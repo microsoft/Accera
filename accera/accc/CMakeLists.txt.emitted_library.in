@@ -1,0 +1,41 @@
+####################################################################################################
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See LICENSE in the project root for license information.
+####################################################################################################
+
+# Templatized CMakeLists.txt file expects the following set:
+# By CMake:
+# @OBJ_EXTENSION@
+#
+# By accc:
+# @LIBRARY_NAME_TAG@
+
+#
+# cmake file for @LIBRARY_NAME_TAG@ Accera subproject
+#
+
+cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+
+# Error on non-existent dependency in add_dependencies.
+cmake_policy(SET CMP0046 NEW)
+
+project(RC_LIB_@LIBRARY_NAME_TAG@ CXX ASM)
+
+option(USE_LIBCXX "Build with libc++ if using the Clang compiler" OFF)
+if(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+    add_compile_options(-stdlib=libc++)
+    link_libraries(-lc++ -lc++abi)
+endif(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+
+option(STRICT_MODE "Build with 'warnings as errors'" OFF)
+option(USE_MKL "Build with Intel MKL" OFF)
+
+# Set C++ version
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+file(GLOB OBJ_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*@OBJ_EXTENSION@)
+set(emitted_lib @LIBRARY_NAME_TAG@)
+add_library(${emitted_lib} STATIC ${OBJ_FILES})
+
+set_target_properties(${emitted_lib} PROPERTIES LINKER_LANGUAGE CXX)

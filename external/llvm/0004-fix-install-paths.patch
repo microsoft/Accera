@@ -1,0 +1,91 @@
+Sources:
+https://github.com/microsoft/vcpkg/blob/master/ports/llvm/0002-fix-install-paths.patch
+https://github.com/microsoft/vcpkg/blob/master/ports/llvm/0009-fix-tools-install-path.patch
+---
+diff --git a/lld/cmake/modules/AddLLD.cmake b/lld/cmake/modules/AddLLD.cmake
+index 9883475d1aa5..48e46586f387 100644
+--- a/lld/cmake/modules/AddLLD.cmake
++++ b/lld/cmake/modules/AddLLD.cmake
+@@ -46,7 +46,7 @@ macro(add_lld_tool name)
+     get_target_export_arg(${name} LLD export_to_lldtargets)
+     install(TARGETS ${name}
+       ${export_to_lldtargets}
+-      RUNTIME DESTINATION bin
++      RUNTIME DESTINATION tools/llvm
+       COMPONENT ${name})
+ 
+     if(NOT CMAKE_CONFIGURATION_TYPES)
+diff --git a/lld/cmake/modules/CMakeLists.txt b/lld/cmake/modules/CMakeLists.txt
+index 62d03fa901dd..09b0f54ee8c3 100644
+--- a/lld/cmake/modules/CMakeLists.txt
++++ b/lld/cmake/modules/CMakeLists.txt
+@@ -1,11 +1,11 @@
+ # Generate a list of CMake library targets so that other CMake projects can
+ # link against them. LLVM calls its version of this file LLVMExports.cmake, but
+ # the usual CMake convention seems to be ${Project}Targets.cmake.
+-set(LLD_INSTALL_PACKAGE_DIR lib${LLVM_LIBDIR_SUFFIX}/cmake/lld)
++set(LLD_INSTALL_PACKAGE_DIR share/lld)
+ set(lld_cmake_builddir "${CMAKE_BINARY_DIR}/${LLD_INSTALL_PACKAGE_DIR}")
+ 
+ # Keep this in sync with llvm/cmake/CMakeLists.txt!
+-set(LLVM_INSTALL_PACKAGE_DIR lib${LLVM_LIBDIR_SUFFIX}/cmake/llvm)
++set(LLVM_INSTALL_PACKAGE_DIR share/llvm)
+ set(llvm_cmake_builddir "${LLVM_BINARY_DIR}/${LLVM_INSTALL_PACKAGE_DIR}")
+ 
+ get_property(LLD_EXPORTS GLOBAL PROPERTY LLD_EXPORTS)
+diff --git a/lld/tools/lld/CMakeLists.txt b/lld/tools/lld/CMakeLists.txt
+index e77b2161a873..b325b934640c 100644
+--- a/lld/tools/lld/CMakeLists.txt
++++ b/lld/tools/lld/CMakeLists.txt
+@@ -21,7 +21,7 @@ target_link_libraries(lld
+   )
+ 
+ install(TARGETS lld
+-  RUNTIME DESTINATION bin)
++  RUNTIME DESTINATION tools/llvm)
+ 
+ if(NOT LLD_SYMLINKS_TO_CREATE)
+   set(LLD_SYMLINKS_TO_CREATE
+diff --git a/llvm/cmake/modules/AddLLVM.cmake b/llvm/cmake/modules/AddLLVM.cmake
+index 689cac474c1a..37a94d5b2cf2 100644
+--- a/llvm/cmake/modules/AddLLVM.cmake
++++ b/llvm/cmake/modules/AddLLVM.cmake
+@@ -1029,7 +1029,7 @@ function(process_llvm_pass_plugins)
+ 
+       ## Part 1: Extension header to be included whenever we need extension
+       #  processing.
+-      set(LLVM_INSTALL_PACKAGE_DIR lib${LLVM_LIBDIR_SUFFIX}/cmake/llvm)
++      set(LLVM_INSTALL_PACKAGE_DIR share/llvm)
+       set(llvm_cmake_builddir "${LLVM_BINARY_DIR}/${LLVM_INSTALL_PACKAGE_DIR}")
+       file(WRITE
+           "${llvm_cmake_builddir}/LLVMConfigExtensions.cmake"
+diff --git a/llvm/cmake/modules/CMakeLists.txt b/llvm/cmake/modules/CMakeLists.txt
+index 51b6a4fdc284..a818de2e116c 100644
+--- a/llvm/cmake/modules/CMakeLists.txt
++++ b/llvm/cmake/modules/CMakeLists.txt
+@@ -1,6 +1,6 @@
+ include(LLVMDistributionSupport)
+ 
+-set(LLVM_INSTALL_PACKAGE_DIR lib${LLVM_LIBDIR_SUFFIX}/cmake/llvm)
++set(LLVM_INSTALL_PACKAGE_DIR share/llvm)
+ set(llvm_cmake_builddir "${LLVM_BINARY_DIR}/${LLVM_INSTALL_PACKAGE_DIR}")
+ 
+ # First for users who use an installed LLVM, create the LLVMExports.cmake file.
+diff --git a/mlir/cmake/modules/CMakeLists.txt b/mlir/cmake/modules/CMakeLists.txt
+index 65efc4a14987..7c3213ab0c2b 100644
+--- a/mlir/cmake/modules/CMakeLists.txt
++++ b/mlir/cmake/modules/CMakeLists.txt
+@@ -3,11 +3,11 @@ include(LLVMDistributionSupport)
+ # Generate a list of CMake library targets so that other CMake projects can
+ # link against them. LLVM calls its version of this file LLVMExports.cmake, but
+ # the usual CMake convention seems to be ${Project}Targets.cmake.
+-set(MLIR_INSTALL_PACKAGE_DIR lib${LLVM_LIBDIR_SUFFIX}/cmake/mlir)
++set(MLIR_INSTALL_PACKAGE_DIR share/mlir)
+ set(mlir_cmake_builddir "${CMAKE_BINARY_DIR}/${MLIR_INSTALL_PACKAGE_DIR}")
+ 
+ # Keep this in sync with llvm/cmake/CMakeLists.txt!
+-set(LLVM_INSTALL_PACKAGE_DIR lib${LLVM_LIBDIR_SUFFIX}/cmake/llvm)
++set(LLVM_INSTALL_PACKAGE_DIR share/llvm)
+ set(llvm_cmake_builddir "${LLVM_BINARY_DIR}/${LLVM_INSTALL_PACKAGE_DIR}")
+ 
+ get_property(MLIR_EXPORTS GLOBAL PROPERTY MLIR_EXPORTS)

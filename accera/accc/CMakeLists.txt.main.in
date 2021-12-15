@@ -1,0 +1,179 @@
+####################################################################################################
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See LICENSE in the project root for license information.
+####################################################################################################
+
+# Templatized CMakeLists.txt file expects the following set:
+# By CMake:
+# @OBJ_EXTENSION@
+# @MAIN_DEPLOY_DIR_NAME@
+#
+# By accc:
+# @PROGRAM_NAME_TAG@
+# @LIBRARY_NAME_TAG@
+# @MAIN_BASENAME_TAG@
+# @MAIN_DEPLOY_TARGET_TYPE_TAG@
+
+#
+# cmake file for @LIBRARY_NAME_TAG@ Accera subproject
+#
+
+cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+
+# Error on non-existent dependency in add_dependencies.
+cmake_policy(SET CMP0046 NEW)
+
+project(RC_MAIN_@PROGRAM_NAME_TAG@ CXX ASM)
+if(MSVC)
+  enable_language(ASM_MASM)
+endif()
+
+# TODO : make this conditional based on accc flags
+if(WIN32)
+  if(MSVC)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:10000000")
+  elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-stack_size,-Wl,0x1000000")
+  else()
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--stack,16777216")
+  endif(MSVC)
+endif(WIN32)
+
+option(STRICT_MODE "Build with 'warnings as errors'" OFF)
+option(USE_MKL "Build with Intel MKL" OFF)
+
+option(USE_LIBCXX "Build with libc++ if using the Clang compiler" OFF)
+if(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+    add_compile_options(-stdlib=libc++)
+    link_libraries(-lc++ -lc++abi)
+endif(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+
+# Try to create a compilation database, which is useful to have when working
+# with clang tooling
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Turn on ability to create folders to organize projects
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+# Set C++ version
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Apply -fPIC where applicable to the platform
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Find the platform-specific way of working with threads
+if(NOT MSVC)
+  set(THREADS_PREFER_PTHREAD_FLAG ON)
+  set(CMAKE_THREAD_PREFER_PTHREAD ON)
+endif(NOT MSVC)
+find_package(Threads REQUIRED)
+
+if(STRICT_MODE)
+  message("-- Turning on strict mode with warnings as errors.")
+endif()
+
+# Get Accera package
+set(ACCERA_INSTALL_PATH "@ACCERA_INSTALL_PATH@/lib/cmake/accera" CACHE PATH "Installation location of Accera")
+find_package(Accera CONFIG PATHS ${ACCERA_INSTALL_PATH} NO_DEFAULT_PATH)
+
+# Include correct LLVM and MLIR packages for Accera
+list(APPEND CMAKE_MODULE_PATH "${ACCERA_INSTALL_PATH}")
+include(ConanSetup)
+include(LLVMSetup)
+
+# Blas
+if(USE_MKL)
+  include(MKLSetup)
+else()
+  include(OpenBLASSetup)
+endif()
+if(BLAS_FOUND AND USE_BLAS)
+  add_compile_definitions(ACCERA_USE_BLAS=1)
+endif()
+if(USE_BLAS)
+  list(APPEND extra_libs ${BLAS_LIBS})
+  list(APPEND extra_includes ${BLAS_INCLUDE_DIRS})
+endif()
+
+set(target_name @PROGRAM_NAME_TAG@)
+
+if(MSVC)
+  # Set Visual Studio-specific options
+  add_definitions(-DUNICODE -D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
+  add_compile_options(/utf-8)
+  add_compile_options(/MP)
+  add_compile_options(/bigobj)
+  add_compile_options(/W4)
+  add_compile_options(/permissive-)
+  if(STRICT_MODE)
+    add_compile_options(/WX)
+  endif()
+  # the debug linker needs to match how LLVM was built (either /MD or /MDd)
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${LLVM_MD_OPTION}")
+  set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${LLVM_MD_OPTION}")
+else()
+  # Set Clang/GCC-specific options
+  add_compile_options(-Wall)
+  if(STRICT_MODE)
+    add_compile_options(-Werror)
+  endif()
+  add_compile_options(-Wsign-compare)
+  add_compile_options(-Wno-missing-braces)
+  add_compile_options(-Wmissing-field-initializers)
+  add_compile_options(-fvisibility-inlines-hidden)
+  add_compile_options(-Wno-unknown-pragmas)
+  add_compile_options(-Wno-comment)
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -ggdb3 -O0")
+  set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -ggdb3 -O0")
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -ggdb3")
+  set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -ggdb3")
+  if(${CMAKE_CXX_COMPILER_ID} STREQUAL Clang)
+    add_compile_options(-Wno-backslash-newline-escape)
+    add_compile_options(-Wno-self-assign)
+    add_compile_options (-fno-color-diagnostics) # we are dumping to a file, so we do not want color output
+  else() # GCC
+    add_compile_options(-Wno-ignored-attributes)
+    add_compile_options (-fdiagnostics-color=never)
+  endif()
+endif()
+
+set(emitted_lib @LIBRARY_NAME_TAG@)
+add_library(${emitted_lib} STATIC IMPORTED)
+set_target_properties(
+  ${emitted_lib}
+  PROPERTIES
+    IMPORTED_LOCATION
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/${CMAKE_STATIC_LIBRARY_PREFIX}@LIBRARY_NAME_TAG@${CMAKE_STATIC_LIBRARY_SUFFIX})
+
+# compile project that calls generated code
+set(src
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/@MAIN_BASENAME_TAG@.cpp
+)
+
+source_group("src" FILES ${src})
+
+add_executable(${target_name} ${src})
+target_include_directories(${target_name}
+  PRIVATE include
+          ${ACCERA_INCLUDE_DIRS}
+          ${ACCERA_INCLUDE_DIRS}/accera
+          ${extra_includes})
+
+target_link_libraries(${target_name}
+  ${emitted_lib}
+  ${ACCERA_EXPORTED_LIBS}
+  ${extra_libs}
+)
+
+if("@MAIN_DEPLOY_TARGET_TYPE_TAG@" STREQUAL GPU)
+  target_link_libraries(${target_name}
+    ${ACCERA_RUNTIME_LIBS}
+  )
+  add_compile_definitions(ACCERA_GPU=1)
+endif()
+
+add_custom_command(TARGET ${target_name} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${PROJECT_SOURCE_DIR}/@MAIN_DEPLOY_DIR_NAME@"
+        $<TARGET_FILE_DIR:${target_name}>)

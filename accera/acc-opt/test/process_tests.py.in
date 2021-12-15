@@ -1,0 +1,118 @@
+import argparse
+import fileinput
+import shlex
+import subprocess
+import sys
+
+CHUNK_DIVIDER = '// -----'
+TEST_NAME_PATTERN = '// @'
+
+THROWAWAY_PATTERNS = ["=========", "All tests passed", "Passed", "Failed", "Filters:"]
+
+
+def is_throwaway(line):
+    for pattern in THROWAWAY_PATTERNS:
+        if line.startswith(pattern):
+            return True
+    return False
+
+
+def chunk_iter(line_iter, pattern):
+    '''Turn an iterator over lines into an iterator over chunks separated by a pattern'''
+    curr_lines = []
+    curr_test_name = ''
+
+    for line in line_iter:
+        if is_throwaway(line):
+            pass
+        elif line.startswith(TEST_NAME_PATTERN):
+            curr_test_name = line[len(TEST_NAME_PATTERN):]
+        elif line.startswith(pattern):
+            yield ''.join(curr_lines), curr_test_name
+            curr_lines = []
+            curr_test_name = ''
+        else:
+            curr_lines.append(line)
+
+    if curr_lines:
+        yield ''.join(curr_lines), curr_test_name
+
+
+def run_command(command_to_run, args, input=None, working_directory=None):
+    try:
+        if working_directory:
+            os.makedirs(working_directory, exist_ok=True)
+
+        run_args = [command_to_run] + args
+        sub_process = subprocess.run(
+            run_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            input=input, universal_newlines=True, cwd=working_directory, check=True)
+        return sub_process.stdout, sub_process.stderr
+    except:
+        print("Error running command {}".format(' '.join(run_args)))
+        raise
+
+
+def rc_opt(ir):
+    cmd_exe = '@CMAKE_BINARY_DIR@/bin/acc-opt@CMAKE_EXECUTABLE_SUFFIX@'
+    args = """--acc-to-llvm
+--verify-each=false
+""".splitlines()
+
+    result, err = run_command(cmd_exe, args, ir)
+    return result, err
+
+
+def run_jit(ir):
+    cmd_exe = 'mlir-cpu-runner'
+    args = ['--entry-point-result=void']
+
+    result, err = run_command(cmd_exe, args, ir)
+    return result, err
+
+
+def process_chunk(chunk, test_name_prefix):
+    ir, name = chunk
+
+    if not name.startswith(test_name_prefix):
+        return
+
+    print('{}{}'.format(TEST_NAME_PATTERN, name))
+
+    # Run through acc-opt
+    converted_ir, rc_opt_err = rc_opt(ir)
+
+    if rc_opt_err:
+        print('compile error output:')
+        print(rc_opt_err)
+        print()
+        print('ir:')
+        print(ir)
+
+    if not converted_ir:
+        print("Couldn't generate any IR to run")
+        return
+
+    jit_output, jit_err = run_jit(converted_ir)
+    print(jit_output)
+
+
+def process_tests(test_name_prefix):
+    with fileinput.input(files=("-",)) as input:
+        for chunk in chunk_iter(input, CHUNK_DIVIDER):
+            process_chunk(chunk, test_name_prefix)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--test_name_prefix", type=str, help="Prefix for the names of the tests to process")
+
+    args = parser.parse_args()
+
+    try:
+        process_tests(args.test_name_prefix)
+    except subprocess.CalledProcessError as e:
+        print("Error running command {}".format(e.cmd), file=sys.stderr)
+        if e.stderr:
+            print(e.stderr, file=sys.stderr)
+        sys.exit(e.returncode)

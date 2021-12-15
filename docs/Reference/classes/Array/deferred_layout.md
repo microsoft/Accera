@@ -1,0 +1,45 @@
+[//]: # (Project: Accera)
+[//]: # (Version: 1.2.0)
+
+# Accera 1.2.0 Reference
+
+## `accera.Array.deferred_layout(layout)`
+Specifies the layout for a `Array.Role.CONST` array based on a `Cache`. For more details, see [Deferred layout of constant arrays](<../../../Manual/08%20Deferred%20layout%20of%20constant%20arrays.md>)
+
+## Arguments
+argument | description | type/default
+--- | --- | ---
+`layout` | The layout to set. | `accera.Array.Layout`
+
+## Examples
+
+Create a constant 16x16 array without specifying a layout. Later on, define its layout based on a cache:
+
+```python
+import numpy as np
+import accera as acc
+
+matrix = np.random.rand(16, 16)
+
+# Create a constant array with a deferred layout
+A = acc.Array(role=acc.Array.Role.CONST, data=matrix, layout=acc.Array.Layout.DEFERRED)
+B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=matrix.shape)
+
+nest = Nest(shape=matrix.shape)
+i, j = nest.get_indices()
+
+@nest.iteration_logic
+def_():
+    B[i, j] += A[i, j]
+
+plan = nest.create_action_plan()
+
+# create a cache for the constant array
+AA = plan.cache(A, i, layout=acc.Array.Layout.FIRST_MAJOR, thrifty=True)
+
+# update the constant array's layout based on the cache
+A.deferred_layout(cache=AA)
+```
+
+
+<div style="page-break-after: always;"></div>

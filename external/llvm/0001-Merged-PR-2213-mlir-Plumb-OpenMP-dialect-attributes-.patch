@@ -1,0 +1,313 @@
+From 74eb894f2beac5f323ce02aa9f658cfab7f2cd14 Mon Sep 17 00:00:00 2001
+From: Lisa Ong <onglisa@microsoft.com>
+Date: Wed, 15 Sep 2021 05:14:38 +0000
+Subject: [PATCH 1/3] Merged PR 2213: [mlir] Plumb OpenMP dialect attributes
+ through affine and scf lowering
+
+* Updated AffineToSCF and SCFToOpenMP to support OMP dialect attributes for num_threads, schedule_val, proc_bind, and collapse
+* Downstream loop collapsing change (https://github.com/llvm/llvm-project/commit/c4c103097660b7b130eaf134919516726d7bd9e6#diff-2cbb5651f4570d81d55ac4198deda0f6f7341b2503479752ef2295da3774c586)
+
+Related work items: #3492
+---
+ conanfile.py                                  |  3 +-
+ .../mlir/Dialect/OpenMP/OpenMPDialect.h       | 17 ++++
+ mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td |  3 +-
+ .../AffineToStandard/AffineToStandard.cpp     |  7 ++
+ .../Conversion/SCFToOpenMP/SCFToOpenMP.cpp    | 26 +++++-
+ mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp  | 10 ++
+ .../OpenMP/OpenMPToLLVMIRTranslation.cpp      | 91 ++++++++++++-------
+ 7 files changed, 119 insertions(+), 38 deletions(-)
+
+diff --git a/mlir/include/mlir/Dialect/OpenMP/OpenMPDialect.h b/mlir/include/mlir/Dialect/OpenMP/OpenMPDialect.h
+index 8f79c4af1ad8..5a6e6f471833 100644
+--- a/mlir/include/mlir/Dialect/OpenMP/OpenMPDialect.h
++++ b/mlir/include/mlir/Dialect/OpenMP/OpenMPDialect.h
+@@ -25,4 +25,21 @@
+ #define GET_OP_CLASSES
+ #include "mlir/Dialect/OpenMP/OpenMPOps.h.inc"
+ 
++namespace mlir {
++namespace omp {
++
++/// Attribute name for the IntegerAttr which encodes the value of num_threads.
++constexpr StringRef getNumThreadsAttrName() { return "omp.num_threads"; }
++
++/// Attribute name for the StringAttr which encodes the value of proc_bind.
++constexpr StringRef getProcBindAttrName() { return "omp.proc_bind"; }
++
++/// Attribute name for the StringAttr which encodes the value of schedule.
++constexpr StringRef getScheduleAttrName() { return "omp.schedule_val"; }
++
++/// Attribute name for the IntegerAttr which encodes the value of collapse.
++constexpr StringRef getCollapseAttrName() { return "omp.collapse_val"; }
++}
++}
++
+ #endif // MLIR_DIALECT_OPENMP_OPENMPDIALECT_H_
+diff --git a/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td b/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td
+index 087d10d14398..af262d88a22c 100644
+--- a/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td
++++ b/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td
+@@ -92,7 +92,8 @@ def ParallelOp : OpenMP_Op<"parallel", [AttrSizedOperandSegments]> {
+   let regions = (region AnyRegion:$region);
+ 
+   let builders = [
+-    OpBuilder<(ins CArg<"ArrayRef<NamedAttribute>", "{}">:$attributes)>
++    OpBuilder<(ins CArg<"ArrayRef<NamedAttribute>", "{}">:$attributes)>,
++    OpBuilder<(ins "Value":$num_threads, "StringRef":$proc_bind)>
+   ];
+   let parser = [{ return parseParallelOp(parser, result); }];
+   let printer = [{ return printParallelOp(p, *this); }];
+diff --git a/mlir/lib/Conversion/AffineToStandard/AffineToStandard.cpp b/mlir/lib/Conversion/AffineToStandard/AffineToStandard.cpp
+index dd3ff5fefa3b..d2d981dab801 100644
+--- a/mlir/lib/Conversion/AffineToStandard/AffineToStandard.cpp
++++ b/mlir/lib/Conversion/AffineToStandard/AffineToStandard.cpp
+@@ -380,6 +380,11 @@ public:
+     SmallVector<Value, 8> upperBoundTuple;
+     SmallVector<Value, 8> lowerBoundTuple;
+     SmallVector<Value, 8> identityVals;
++
++    auto transferDialectAttrs = [=](Operation *fromOp, Operation *toOp) {
++      toOp->setDialectAttrs(fromOp->getDialectAttrs());
++    };
++
+     // Emit IR computing the lower and upper bound by expanding the map
+     // expression.
+     lowerBoundTuple.reserve(op.getNumDims());
+@@ -413,6 +418,7 @@ public:
+       rewriter.eraseBlock(parOp.getBody());
+       rewriter.inlineRegionBefore(op.region(), parOp.region(),
+                                   parOp.region().end());
++      transferDialectAttrs(op, parOp);
+       rewriter.replaceOp(op, parOp.results());
+       return success();
+     }
+@@ -460,6 +466,7 @@ public:
+                          reduceOp.reductionOperator().front().getArgument(1));
+       rewriter.create<scf::ReduceReturnOp>(loc, reductionResult);
+     }
++    transferDialectAttrs(op, parOp);
+     rewriter.replaceOp(op, parOp.results());
+     return success();
+   }
+diff --git a/mlir/lib/Conversion/SCFToOpenMP/SCFToOpenMP.cpp b/mlir/lib/Conversion/SCFToOpenMP/SCFToOpenMP.cpp
+index 1dedc2c39d8f..09eb825404be 100644
+--- a/mlir/lib/Conversion/SCFToOpenMP/SCFToOpenMP.cpp
++++ b/mlir/lib/Conversion/SCFToOpenMP/SCFToOpenMP.cpp
+@@ -15,6 +15,7 @@
+ #include "../PassDetail.h"
+ #include "mlir/Dialect/OpenMP/OpenMPDialect.h"
+ #include "mlir/Dialect/SCF/SCF.h"
++#include "mlir/Dialect/StandardOps/IR/Ops.h"
+ #include "mlir/Transforms/DialectConversion.h"
+ 
+ using namespace mlir;
+@@ -44,9 +45,17 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
+     }
+ 
+     // Replace the loop.
++    NamedAttrList attrs;
++    if (auto scheduleVal = parallelOp->getAttrOfType<StringAttr>(omp::getScheduleAttrName())) {
++      attrs.append("schedule_val", scheduleVal);
++    }
++    if (auto collapseVal = parallelOp->getAttrOfType<IntegerAttr>(omp::getCollapseAttrName())) {
++      attrs.append("collapse_val", collapseVal);
++    }
+     auto loop = rewriter.create<omp::WsLoopOp>(
+-        parallelOp.getLoc(), parallelOp.lowerBound(), parallelOp.upperBound(),
+-        parallelOp.step());
++      parallelOp.getLoc(), parallelOp.lowerBound(), parallelOp.upperBound(),
++      parallelOp.step(), attrs.getAttrs());
++
+     rewriter.inlineRegionBefore(parallelOp.region(), loop.region(),
+                                 loop.region().begin());
+     rewriter.eraseOp(parallelOp);
+@@ -73,7 +82,18 @@ static void insertOpenMPParallel(FuncOp func) {
+   // Wrap SCF ops into OpenMP "parallel" ops.
+   for (scf::ParallelOp parallelOp : topLevelParallelOps) {
+     OpBuilder builder(parallelOp);
+-    auto omp = builder.create<omp::ParallelOp>(parallelOp.getLoc());
++    omp::ParallelOp omp;
++    if (auto numThreads = parallelOp->getAttrOfType<IntegerAttr>(omp::getNumThreadsAttrName())) {
++      Value numThreadsVal = builder.create<mlir::ConstantIntOp>(parallelOp.getLoc(),
++                                                                numThreads.getInt(),
++                                                                numThreads.getType());
++      auto procBind = parallelOp->getAttrOfType<StringAttr>(omp::getProcBindAttrName());
++      omp = builder.create<omp::ParallelOp>(parallelOp.getLoc(),
++                                            numThreadsVal,
++                                            procBind.getValue());
++    } else {
++      omp = builder.create<omp::ParallelOp>(parallelOp.getLoc());
++    }
+     Block *block = builder.createBlock(&omp.getRegion());
+     builder.create<omp::TerminatorOp>(parallelOp.getLoc());
+     block->getOperations().splice(block->begin(),
+diff --git a/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp b/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp
+index 9160ab9318b6..ef994df90466 100644
+--- a/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp
++++ b/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp
+@@ -49,6 +49,16 @@ void ParallelOp::build(OpBuilder &builder, OperationState &state,
+   state.addAttributes(attributes);
+ }
+ 
++void ParallelOp::build(OpBuilder &builder, OperationState &state,
++                       Value numThreads, StringRef procBind) {
++  ParallelOp::build(
++      builder, state, /*if_expr_var=*/nullptr, numThreads,
++      /*default_val=*/nullptr, /*private_vars=*/ValueRange(),
++      /*firstprivate_vars=*/ValueRange(), /*shared_vars=*/ValueRange(),
++      /*copyin_vars=*/ValueRange(), /*allocate_vars=*/ValueRange(),
++      /*allocators_vars=*/ValueRange(), builder.getStringAttr(procBind));
++}
++
+ /// Parse a list of operands with types.
+ ///
+ /// operand-and-type-list ::= `(` ssa-id-and-type-list `)`
+diff --git a/mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp b/mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp
+index 6259612d5112..84f357156426 100644
+--- a/mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp
++++ b/mlir/lib/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.cpp
+@@ -213,25 +213,12 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
+   if (loop.lowerBound().empty())
+     return failure();
+ 
+-  if (loop.getNumLoops() != 1)
+-    return opInst.emitOpError("collapsed loops not yet supported");
+-
+   // Static is the default.
+   omp::ClauseScheduleKind schedule = omp::ClauseScheduleKind::Static;
+   if (loop.schedule_val().hasValue())
+     schedule =
+         *omp::symbolizeClauseScheduleKind(loop.schedule_val().getValue());
+ 
+-  // Find the loop configuration.
+-  llvm::Value *lowerBound = moduleTranslation.lookupValue(loop.lowerBound()[0]);
+-  llvm::Value *upperBound = moduleTranslation.lookupValue(loop.upperBound()[0]);
+-  llvm::Value *step = moduleTranslation.lookupValue(loop.step()[0]);
+-  llvm::Type *ivType = step->getType();
+-  llvm::Value *chunk =
+-      loop.schedule_chunk_var()
+-          ? moduleTranslation.lookupValue(loop.schedule_chunk_var())
+-          : llvm::ConstantInt::get(ivType, 1);
+-
+   // Set up the source location value for OpenMP runtime.
+   llvm::DISubprogram *subprogram =
+       builder.GetInsertBlock()->getParent()->getSubprogram();
+@@ -240,22 +227,29 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
+   llvm::OpenMPIRBuilder::LocationDescription ompLoc(builder.saveIP(),
+                                                     llvm::DebugLoc(diLoc));
+ 
+-  // Generator of the canonical loop body. Produces an SESE region of basic
+-  // blocks.
++  // Generator of the canonical loop body.
+   // TODO: support error propagation in OpenMPIRBuilder and use it instead of
+   // relying on captured variables.
++  SmallVector<llvm::CanonicalLoopInfo *> loopInfos;
++  SmallVector<llvm::OpenMPIRBuilder::InsertPointTy> bodyInsertPoints;
+   LogicalResult bodyGenStatus = success();
+   auto bodyGen = [&](llvm::OpenMPIRBuilder::InsertPointTy ip, llvm::Value *iv) {
+-    llvm::IRBuilder<>::InsertPointGuard guard(builder);
+-
+     // Make sure further conversions know about the induction variable.
+-    moduleTranslation.mapValue(loop.getRegion().front().getArgument(0), iv);
++    moduleTranslation.mapValue(
++        loop.getRegion().front().getArgument(loopInfos.size()), iv);
++
++    // Capture the body insertion point for use in nested loops. BodyIP of the
++    // CanonicalLoopInfo always points to the beginning of the entry block of
++    // the body.
++    bodyInsertPoints.push_back(ip);
++
++    if (loopInfos.size() != loop.getNumLoops() - 1)
++      return;
+ 
++    // Convert the body of the loop.
+     llvm::BasicBlock *entryBlock = ip.getBlock();
+     llvm::BasicBlock *exitBlock =
+         entryBlock->splitBasicBlock(ip.getPoint(), "omp.wsloop.exit");
+-
+-    // Convert the body of the loop.
+     convertOmpOpRegions(loop.region(), "omp.wsloop.region", *entryBlock,
+                         *exitBlock, builder, moduleTranslation, bodyGenStatus);
+   };
+@@ -264,21 +258,49 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
+   // TODO: this currently assumes WsLoop is semantically similar to SCF loop,
+   // i.e. it has a positive step, uses signed integer semantics. Reconsider
+   // this code when WsLoop clearly supports more cases.
++  llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
++  for (unsigned i = 0, e = loop.getNumLoops(); i < e; ++i) {
++    llvm::Value *lowerBound =
++        moduleTranslation.lookupValue(loop.lowerBound()[i]);
++    llvm::Value *upperBound =
++        moduleTranslation.lookupValue(loop.upperBound()[i]);
++    llvm::Value *step = moduleTranslation.lookupValue(loop.step()[i]);
++
++    // Make sure loop trip count are emitted in the preheader of the outermost
++    // loop at the latest so that they are all available for the new collapsed
++    // loop will be created below.
++    llvm::OpenMPIRBuilder::LocationDescription loc = ompLoc;
++    llvm::OpenMPIRBuilder::InsertPointTy computeIP = ompLoc.IP;
++    if (i != 0) {
++      loc = llvm::OpenMPIRBuilder::LocationDescription(bodyInsertPoints.back(),
++                                                       llvm::DebugLoc(diLoc));
++      computeIP = loopInfos.front()->getPreheaderIP();
++    }
++    loopInfos.push_back(ompBuilder->createCanonicalLoop(
++        loc, bodyGen, lowerBound, upperBound, step,
++        /*IsSigned=*/true, loop.inclusive(), computeIP));
++
++    if (failed(bodyGenStatus))
++      return failure();
++  }
++
++  // Collapse loops. Store the insertion point because LoopInfos may get
++  // invalidated.
++  llvm::IRBuilderBase::InsertPoint afterIP = loopInfos.front()->getAfterIP();
+   llvm::CanonicalLoopInfo *loopInfo =
+-      moduleTranslation.getOpenMPBuilder()->createCanonicalLoop(
+-          ompLoc, bodyGen, lowerBound, upperBound, step, /*IsSigned=*/true,
+-          /*InclusiveStop=*/loop.inclusive());
+-  if (failed(bodyGenStatus))
+-    return failure();
++      ompBuilder->collapseLoops(diLoc, loopInfos, {});
+ 
++  // Find the loop configuration.
++  llvm::Type *ivType = loopInfo->getIndVar()->getType();
++  llvm::Value *chunk =
++      loop.schedule_chunk_var()
++          ? moduleTranslation.lookupValue(loop.schedule_chunk_var())
++          : llvm::ConstantInt::get(ivType, 1);
+   llvm::OpenMPIRBuilder::InsertPointTy allocaIP =
+       findAllocaInsertPoint(builder, moduleTranslation);
+-  llvm::OpenMPIRBuilder::InsertPointTy afterIP;
+-  llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
+   if (schedule == omp::ClauseScheduleKind::Static) {
+-    loopInfo = ompBuilder->createStaticWorkshareLoop(ompLoc, loopInfo, allocaIP,
+-                                                     !loop.nowait(), chunk);
+-    afterIP = loopInfo->getAfterIP();
++    ompBuilder->createStaticWorkshareLoop(ompLoc, loopInfo, allocaIP,
++                                          !loop.nowait(), chunk);
+   } else {
+     llvm::omp::OMPScheduleType schedType;
+     switch (schedule) {
+@@ -299,11 +321,14 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
+       break;
+     }
+ 
+-    afterIP = ompBuilder->createDynamicWorkshareLoop(
+-        ompLoc, loopInfo, allocaIP, schedType, !loop.nowait(), chunk);
++    ompBuilder->createDynamicWorkshareLoop(ompLoc, loopInfo, allocaIP,
++                                           schedType, !loop.nowait(), chunk);
+   }
+ 
+-  // Continue building IR after the loop.
++  // Continue building IR after the loop. Note that the LoopInfo returned by
++  // `collapseLoops` points inside the outermost loop and is intended for
++  // potential further loop transformations. Use the insertion point stored
++  // before collapsing loops instead.
+   builder.restoreIP(afterIP);
+   return success();
+ }
+-- 
+2.30.0.windows.1
+

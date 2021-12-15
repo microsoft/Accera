@@ -1,0 +1,636 @@
+From 97c4232342b7e8b802c4557368bc016264679930 Mon Sep 17 00:00:00 2001
+From: Chuck Jacobs <cjacobs@microsoft.com>
+Date: Wed, 6 Oct 2021 16:40:38 +0000
+Subject: [PATCH 2/3] Merged PR 2237: Improved codegen of vpmaddwd instruction
+
+This PR adds another codegen path that lowers certain "multiply-like" operations into a `vpmaddubsw` instruction followed by a `vpmaddwd` instruction.
+---
+diff --git a/llvm/lib/Target/X86/X86ISelLowering.cpp b/llvm/lib/Target/X86/X86ISelLowering.cpp
+index 5477c80d27f0..7bdfd7c612c7 100644
+--- a/llvm/lib/Target/X86/X86ISelLowering.cpp
++++ b/llvm/lib/Target/X86/X86ISelLowering.cpp
+@@ -39,6 +39,7 @@
+ #include "llvm/CodeGen/MachineLoopInfo.h"
+ #include "llvm/CodeGen/MachineModuleInfo.h"
+ #include "llvm/CodeGen/MachineRegisterInfo.h"
++#include "llvm/CodeGen/SelectionDAGAddressAnalysis.h"
+ #include "llvm/CodeGen/TargetLowering.h"
+ #include "llvm/CodeGen/WinEHFuncInfo.h"
+ #include "llvm/IR/CallingConv.h"
+@@ -37803,7 +37804,7 @@ static SDValue combineTargetShuffle(SDValue N, SelectionDAG &DAG,
+       return Res;
+ 
+     // Fold vperm2x128 subvector shuffle with an inner concat pattern.
+-    // vperm2x128(concat(X,Y),concat(Z,W)) --> concat X,Y etc.  
++    // vperm2x128(concat(X,Y),concat(Z,W)) --> concat X,Y etc.
+     auto FindSubVector128 = [&](unsigned Idx) {
+       if (Idx > 3)
+         return SDValue();
+@@ -46694,6 +46695,351 @@ static SDValue combinePMULH(SDValue Src, EVT VT, const SDLoc &DL,
+   return DAG.getNode(Opc, DL, VT, LHS, RHS);
+ }
+ 
++// Helper function for PMADDUBSW / PMADDWD
++// TODO: need to do the convert-load-to-broadcast-splat fixup in the function that takes the a0/a1 pair
++static SDValue getExtMulOperand(SDValue node, int index, EVT VT, const SDLoc &DL,
++                                SelectionDAG &DAG) {
++  unsigned NumElems = VT.getVectorNumElements();
++  auto op = node.getOperand(index);
++  auto opcode = op.getOpcode();
++
++  // Check for ZERO_EXTEND or SIGN_EXTEND
++  if (opcode == ISD::ZERO_EXTEND || opcode == ISD::SIGN_EXTEND || opcode == ISD::ZERO_EXTEND_VECTOR_INREG || opcode == ISD::SIGN_EXTEND_VECTOR_INREG) {
++      auto arg = op.getOperand(0);
++      EVT argVT = arg.getValueType();
++      if (arg.getOpcode() == ISD::INSERT_VECTOR_ELT) {
++        // #### TODO: do this part in fixInterleaved...?
++
++        SmallVector<SDValue, 32> elements(NumElems);
++        while(arg) {
++          if (arg.getOpcode() == ISD::INSERT_VECTOR_ELT) {
++            unsigned idx = arg.getConstantOperandVal(2);
++            if (!elements[idx]) {
++              assert(idx < NumElems && "Illegal insert index");
++              elements[idx] = arg.getOperand(1);
++            }
++            arg = arg.getOperand(0);
++          }
++          else if (arg.getValueType().isVector()) {
++            unsigned argElems = arg.getValueType().getVectorNumElements();
++            assert (argElems <= NumElems);
++            if (auto *baseLoad = dyn_cast<LoadSDNode>(arg)) {
++              auto base = baseLoad->getBasePtr();
++              auto offset = baseLoad->getOffset();
++              if (auto *global = dyn_cast<GlobalAddressSDNode>(base)) {
++                auto globalAddr = global->getGlobal();
++                auto globalOffset = global->getOffset(); // + offset?
++
++                for(unsigned idx = 0; idx < argElems; ++idx) {
++                  if (!elements[idx]) {
++                    auto elemMT = argVT.getVectorElementType();
++                    auto addr = DAG.getGlobalAddress(globalAddr, DL, elemMT, globalOffset + idx);
++                    auto elt = DAG.getLoad(elemMT, DL, baseLoad->getChain(), addr,
++                                            baseLoad->getPointerInfo(),
++                                            baseLoad->getOriginalAlign(),
++                                            baseLoad->getMemOperand()->getFlags());
++
++
++                    elements[idx] = elt;
++                  }
++                }
++              }
++            }
++            else {
++              // maybe just omit this part
++              for(unsigned idx = 0; idx < argElems; ++idx) {
++                if (!elements[idx]) {
++                  MVT elemMT = argVT.getSimpleVT().getVectorElementType();
++                  SDValue elt = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, elemMT, arg,
++                                                DAG.getIntPtrConstant(idx, DL));
++                  elements[idx] = elt;
++                }
++              }
++            }
++            arg = SDValue();
++          }
++          else {
++            arg = SDValue();
++          }
++        }
++
++        // Now check elements to see if it represents a shuffle of a single vector load
++        bool isSingleLoad = true;
++        const GlobalValue *globalBase = nullptr;
++        SmallVector<int64_t, 32> globalOffsets(NumElems);
++        for(unsigned idx = 0; idx < NumElems; ++idx) {
++          if (auto elem = elements[idx]) {
++            if (auto *load = dyn_cast<LoadSDNode>(elem)) {
++              auto base = load->getBasePtr();
++              auto offset = load->getOffset();
++              // TODO: assert offset is UNDEF (?)
++              if (!offset.isUndef()) {
++                return node;
++              }
++
++              if (auto *global = dyn_cast<GlobalAddressSDNode>(base)) {
++                auto globalAddr = global->getGlobal();
++                if (!globalBase) {
++                  globalBase = globalAddr;
++                }
++                else {
++                  if (globalBase != globalAddr)
++                    isSingleLoad = false;
++                }
++                auto globalOffset = global->getOffset();
++                globalOffsets[idx] = globalOffset;
++              }
++            }
++            else {
++              isSingleLoad = false;
++            }
++
++          }
++          else {
++            isSingleLoad = false;
++          }
++        }
++
++        if (isSingleLoad) {
++          // TODO: reduce to a single global load
++        }
++
++        auto bv = DAG.getBuildVector(argVT, DL, elements);
++        auto replacement = DAG.getNode(opcode, DL, VT, bv);
++        return replacement;
++      }
++      return op;
++    }
++
++  // look for (shuf<0,0,0,0...> (insert_elt (extend ...) 0) undef) pattern and translate it
++  // into (extend (shuf<0,0,0,0...> (insert_elt ... 0) undef))
++  // or better yet: (extend (splat ...))
++  if (opcode != ISD::VECTOR_SHUFFLE)
++    return SDValue();
++
++  SDValue shuf = op;
++  if (!shuf.getOperand(1).isUndef())
++    return SDValue();
++
++  auto resultVT = shuf.getValueType();
++  auto numElts = resultVT.getVectorNumElements();
++  op = shuf.getOperand(0);
++
++  if (op.getOpcode() != ISD::INSERT_VECTOR_ELT)
++    return SDValue();
++
++  SDValue insertElt = op;
++  op = insertElt.getOperand(1);
++
++  if (op.getOpcode() != ISD::SIGN_EXTEND && op.getOpcode() != ISD::ZERO_EXTEND)
++    return SDValue();
++
++  auto isSigned = op.getOpcode() == ISD::SIGN_EXTEND;
++  SDValue val = op.getOperand(0);
++  auto valMT = val.getSimpleValueType();
++
++  // We can now reorder the ops to (extend (shuf (insert_elt ...)))
++  EVT splatVT = EVT::getVectorVT(*DAG.getContext(), valMT, numElts);
++  SDValue buildVec = DAG.getSplatBuildVector(splatVT, DL, val);
++  SDValue newExt = isSigned ? DAG.getSExtOrTrunc(buildVec, DL, resultVT) : DAG.getZExtOrTrunc(buildVec, DL, resultVT);
++  return newExt;
++} // end of getExtMulOperand
++
++static void replaceWithInterleavedShuffles(ArrayRef<std::reference_wrapper<SDValue>> interleavedOps, const std::vector<std::vector<int>>& masks, SDValue val, SelectionDAG &DAG, const SDLoc &DL) {
++  const unsigned dotProdSize = interleavedOps.size();
++  EVT VT = interleavedOps[0].get().getValueType();
++  const unsigned NumElts = VT.getVectorNumElements();
++  const unsigned NumSubvecElts = val.getValueType().getVectorNumElements();
++  auto elemMT = VT.getVectorElementType();
++  auto fullVT = EVT::getVectorVT(*DAG.getContext(), elemMT, dotProdSize * NumElts);
++
++  // now extract the relevant part of the shuffled subvec
++  // create a big shuffle vec with alternating values from the even and odd shuffle masks
++  SmallVector<int, 32> blendMask;
++  for (unsigned i = 0; i != dotProdSize*NumElts; ++i)
++  {
++    blendMask.push_back(i % dotProdSize);
++  }
++
++  auto numConcats = dotProdSize * NumElts / NumSubvecElts;
++  SmallVector<SDValue, 32>  concatOps(numConcats, val);
++  auto concat = DAG.getNode(ISD::CONCAT_VECTORS, DL, fullVT, concatOps);
++  auto bcastSubvec = DAG.getVectorShuffle(fullVT, DL, concat, DAG.getUNDEF(fullVT), blendMask);
++
++  // Now we need to generate extract-element ops
++  std::vector<SmallVector<SDValue, 32>> ops(dotProdSize);
++  auto inMaskSize = masks[0].size();
++
++  for (unsigned elemIdx = 0; elemIdx < NumElts; ++elemIdx) {
++    for (unsigned phase = 0; phase < dotProdSize; ++phase) {
++      auto offset = masks[phase][elemIdx%inMaskSize];
++      SDValue elt = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, elemMT, bcastSubvec,
++                                    DAG.getIntPtrConstant(dotProdSize*elemIdx + offset, DL));
++      ops[phase].push_back(elt);
++    }
++  }
++
++  // Replace inputs with new build vectors
++  for (unsigned idx = 0; idx < dotProdSize; ++idx)
++  {
++    SDValue buildVec = DAG.getBuildVector(VT, DL, ops[idx]);
++    std::swap(interleavedOps[idx].get(), buildVec);
++  }
++}
++
++// Look for this pattern:
++//
++// ## LOAD 1     t21: i8,ch = load<(load 1 from %ir.sunkaddr24)> t0, t20, undef:i64
++//                 t0: ch = EntryToken
++//                 t20: i64 = add t7, Constant:i64<7>
++//                   t7: i64 = add t4, t6
++//                     t4: i64,ch = CopyFromReg t0, Register:i64 %11
++//                     t6: i64,ch = CopyFromReg t0, Register:i64 %3
++//
++// ## LOAD 2     t18: i8,ch = load<(load 1 from %ir.sunkaddr22)> t0, t17, undef:i64
++//                 t17: i64 = add t7, Constant:i64<6>
++
++// #### TODO: actually figure out the number of elements in the subvec
++static void fixInterleavedSplats(ArrayRef<std::reference_wrapper<SDValue>> ops, unsigned numSubvecElts, SelectionDAG &DAG, const SDLoc &DL) {
++    auto numPhases = ops.size();
++
++    SmallVector<LoadSDNode*, 4> loadNodes;
++    for (auto op: ops) {
++      LoadSDNode* load = nullptr;
++      if (auto buildVectorNode = dyn_cast<BuildVectorSDNode>(op.get())) {
++        auto splatVal = buildVectorNode->getSplatValue();
++        if (!splatVal || splatVal.getOpcode() != ISD::LOAD)
++          return;
++        load = cast<LoadSDNode>(splatVal);
++      }
++      else if (auto shuffleNode = dyn_cast<ShuffleVectorSDNode>(op.get())) {
++        // should be a shuffle of an insert vec element
++        auto splatVal = shuffleNode->getOperand(0);
++        if (splatVal.getOpcode() !=ISD::INSERT_VECTOR_ELT) {
++          return;
++        }
++        splatVal = splatVal.getOperand(1);
++        // TODO: check it's inserting value into position 0 of an undef
++
++        if (!splatVal || splatVal.getOpcode() != ISD::LOAD) {
++          return;
++        }
++        load = cast<LoadSDNode>(splatVal);
++      }
++      else {
++        return;
++      }
++
++      if (!load->getOffset().isUndef()) {
++        return;
++      }
++      loadNodes.push_back(load);
++    }
++
++    // TODO: ensure all value types are the same
++    EVT VT = ops[0].get().getValueType();
++    auto elemVT = loadNodes[0]->getValueType(0);
++
++    // Check for loads of scalars
++    auto eltSizeInBits = elemVT.getSizeInBits();
++
++    // TODO: extend this to deal with widening any vector type (?)
++    unsigned eltBytes = eltSizeInBits / 8;
++    unsigned dist = eltBytes;
++
++    SmallVector<int,4> firstEntryOffsets;
++    auto firstLoad = loadNodes[0];
++    auto firstEntryDecomp = BaseIndexOffset::match(firstLoad, DAG);
++    for(auto load: loadNodes) {
++        auto loadDecomp = BaseIndexOffset::match(load, DAG);
++        int64_t offset = 0;
++        if (!firstEntryDecomp.equalBaseIndex(loadDecomp, DAG, offset)) {
++          return; // not the same base
++        }
++
++        firstEntryOffsets.push_back(offset);
++    }
++
++    // Now find the min value and use it as the base
++    auto minEntry = std::min_element(firstEntryOffsets.begin(), firstEntryOffsets.end());
++    auto minEntryIndex = minEntry - firstEntryOffsets.begin();
++    auto minEntryOffset = *minEntry;
++    auto baseLoad = loadNodes[minEntryIndex];
++
++    std::vector<std::vector<int>> masks(numPhases);
++    for (unsigned i = 0; i != numPhases; ++i) {
++      masks[i].push_back(firstEntryOffsets[i] - minEntryOffset);
++    }
++
++    MVT elemMT = loadNodes[0]->getSimpleValueType(0);
++    auto numElts = VT.getVectorNumElements();
++
++    // turn load<T> into a load <2xT> or a load<VSizexT>
++    auto fullMT = MVT::getVectorVT(elemMT, numPhases * numElts);
++    auto combinedLoad = DAG.getLoad(fullMT, DL, baseLoad->getChain(), baseLoad->getBasePtr(),
++                              baseLoad->getPointerInfo(),
++                              baseLoad->getOriginalAlign(),
++                              baseLoad->getMemOperand()->getFlags());
++
++    EVT subvecVT = EVT::getVectorVT(*DAG.getContext(), elemVT, numPhases); // #### Check that numPhases is the correct thing to pass in here
++    auto shuffledSubvec = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, subvecVT, combinedLoad, DAG.getIntPtrConstant(0, DL));
++    replaceWithInterleavedShuffles(ops, masks, shuffledSubvec, DAG, DL);
++}
++
++static void fixInterleavedOperations(ArrayRef<std::reference_wrapper<SDValue>> ops, SelectionDAG &DAG, const SDLoc &DL) {
++  auto opcode = ops[0].get().getOpcode();
++  // check they're all the same operation
++  if (!llvm::all_of(ops, [opcode](auto op) { return op.get().getOpcode() == opcode; })) {
++    return;
++  }
++
++  // Check even/odd pair for access into a subvector
++  auto getSubvecOperand = [](SDValue op) {
++    if (op.getOpcode() == ISD::CONCAT_VECTORS)
++    {
++      if (op.getOperand(0).isUndef())
++        return SDValue();
++      op = op.getOperand(0);
++    }
++
++    if (op.getOpcode() == ISD::EXTRACT_SUBVECTOR) {
++      return op;
++    }
++    return SDValue();
++  };
++
++  switch (opcode) {
++  case ISD::VECTOR_SHUFFLE:
++    // They're not all the same in the broadcast-A-by-4 case --- they're each vector_shuffle<0,0,0...0> (load addr)
++    // TODO: make this check that they're all the same
++    if (ops[0].get().getOperand(0) != ops[1].get().getOperand(0)) {
++      // ensure they're all different operands, broadcasting a single value
++      auto numPhases = ops.size();
++      fixInterleavedSplats(ops, numPhases, DAG, DL);
++    }
++    else {
++    // TODO: ensure they're all the same operand
++      if (auto shuffledSubvec = getSubvecOperand(ops[0].get().getOperand(0))) {
++        std::vector<std::vector<int>> masks;
++        for(auto op: ops) {
++          masks.push_back(cast<ShuffleVectorSDNode>(op.get())->getMask());
++        }
++
++        replaceWithInterleavedShuffles(ops, masks, shuffledSubvec, DAG, DL);
++      }
++    }
++
++  break;
++
++  case ISD::BUILD_VECTOR: // check if they're both splatted build vectors
++    auto numPhases = ops.size();
++    fixInterleavedSplats(ops, numPhases, DAG, DL);
++  }
++
++  // check they're splatted build vectors from sequential memory locations
++}
++
++
+ // Attempt to match PMADDUBSW, which multiplies corresponding unsigned bytes
+ // from one vector with signed bytes from another vector, adds together
+ // adjacent pairs of 16-bit products, and saturates the result before
+@@ -49623,21 +49969,234 @@ static SDValue matchPMADDWD_2(SelectionDAG &DAG, SDValue N0, SDValue N1,
+                                  OpVT.getVectorNumElements() / 2);
+     return DAG.getNode(X86ISD::VPMADDWD, DL, ResVT, Ops[0], Ops[1]);
+   };
++  return SplitOpsAndApply(DAG, Subtarget, DL, VT, { In0, In1 },
++                          PMADDBuilder);
++}
+ 
+-  // If the output is narrower than an input, extract the low part of the input
+-  // vector.
+-  EVT OutVT16 = EVT::getVectorVT(*DAG.getContext(), MVT::i16,
+-                               VT.getVectorNumElements() * 2);
+-  if (OutVT16.bitsLT(In0.getValueType())) {
+-    In0 = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, OutVT16, In0,
+-                      DAG.getIntPtrConstant(0, DL));
++// TODO: add support for the VNNI PDPBUSD instruction as well
++static SDValue matchPMADDWD_3(SelectionDAG &DAG, SDValue N0, SDValue N1,
++                              const SDLoc &DL, EVT VT,
++                              TargetLowering::DAGCombinerInfo &DCI,
++                              const X86Subtarget &Subtarget) {
++  if (!Subtarget.hasSSE2())
++    return SDValue();
++
++  if (!VT.isVector() || VT.getVectorElementType() != MVT::i32 ||
++      VT.getVectorNumElements() < 4 ||
++      !isPowerOf2_32(VT.getVectorNumElements()))
++    return SDValue();
++  auto numElements = VT.getVectorNumElements();
++
++  auto VT16 = EVT::getVectorVT(*DAG.getContext(), MVT::i16,
++                              numElements);
++  SDValue arg0 = detectSSatPattern(N0, VT16);
++  SDValue arg1 = detectSSatPattern(N1, VT16);
++  if(!arg0 || arg0.getOpcode() != ISD::ADD) {
++    arg0 = SDValue();
+   }
+-  if (OutVT16.bitsLT(In1.getValueType())) {
+-    In1 = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, OutVT16, In1,
+-                      DAG.getIntPtrConstant(0, DL));
++  if(!arg1 || arg1.getOpcode() != ISD::ADD) {
++    arg1 = SDValue();
+   }
+-  return SplitOpsAndApply(DAG, Subtarget, DL, VT, { In0, In1 },
+-                          PMADDBuilder);
++
++  SDValue ssatArg0;
++  SDValue ssatArg1;
++  SDValue extraAddend;
++
++  // TODO: look for (ssat + ssat) or (ssat + (ssat + X)), and rearrange appropriately
++  if (arg0 && arg1) {
++    ssatArg0 = arg0;
++    ssatArg1 = arg1;
++  }
++  else if (arg0 || arg1) {
++    // canonicalize to arg0 being the ssat value
++    if (!arg0) {
++      std::swap(arg0, arg1);
++      std::swap(N0, N1);
++    }
++
++    if (N1->getOpcode() == ISD::ADD)
++    {
++      // check if N1 is an addition with a ssat arg
++      SDValue N10 = N1->getOperand(0);
++      SDValue N11 = N1->getOperand(1);
++      SDValue arg10 = detectSSatPattern(N10, VT16);
++      SDValue arg11 = detectSSatPattern(N11, VT16);
++
++      if(!arg10 || arg10.getOpcode() != ISD::ADD) {
++        arg10 = SDValue();
++      }
++      if(!arg11 || arg11.getOpcode() != ISD::ADD) {
++        arg11 = SDValue();
++      }
++
++      // Make sure arg10 is a ssat arg if there is one
++      if (!arg10) {
++        std::swap(arg10, arg11);
++        std::swap(N10, N11);
++      }
++
++      ssatArg0 = arg0;
++      ssatArg1 = arg10;
++      extraAddend = N11;
++    }
++  }
++
++  if (!ssatArg0 || !ssatArg1)
++    return SDValue();
++
++  if (ssatArg0.getOperand(0).getOpcode() != ISD::MUL || ssatArg1.getOperand(1).getOpcode() != ISD::MUL)
++    return SDValue();
++
++  SDValue p000, p001, p010, p011, p100, p101, p110, p111;
++  if (!(p000 = getExtMulOperand(ssatArg0.getOperand(0), 0, VT, DL, DAG))) return SDValue();
++  if (!(p001 = getExtMulOperand(ssatArg0.getOperand(0), 1, VT, DL, DAG))) return SDValue();
++  if (!(p010 = getExtMulOperand(ssatArg0.getOperand(1), 0, VT, DL, DAG))) return SDValue();
++  if (!(p011 = getExtMulOperand(ssatArg0.getOperand(1), 1, VT, DL, DAG))) return SDValue();
++  if (!(p100 = getExtMulOperand(ssatArg1.getOperand(0), 0, VT, DL, DAG))) return SDValue();
++  if (!(p101 = getExtMulOperand(ssatArg1.getOperand(0), 1, VT, DL, DAG))) return SDValue();
++  if (!(p110 = getExtMulOperand(ssatArg1.getOperand(1), 0, VT, DL, DAG))) return SDValue();
++  if (!(p111 = getExtMulOperand(ssatArg1.getOperand(1), 1, VT, DL, DAG))) return SDValue();
++
++  SDValue zextArgs[4] = {p000, p010, p100, p110};
++  SDValue sextArgs[4] = {p001, p011, p101, p111};
++
++  for (int i = 0; i < 4; ++i) {
++    if (zextArgs[i].getOpcode() != ISD::ZERO_EXTEND && zextArgs[i].getOpcode() != ISD::ZERO_EXTEND_VECTOR_INREG)
++      std::swap(zextArgs[i], sextArgs[i]);
++
++    if ((zextArgs[i].getOpcode() != ISD::ZERO_EXTEND && zextArgs[i].getOpcode() != ISD::ZERO_EXTEND_VECTOR_INREG) ||
++        (sextArgs[i].getOpcode() != ISD::SIGN_EXTEND && sextArgs[i].getOpcode() != ISD::SIGN_EXTEND_VECTOR_INREG))
++      return SDValue();
++
++    // Peek through the extends.
++    zextArgs[i] = zextArgs[i].getOperand(0);
++    sextArgs[i] = sextArgs[i].getOperand(0);
++  }
++
++  fixInterleavedOperations({std::ref(zextArgs[0]), std::ref(zextArgs[1]), std::ref(zextArgs[2]), std::ref(zextArgs[3])}, DAG, DL); // "A" values
++  fixInterleavedOperations({std::ref(sextArgs[0]), std::ref(sextArgs[1]), std::ref(sextArgs[2]), std::ref(sextArgs[3])}, DAG, DL); // "B" values
++
++  // All inputs should be build_vectors
++  for (auto op: zextArgs) {
++    if (op.getOpcode() != ISD::BUILD_VECTOR) {
++      return SDValue();
++    }
++  }
++  for (auto op: sextArgs) {
++    if (op.getOpcode() != ISD::BUILD_VECTOR) {
++      return SDValue();
++    }
++  }
++
++  SDValue zext = zextArgs[0];
++  SDValue sext = sextArgs[0];
++
++  SDValue zextIn, sextIn;
++  for (unsigned i = 0; i != numElements; ++i) {
++
++    // args for each phase
++    SDValue z0 = zextArgs[0].getOperand(i);
++    SDValue s0 = sextArgs[0].getOperand(i);
++
++    SDValue z1 = zextArgs[1].getOperand(i);
++    SDValue s1 = sextArgs[1].getOperand(i);
++
++    SDValue z2 = zextArgs[2].getOperand(i);
++    SDValue s2 = sextArgs[2].getOperand(i);
++
++    SDValue z3 = zextArgs[3].getOperand(i);
++    SDValue s3 = sextArgs[3].getOperand(i);
++
++    auto isExtractVectorElt = [](auto node) { return node.getOpcode() == ISD::EXTRACT_VECTOR_ELT; };
++
++    // TODO: Be more tolerant to undefs.
++    for (auto& elt: { z0, s0, z1, s1, z2, s2, z3, s3 }) {
++      if (!isExtractVectorElt(elt)) {
++          return SDValue();
++      }
++    }
++
++    auto *constz0Elt = dyn_cast<ConstantSDNode>(z0.getOperand(1));
++    auto *constz1Elt = dyn_cast<ConstantSDNode>(z1.getOperand(1));
++    auto *constz2Elt = dyn_cast<ConstantSDNode>(z2.getOperand(1));
++    auto *constz3Elt = dyn_cast<ConstantSDNode>(z3.getOperand(1));
++
++    auto *consts0Elt = dyn_cast<ConstantSDNode>(s0.getOperand(1));
++    auto *consts1Elt = dyn_cast<ConstantSDNode>(s1.getOperand(1));
++    auto *consts2Elt = dyn_cast<ConstantSDNode>(s2.getOperand(1));
++    auto *consts3Elt = dyn_cast<ConstantSDNode>(s3.getOperand(1));
++
++    if (!constz0Elt || !constz1Elt || !constz2Elt || !constz3Elt ||
++        !consts0Elt || !consts1Elt || !consts2Elt || !consts3Elt)
++    {
++      return SDValue();
++    }
++
++    unsigned z0idx = constz0Elt->getZExtValue();
++    unsigned z1idx = constz1Elt->getZExtValue();
++    unsigned z2idx = constz2Elt->getZExtValue();
++    unsigned z3idx = constz3Elt->getZExtValue();
++
++    unsigned s0idx = consts0Elt->getZExtValue();
++    unsigned s1idx = consts1Elt->getZExtValue();
++    unsigned s2idx = consts2Elt->getZExtValue();
++    unsigned s3idx = consts3Elt->getZExtValue();
++
++    SDValue z0In = z0.getOperand(0);
++    SDValue s0In = s0.getOperand(0);
++
++    // First time we find an input capture it.
++    if (!zextIn) {
++      zextIn = z0In;
++      sextIn = s0In;
++    }
++    if (zextIn != z0In || sextIn != s0In) // ... or the rest
++    {
++      return SDValue();
++    }
++  }
++
++  // TODO: if the subtarget has VNNI, just reduce the whole thing to vpdpbusw(zextIn, sextIn)
++
++  // Convert (ssatArg0 + ssatArg1) to vpmaddwd(vpmaddubsw(ssatArg0, ssatArg1), 1)
++  auto PMADDUBSWBuilder = [](SelectionDAG &DAG, const SDLoc &DL,
++                        ArrayRef<SDValue> Ops) {
++    // Shrink by adding truncate nodes and let DAGCombine fold with the
++    // sources.
++    EVT InVT = Ops[0].getValueType();
++    assert(InVT.getScalarType() == MVT::i8 &&
++          "Unexpected scalar element type");
++    assert(InVT == Ops[1].getValueType() && "Operands' types mismatch");
++    EVT ResVT = EVT::getVectorVT(*DAG.getContext(), MVT::i16,
++                                InVT.getVectorNumElements()/2);
++    return DAG.getNode(X86ISD::VPMADDUBSW, DL, ResVT, Ops[0], Ops[1]);
++  };
++
++  auto pmaddubswResult = SplitOpsAndApply(DAG, Subtarget, DL, VT, { zextIn, sextIn },
++                          PMADDUBSWBuilder);
++
++  // Create a broadcasted vector of 1s
++  // Now create a pmaddwd of pmaddubswResult, bcastOnes
++  auto bcastOnes = DAG.getConstant(1, DL, pmaddubswResult.getValueType());
++  auto PMADDWDBuilder = [](SelectionDAG &DAG, const SDLoc &DL,
++                        ArrayRef<SDValue> Ops) {
++    // Shrink by adding truncate nodes and let DAGCombine fold with the
++    // sources.
++    EVT OpVT = Ops[0].getValueType();
++    assert(OpVT.getScalarType() == MVT::i16 &&
++          "Unexpected scalar element type");
++    assert(OpVT == Ops[1].getValueType() && "Operands' types mismatch");
++    EVT ResVT = EVT::getVectorVT(*DAG.getContext(), MVT::i32,
++                                OpVT.getVectorNumElements() / 2);
++    return DAG.getNode(X86ISD::VPMADDWD, DL, ResVT, Ops[0], Ops[1]);
++  };
++  SDValue pmaddwdResult = SplitOpsAndApply(DAG, Subtarget, DL, VT, { pmaddubswResult, bcastOnes },
++                          PMADDWDBuilder);
++
++  if (extraAddend)
++    return DAG.getNode(ISD::ADD, DL, VT, extraAddend, pmaddwdResult);
++  else
++    return pmaddwdResult;
+ }
+ 
+ static SDValue combineAdd(SDNode *N, SelectionDAG &DAG,
+@@ -49651,6 +50210,8 @@ static SDValue combineAdd(SDNode *N, SelectionDAG &DAG,
+     return MAdd;
+   if (SDValue MAdd = matchPMADDWD_2(DAG, Op0, Op1, SDLoc(N), VT, Subtarget))
+     return MAdd;
++  if (SDValue MAdd = matchPMADDWD_3(DAG, Op0, Op1, SDLoc(N), VT, DCI, Subtarget))
++    return MAdd;
+ 
+   // Try to synthesize horizontal adds from adds of shuffles.
+   if (SDValue V = combineToHorizontalAddSub(N, DAG, Subtarget))

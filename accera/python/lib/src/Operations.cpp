@@ -1,0 +1,91 @@
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//  Copyright (c) Microsoft Corporation. All rights reserved.
+//  Licensed under the MIT License. See LICENSE in the project root for license information.
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#include "AcceraTypes.h"
+#include <value/include/Debugging.h>
+
+namespace py = pybind11;
+namespace value = accera::value;
+namespace util = accera::utilities;
+
+using namespace pybind11::literals;
+
+namespace accera::python::lang
+{
+void DefineOperations(py::module& module)
+{
+    module.def(
+            "Allocate",
+            [](value::ValueType type, util::MemoryLayout layout, size_t alignment, value::AllocateFlags flags) {
+                return value::Allocate(type, layout, alignment, flags);
+            },
+            "type"_a,
+            "layout"_a,
+            "alignment"_a = 0,
+            "flags"_a = value::AllocateFlags::None)
+        .def(
+            "StaticAllocate",
+            [](std::string name, value::ValueType type, util::MemoryLayout layout, value::AllocateFlags flags) {
+                return value::StaticAllocate(name, type, layout, flags);
+            },
+            "name"_a,
+            "type"_a,
+            "layout"_a,
+            "flags"_a = value::AllocateFlags::None)
+        .def(
+            "GlobalAllocate",
+            [](std::string name, value::ValueType type, util::MemoryLayout layout, value::AllocateFlags flags) {
+                return value::GlobalAllocate(name, type, layout, flags);
+            },
+            "name"_a,
+            "type"_a,
+            "layout"_a,
+            "flags"_a = value::AllocateFlags::None)
+        .def("ForRange", py::overload_cast<value::Scalar, value::Scalar, value::Scalar, std::function<void(value::Scalar)>>(&value::ForRange))
+        .def("ForRanges", py::overload_cast<std::vector<value::Scalar>, std::function<void(std::vector<value::Scalar>)>>(&value::ForRanges))
+        .def("Print", py::overload_cast<value::ViewAdapter, bool>(&value::Print), "value"_a, "to_stderr"_a = false)
+        .def("Print", py::overload_cast<const std::string&, bool>(&value::Print), "message"_a, "to_stderr"_a = false)
+        .def("PrintRawMemory", &value::PrintRawMemory)
+        .def("AsFullView", &value::AsFullView<value::Vector>)
+        .def("AsFullView", &value::AsFullView<value::Matrix>)
+        .def("AsFullView", &value::AsFullView<value::Tensor>)
+        .def("AsFullView", &value::AsFullView<value::Array>)
+        .def(
+            "ReduceN",
+            [](value::Scalar start, value::Scalar end, value::Scalar step, value::ViewAdapter init, std::function<value::ViewAdapter(value::Scalar, value::ViewAdapter)> forFn) {
+                return value::ReduceN(start, end, step, init, std::move(forFn));
+            },
+            "start"_a,
+            "end"_a,
+            "step"_a,
+            "init"_a,
+            "fn"_a)
+        .def(
+            "Reduce",
+            [](value::Array a,
+                value::ViewAdapter init,
+                std::function<value::ViewAdapter(value::Scalar, value::ViewAdapter)> reduceFn) {
+                return value::Reduce(a, init, std::move(reduceFn));
+            },
+            "data"_a,
+            "init"_a,
+            "fn"_a)
+        .def(
+            "MapReduce",
+            [](value::Array a,
+                value::ViewAdapter init,
+                std::function<value::ViewAdapter(value::Scalar)> mapFn,
+                std::function<value::ViewAdapter(value::Scalar, value::ViewAdapter)> reduceFn) {
+                return value::MapReduce(a, init, std::move(mapFn), std::move(reduceFn));
+            },
+            "data"_a,
+            "init"_a,
+            "map_fn"_a,
+            "reduce_fn"_a)
+        .def("CheckAllClose", &value::CheckAllClose)
+        .def("Return", py::overload_cast<value::ViewAdapter>(&value::Return), "view"_a = value::ViewAdapter{})
+        .def("GetTime", &value::GetTime);
+}
+} // accera::python::lang

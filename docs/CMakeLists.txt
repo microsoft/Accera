@@ -1,0 +1,5 @@
+add_subdirectory("Case Studies")
+add_subdirectory(Install)
+add_subdirectory(Manual)
+add_subdirectory(Miscellaneous)
+add_subdirectory(Reference)

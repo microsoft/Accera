@@ -1,0 +1,39 @@
+[//]: # (Project: Accera)
+[//]: # (Version: 1.2.0)
+
+# Accera 1.2.0 Reference
+
+## `accera.ActionPlan.parallelize(indices[, pin, policy])`
+
+Performs one or more loops in parallel on multiple cores or processors.
+
+Only available for targets with multiple cores or processors.
+
+## Arguments
+argument | description | type/default
+--- | --- | ---
+`indices` | The iteration-space dimensions to run in parallel. | tuple of `accera.Index`
+`pin` | Pin the computation to a subset of cores or processors. | tuple of target-specific identifiers
+`policy` | The scheduling policy to apply ("dynamic" or "static"). | string. Defaults to "static"
+
+## Examples
+
+Parallelize the `i`, `j`, and `k` dimensions:
+
+```python
+plan.parallelize(indices=(i, j, k))
+```
+
+__Not yet implemented:__ Parallelize the `i`, `j`, and `k` dimensions by pinning them to specific cores on an Intel Xeon E5:
+
+```python
+plan.parallelize(indices=(i, j, k), pin=(xeonE5.cores[0], xeonE5.cores[1], xeonE5.cores[2]))
+```
+
+Apply a dynamic scheduling policy, which uses a queue to partition the work across multiple cores:
+
+```python
+plan.parallelize(indices=(i, j, k), policy="dynamic")
+```
+
+<div style="page-break-after: always;"></div>

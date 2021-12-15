@@ -1,0 +1,127 @@
+####################################################################################################
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See LICENSE in the project root for license information.
+####################################################################################################
+
+# Templatized CMakeLists.txt file expects the following set:
+# By CMake:
+# @ACCERA_INSTALL_PATH@
+#
+# By accc:
+# @PROGRAM_NAME_TAG@
+# @DSL_FILE_BASENAME_TAG@
+
+#
+# cmake file for @PROGRAM_NAME_TAG@ Accera generator project
+#
+
+cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+
+# Error on non-existent dependency in add_dependencies.
+cmake_policy(SET CMP0046 NEW)
+
+project(RC_GENERATOR_@PROGRAM_NAME_TAG@ CXX ASM)
+if(MSVC)
+  enable_language(ASM_MASM)
+endif()
+
+option(USE_LIBCXX "Build with libc++ if using the Clang compiler" OFF)
+if(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+    add_compile_options(-stdlib=libc++)
+    link_libraries(-lc++ -lc++abi)
+endif(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+
+# Try to create a compilation database, which is useful to have when working
+# with clang tooling
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Turn on ability to create folders to organize projects
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+# Set C++ version
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Apply -fPIC where applicable to the platform
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Find the platform-specific way of working with threads
+if(NOT MSVC)
+  set(THREADS_PREFER_PTHREAD_FLAG ON)
+  set(CMAKE_THREAD_PREFER_PTHREAD ON)
+endif(NOT MSVC)
+find_package(Threads REQUIRED)
+
+if(STRICT_MODE)
+  message("-- Turning on strict mode with warnings as errors.")
+endif()
+
+# Get Accera package
+set(ACCERA_INSTALL_PATH "@ACCERA_INSTALL_PATH@/lib/cmake/accera" CACHE PATH "Installation location of Accera")
+find_package(Accera CONFIG PATHS ${ACCERA_INSTALL_PATH} NO_DEFAULT_PATH)
+
+# Include correct LLVM and MLIR packages for Accera
+list(APPEND CMAKE_MODULE_PATH "${ACCERA_INSTALL_PATH}")
+include(ConanSetup)
+include(LLVMSetup)
+
+set(generator_name @PROGRAM_NAME_TAG@)
+
+if(MSVC)
+  # Set Visual Studio-specific options
+  add_definitions(-DUNICODE -D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
+  add_compile_options(/utf-8)
+  add_compile_options(/MP)
+  add_compile_options(/bigobj)
+  add_compile_options(/W4)
+  add_compile_options(/permissive-)
+  if(STRICT_MODE)
+    add_compile_options(/WX)
+  endif()
+  # the debug linker needs to match how LLVM was built (either /MD or /MDd)
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${LLVM_MD_OPTION}")
+  set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${LLVM_MD_OPTION}")
+else()
+  # Set Clang/GCC-specific options
+  add_compile_options(-Wall)
+  if(STRICT_MODE)
+    add_compile_options(-Werror)
+  endif()
+  add_compile_options(-Wsign-compare)
+  add_compile_options(-Wno-missing-braces)
+  add_compile_options(-Wmissing-field-initializers)
+  add_compile_options(-fvisibility-inlines-hidden)
+  add_compile_options(-Wno-unknown-pragmas)
+  add_compile_options(-Wno-comment)
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -ggdb3 -O0")
+  set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -ggdb3 -O0")
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -ggdb3")
+  set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -ggdb3")
+  if(${CMAKE_CXX_COMPILER_ID} STREQUAL Clang)
+    add_compile_options(-Wno-backslash-newline-escape)
+    add_compile_options(-Wno-self-assign)
+    add_compile_options (-fno-color-diagnostics) # we are dumping to a file, so we do not want color output
+  else() # GCC
+    add_compile_options(-Wno-ignored-attributes)
+    add_compile_options (-fdiagnostics-color=never)
+  endif()
+endif()
+
+# compile project that uses Accera to generate object and header files
+set(GENERATOR_SRC_FILES
+   src/@DSL_FILE_BASENAME_TAG@.cpp
+)
+source_group("src" FILES ${GENERATOR_SRC_FILES})
+
+add_executable(${generator_name} ${GENERATOR_SRC_FILES})
+target_include_directories(${generator_name} PUBLIC include)
+target_include_directories(
+  ${generator_name}
+  PRIVATE include
+          ${ACCERA_INCLUDE_DIRS}
+          ${ACCERA_INCLUDE_DIRS}/accera
+)
+target_link_libraries(
+  ${generator_name}
+  ${ACCERA_EXPORTED_LIBS}
+)

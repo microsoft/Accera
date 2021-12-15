@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+####################################################################################################
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See LICENSE in the project root for license information.
+# Authors: Mason Remy
+# Requires: Python 3.5+
+####################################################################################################
+
+import os
+
+from build_config import BuildConfig
+
+__script_path = os.path.dirname(os.path.abspath(__file__))
+bin_dir = __script_path # Assume this script is deployed into the install bin dir
+
+class RCGPURunnerConfig:
+    rc_gpu_runner = os.path.join(bin_dir, "acc-gpu-runner")
+    vulkan_runtime_wrapper_shared_library = os.path.join(bin_dir, "acc-vulkan-runtime-wrappers" + BuildConfig.shared_library_extension)

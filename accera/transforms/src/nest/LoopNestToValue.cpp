@@ -978,13 +978,13 @@ LogicalResult MergeNearlyIdenticalSiblingLoops::matchAffineForOps(AffineForOp op
 
     // Gather any begin/end cache regions around the second op, if any
     auto nextOp1 = op1->getNextNode(), nextOp2 = op2->getNextNode();
-    llvm::SmallVector<executionPlan::BeginCacheRegionOp> op2BeginRegionOps;
-    llvm::SmallVector<executionPlan::EndCacheRegionOp> op2EndRegionOps;
+    llvm::SmallVector<executionPlan::BeginCacheRegion> op2BeginRegionOps;
+    llvm::SmallVector<executionPlan::EndCacheRegion> op2EndRegionOps;
     while (nextOp1 || nextOp2)
     {
 
-        if (auto endOp1 = dyn_cast_or_null<executionPlan::EndCacheRegionOp>(nextOp1),
-            endOp2 = dyn_cast_or_null<executionPlan::EndCacheRegionOp>(nextOp2);
+        if (auto endOp1 = dyn_cast_or_null<executionPlan::EndCacheRegion>(nextOp1),
+            endOp2 = dyn_cast_or_null<executionPlan::EndCacheRegion>(nextOp2);
             // if there's a mismatch, bail
             !!endOp1 ^ !!endOp2)
         {
@@ -993,7 +993,7 @@ LogicalResult MergeNearlyIdenticalSiblingLoops::matchAffineForOps(AffineForOp op
         else if (endOp1 && endOp2)
         {
             // if we have a mismatch in begin region ids, bail
-            if (auto op2BeginRegionOp = endOp2.getBeginOp(); endOp1.getBeginOp().id() != op2BeginRegionOp.id())
+            if (auto op2BeginRegionOp = mlir::dyn_cast<executionPlan::BeginCacheRegion>(endOp2.getBeginOp()); mlir::dyn_cast<executionPlan::BeginCacheRegion>(endOp1.getBeginOp()).getId() != op2BeginRegionOp.getId())
             {
                 return failure();
             }
@@ -1097,7 +1097,7 @@ LogicalResult MergeNearlyIdenticalSiblingLoops::matchAffineForOps(AffineForOp op
             // if they both have a begin cache region op, make sure the id matches
             else if (beginOp1 && beginOp2)
             {
-                if (beginOp1.id() != beginOp2.id())
+                if (beginOp1.getId() != beginOp2.getId())
                 {
                     return failure();
                 }

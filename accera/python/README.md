@@ -18,9 +18,9 @@ From LLVM, the following binaries are included in the `accera-llvm` package:
 
 ## Installing the package locally
 
-To build the packages for local testing:
+To build the packages for local testing (replace `<path_to_accera>` with the path to the cloned Accera repository):
 ```shell
-cd <accera-root>
+cd <path_to_accera>
 python setup.py build
 ```
 
@@ -36,8 +36,8 @@ directory, you can `import accera` as if it were a normal package install.
 
 To install the package for yourself on the current system, you can run
 ```shell
-python3 -m pip install -U pip
-python3 -m pip install --user -e .
+python -m pip install -U pip
+python -m pip install --user -e .
 ```
 
 ## Tests
@@ -45,10 +45,10 @@ python3 -m pip install --user -e .
 These are in the `test` folder and written using `unittest`.
 
 ```shell
-cd <accera-root>
-python3 setup.py build
+cd <path_to_accera>
+python setup.py build
 cd build/lib.linux-x86_64-3.7
-python3 -m unittest discover accera/test "*.py"
+python -m unittest discover accera/test "*.py"
 ```
 
 It is generally a good idea to run tests at least once for each version
@@ -63,10 +63,10 @@ A summary of the packages that you can generate:
 
 |Package|Depends on|Build PyPI whl from|
 |--|--|--|
-|accera|accera-compilers, accera-llvm|`<accera-root>`|
-|accera-compilers|-|`<accera-root>/accera/python/compilers`|
-|accera-llvm|-|`<accera-root>/accera/python/llvm`|
-|accera-gpu|-|`<accera-root>/accera/python/gpu`|
+|accera|accera-compilers, accera-llvm|`<path_to_accera>`|
+|accera-compilers|-|`<path_to_accera>/accera/python/compilers`|
+|accera-llvm|-|`<path_to_accera>/accera/python/llvm`|
+|accera-gpu|-|`<path_to_accera>/accera/python/gpu`|
 
 ```shell
 # Disable development mode if you need to upload to PyPI.
@@ -74,28 +74,28 @@ A summary of the packages that you can generate:
 export ACCERA_PACKAGE_FOR_CI=1
 
 # build the accera package
-# staging folder: <accera-root>/build/lib.*
-# package folder: <accera-root>/dist
-cd <accera-root>
-python3 setup.py bdist_wheel
+# staging folder: <path_to_accera>/build/lib.*
+# package folder: <path_to_accera>/dist
+cd <path_to_accera>
+python setup.py bdist_wheel
 
 # build the accera-compilers package
-# staging folder: <accera-root>/build/lib.*-accera_compilers
-# package folder: <accera-root>/accera/python/compilers/dist
+# staging folder: <path_to_accera>/build/lib.*-accera_compilers
+# package folder: <path_to_accera>/accera/python/compilers/dist
 cd accera/python/compilers
-python3 setup.py bdist_wheel
+python setup.py bdist_wheel
 
 # build the accera-llvm package
-# staging folder: <accera-root>/build/lib.*-accera_llvm
-# package folder: <accera-root>/accera/python/llvm/dist
+# staging folder: <path_to_accera>/build/lib.*-accera_llvm
+# package folder: <path_to_accera>/accera/python/llvm/dist
 cd ../llvm
-python3 setup.py bdist_wheel
+python setup.py bdist_wheel
 
 # build the accera-gpu package
-# staging folder: <accera-root>/build/lib.*-accera_gpu
-# package folder: <accera-root>/accera/python/gpu/dist
+# staging folder: <path_to_accera>/build/lib.*-accera_gpu
+# package folder: <path_to_accera>/accera/python/gpu/dist
 cd ../gpu
-python3 setup.py bdist_wheel
+python setup.py bdist_wheel
 ```
 
 ### Installing the packages
@@ -106,8 +106,8 @@ so that `pip` will search your local `dist` folders first:
 For example, to install a locally-built `accera` package and its dependencies:
 
 ```shell
-cd <accera-root>/dist
-pip3 install accera-<version>-<arch>.whl \
+cd <path_to_accera>/dist
+pip install accera-<version>-<arch>.whl \
  --find-links=../accera/python/compilers/dist \
  --find-links=../accera/python/llvm/dist
 ```

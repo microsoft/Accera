@@ -883,12 +883,21 @@ namespace executionPlan
                                   loopnest::ScheduleOp schedule,
                                   const std::optional<loopnest::Index>& keySliceIndex,
                                   const std::optional<loopnest::Index>& triggerIndex,
-                                  const std::optional<int64_t>& maxElements, // TODO : maxElements caching doesn't work with manual caching because we don't know the size of the active block yet
+                                  const std::optional<int64_t>& maxElements,
                                   const std::variant<utilities::MemoryAffineCoefficients, utilities::DimensionOrder>& cacheMappingInfo,
                                   MemorySpace memorySpace)
     {
-        auto cacheInfo = ComputeCacheIndexInfo(builder, input, schedule, keySliceIndex, triggerIndex, std::nullopt, keySliceIndex.has_value());
+        CacheInfo cacheInfo;
+        if (maxElements.has_value())
+        {
+            cacheInfo.maxElementBudget = *maxElements;
+        }
+        else
+        {
+            cacheInfo = ComputeCacheIndexInfo(builder, input, schedule, keySliceIndex, triggerIndex, std::nullopt, keySliceIndex.has_value());
+        }
         CacheAccessMaps accessMaps;
+
         if (std::holds_alternative<utilities::MemoryAffineCoefficients>(cacheMappingInfo))
         {
             accessMaps.coefficients = std::get<utilities::MemoryAffineCoefficients>(cacheMappingInfo);
@@ -955,13 +964,97 @@ namespace executionPlan
 
     void MakeCacheOp::build(OpBuilder& builder,
                             OperationState& result,
+                            mlir::MemRefType cacheType,
                             accera::ir::value::MemorySpace memorylocation)
     {
-        auto cacheMemRefType = builder.getIndexType();
         build(builder,
               result,
-              cacheMemRefType,
-              memorylocation);
+              cacheType,
+              memorylocation,
+              mlir::AffineMap::getMultiDimIdentityMap(cacheType.getRank(), builder.getContext()),
+              std::vector<Index>{},
+              std::vector<Index>{});
+    }
+
+    void MakeCacheOp::build(OpBuilder& builder,
+                            OperationState& result,
+                            mlir::MemRefType cacheType,
+                            accera::ir::value::MemorySpace memorylocation,
+                            AffineMap offsetArrayToCacheAccessMap,
+                            const std::vector<Index>& offsetAccessIndices,
+                            const std::vector<Index>& multiCacheAccessIndices)
+    {
+        auto offsetAccessIndexAttrs = util::ConvertIndexVectorToArrayAttr(offsetAccessIndices, builder.getContext());
+        auto multiCacheAccessIndexAttrs = util::ConvertIndexVectorToArrayAttr(multiCacheAccessIndices, builder.getContext());
+        build(builder,
+              result,
+              cacheType,
+              memorylocation,
+              offsetArrayToCacheAccessMap,
+              offsetAccessIndexAttrs,
+              multiCacheAccessIndexAttrs);
+    }
+
+    mlir::AffineValueMap MakeCacheOp::insertCachePosition(const std::vector<mlir::Value>& multiCacheIndexIterationCounters, const std::vector<mlir::Value>& offsetAccessIVs, const std::vector<mlir::Value>& baseArrayIndices)
+    {
+        std::vector<mlir::Value> allIndices(multiCacheIndexIterationCounters.begin(), multiCacheIndexIterationCounters.end());
+        allIndices.insert(allIndices.end(), offsetAccessIVs.begin(), offsetAccessIVs.end());
+        allIndices.insert(allIndices.end(), baseArrayIndices.begin(), baseArrayIndices.end());
+        auto map = offsetArrayToCacheAccessMap();
+        mlir::AffineValueMap result(map, allIndices);
+        return result;
+    }
+
+    mlir::AffineValueMap MakeCacheOp::insertCachePosition(mlir::Operation* where, const std::vector<mlir::Value>& baseArrayIndices)
+    {
+        return insertCachePosition(where->getBlock(), baseArrayIndices);
+    }
+
+    mlir::AffineValueMap MakeCacheOp::insertCachePosition(mlir::Block* where, const std::vector<mlir::Value>& baseArrayIndices)
+    {
+        std::vector<loopnest::Index> cacheMultiCacheIndices = util::ConvertArrayAttrToIndexVector(multiCacheAccessIndices());
+        std::vector<loopnest::Index> cacheOffsetAccessIndices = util::ConvertArrayAttrToIndexVector(offsetAccessIndices());
+
+        std::vector<mlir::Value> multiCacheIVs = util::GetCurrentIndexIVs(cacheMultiCacheIndices, where);
+        std::vector<mlir::Value> offsetAccessIVs = util::GetCurrentIndexIVs(cacheOffsetAccessIndices, where);
+
+        mlir::OpBuilder builder = mlir::OpBuilder::atBlockBegin(where);
+
+        std::vector<mlir::Value> multiCacheIterationCounters;
+        std::transform(multiCacheIVs.begin(), multiCacheIVs.end(), std::back_inserter(multiCacheIterationCounters), [&](mlir::Value iv) {
+            mlir::AffineForOp loop = mlir::getForInductionVarOwner(iv);
+            mlir::Value multiCacheIterationCounter = util::CreateConstantRangeForOpIterationCounter(builder, builder.getUnknownLoc(), loop);
+            return multiCacheIterationCounter;
+        });
+
+        return insertCachePosition(multiCacheIterationCounters, offsetAccessIVs, baseArrayIndices);
+    }
+
+    template <typename OpType>
+    std::vector<mlir::Value> GetBaseArrayLoadStorePosition(OpType op, const mlir::ArrayAttr& multiCacheAccessIndices, const mlir::ArrayAttr& offsetAccessIndices)
+    {
+        std::vector<loopnest::Index> cacheMultiCacheIndices = util::ConvertArrayAttrToIndexVector(multiCacheAccessIndices);
+        std::vector<loopnest::Index> cacheOffsetAccessIndices = util::ConvertArrayAttrToIndexVector(offsetAccessIndices);
+
+        size_t multiCacheIdxCount = cacheMultiCacheIndices.size();
+        size_t offsetIdxCount = cacheOffsetAccessIndices.size();
+
+        typename OpType::Adaptor adaptor{ op };
+        std::vector<mlir::Value> baseIndices(adaptor.indices().begin() + (multiCacheIdxCount + offsetIdxCount), adaptor.indices().end());
+
+        return baseIndices;
+    }
+
+    std::vector<mlir::Value> MakeCacheOp::getBaseArrayPosition(mlir::AffineLoadOp loadOp)
+    {
+        assert(loadOp.memref() == cache());
+        return GetBaseArrayLoadStorePosition(loadOp, multiCacheAccessIndices(), offsetAccessIndices());
+    }
+
+    std::vector<mlir::Value> MakeCacheOp::getBaseArrayPosition(mlir::AffineStoreOp storeOp)
+    {
+        assert(storeOp.memref() == cache());
+        return GetBaseArrayLoadStorePosition(storeOp, multiCacheAccessIndices(), offsetAccessIndices());
     }
 
     //
@@ -1119,7 +1212,6 @@ namespace executionPlan
                                          ValueRange ubOperands,
                                          mlir::ArrayAttr lbMaps,
                                          mlir::ArrayAttr ubMaps,
-                                         mlir::ArrayAttr activeBlockOffsetMaps,
                                          AffineMap activeBlockToCacheMap)
     {
         build(builder,
@@ -1130,7 +1222,6 @@ namespace executionPlan
               ubOperands,
               lbMaps,
               ubMaps,
-              activeBlockOffsetMaps,
               activeBlockToCacheMap,
               llvm::None); // scaleValues
     }
@@ -1141,6 +1232,8 @@ namespace executionPlan
     void BeginCacheMappingOp::build(OpBuilder& builder,
                                     OperationState& result,
                                     Value fromValue,
+                                    Value baseCacheValue,
+                                    Value baseInput,
                                     CacheAccessContext toValueContext,
                                     int64_t id,
                                     bool activeBlockCache)
@@ -1161,6 +1254,8 @@ namespace executionPlan
 
         result.addTypes(builder.getIndexType());
         result.addOperands(fromValue);
+        result.addOperands(baseCacheValue);
+        result.addOperands(baseInput);
         result.addOperands(toValueContext.value);
         result.addOperands(toValueContext.fullRelevantScheduleIndices);
         result.addOperands(toValueContext.externalRelevantScheduleIndices);
@@ -1172,7 +1267,7 @@ namespace executionPlan
         {
             result.addAttribute("activeBlockCache", builder.getUnitAttr());
         }
-        result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({ 1 /* fromValue */, 1 /* toValue */, static_cast<int32_t>(toValueContext.fullRelevantScheduleIndices.size()), static_cast<int32_t>(toValueContext.externalRelevantScheduleIndices.size()) }));
+        result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({ 1 /* fromValue */, 1 /* baseCacheValue */, 1 /* toValue */, static_cast<int32_t>(toValueContext.fullRelevantScheduleIndices.size()), static_cast<int32_t>(toValueContext.externalRelevantScheduleIndices.size()) }));
     }
 
     CacheAccessContext BeginCacheMappingOp::getToValueAccessContext()
@@ -1200,21 +1295,26 @@ namespace executionPlan
         return result;
     }
 
-    EndCacheMappingOp BeginCacheMappingOp::getEndOp()
+    mlir::Operation* BeginCacheMappingOp::getEndOp()
     {
         auto uses = util::getUsesOfType<EndCacheMappingOp>(resultId());
         assert(uses.size() == 1);
         return uses.front();
     }
 
+    int64_t BeginCacheMappingOp::getId()
+    {
+        return id();
+    }
+
     //
     // EndCacheMappingOp
     //
-    BeginCacheMappingOp EndCacheMappingOp::getBeginOp()
+    mlir::Operation* EndCacheMappingOp::getBeginOp()
     {
         auto op = mappingId().getDefiningOp();
         assert(op != nullptr);
-        return mlir::dyn_cast<BeginCacheMappingOp>(op);
+        return op;
     }
 
     //
@@ -1224,9 +1324,11 @@ namespace executionPlan
                                    OperationState& result,
                                    Value inputValue,
                                    CacheAccessContext cacheAccessContext,
+                                   Value baseInput,
                                    loopnest::Index cacheIndex,
                                    loopnest::Index triggerIndex,
                                    int64_t id,
+                                   int64_t cacheHierarchyLevel,
                                    bool activeBlockCache,
                                    bool dimReorderCache)
     {
@@ -1247,6 +1349,7 @@ namespace executionPlan
         result.addTypes(builder.getIndexType());
         result.addOperands(inputValue);
         result.addOperands(cacheAccessContext.value);
+        result.addOperands(baseInput);
         result.addOperands(cacheAccessContext.fullRelevantScheduleIndices);
         result.addOperands(cacheAccessContext.externalRelevantScheduleIndices);
         result.addAttribute("cacheRegionRelevantIndexRanges", cacheRegionRelevantIndexRangeAttrs);
@@ -1255,6 +1358,7 @@ namespace executionPlan
         result.addAttribute("triggerIndex", IndexAttr::get(triggerIndex, builder.getContext()));
         result.addAttribute("cacheIndex", IndexAttr::get(cacheIndex, builder.getContext()));
         result.addAttribute("id", builder.getI64IntegerAttr(id));
+        result.addAttribute("cacheHierarchyLevel", builder.getI64IntegerAttr(cacheHierarchyLevel));
         if (activeBlockCache)
         {
             result.addAttribute("activeBlockCache", builder.getUnitAttr());
@@ -1263,7 +1367,7 @@ namespace executionPlan
         {
             result.addAttribute("dimReorderCache", builder.getUnitAttr());
         }
-        result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({ 1 /* fromValue */, 1 /* toValue */, static_cast<int32_t>(cacheAccessContext.fullRelevantScheduleIndices.size()), static_cast<int32_t>(cacheAccessContext.externalRelevantScheduleIndices.size()) }));
+        result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({ 1 /* fromValue */, 1 /* toValue */, 1 /* baseInput */, static_cast<int32_t>(cacheAccessContext.fullRelevantScheduleIndices.size()), static_cast<int32_t>(cacheAccessContext.externalRelevantScheduleIndices.size()) }));
     }
 
     CacheAccessContext BeginCacheRegionOp::getCacheAccessContext()
@@ -1307,21 +1411,83 @@ namespace executionPlan
         return getEndOp();
     }
 
-    EndCacheRegionOp BeginCacheRegionOp::getEndOp()
+    mlir::Operation* BeginCacheRegionOp::getEndOp()
     {
         auto uses = util::getUsesOfType<EndCacheRegionOp>(resultId());
         assert(uses.size() == 1);
         return uses.front();
     }
 
+    int64_t BeginCacheRegionOp::getId()
+    {
+        return id();
+    }
+
+    //
+    // BeginMaxElementCacheRegionOp
+    //
+    void BeginMaxElementCacheRegionOp::build(OpBuilder& builder,
+                                             OperationState& result,
+                                             Value input,
+                                             Value cache,
+                                             Value baseInput,
+                                             CacheAccessMaps accessMaps,
+                                             int64_t maxElements,
+                                             loopnest::Index innermostLoopNestIndex,
+                                             int64_t id,
+                                             int64_t cacheHierarchyLevel,
+                                             bool dimReorderCache)
+    {
+        result.addTypes(builder.getIndexType());
+        result.addOperands(input);
+        result.addOperands(cache);
+        result.addOperands(baseInput);
+        result.addAttribute("cacheAccessMaps", accessMaps.ToAttr(builder));
+        result.addAttribute("id", builder.getI64IntegerAttr(id));
+        result.addAttribute("cacheHierarchyLevel", builder.getI64IntegerAttr(cacheHierarchyLevel));
+        result.addAttribute("maxElements", builder.getI64IntegerAttr(maxElements));
+        result.addAttribute("innermostLoopNestIndex", IndexAttr::get(innermostLoopNestIndex, builder.getContext()));
+        if (dimReorderCache)
+        {
+            result.addAttribute("dimReorderCache", builder.getUnitAttr());
+        }
+    }
+
+    Index BeginMaxElementCacheRegionOp::index()
+    {
+        return innermostLoopNestIndex().getValue();
+    }
+
+    Position BeginMaxElementCacheRegionOp::position()
+    {
+        return Position::prologue;
+    }
+
+    mlir::Operation* BeginMaxElementCacheRegionOp::getInjectionEndOp()
+    {
+        return getEndOp();
+    }
+
+    mlir::Operation* BeginMaxElementCacheRegionOp::getEndOp()
+    {
+        auto uses = util::getUsesOfType<EndCacheRegionOp>(resultId());
+        assert(uses.size() == 1);
+        return uses.front();
+    }
+
+    int64_t BeginMaxElementCacheRegionOp::getId()
+    {
+        return id();
+    }
+
     //
     // EndCacheRegionOp
     //
-    BeginCacheRegionOp EndCacheRegionOp::getBeginOp()
+    Operation* EndCacheRegionOp::getBeginOp()
     {
         auto op = regionId().getDefiningOp();
         assert(op != nullptr);
-        return mlir::dyn_cast<BeginCacheRegionOp>(op);
+        return op;
     }
 
     // Parse an instance of an attribute registered to the execution plan dialect.
@@ -1374,4 +1540,5 @@ namespace executionPlan
 //
 
 #define GET_OP_CLASSES
+#include "exec/ExecutionPlanInterfaces.cpp.inc"
 #include "exec/ExecutionPlanOps.cpp.inc"

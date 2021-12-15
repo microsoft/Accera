@@ -1412,9 +1412,7 @@ TEST_CASE_METHOD(Fixture, "basic_gemm_loopnest", "[cpu][nest]")
         });
 
     std::string moduleName = "basic_gemm_loopnest_";
-    RunConversionPasses(target, moduleName +
-        std::to_string(M_) + "_" + std::to_string(N_) + "_" + std::to_string(K_) + "_" +
-        stringify(target));
+    RunConversionPasses(target, moduleName + std::to_string(M_) + "_" + std::to_string(N_) + "_" + std::to_string(K_) + "_" + stringify(target));
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
 }
@@ -1530,6 +1528,7 @@ TEST_CASE_METHOD(Fixture, "gemm_mlas_value", "[cpu][nest]")
             // Schedule constants
             // TODO : read these values from the target system
             int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+            int vectorBytes = vectorSize * 4; // 4 bytes per float
             int vectorUnits = 16; // AVX-2 has 16 256-bit registers
             int kUnroll = 4;
 
@@ -1587,7 +1586,7 @@ TEST_CASE_METHOD(Fixture, "gemm_mlas_value", "[cpu][nest]")
             schedule.Unroll(iInner);
             if (NumColumnsInKernel >= vectorSize)
             {
-                plan.Vectorize(jInner3, { vectorSize, vectorUnits });
+                plan.Vectorize(jInner3, { vectorBytes, vectorUnits });
             }
         });
 
@@ -1723,6 +1722,7 @@ void Gemm(accera::value::Matrix A, accera::value::Matrix B, accera::value::Matri
     // Schedule constants
     // TODO : read these values from the target system
     int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+    int vectorBytes = vectorSize * 4; // 4 bytes per float
     int vectorUnits = 16; // AVX-2 has 16 256-bit registers
     int kUnroll = 4;
 
@@ -1780,7 +1780,7 @@ void Gemm(accera::value::Matrix A, accera::value::Matrix B, accera::value::Matri
     schedule.Unroll(iInner);
     if (NumColumnsInKernel >= vectorSize)
     {
-        plan.Vectorize(jInner3, { vectorSize, vectorUnits });
+        plan.Vectorize(jInner3, { vectorBytes, vectorUnits });
     }
 }
 
@@ -2172,7 +2172,6 @@ TEST_CASE_METHOD(Fixture, "parallelize_gemm", "[cpu][nest][parallel]")
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ K_, N_ }) }),
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M_, N_ }) }))
         .Define([=](Array A, Array B, Array C) {
-
             const int OutputRows = (int)(A.Shape()[0]); // M
             const int OutputColumns = (int)(B.Shape()[1]); // N
             const int InnerDimension = (int)(A.Shape()[1]); // K
@@ -2193,7 +2192,7 @@ TEST_CASE_METHOD(Fixture, "parallelize_gemm", "[cpu][nest][parallel]")
                 auto [iOuter, iInner] = schedule.Split(i, OutputRows / numThreads);
                 schedule.SetOrder({ iOuter, j, k, iInner });
                 auto plan = schedule.CreatePlan();
-                plan.Parallelize({iOuter, j, k}, numThreads, ParallelizationPolicy::Dynamic);
+                plan.Parallelize({ iOuter, j, k }, numThreads, ParallelizationPolicy::Dynamic);
             }
         });
 
@@ -2201,9 +2200,7 @@ TEST_CASE_METHOD(Fixture, "parallelize_gemm", "[cpu][nest][parallel]")
     // options.dumpPasses = true;   // set .Public(true) in the function above to see the full IR
     // options.dumpIntraPassIR = true;
 
-    RunConversionPasses(target, "gemm_parallelized_" +
-        std::to_string(M_) + "_" + std::to_string(N_) + "_" + std::to_string(K_) + "_" +
-        "p" + std::to_string(numThreads) + "_" + stringify(target), options);
+    RunConversionPasses(target, "gemm_parallelized_" + std::to_string(M_) + "_" + std::to_string(N_) + "_" + std::to_string(K_) + "_" + "p" + std::to_string(numThreads) + "_" + stringify(target), options);
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
 }
@@ -2236,13 +2233,14 @@ TEST_CASE_METHOD(Fixture, "parallelize_gemm_mlas_value", "[cpu][nest]")
             // Schedule constants
             // TODO : read these values from the target system
             int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+            int vectorBytes = vectorSize * 4; // 4 bytes per float
             int vectorUnits = 16; // AVX-2 has 16 256-bit registers
             int kUnroll = 4;
 
             int NumRowsInKernel = 6;
             int NumColumnsInKernel = 2 * vectorSize;
 
-            int columnBlock = std::min(128, (int)(OutputColumns/numThreads));
+            int columnBlock = std::min(128, (int)(OutputColumns / numThreads));
             int innerDimensionBlock = std::min(256, InnerDimension);
 
             if (OutputRows < NumRowsInKernel)
@@ -2293,13 +2291,13 @@ TEST_CASE_METHOD(Fixture, "parallelize_gemm_mlas_value", "[cpu][nest]")
             schedule.Unroll(iInner);
             if (NumColumnsInKernel >= vectorSize)
             {
-                plan.Vectorize(jInner3, { vectorSize, vectorUnits });
+                plan.Vectorize(jInner3, { vectorBytes, vectorUnits });
             }
 
             if (numThreads > 1)
             {
                 // parallelize the outermost index
-                plan.Parallelize({jCache}, numThreads, ParallelizationPolicy::Static);
+                plan.Parallelize({ jCache }, numThreads, ParallelizationPolicy::Static);
             }
         });
 
@@ -2307,9 +2305,7 @@ TEST_CASE_METHOD(Fixture, "parallelize_gemm_mlas_value", "[cpu][nest]")
     // options.dumpPasses = true;
     // options.dumpIntraPassIR = true;
 
-    RunConversionPasses(target, "gemm_mlas_value_parallelized_" +
-        std::to_string(M_) + "_" + std::to_string(N_) + "_" + std::to_string(K_) + "_" +
-        "p" + std::to_string(numThreads) + "_" + stringify(target), options);
+    RunConversionPasses(target, "gemm_mlas_value_parallelized_" + std::to_string(M_) + "_" + std::to_string(N_) + "_" + std::to_string(K_) + "_" + "p" + std::to_string(numThreads) + "_" + stringify(target), options);
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
 }

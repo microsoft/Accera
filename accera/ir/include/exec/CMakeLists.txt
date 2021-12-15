@@ -1,5 +1,10 @@
 include_directories(${ACCERA_LIBRARIES_DIR})
 
+set(LLVM_TARGET_DEFINITIONS ExecutionPlanInterfaces.td)
+mlir_tablegen(ExecutionPlanInterfaces.h.inc -gen-op-interface-decls)
+mlir_tablegen(ExecutionPlanInterfaces.cpp.inc -gen-op-interface-defs)
+add_public_tablegen_target(ExecutionPlanInterfacesIncGen)
+
 set(LLVM_TARGET_DEFINITIONS ExecutionPlanOps.td)
 mlir_tablegen(ExecutionPlanOps.h.inc -gen-op-decls)
 mlir_tablegen(ExecutionPlanOps.cpp.inc -gen-op-defs)

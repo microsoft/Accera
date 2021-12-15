@@ -8,9 +8,11 @@
 #include "EmitterContext.h"
 #include "MLIREmitterContext.h"
 #include "Scalar.h"
+#include "ValueType.h"
 
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
+#include <stdexcept>
 
 namespace accera
 {
@@ -133,7 +135,19 @@ namespace value
 
     Scalar Abs(Scalar s)
     {
-        return ScalarOpBuilder<mlir::AbsFOp>(s);
+        switch (s.GetType())
+        {
+        case ValueType::Float:
+            [[fallthrough]];
+        case ValueType::Double:
+            return ScalarOpBuilder<mlir::AbsFOp>(s);
+        case ValueType::Undefined:
+            [[fallthrough]];
+        case ValueType::Void:
+            throw std::logic_error("Called Abs on invalid type");
+        default:
+            return Select(s < Cast(0, s.GetType()), -s, s);
+        }
     }
 
     Scalar Ceil(Scalar s)

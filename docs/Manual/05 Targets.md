@@ -6,7 +6,7 @@ Accera is a cross compiler, which means that it can generate code for different 
 ```python
 import accera as acc
 
-corei9 = acc.Target(model=acc.Target.Model.INTEL_CORE_I9, num_threads=44)
+corei9 = acc.Target(model=acc.Target.Model.INTEL_CORE_GENERATION_7, num_threads=44)
 ```
 or
 ```python

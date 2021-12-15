@@ -24,6 +24,9 @@ void populateExecutionPlanCacheRegionHoistingPatterns(mlir::OwningRewritePattern
 void populateExecutionPlanCacheRegionMergingPatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanCacheRegionPatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanCacheMappingPatterns(mlir::OwningRewritePatternList& patterns);
+void populateExecutionPlanAdjustHierarchicalCacheRegionPositionPatterns(mlir::OwningRewritePatternList& patterns);
+void populateExecutionPlanAdjustCacheMappingPositionPatterns(mlir::OwningRewritePatternList& patterns);
+void populateExecutionPlanMaxElementCacheRegionPatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanVectorizePatterns(bool printVectorizationDetails, mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanParallelizePatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanScaleHoistingPatterns(mlir::OwningRewritePatternList& patterns);

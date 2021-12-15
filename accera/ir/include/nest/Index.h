@@ -38,7 +38,7 @@ namespace loopnest
     private:
         static int GetNextId();
 
-        friend inline bool operator==(const Index& i1, const Index& i2) { return i1.GetId() == i2.GetId(); }
+        friend inline bool operator==(const Index& i1, const Index& i2) { return i1.GetId() == i2.GetId() && i1.GetName() == i2.GetName(); }
         friend inline bool operator!=(const Index& i1, const Index& i2) { return !(i1 == i2); }
         friend inline bool operator<(const Index& i1, const Index& i2) { return i1.GetId() < i2.GetId(); }
 

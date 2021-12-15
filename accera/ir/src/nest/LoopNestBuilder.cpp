@@ -441,8 +441,6 @@ namespace loopnest
         auto registeredInjectableMappings = GetScheduleOp().getInjectableMappings();
         for (auto& mapping : registeredInjectableMappings)
         {
-            // TODO : support precedence for mappings (e.g. in cache-of-cache scenario)
-
             auto scheduledLoopOps = FindAllScheduledLoops(mapping.index());
 
             for (auto& scheduledLoopOp : scheduledLoopOps)
@@ -990,7 +988,7 @@ namespace loopnest
             }
         };
 
-        std::function<bool(Operation* p, FragmentType type)> containsFragmentPredicate = [&containsFragmentPredicate](Operation* p, FragmentType type) -> bool {
+        std::function<bool(Operation * p, FragmentType type)> containsFragmentPredicate = [&containsFragmentPredicate](Operation* p, FragmentType type) -> bool {
             bool result = false;
             if (auto fragPred = dyn_cast<FragmentTypePredicateOp>(p);
                 fragPred && fragPred.fragment() == type)

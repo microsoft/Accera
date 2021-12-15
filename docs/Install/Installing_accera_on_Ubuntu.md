@@ -18,8 +18,8 @@ docker run -v $PWD:/code -it --entrypoint "/bin/bash" ubuntu:focal
 Install Accera's dependencies:
 
 ```shell
-apt update -y
-apt-get install -y gcc-8 g++-8 python3 python3-pip libncurses5
+apt update
+apt-get install gcc-8 g++-8 python3 python3-pip libncurses5
 ```
 
 Install the optional dependency if using parallelization:

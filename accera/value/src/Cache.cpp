@@ -61,14 +61,37 @@ namespace value
 
     class CacheImpl
     {
+    public:
+        Value GetBaseValue()
+        {
+            return _input;
+        }
+
     protected:
-        CacheImpl(ScheduleOp schedule, Value input, CacheIndexing cacheIndexMapping) :
+        CacheImpl(ScheduleOp schedule, std::variant<Value, CacheImpl*> input, CacheIndexing cacheIndexMapping) :
             _scheduleOp(schedule),
-            _input(input),
-            _mlirValueInput(mlir::Value::getFromOpaquePointer(input.Get<Emittable>().GetDataAs<MLIRContext::EmittableInfo*>()->data)),
             _cacheIndexMapping(cacheIndexMapping),
             _cacheId(accera::ir::util::GetUniqueId())
         {
+            if (std::holds_alternative<Value>(input))
+            {
+                _input = std::get<Value>(input);
+                _baseMlirValueInput = mlir::Value::getFromOpaquePointer(_input.Get<Emittable>().GetDataAs<MLIRContext::EmittableInfo*>()->data);
+                _mlirValueInput = _baseMlirValueInput;
+                _hierarchicalCacheLevel = 0;
+            }
+            else
+            {
+                auto parentCacheImpl = std::get<CacheImpl*>(input);
+                _input = parentCacheImpl->_input;
+                _mlirValueInput = parentCacheImpl->_cacheValue;
+                _baseMlirValueInput = parentCacheImpl->_baseMlirValueInput;
+                _hierarchicalCacheLevel = parentCacheImpl->_hierarchicalCacheLevel + 1;
+                if (_mlirValueInput == nullptr)
+                {
+                    throw accera::utilities::InputException(accera::utilities::InputExceptionErrors::invalidArgument, "Source cache for hierarchical cache is invalid becaase it doesn't have a cache mlir::Value");
+                }
+            }
         }
 
         mlir::OpBuilder GetBuilder()
@@ -112,10 +135,13 @@ namespace value
 
         ScheduleOp _scheduleOp;
         Value _input;
+        mlir::Value _baseMlirValueInput;
         mlir::Value _mlirValueInput;
         CacheIndexing _cacheIndexMapping;
         int64_t _cacheId;
+        int64_t _hierarchicalCacheLevel;
         CacheInfo _cacheInfo; // Subclasses set this manually
+        mlir::Value _cacheValue; // Subclasses set this manually
     };
 
     class AutomaticCacheImpl : public CacheImpl
@@ -142,31 +168,24 @@ namespace value
             if (allocation == CacheAllocation::Automatic)
             {
                 auto makeCache = builder.create<MakeCacheOp>(loc, _cacheInfo.cacheType, memorySpace);
-                _cache = makeCache;
+                _cacheValue = makeCache;
                 auto op = makeCache;
                 op->moveBefore(schedule.getOperation());
             }
             else
             {
-                _cache = _mlirValueInput;
+                _cacheValue = _mlirValueInput;
             }
 
-            _cacheAccessContext = MakeCacheAccessContext(_cache, _cacheInfo);
+            _cacheAccessContext = MakeCacheAccessContext(_cacheValue, _cacheInfo);
             _cacheAccessContext.cacheRegionRelevantScheduleIndexRanges = _cacheInfo.cacheRegionRelevantScheduleIndexRanges;
             _cacheAccessContext.cacheRegionBaseIndices = _cacheInfo.cacheRegionBaseIndices;
 
-            AddCacheRegion(builder);
-        }
-
-        void AddCacheRegion(mlir::OpBuilder& builder)
-        {
-            auto loc = builder.getUnknownLoc();
-            BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc, _mlirValueInput, _cacheAccessContext, *_cacheInfo.cacheIndex, *_cacheInfo.triggerIndex, _cacheId, false, false);
+            BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc, _mlirValueInput, _cacheAccessContext, _mlirValueInput, *_cacheInfo.cacheIndex, *_cacheInfo.triggerIndex, _cacheId, _hierarchicalCacheLevel, false, false);
             auto endOp = builder.create<EndCacheRegionOp>(loc, regionOp);
             _scheduleOp.injectMapping(regionOp);
         }
 
-        mlir::Value _cache;
         CacheAccessContext _cacheAccessContext;
         ExecutionOptions _execOptions;
     };
@@ -175,7 +194,7 @@ namespace value
     {
     public:
         ActiveBlockCacheImpl(ScheduleOp schedule,
-                             Value value,
+                             std::variant<Value, CacheImpl*> value,
                              const std::optional<Index>& keySliceIndex,
                              const std::optional<Index>& triggerIndex,
                              const std::optional<int64_t>& maxElements,
@@ -187,40 +206,57 @@ namespace value
             CacheImpl(schedule, value, mapping),
             _execOptions(execOptions)
         {
+            auto builder = GetBuilder();
+            auto loc = builder.getUnknownLoc();
             auto memorySpace = *ir::value::symbolizeMemorySpace((uint64_t)dslMemorySpace);
 
-            auto builder = GetBuilder();
-
-            _cacheInfo = MakeManualCacheInfo(builder, _mlirValueInput, allocation, schedule, keySliceIndex, triggerIndex, maxElements, cacheMapping, memorySpace);
+            _cacheInfo = MakeManualCacheInfo(builder, _baseMlirValueInput, allocation, schedule, keySliceIndex, triggerIndex, maxElements, cacheMapping, memorySpace);
 
             if (allocation == CacheAllocation::Automatic)
             {
-                auto makeCache = builder.create<MakeCacheOp>(builder.getUnknownLoc(), _cacheInfo.cacheType, memorySpace);
-                _cache = makeCache.getResult();
+                auto makeCache = builder.create<MakeCacheOp>(loc, _cacheInfo.cacheType, memorySpace);
+                _cacheValue = makeCache.getResult();
                 auto op = makeCache;
                 op->moveBefore(schedule.getOperation());
             }
             else
             {
-                _cache = _mlirValueInput;
+                _cacheValue = _mlirValueInput;
             }
 
-            _cacheAccessContext = MakeCacheAccessContext(_cache, _cacheInfo);
+            _cacheAccessContext = MakeCacheAccessContext(_cacheValue, _cacheInfo);
             _cacheAccessContext.cacheRegionRelevantScheduleIndexRanges = _cacheInfo.cacheRegionRelevantScheduleIndexRanges;
             _cacheAccessContext.cacheRegionBaseIndices = _cacheInfo.cacheRegionBaseIndices;
 
-            AddCacheRegion(builder);
+            mlir::Operation* cacheRegionOp;
+            if (maxElements.has_value())
+            {
+                auto loopIndices = schedule.getOrder();
+                assert(!loopIndices.empty());
+                auto innermostIndex = loopIndices.back();
+
+                BeginMaxElementCacheRegionOp regionOp = builder.create<BeginMaxElementCacheRegionOp>(loc,
+                                                                                                     _mlirValueInput,
+                                                                                                     _cacheValue,
+                                                                                                     _baseMlirValueInput,
+                                                                                                     _cacheInfo.accessMaps,
+                                                                                                     _cacheInfo.maxElementBudget,
+                                                                                                     innermostIndex,
+                                                                                                     _cacheId,
+                                                                                                     _hierarchicalCacheLevel,
+                                                                                                     _cacheInfo.dimReorderCache);
+                cacheRegionOp = regionOp;
+            }
+            else
+            {
+                BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc, _mlirValueInput, _cacheAccessContext, _baseMlirValueInput, *_cacheInfo.cacheIndex, *_cacheInfo.triggerIndex, _cacheId, _hierarchicalCacheLevel, true, _cacheInfo.dimReorderCache);
+                cacheRegionOp = regionOp;
+            }
+            auto regionHandle = cacheRegionOp->getResult(0);
+            auto endOp = builder.create<EndCacheRegionOp>(loc, regionHandle);
+            _scheduleOp.injectMapping(cacheRegionOp);
         }
 
-        void AddCacheRegion(mlir::OpBuilder& builder)
-        {
-            auto loc = builder.getUnknownLoc();
-            BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc, _mlirValueInput, _cacheAccessContext, *_cacheInfo.cacheIndex, *_cacheInfo.triggerIndex, _cacheId, true, _cacheInfo.dimReorderCache);
-            auto endOp = builder.create<EndCacheRegionOp>(loc, regionOp);
-            _scheduleOp.injectMapping(regionOp);
-        }
-
-        mlir::Value _cache;
         CacheAccessContext _cacheAccessContext;
         ExecutionOptions _execOptions;
     };
@@ -698,7 +734,7 @@ namespace value
 
     // Manual caching version
     Cache::Cache(ScheduleOp schedule,
-                 ViewAdapter value,
+                 std::variant<ViewAdapter, Cache*> value,
                  const std::optional<ScalarIndex>& keySliceIndex,
                  const std::optional<ScalarIndex>& triggerIndex,
                  const std::optional<int64_t>& maxElements,
@@ -718,11 +754,18 @@ namespace value
         {
             resolvedTriggerIndex = GetIndex(*triggerIndex);
         }
-        _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, value, keySlice, resolvedTriggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, execOptions);
+        if (std::holds_alternative<ViewAdapter>(value))
+        {
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<ViewAdapter>(value), keySlice, resolvedTriggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, execOptions);
+        }
+        else
+        {
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<Cache*>(value)->_impl.get(), keySlice, resolvedTriggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, execOptions);
+        }
     }
 
     Cache::Cache(ScheduleOp schedule,
-                 ViewAdapter value,
+                 std::variant<ViewAdapter, Cache*> value,
                  const std::optional<ScalarIndex>& keySliceIndex,
                  const std::optional<ScalarIndex>& triggerIndex,
                  const std::optional<int64_t>& maxElements,
@@ -742,7 +785,15 @@ namespace value
         {
             resolvedTriggerIndex = GetIndex(*triggerIndex);
         }
-        _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, value, keySlice, resolvedTriggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, execOptions);
+
+        if (std::holds_alternative<ViewAdapter>(value))
+        {
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<ViewAdapter>(value), keySlice, resolvedTriggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, execOptions);
+        }
+        else
+        {
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<Cache*>(value)->_impl.get(), keySlice, resolvedTriggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, execOptions);
+        }
     }
 
     // Runtime-init caching version
@@ -781,6 +832,11 @@ namespace value
     }
 
     Cache::~Cache() = default;
+
+    Value Cache::GetBaseValue()
+    {
+        return _impl->GetBaseValue();
+    }
 
 } // namespace value
 } // namespace accera

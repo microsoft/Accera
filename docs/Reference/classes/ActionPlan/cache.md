@@ -29,7 +29,7 @@ Create a cache of array `A` at level 2.
 AA = plan.cache(A, level=2)
 ```
 
-__Not yet implemented:__ Create a cache of array `A` with the `Array.Layout.FIRST_MAJOR` layout:
+Create a cache of array `A` with the `Array.Layout.FIRST_MAJOR` layout:
 ```python
 AA = plan.cache(A, level=2, layout=acc.Array.Layout.FIRST_MAJOR)
 ```
@@ -39,12 +39,12 @@ Create a cache of array `A` for dimension `j`:
 AA = plan.cache(A, index=j)
 ```
 
-Create a cache of array `A` for the largest active block that does not exceed 1024 elements:
+__Not yet implemented:__ Create a cache of array `A` for the largest active block that does not exceed 1024 elements:
 ```python
 AA = plan.cache(A, max_elements=1024)
 ```
 
-__Not yet implemented:__ Create a level 2 cache of array `A` from its level 4 cache:
+Create a level 2 cache of array `A` from its level 4 cache:
 ```python
 AA = plan.cache(A, level=4)
 AAA = plan.cache(AA, level=2)

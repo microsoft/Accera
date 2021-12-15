@@ -1289,8 +1289,9 @@ class SmokeTest(unittest.TestCase):
 
         benchmark = AutoBenchmark(output_dir)
         mean_time_secs, _ = benchmark.run(function.name,
-                                       min_timing_iterations=20,
-                                       warmup_iterations=10,
+                                       min_timing_iterations=1,
+                                       warmup_iterations=1,
+                                       min_time_in_sec=1,
                                        correctness_check_values={
                                            "pre": (A_test, B_test, C_test),
                                            "post": (A_test, B_test, C_ref)
@@ -1355,6 +1356,468 @@ class SmokeTest(unittest.TestCase):
         # but an inner split of 24 won't evenly divide 128 though 8 will evenly divide 24
 
         self._multicache_matmul_common(1020, 1024, 1024, "internal_boundary", jjj_split=24)
+
+    def _hierarchical_cache_matmul_common(self, M, N, K, A_cache_infos=[], B_cache_infos=[], C_cache_infos=[], force_boundary_conditions=False, cache_by_level=True) -> None:
+        import accera as acc
+
+        A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K))
+        B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N))
+        C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N))
+
+        nest = acc.Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        if force_boundary_conditions:
+            # Split by prime numbers to force many boundary conditions
+            jj = schedule.split(j, 127)
+            kk = schedule.split(k, 251)
+            kkk = schedule.split(kk, 11)
+            jjj = schedule.split(jj, 17)
+            jjjj = schedule.split(jjj, 7)
+            ii = schedule.split(i, 5)
+        else:
+            jj = schedule.split(j, 128)
+            kk = schedule.split(k, 256)
+            kkk = schedule.split(kk, 4)
+            jjj = schedule.split(jj, 16)
+            jjjj = schedule.split(jjj, 8)
+            ii = schedule.split(i, 6)
+
+        order = [j, k, i, jj, kk, kkk, ii, jjj, jjjj]
+        schedule.reorder(order)
+
+        plan = schedule.create_action_plan()
+
+        current_A_caches = [A]
+        current_B_caches = [B]
+        current_C_caches = [C]
+        for (cache_level, cache_trigger_level, layout) in A_cache_infos:
+            prev_cache = current_A_caches[len(current_A_caches) - 1]
+
+            if cache_by_level:
+                new_cache = plan.cache(prev_cache, level=cache_level, trigger_level=cache_trigger_level, layout=layout)
+            else:
+                cache_index = order[-cache_level]
+                trigger_index = order[-cache_trigger_level]
+                new_cache = plan.cache(prev_cache, index=cache_index, trigger_index=trigger_index, layout=layout)
+
+            current_A_caches.append(new_cache)
+
+        for (cache_level, cache_trigger_level, layout) in B_cache_infos:
+            prev_cache = current_B_caches[len(current_B_caches) - 1]
+
+            if cache_by_level:
+                new_cache = plan.cache(prev_cache, level=cache_level, trigger_level=cache_trigger_level, layout=layout)
+            else:
+                cache_index = order[-cache_level]
+                trigger_index = order[-cache_trigger_level]
+                new_cache = plan.cache(prev_cache, index=cache_index, trigger_index=trigger_index, layout=layout)
+
+            current_B_caches.append(new_cache)
+
+        for (cache_level, layout) in C_cache_infos:
+            prev_cache = current_C_caches[len(current_C_caches) - 1]
+
+            if cache_by_level:
+                new_cache = plan.cache(prev_cache, level=cache_level, layout=layout)
+            else:
+                cache_index = order[-cache_level]
+                new_cache = plan.cache(prev_cache, index=cache_index, layout=layout)
+
+            current_C_caches.append(new_cache)
+
+        return plan, (A, B, C)
+
+
+    def test_hierarchical_cache_matmul_2_caches_simple_boundaries_cache_by_index(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR),
+                    (3, 5, acc.Array.Layout.LAST_MAJOR)]
+
+        b_caches = [(4, 6, acc.Array.Layout.FIRST_MAJOR),
+                    (2, 4, acc.Array.Layout.LAST_MAJOR)]
+
+        c_caches = [(8, acc.Array.Layout.LAST_MAJOR),
+                    (6, acc.Array.Layout.FIRST_MAJOR)]
+
+        package = Package()
+        plan, args = self._hierarchical_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=False, cache_by_level=False)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"hierarchical_cache_matmul_2_caches_simple_index")
+
+        self._verify_matrix_multiplication_function(function, package, f"hierarchical_cache_matmul_2_caches_simple_index")
+
+    def test_hierarchical_cache_matmul_2_caches_simple_boundaries(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR), (3, 5, acc.Array.Layout.LAST_MAJOR)]
+
+        b_caches = [(4, 6, acc.Array.Layout.FIRST_MAJOR), (2, 4, acc.Array.Layout.LAST_MAJOR)]
+
+        c_caches = [(8, acc.Array.Layout.LAST_MAJOR), (6, acc.Array.Layout.FIRST_MAJOR)]
+
+        package = Package()
+        plan, args = self._hierarchical_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=False)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"hierarchical_cache_matmul_2_caches_simple")
+
+        self._verify_matrix_multiplication_function(function, package, f"hierarchical_cache_matmul_2_caches_simple")
+
+    def test_hierarchical_cache_matmul_2_caches_complicated_boundaries(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR),
+                    (3, 5, acc.Array.Layout.LAST_MAJOR)]
+
+        b_caches = [(4, 6, acc.Array.Layout.FIRST_MAJOR),
+                    (2, 4, acc.Array.Layout.LAST_MAJOR)]
+
+        c_caches = [(8, acc.Array.Layout.LAST_MAJOR),
+                    (6, acc.Array.Layout.FIRST_MAJOR)]
+
+        package = Package()
+        plan, args = self._hierarchical_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=True)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"hierarchical_cache_matmul_2_caches_complicated")
+
+        self._verify_matrix_multiplication_function(function, package, f"hierarchical_cache_matmul_2_caches_complicated")
+
+    def test_hierarchical_cache_matmul_3_caches_simple_boundaries(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR),
+                    (4, 5, acc.Array.Layout.LAST_MAJOR),
+                    (3, 3, acc.Array.Layout.FIRST_MAJOR)]
+
+        b_caches = [(5, 6, acc.Array.Layout.FIRST_MAJOR),
+                    (3, 5, acc.Array.Layout.LAST_MAJOR),
+                    (2, 3, acc.Array.Layout.FIRST_MAJOR)]
+
+        c_caches = [(8, acc.Array.Layout.LAST_MAJOR),
+                    (6, acc.Array.Layout.FIRST_MAJOR),
+                    (3, acc.Array.Layout.LAST_MAJOR)]
+
+        package = Package()
+        plan, args = self._hierarchical_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=False)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"hierarchical_cache_matmul_3_caches_simple")
+
+        self._verify_matrix_multiplication_function(function, package, f"hierarchical_cache_matmul_3_caches_simple")
+
+    def test_hierarchical_cache_matmul_3_caches_complicated_boundaries(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR),
+                    (4, 5, acc.Array.Layout.LAST_MAJOR),
+                    (3, 3, acc.Array.Layout.FIRST_MAJOR)]
+
+        b_caches = [(5, 6, acc.Array.Layout.FIRST_MAJOR),
+                    (3, 5, acc.Array.Layout.LAST_MAJOR),
+                    (2, 3, acc.Array.Layout.FIRST_MAJOR)]
+
+        c_caches = [(8, acc.Array.Layout.LAST_MAJOR),
+                    (6, acc.Array.Layout.FIRST_MAJOR),
+                    (3, acc.Array.Layout.LAST_MAJOR)]
+
+        package = Package()
+        plan, args = self._hierarchical_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=True)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"hierarchical_cache_matmul_3_caches_complicated")
+
+        self._verify_matrix_multiplication_function(function, package, f"hierarchical_cache_matmul_3_caches_complicated")
+
+    def test_hierarchical_cache_parameterized(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_level_1, a_level_2, a_trigger_1, a_trigger_2 = acc.create_parameters(4)
+        b_level_1, b_level_2, b_trigger_1, b_trigger_2 = acc.create_parameters(4)
+        c_level_1, c_level_2 = acc.create_parameters(2)
+
+        a_caches = [(a_level_1, a_trigger_1, acc.Array.Layout.FIRST_MAJOR),
+                    (a_level_2, a_trigger_2, acc.Array.Layout.LAST_MAJOR)]
+
+        b_caches = [(b_level_1, b_trigger_1, acc.Array.Layout.FIRST_MAJOR),
+                    (b_level_2, b_trigger_2, acc.Array.Layout.LAST_MAJOR)]
+
+        c_caches = [(c_level_1, acc.Array.Layout.FIRST_MAJOR),
+                    (c_level_2, acc.Array.Layout.LAST_MAJOR)]
+
+        package = Package()
+        plan, args = self._hierarchical_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
+        function = package.add_function(plan,
+                                        args=args,
+                                        parameters={
+                                            a_level_1: 5,
+                                            a_trigger_1: 7,
+                                            a_level_2: 3,
+                                            a_trigger_2: 5,
+                                            b_level_1: 5,
+                                            b_trigger_1: 6,
+                                            b_level_2: 3,
+                                            b_trigger_2: 5,
+                                            c_level_1: 8,
+                                            c_level_2: 6,
+                                        },
+                                        base_name=f"parameterized_hierarchical_cache_matmul")
+
+        self._verify_matrix_multiplication_function(function, package, f"parameterized_hierarchical_cache_matmul")
+
+
+    def _max_element_cache_matmul_common(self, M, N, K, A_cache_infos=[], B_cache_infos=[], C_cache_infos=[], force_boundary_conditions=False) -> None:
+        import accera as acc
+
+        A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K))
+        B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N))
+        C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N))
+
+        nest = acc.Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        if force_boundary_conditions:
+            # Split by prime numbers to force many boundary conditions
+            jj = schedule.split(j, 127)
+            kk = schedule.split(k, 251)
+            kkk = schedule.split(kk, 11)
+            jjj = schedule.split(jj, 17)
+            jjjj = schedule.split(jjj, 7)
+            ii = schedule.split(i, 5)
+        else:
+            jj = schedule.split(j, 128)
+            kk = schedule.split(k, 256)
+            kkk = schedule.split(kk, 4)
+            jjj = schedule.split(jj, 16)
+            jjjj = schedule.split(jjj, 8)
+            ii = schedule.split(i, 6)
+
+        order = [j, k, i, jj, kk, kkk, ii, jjj, jjjj]
+        schedule.reorder(order)
+
+        plan = schedule.create_action_plan()
+
+        current_A_caches = [A]
+        current_B_caches = [B]
+        current_C_caches = [C]
+        for (cache_budget, layout) in A_cache_infos:
+            prev_cache = current_A_caches[len(current_A_caches) - 1]
+            new_cache = plan.cache(prev_cache, max_elements=cache_budget, layout=layout)
+            current_A_caches.append(new_cache)
+
+        for (cache_budget, layout) in B_cache_infos:
+            prev_cache = current_B_caches[len(current_B_caches) - 1]
+            new_cache = plan.cache(prev_cache, max_elements=cache_budget, layout=layout)
+            current_B_caches.append(new_cache)
+
+        for (cache_budget, layout) in C_cache_infos:
+            prev_cache = current_C_caches[len(current_C_caches) - 1]
+            new_cache = plan.cache(prev_cache, max_elements=cache_budget, layout=layout)
+            current_C_caches.append(new_cache)
+
+        return plan, (A, B, C)
+
+
+    def test_simple_single_budget_cache(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(128, acc.Array.Layout.LAST_MAJOR)] # This should set the cache level to the kkk index (footprint should be 6 * 4 = 24 elements at that point, whereas the next level out is 6 * 256 = 1536 elements)
+        b_caches = []
+        c_caches = []
+
+        package = Package()
+        plan, args = self._max_element_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"test_simple_single_budget_cache")
+
+        self._verify_matrix_multiplication_function(function, package, f"test_simple_single_budget_cache")
+
+
+    def test_multiple_single_budget_caches(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(128, acc.Array.Layout.LAST_MAJOR)] # This should set the cache level to the kkk index (footprint should be 6 * 4 = 24 elements at that point, whereas the next level out is 6 * 256 = 1536 elements)
+        b_caches = [(K*N // 128, acc.Array.Layout.FIRST_MAJOR)] # This should set the cache level to the k index
+        c_caches = [(6 * 16, acc.Array.Layout.FIRST_MAJOR)] # This should set the cache level to the ii index
+
+        package = Package()
+        plan, args = self._max_element_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"test_multiple_single_budget_caches")
+
+        self._verify_matrix_multiplication_function(function, package, f"test_multiple_single_budget_caches")
+
+    def test_hierarchical_budget_caches(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(128, acc.Array.Layout.LAST_MAJOR), (6, acc.Array.Layout.FIRST_MAJOR)]
+        b_caches = [(K*N // 128, acc.Array.Layout.FIRST_MAJOR), (K*N // (128*256), acc.Array.Layout.LAST_MAJOR)]
+        c_caches = [(6 * 128, acc.Array.Layout.FIRST_MAJOR), (6 * 16, acc.Array.Layout.LAST_MAJOR)]
+
+        package = Package()
+        plan, args = self._max_element_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"test_hierarchical_budget_caches")
+
+        self._verify_matrix_multiplication_function(function, package, f"test_hierarchical_budget_caches")
+
+    def test_hierarchical_budget_caches_boundary_conditions(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(128, acc.Array.Layout.LAST_MAJOR), (6, acc.Array.Layout.FIRST_MAJOR)]
+        b_caches = [(K*N // 128, acc.Array.Layout.FIRST_MAJOR), (K*N // (128*256), acc.Array.Layout.LAST_MAJOR)]
+        c_caches = [(6 * 128, acc.Array.Layout.FIRST_MAJOR), (6 * 16, acc.Array.Layout.LAST_MAJOR)]
+
+        package = Package()
+        plan, args = self._max_element_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=True)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"test_hierarchical_budget_caches_boundary_conditions")
+
+        self._verify_matrix_multiplication_function(function, package, f"test_hierarchical_budget_caches_boundary_conditions")
+
+    def test_small_budget_cache(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(1, acc.Array.Layout.LAST_MAJOR)]
+        b_caches = [(1, acc.Array.Layout.LAST_MAJOR)]
+        c_caches = [(1, acc.Array.Layout.FIRST_MAJOR)]
+
+        package = Package()
+        plan, args = self._max_element_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"test_small_budget_cache")
+
+        self._verify_matrix_multiplication_function(function, package, f"test_small_budget_cache")
+
+    def test_max_budget_cache(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(M*K, acc.Array.Layout.LAST_MAJOR)]
+        b_caches = [(K*N, acc.Array.Layout.FIRST_MAJOR)]
+        c_caches = [(M*N, acc.Array.Layout.FIRST_MAJOR)]
+
+        package = Package()
+        plan, args = self._max_element_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"test_max_budget_cache")
+
+        self._verify_matrix_multiplication_function(function, package, f"test_max_budget_cache")
+
+    def test_overmax_budget_cache(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        a_caches = [(2*M*K, acc.Array.Layout.LAST_MAJOR)]
+        b_caches = [(2*K*N, acc.Array.Layout.FIRST_MAJOR)]
+        c_caches = [(2*M*N, acc.Array.Layout.FIRST_MAJOR)]
+
+        package = Package()
+        plan, args = self._max_element_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"test_overmax_budget_cache")
+
+        self._verify_matrix_multiplication_function(function, package, f"test_overmax_budget_cache")
+
+    def test_boundary_differently_shaped_budget_cache(self) -> None:
+        import accera as acc
+
+        M = 1024
+        N = 1024
+        K = 1024
+
+        # Create max element caches that will have a different cache level in different boundary condition sections
+
+        # with the default scheduling, there will be a boundary condition on the ii loop, where M = 0...1020 will be taken in steps of 6
+        # then M = 1020...1024 will be taken in steps of 4
+        # So if we create a budget that will be larger than the footprint in the boundary loop but smaller than the footprint in the base loop
+        # we should wind up with two different cache buffers at two different levels in separate regions
+
+        # 5 to be between 4 and 6, 256 because that is the K dimension tile size
+        a_caches = [(5*256, acc.Array.Layout.LAST_MAJOR)]
+        b_caches = []
+        c_caches = []
+
+        package = Package()
+        plan, args = self._max_element_cache_matmul_common(M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
+        function = package.add_function(plan,
+                                        args=args,
+                                        base_name=f"test_boundary_differently_shaped_budget_cache")
+
+        self._verify_matrix_multiplication_function(function, package, f"test_boundary_differently_shaped_budget_cache")
+
 
 
 if __name__ == '__main__':

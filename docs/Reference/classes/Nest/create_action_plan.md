@@ -22,10 +22,10 @@ Create an action plan for the host computer, using the default schedule for a ne
 plan = nest.create_action_plan()
 ```
 
-Create an action plan for an Intel Core I9, using the default schedule for a nest:
+Create an action plan for an Intel Core 7th Generation, using the default schedule for a nest:
 
 ```python
-corei9 = acc.Target(model=acc.Target.Model.INTEL_CORE_I9, num_threads=44)
+corei9 = acc.Target(model=acc.Target.Model.INTEL_CORE_GENERATION_7, num_threads=44)
 plan = nest.create_action_plan(corei9)
 ```
 

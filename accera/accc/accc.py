@@ -217,11 +217,21 @@ class AcceraSharedLibraryBuildProject:
         print(f"### Searching for: {openmp_library.name} ... ")
         found = ctypes.util.find_library(openmp_library.name)
 
-        # fallback to the build environment
-        # TODO: windows + omp is not officially supported while the install location of libomp is non-standard
-        # One option is for the caller to pass in a parameter
-        if not found and (os.path.isfile(BuildConfig.openmp_library)):
-            found = BuildConfig.openmp_library
+        if not found:
+            # TODO: need to make this logic cleaner
+            if os.path.isfile(BuildConfig.openmp_library):
+                # build environment has libomp installed
+                found = BuildConfig.openmp_library
+            elif "NOTFOUND" in BuildConfig.openmp_library and ctypes.util.find_library("omp"):
+                # build environment does not have libomp installed (e.g. manylinux), but the
+                # target environment has it as a system lib
+                if sys.platform.startswith("linux"):
+                    found = "-lomp5"
+                elif sys.platform.startswith("darwin"):
+                    found = "-lomp"
+                # BUGBUG: windows + omp is not officially supported while the
+                # install location of libomp is non-standard
+                # One option is for the caller to pass in a parameter
 
         if found:
             print(f"### Found {found}")

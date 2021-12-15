@@ -16,7 +16,6 @@
 #include <ir/include/nest/LoopNestOps.h>
 #include <ir/include/value/ValueDialect.h>
 
-
 #include <utilities/include/Exception.h>
 
 #include <mlir/IR/Attributes.h>
@@ -87,12 +86,12 @@ namespace value
             return { _scheduleOp, target, keySliceIndex, maxElements, mapping, allocation, memorySpace, _execOptions };
         }
 
-        Cache AddManualCache(ViewAdapter target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<ScalarIndex>& triggerIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, const MemoryAffineCoefficients& memoryMap)
+        Cache AddManualCache(std::variant<ViewAdapter, Cache*> target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<ScalarIndex>& triggerIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, const MemoryAffineCoefficients& memoryMap)
         {
             return { _scheduleOp, target, keySliceIndex, triggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, _execOptions };
         }
 
-        Cache AddManualCache(ViewAdapter target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<ScalarIndex>& triggerIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, const DimensionOrder& dimOrder)
+        Cache AddManualCache(std::variant<ViewAdapter, Cache*> target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<ScalarIndex>& triggerIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, const DimensionOrder& dimOrder)
         {
             return { _scheduleOp, target, keySliceIndex, triggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, _execOptions };
         }
@@ -213,34 +212,61 @@ namespace value
 
     Plan::~Plan() = default;
 
-    Cache Plan::AddCache(ViewAdapter target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const MemoryAffineCoefficients& memoryMap, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const MemoryAffineCoefficients& memoryMap, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
     {
         return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, mapping, allocation, memorySpace, memoryMap);
     }
 
-    Cache Plan::AddCache(ViewAdapter target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
     {
         return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, mapping, allocation, memorySpace, dimOrder);
     }
 
-    Cache Plan::AddCache(ViewAdapter target, const ScalarIndex& outermostIncludedSplitIndex, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
-    {
-        return _impl->AddAutomaticCache(target, outermostIncludedSplitIndex, std::nullopt, mapping, allocation, memorySpace);
-    }
-
-    Cache Plan::AddCache(ViewAdapter target, int64_t maxElements, const MemoryAffineCoefficients& memoryMap, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const MemoryAffineCoefficients& memoryMap, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
     {
         return _impl->AddManualCache(target, std::nullopt, std::nullopt, maxElements, mapping, allocation, memorySpace, memoryMap);
     }
 
-    Cache Plan::AddCache(ViewAdapter target, int64_t maxElements, const DimensionOrder& dimOrder, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const DimensionOrder& dimOrder, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
     {
         return _impl->AddManualCache(target, std::nullopt, std::nullopt, maxElements, mapping, allocation, memorySpace, dimOrder);
     }
 
-    Cache Plan::AddCache(ViewAdapter target, int64_t maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
     {
-        return _impl->AddAutomaticCache(target, std::nullopt, maxElements, mapping, allocation, memorySpace);
+        Value baseValue;
+        if (std::holds_alternative<Cache*>(target))
+        {
+            auto cache = std::get<Cache*>(target);
+            baseValue = cache->GetBaseValue();
+        }
+        else
+        {
+            auto viewAdapter = std::get<ViewAdapter>(target);
+            baseValue = viewAdapter.GetValue();
+        }
+        int64_t rank = baseValue.GetLayout().NumDimensions();
+        DimensionOrder dimOrder(rank);
+        return _impl->AddManualCache(target, outermostIncludedSplitIndex, outermostIncludedSplitIndex, std::nullopt, mapping, allocation, memorySpace, dimOrder);
+    }
+
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
+    {
+        Value baseValue;
+        if (std::holds_alternative<Cache*>(target))
+        {
+            auto cache = std::get<Cache*>(target);
+            baseValue = cache->GetBaseValue();
+        }
+        else
+        {
+            auto viewAdapter = std::get<ViewAdapter>(target);
+            baseValue = viewAdapter.GetValue();
+        }
+        int64_t rank = baseValue.GetLayout().NumDimensions();
+        DimensionOrder dimOrder(rank);
+        auto viewAdapter = std::get<ViewAdapter>(target);
+        return _impl->AddManualCache(target, std::nullopt, std::nullopt, maxElements, mapping, allocation, memorySpace, dimOrder);
     }
 
     Cache Plan::EmitRuntimeInitPacking(ViewAdapter target, const std::string& packingFnName, const std::string& packedBufferSizeFnName, CacheIndexing indexing)

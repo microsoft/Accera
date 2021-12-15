@@ -17,6 +17,7 @@
 #include <utilities/include/MemoryLayout.h>
 
 #include <memory>
+#include <variant>
 #include <vector>
 
 namespace accera
@@ -59,7 +60,7 @@ namespace value
         Plan& operator=(Plan&&) noexcept;
         ~Plan();
 
-        /// <summary> Adds a manual active block cache for a view target </summary>
+        /// <summary> Adds a manual active block cache for a view target or different cache </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="outermostIncludedSplitIndex"> The outermost index in one of the cached dimensions to include in the cache </param>
         /// <param name="triggerIndex"> The index to fill the cache at, must be the same as outermostIncludedSplitIndex or precede it in the schedule order </param>
@@ -69,9 +70,9 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="memoryMap"> The affine layout</param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(ViewAdapter target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const MemoryAffineCoefficients& memoryMap, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const MemoryAffineCoefficients& memoryMap, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
 
-        /// <summary> Adds a manual active block cache for a view target </summary>
+        /// <summary> Adds a manual active block cache for a view target or different cache </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="outermostIncludedSplitIndex"> The outermost index in one of the cached dimensions to include in the cache </param>
         /// <param name="triggerIndex"> The index to fill the cache at, must be the same as outermostIncludedSplitIndex or precede it in the schedule order </param>
@@ -81,9 +82,9 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="memoryMap"> The affine layout</param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(ViewAdapter target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
 
-        /// <summary> Adds an automatic active element cache for a view target </summary>
+        /// <summary> Adds a manual active block cache for a view target or different cache with an identity dimension ordering </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="outermostIncludedSplitIndex"> The outermost index in one of the cached dimensions to include in the cache </param>
         /// <param name="memoryMap"> The affine coefficients to use to map from active block position to cache position in the cache buffer </param>
@@ -92,9 +93,9 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="memoryMap"> The affine layout</param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(ViewAdapter target, const ScalarIndex& outermostIncludedSplitIndex, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
 
-        /// <summary> Adds a manual active block cache for a view target </summary>
+        /// <summary> Adds a manual active block cache for a view target or different cache </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="maxElements"> A cutoff budget that will be used to select the outermost index in one of the cached dimensions to include in the cache (in order not to exceed the budget) </param>
         /// <param name="memoryMap"> The affine coefficients to use to map from active block position to cache position in the cache buffer </param>
@@ -103,9 +104,9 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="memoryMap"> The affine layout</param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(ViewAdapter target, int64_t maxElements, const MemoryAffineCoefficients& memoryMap, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const MemoryAffineCoefficients& memoryMap, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
 
-        /// <summary> Adds a manual active block cache for a view target </summary>
+        /// <summary> Adds a manual active block cache for a view target or different cache </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="maxElements"> A cutoff budget that will be used to select the outermost index in one of the cached dimensions to include in the cache (in order not to exceed the budget) </param>
         /// <param name="dimOrder"> The dimension order permutation to use to map from active block position to cache position in the cache buffer </param>
@@ -114,9 +115,9 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="memoryMap"> The affine layout</param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(ViewAdapter target, int64_t maxElements, const DimensionOrder& dimOrder, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const DimensionOrder& dimOrder, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
 
-        /// <summary> Adds an automatic active element cache for a view target </summary>
+        /// <summary> Adds a manual active element cache for a view target or different cache with an identity dimension ordering </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="maxElements"> A cutoff budget that will be used to select the outermost index in one of the cached dimensions to include in the cache (in order not to exceed the budget) </param>
         /// <param name="indexing"> The cache indexing </param>
@@ -124,7 +125,7 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="memoryMap"> The affine layout</param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(ViewAdapter target, int64_t maxElements, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None);
 
         /// <summary> Emits an offline packing function for the given target and changes its usage in the function to assume a packed representation </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>

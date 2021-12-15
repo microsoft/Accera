@@ -87,6 +87,9 @@ class CMakeBuild(build_ext):
             cmake_generator = os.environ.get("CMAKE_GENERATOR", "")
             llvm_setup_variant = os.environ.get("LLVM_SETUP_VARIANT", "Default")
 
+            # E.g. /opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+            vcpkg_toolchain = os.environ.get("VCPKG_TOOLCHAIN")
+
             # Set Python_EXECUTABLE instead if you use PYBIND11_FINDPYTHON
             # ACCERA_VERSION_INFO shows you how to pass a value into the C++ code
             # from Python.
@@ -96,6 +99,9 @@ class CMakeBuild(build_ext):
                 f"-DCMAKE_BUILD_TYPE={cfg}",    # not used on MSVC, but no harm
                 f"-DLLVM_SETUP_VARIANT={llvm_setup_variant}"
             ]
+            if vcpkg_toolchain:
+                cmake_args += [f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_toolchain}"]
+
             build_args = []
 
             if self.compiler.compiler_type != "msvc":

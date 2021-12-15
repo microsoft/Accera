@@ -24,10 +24,10 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-from accera import ScalarType, Array, Target, Package
+from accera import ScalarType, Array, Function, Target, Package
 from accera.test import verifiers
 
-TEST_MODE = Package.Mode.RELEASE
+TEST_MODE = Package.Mode.DEBUG if DEV_MODE else Package.Mode.RELEASE
 TEST_FORMAT = Package.Format.MLIR if DEV_MODE else Package.Format.HAT
 
 TEST_PACKAGE_DIR = "test_acccgen"
@@ -45,8 +45,8 @@ class FailedReason(Enum):
     BUG = "Bug"
 
 
-def expectedFailure(reason: FailedReason, msg: str) -> Callable:
-    "Extends the unittest.expectedFailure decorator to print failure details"
+def expectedFailure(reason: FailedReason, msg: str, condition: bool = True) -> Callable:
+    "Extends the unittest.expectedFailure decorator to print failure details and takes an optional condition"
 
     def _decorator(func):
         @unittest.expectedFailure
@@ -58,7 +58,7 @@ def expectedFailure(reason: FailedReason, msg: str) -> Callable:
                 print(f"\t{e}\n")
                 raise (e)
 
-        return _wrapper
+        return _wrapper if condition else func
 
     return _decorator
 
@@ -166,7 +166,7 @@ class DSLTest_01Arrays(unittest.TestCase):
 
     def test_temp_array_materialization_1(self) -> None:
         # Materializes (allocates) a TEMP array externally to an added function
-        from accera import Nest
+        from accera import Nest, Package
 
         def make_test_fn(package, A, B, C):
             T = Array(role=Array.Role.TEMP, element_type=A.element_type, shape=A.shape)
@@ -194,7 +194,7 @@ class DSLTest_01Arrays(unittest.TestCase):
 
     def test_temp_array_materialization_2(self) -> None:
         # Materializes (allocates) a TEMP array within an added function
-        from accera import Nest
+        from accera import Nest, Package
 
         package = Package()
         A = Array(shape=(256, 32), role=Array.Role.INPUT)
@@ -251,7 +251,7 @@ class DSLTest_01Arrays(unittest.TestCase):
     def test_temp_array_materialization_3(self) -> None:
         # Materializes (allocates) a TEMP array within some nest iteration logic
         # *without* passing the array as a function argument
-        from accera import Nest
+        from accera import Nest, Package
 
         package = Package()
         A = Array(shape=(256, 32), role=Array.Role.INPUT_OUTPUT)
@@ -320,6 +320,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         }
         self._verify_nest(nest, (A,), "test_last_major_array_access", correctness_check_values=correctness_check_values)
 
+    @expectedFailure(FailedReason.BUG, "Debug mode doesn't support sub-arrays", TEST_MODE == Package.Mode.DEBUG)
     def test_subarray(self) -> None:
         from accera import Nest
         package = Package()
@@ -355,6 +356,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
+    @expectedFailure(FailedReason.BUG, "Debug mode doesn't support sub-arrays", TEST_MODE == Package.Mode.DEBUG)
     def test_subarray_l2(self) -> None:
         from accera import Nest
         package = Package()
@@ -1156,15 +1158,286 @@ class DSLTest_04Fusing(unittest.TestCase):
             # where schedule1's iteration space < schedule0 iteration space
             print(e)
 
+    def test_concat_fusing_1(self) -> None:
+        from accera import fuse, Nest
+
+        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(3,))
+        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(7,))
+
+        n1 = Nest(A.shape)
+        n2 = Nest(B.shape)
+
+        n1_i = n1.get_indices()
+
+        @n1.iteration_logic
+        def _():
+            A[n1_i] /= A[n1_i]
+
+        n2_i = n2.get_indices()
+
+        @n2.iteration_logic
+        def _():
+            B[n2_i] *= B[n2_i]
+
+        fused = fuse([n.create_schedule() for n in [n1, n2]], partial=0)
+
+        # Emitted fused loop should look like:
+        # for f in range(3):
+        #     if f == 0:
+        #         for i in range(3):
+        #             A[i] /= A[i]
+        #     if f == 1:
+        #         for i in range(7):
+        #             B[i] *= B[i]
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+
+        A_ref = A_test / A_test
+        B_ref = B_test * B_test
+
+        correctness_check_values = {
+            "pre": [A_test, B_test],
+            "post": [A_ref, B_ref]
+        }
+        self._verify_schedule(fused, (A, B), "test_concat_fusing_1", correctness_check_values)
+
+    @expectedFailure(FailedReason.BUG, "Concat fusing is broken")
+    def test_concat_fusing_2(self) -> None:
+        from accera import fuse, Nest
+
+        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(11,))
+        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(7,))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(5,))
+
+        n1 = Nest(A.shape)
+        n2 = Nest(B.shape)
+        n3 = Nest(C.shape)
+
+        n1_i = n1.get_indices()
+
+        @n1.iteration_logic
+        def _():
+            A[n1_i] += A[n1_i]
+
+        n2_i = n2.get_indices()
+
+        @n2.iteration_logic
+        def _():
+            B[n2_i] *= B[n2_i]
+
+        n3_i = n3.get_indices()
+
+        @n3.iteration_logic
+        def _():
+            C[n3_i] /= C[n3_i]
+
+        fused = fuse([n.create_schedule() for n in [n1, n2, n3]], partial=0)
+
+        # Emitted fused loop should look like:
+        # for f in range(3):
+        #     if f == 0:
+        #         for i in range(11):
+        #           A[i}] += A[i}]
+        #     if f == 1:
+        #         for i in range(7):
+        #           B[i}] *= B[i}]
+        #     if f == 2:
+        #         for i in range(5):
+        #           C[i}] /= C[i}]
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+
+        A_ref = A_test + A_test
+        B_ref = B_test * B_test
+        C_ref = C_test / C_test
+
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_ref, B_ref, C_ref]
+        }
+        self._verify_schedule(fused, (A, B, C), "test_concat_fusing_2", correctness_check_values)
+
+    def test_concat_fusing_3(self) -> None:
+        from accera import fuse, Nest
+
+        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 16))
+        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(7, 16))
+
+        n1 = Nest(A.shape)
+        n2 = Nest(B.shape)
+
+        n1_i, n1_j = n1.get_indices()
+
+        @n1.iteration_logic
+        def _():
+            A[n1_i, n1_j] /= A[n1_i, n1_j]
+
+        n2_i, n2_j = n2.get_indices()
+
+        @n2.iteration_logic
+        def _():
+            B[n2_i, n2_j] *= B[n2_i, n2_j]
+
+        fused = fuse([n.create_schedule() for n in [n1, n2]], partial=0)
+
+        # Emitted fused loop should look like:
+        # for f in range(3):
+        #     if f == 0:
+        #         for i in range(3):
+        #             for j in range(16):
+        #                 A[i,j] /= A[i,j]
+        #     if f == 1:
+        #         for i in range(7):
+        #             for j in range(16):
+        #                 B[i,j] *= B[i,j]
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+
+        A_ref = A_test / A_test
+        B_ref = B_test * B_test
+
+        correctness_check_values = {
+            "pre": [A_test, B_test],
+            "post": [A_ref, B_ref]
+        }
+        self._verify_schedule(fused, (A, B), "test_concat_fusing_3", correctness_check_values)
+
+    @expectedFailure(FailedReason.BUG, "Concat fusing is broken")
+    def test_concat_fusing_4(self) -> None:
+        from accera import fuse, Nest
+
+        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(11, 16))
+        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(7, 16))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(5, 16))
+
+        n1 = Nest(A.shape)
+        n2 = Nest(B.shape)
+        n3 = Nest(C.shape)
+
+        n1_i, n1_j = n1.get_indices()
+
+        @n1.iteration_logic
+        def _():
+            A[n1_i, n1_j] += A[n1_i, n1_j]
+
+        n2_i, n2_j = n2.get_indices()
+
+        @n2.iteration_logic
+        def _():
+            B[n2_i, n2_j] *= B[n2_i, n2_j]
+
+        n3_i, n3_j = n3.get_indices()
+
+        @n3.iteration_logic
+        def _():
+            C[n3_i, n3_j] /= C[n3_i, n3_j]
+
+        fused = fuse([n.create_schedule() for n in [n1, n2, n3]], partial=0)
+
+        # Emitted fused loop should look like:
+        # for f in range(3):
+        #     if f == 0:
+        #         for i in range(11):
+        #             for j in range(16):
+        #                 A[i,j] += A[i,j]
+        #     if f == 1:
+        #         for i in range(7):
+        #             for j in range(16):
+        #                 B[i,j] *= B[i,j]
+        #     if f == 2:
+        #         for i in range(5):
+        #             for j in range(16):
+        #                 C[i,j] /= C[i,j]
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+
+        A_ref = A_test + A_test
+        B_ref = B_test * B_test
+        C_ref = C_test / C_test
+
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_ref, B_ref, C_ref]
+        }
+        self._verify_schedule(fused, (A, B, C), "test_concat_fusing_4", correctness_check_values)
+
+    @unittest.skip("BUG: Compilation takes too long")
+    def test_multi_concat_fusing_1(self) -> None:
+        from accera import fuse, Nest
+
+        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(1024 + 13,))
+        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(1024 + 11,))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(1024 + 7,))
+        D = Array(role=Array.Role.INPUT_OUTPUT, shape=(1024 + 3,))
+
+        # Create nest0 and schedule
+        nest0 = Nest(A.shape)
+        i0 = nest0.get_indices()
+
+        @nest0.iteration_logic
+        def _():
+            A[i0] += A[i0]
+
+        # Create nest1 and schedule1
+        nest1 = Nest(B.shape)
+        i1 = nest1.get_indices()
+
+        @nest1.iteration_logic
+        def _():
+            B[i1] *= B[i1]
+
+        # Create a fused schedule
+        s0, s1 = [n.create_schedule() for n in [nest0, nest1]]
+        s0.split(i0, 11)
+        s1.split(i1, 5)
+        fused1 = fuse([s0, s1], partial=0)
+
+        nest2 = Nest(C.shape)
+        i2 = nest2.get_indices()
+
+        @nest2.iteration_logic
+        def _():
+            C[i2] *= C[i2]
+
+        s2 = nest2.create_schedule()
+        s2.split(i2, 13)
+        fused2 = fuse([fused1, s2], partial=0)
+
+        nest3 = Nest(D.shape)
+        i3 = nest3.get_indices()
+
+        @nest3.iteration_logic
+        def _():
+            D[i3] *= D[i3]
+
+        s3 = nest3.create_schedule()
+        s3.split(i3, 7)
+        fused3 = fuse([fused2, s3], partial=0)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+        D_test = np.random.random(D.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test, D_test],
+            "post": [A_test + A_test, B_test * B_test, C_test * C_test, D_test * D_test]
+        }
+        self._verify_schedule(fused3, (A, B, C, D), "test_multi_concat_fusing_1", correctness_check_values)
 
 class DSLTest_05Targets(unittest.TestCase):
     def test_known_targets(self) -> None:
-        corei9 = Target(model=Target.Model.INTEL_CORE_I9, num_threads=44)
-        self.assertEqual(corei9.model, Target.Model.INTEL_CORE_I9)
-        self.assertEqual(corei9.num_threads, 44)  # override
-        self.assertEqual(corei9.vector_bytes, 64)  # default
-        self.assertEqual(corei9.vector_registers, 32)  # default
-        self.assertEqual(corei9.category, Target.Category.CPU)  # default
+        intel_generation_7 = Target(model=Target.Model.INTEL_CORE_GENERATION_7, num_threads=44)
+        self.assertEqual(intel_generation_7.model, Target.Model.INTEL_CORE_GENERATION_7)
+        self.assertEqual(intel_generation_7.num_threads, 44)  # override
+        self.assertEqual(intel_generation_7.vector_bytes, 32)  # default
+        self.assertEqual(intel_generation_7.vector_registers, 16)  # default
+        self.assertEqual(intel_generation_7.category, Target.Category.CPU)  # default
 
         pi3 = Target(model=Target.Model.RASPBERRY_PI3, frequency_GHz=1.2)
         self.assertEqual(pi3.model, Target.Model.RASPBERRY_PI3)
@@ -1294,19 +1567,6 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
 
         self._verify_plan(plan, [A, B, C], "test_thrifty_caching")
 
-    @expectedFailure(FailedReason.NOT_IN_CORE, "hierachical caching")
-    def test_hierachical_caching(self) -> None:
-        plan, args, _ = self._create_plan((16, 10, 11))
-        A, B, C = args
-
-        AA = plan.cache(A, level=4)
-        self.assertIsNotNone(AA)
-
-        AAA = plan.cache(AA, level=2)
-        self.assertIsNotNone(AAA)
-
-        self._verify_plan(plan, [A, B, C], "test_hierarchical_caching")
-
     @expectedFailure(FailedReason.NOT_IN_PY, "Various target memory identifiers")
     def test_cache_mapping(self) -> None:
         from accera import Nest
@@ -1390,6 +1650,53 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
         }
 
         self._verify_plan(plan, [A, B, C], "test_cache_trigger_level_matmul", correctness_check_values=correctness_check_values)
+
+    def test_hierachical_caching(self) -> None:
+        from accera import Nest
+
+        M = 1024
+        N = 1024
+        S = 1024
+
+        A = Array(role=Array.Role.INPUT, shape=(M, S))
+        B = Array(role=Array.Role.INPUT, shape=(S, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+
+        nest = Nest(shape=(M, N, S))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        jj = schedule.split(j, 128)
+        kk = schedule.split(k, 256)
+        kkk = schedule.split(kk, 4)
+        jjj = schedule.split(jj, 16)
+        jjjj = schedule.split(jjj, 8)
+        ii = schedule.split(i, 6)
+
+        schedule.reorder(j, k, i, jj, kk, kkk, ii, jjj, jjjj)
+        plan = schedule.create_action_plan()
+
+        AA = plan.cache(A, level=5, trigger_level=7, layout=Array.Layout.FIRST_MAJOR)
+        AAA = plan.cache(AA, level=3, trigger_level=5, layout=Array.Layout.LAST_MAJOR)
+        BB = plan.cache(B, level=6, trigger_level=7, layout=Array.Layout.FIRST_MAJOR)
+        BBB = plan.cache(BB, level=2, trigger_level=5, layout=Array.Layout.LAST_MAJOR)
+        CC = plan.cache(C, level=8, layout=Array.Layout.FIRST_MAJOR)
+        CCC = plan.cache(CC, level=6, layout=Array.Layout.LAST_MAJOR)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_test, B_test, C_test + A_test @ B_test]
+        }
+
+        self._verify_plan(plan, [A, B, C], "test_hierarchical_caching", correctness_check_values=correctness_check_values)
 
 
 class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
@@ -1514,10 +1821,7 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
         def _():
             C[i, j] += A[i, k] * B[k, j]
 
-        if sys.platform.startswith('darwin'):
-            target = Target(model=Target.Model.HOST, num_threads=16)
-        else:
-            target = Target(model=Target.Model.INTEL_CORE_I9, num_threads=16)
+        target = Target(model=Target.Model.HOST, num_threads=16)
         plan = nest.create_action_plan(target)
 
         plan.parallelize(indices=(i, j, k), pin=(target.cores[0], target.cores[1]))    # TODO: confirm syntax
@@ -1558,10 +1862,7 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
         def _():
             C[i, j] += A[i, k] * B[k, j]
 
-        if sys.platform.startswith('darwin'):
-            target = Target(model=Target.Model.HOST, num_threads=16)
-        else:
-            target = Target(model=Target.Model.INTEL_CORE_I9, num_threads=16)
+        target = Target(model=Target.Model.HOST, num_threads=16)
 
         # disable correctness checking on windows because the
         # install location of libomp.dll is non-standard as of now
@@ -1634,6 +1935,7 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
         checker = CorrectnessCheck(output_dir)
         checker.run(function.name, before=correctness_check_values["pre"], after=correctness_check_values["post"])
 
+    @expectedFailure(FailedReason.BUG, "Debug mode doesn't support deferred layouts", TEST_MODE == Package.Mode.DEBUG)
     def test_deferred_layout_predefined(self) -> None:
         from accera import Nest, ScalarType
         import numpy as np
@@ -1678,6 +1980,7 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
             self._verify_package(plan1, (B, ), package_name,
                                 {"pre": [B_test], "post": [B_test + matrix]})
 
+    @expectedFailure(FailedReason.BUG, "Debug mode doesn't support deferred layouts", TEST_MODE == Package.Mode.DEBUG)
     def test_deferred_layout_coefficients(self) -> None:
         from accera import Nest, ScalarType
         import numpy as np
@@ -1971,10 +2274,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         def _():
             C[i, j] += A[i, k] * B[k, j]
 
-        if sys.platform.startswith('darwin'):
-            target = Target(model=Target.Model.HOST, num_threads=16)
-        else:
-            target = Target(model=Target.Model.INTEL_CORE_I9, num_threads=16)
+        target = Target(model=Target.Model.HOST, num_threads=16)
 
         # disable correctness checking on windows because the
         # install location of libomp.dll is non-standard as of now
@@ -2412,7 +2712,7 @@ class DSLTest_09Parameters(unittest.TestCase):
 
 
 class DSLTest_10Packages(unittest.TestCase):
-    def _create_plan(self, target=Target.HOST):
+    def _create_plan(self, target=Target.HOST) -> Function:
         from accera import Nest
 
         A = Array(role=Array.Role.INPUT_OUTPUT, shape=(64, ))

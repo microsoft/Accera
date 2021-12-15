@@ -122,6 +122,20 @@ struct BeginCacheMappingOpRewrite : public OpRewritePattern<BeginCacheMappingOp>
     LogicalResult matchAndRewrite(BeginCacheMappingOp beginCacheMappingOp, PatternRewriter& rewriter) const final;
 };
 
+struct AdjustHierarchicalCacheRegionPositionRewrite : public OpRewritePattern<BeginCacheRegionOp>
+{
+    using OpRewritePattern<BeginCacheRegionOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(BeginCacheRegionOp beginCacheRegionOp, PatternRewriter& rewriter) const final;
+};
+
+struct AdjustCacheMappingPositionRewrite : public OpRewritePattern<BeginCacheMappingOp>
+{
+    using OpRewritePattern<BeginCacheMappingOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(BeginCacheMappingOp beginCacheMappingOp, PatternRewriter& rewriter) const final;
+};
+
 struct BeginCacheRegionOpRewrite : public OpRewritePattern<BeginCacheRegionOp>
 {
     using OpRewritePattern<BeginCacheRegionOp>::OpRewritePattern;
@@ -141,6 +155,13 @@ struct MergeCacheRegionOpsRewrite : public OpRewritePattern<BeginCacheRegionOp>
     using OpRewritePattern<BeginCacheRegionOp>::OpRewritePattern;
 
     LogicalResult matchAndRewrite(BeginCacheRegionOp beginCacheRegionOp, PatternRewriter& rewriter) const final;
+};
+
+struct MaxElementCacheRegionOpRewrite : public OpRewritePattern<BeginMaxElementCacheRegionOp>
+{
+    using OpRewritePattern<BeginMaxElementCacheRegionOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(BeginMaxElementCacheRegionOp beginMaxElementCacheRegionOp, PatternRewriter& rewriter) const final;
 };
 
 struct VectorizeAffineForOpConversion : public OpRewritePattern<AffineForOp>
@@ -743,7 +764,7 @@ struct ActiveBlockInfo
     std::vector<mlir::Value> externalSymbols;
     std::vector<mlir::AffineMap> lbMaps;
     std::vector<mlir::AffineMap> ubMaps;
-    std::vector<mlir::AffineMap> activeBlockOffsetMaps;
+    mlir::AffineMap activeBlockOffsetMap;
 };
 
 // Contains the MemRefRegion and access characteristics of an active block
@@ -769,12 +790,11 @@ struct MultiCacheInfo
 
     struct ActiveBlockRegionInfo
     {
-        std::vector<mlir::Value> multiCacheLoopIterationCounters;
-        std::vector<mlir::Value> multiCacheSliceIVs;
         std::vector<mlir::Value> allCacheExternalSymbols;
         CacheAccessContext cacheAccessContext;
     };
     std::unordered_map<mlir::Operation*, ActiveBlockRegionInfo> activeBlockRegionInfos;
+    MakeCacheOp originalCacheOp;
     MakeCacheOp multiCache;
     ArrayAccessInfo arrayAccessInfo;
     ActiveBlockInfo activeBlockInfo;
@@ -784,6 +804,9 @@ struct MultiCacheInfo
     std::vector<mlir::AffineMap> multiCacheLBMaps;
     std::vector<mlir::AffineMap> multiCacheUBMaps;
     std::vector<int64_t> multiCacheStepSizes;
+    std::vector<Index> multiCacheLoopIndexIds;
+    std::vector<uint64_t> multiCacheIterationCounts;
+    std::vector<mlir::AffineForOp> multiCacheLoops;
 };
 
 std::pair<mlir::Value, mlir::ValueRange> GetAccessValueAndIndices(Operation* loadOrStoreOp)
@@ -969,16 +992,31 @@ ArrayAccessInfo ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir
     return result;
 }
 
+int64_t GetActiveBlockVolume(const mlir::MemRefRegion& activeBlock)
+{
+    if (!activeBlock.memref)
+    {
+        return 0;
+    }
+    mlir::SmallVector<int64_t, 4> shape;
+    std::vector<mlir::SmallVector<int64_t, 4>> lbs;
+    mlir::SmallVector<int64_t, 4> lbDivisors;
+
+    auto activeBlockVolumeOpt = activeBlock.getConstantBoundingSizeAndShape(&shape, &lbs, &lbDivisors);
+    assert(activeBlockVolumeOpt.hasValue());
+    return activeBlockVolumeOpt.getValue();
+}
+
 ActiveBlockInfo ConvertMemRefRegionToActiveBlockInfo(OpBuilder& builder, const mlir::MemRefRegion& activeBlockRegion)
 {
     ActiveBlockInfo activeBlockInfo;
 
+    // This shape computation is duplicated from GetActiveBlockVolume() since this function is the only one that needs the shape, lbs, and lbDivisors
     mlir::SmallVector<int64_t, 4> shape;
     std::vector<mlir::SmallVector<int64_t, 4>> lbs;
     mlir::SmallVector<int64_t, 4> lbDivisors; // TODO : do we have scenarios where we need to consider these?
 
     auto activeBlockVolumeOpt = activeBlockRegion.getConstantBoundingSizeAndShape(&shape, &lbs, &lbDivisors);
-
     assert(activeBlockVolumeOpt.hasValue());
     activeBlockInfo.activeBlockVolume = activeBlockVolumeOpt.getValue();
 
@@ -1021,23 +1059,22 @@ ActiveBlockInfo ConvertMemRefRegionToActiveBlockInfo(OpBuilder& builder, const m
         // the original memref further below.
         activeBlockOffsetExprs.push_back(offset);
     }
-    std::transform(activeBlockOffsetExprs.begin(), activeBlockOffsetExprs.end(), std::back_inserter(activeBlockInfo.activeBlockOffsetMaps), [&](const mlir::AffineExpr& expr) {
-        return mlir::AffineMap::get(numConstraints, 0, expr);
-    });
+
+    activeBlockInfo.activeBlockOffsetMap = mlir::AffineMap::get(numConstraints, 0, activeBlockOffsetExprs, builder.getContext());
 
     return activeBlockInfo;
 }
 
 MakeCacheOp UpdateActiveBlockCacheShape(PatternRewriter& rewriter,
-                                        MakeCacheOp makeCacheOp,
+                                        MakeCacheOp baseMakeCacheOp,
                                         const CacheAccessContext& cacheAccessContext,
                                         const ActiveBlockInfo& activeBlockInfo,
                                         const std::vector<uint64_t>& multiCacheShape)
 {
     // TODO : detect when the access region exceeds the MemRefRegion and pad the memref
 
-    // Replace MakeCacheOp for this cache with a large enough 1-D memref to hold activeBlockVolume
-    auto currentCacheType = makeCacheOp.cache().getType();
+    // Duplicate the given MakeCacheOp for this cache and give it a large enough 1-D memref to hold activeBlockVolume
+    auto currentCacheType = baseMakeCacheOp.cache().getType();
     assert(currentCacheType.isa<mlir::MemRefType>());
     auto currentCacheMemRefType = currentCacheType.cast<mlir::MemRefType>();
     if (!cacheAccessContext.dimReorderCache)
@@ -1079,10 +1116,8 @@ MakeCacheOp UpdateActiveBlockCacheShape(PatternRewriter& rewriter,
     auto newCacheType = mlir::MemRefType::get(cacheShape, currentCacheMemRefType.getElementType(), {}, currentCacheMemRefType.getMemorySpace());
 
     mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-    rewriter.setInsertionPoint(makeCacheOp);
-    auto replacementOp = rewriter.create<MakeCacheOp>(makeCacheOp.getLoc(), newCacheType, makeCacheOp.memorySpace());
-    makeCacheOp.replaceAllUsesWith(replacementOp.getResult());
-    rewriter.eraseOp(makeCacheOp);
+    rewriter.setInsertionPoint(baseMakeCacheOp);
+    auto replacementOp = rewriter.create<MakeCacheOp>(baseMakeCacheOp.getLoc(), newCacheType, baseMakeCacheOp.memorySpace());
     return replacementOp;
 }
 
@@ -1103,12 +1138,85 @@ mlir::AffineMap CreateActiveBlockToCacheMap(PatternRewriter& rewriter,
     return activeBlockToCacheMap;
 }
 
+mlir::AffineMap CreateArrayToCacheMap(mlir::OpBuilder& builder,
+                                      size_t arrayRank,
+                                      mlir::AffineMap activeBlockOffsetMap,
+                                      mlir::AffineMap activeBlockToCacheMap,
+                                      size_t offsetAccessIndexCount,
+                                      size_t multiCacheDimCount)
+{
+    // Our final map has (offsetAccessIndexCount + arrayRank) inputs and (arrayRank) results unless it is a multicache,
+    // in which case it has (multiCacheDimCount + offsetAccessIndexCount + arrayRank) inputs and (multiCacheDimCount + arrayRank) results
+
+    // Create a simple passthrough map for the base array position values
+    auto passthroughMap = mlir::AffineMap::getMultiDimIdentityMap(arrayRank, builder.getContext());
+
+    // The activeBlockOffsetMap maps from the loop indices used to perform an offset into the base array (the "offset access indices") to the values
+    // for each dimension that the base array position should be offset to access the active block.
+
+    // Now concatenate the passthrough map onto the activeBlockOffsetMap to produce a map that maps from ( offset access index IVs..., base array positions... ) -> ( offset amounts..., base array positions... )
+    auto activeBlockOffsetWithPassthroughMap = util::ConcatenateAndShiftAffineDimsAndMaps(builder, activeBlockOffsetMap, passthroughMap);
+    assert(activeBlockOffsetWithPassthroughMap.getNumResults() == 2 * arrayRank);
+
+    // Now create a map that subtracts each offset amount from the corresponding base array position
+    std::vector<mlir::AffineExpr> subtractOffsetExprs;
+    for (int dimIdx = 0; dimIdx < arrayRank; ++dimIdx)
+    {
+        subtractOffsetExprs.push_back(builder.getAffineDimExpr(dimIdx + arrayRank) - builder.getAffineDimExpr(dimIdx));
+    }
+    auto offsetSubtractMap = mlir::AffineMap::get(2 * arrayRank, 0, subtractOffsetExprs, builder.getContext());
+
+    // Now compose the activeBlockOffsetWithPassthroughMap and offsetSubtractMap to map from ( offset access index IVs..., base array positions... ) -> ( active block position... )
+    auto offsetAccessIVsArrayIndicesToActiveBlockPositionMap = offsetSubtractMap.compose(activeBlockOffsetWithPassthroughMap);
+
+    // Now map from the active block position to the cache position
+    auto fullActiveBlockCacheMap = activeBlockToCacheMap.compose(offsetAccessIVsArrayIndicesToActiveBlockPositionMap);
+
+    // Now account for multicache slicing
+
+    // Insert the multiCache slice operands into the map and operands
+    // Shift the dimensions used in the fullActiveBlockCacheMap so that the first several
+    // dimensions are the multiCache slicing dimensions
+    auto multiCacheSliceMap = mlir::AffineMap::getMultiDimIdentityMap(multiCacheDimCount, builder.getContext());
+    auto fullCacheMap = util::ConcatenateAndShiftAffineDimsAndMaps(builder, multiCacheSliceMap, fullActiveBlockCacheMap);
+
+    // Now fullCacheMap maps ( multiCache indices..., offset access index IVs..., base array positions... ) -> ( multicache active block position... )
+    return fullCacheMap;
+}
+
+MakeCacheOp UpdateActiveBlockCacheAccess(PatternRewriter& rewriter,
+                                         MakeCacheOp shapedMakeCacheOp,
+                                         size_t arrayRank,
+                                         mlir::AffineMap activeBlockOffsetMap,
+                                         mlir::AffineMap activeBlockToCacheMap,
+                                         const std::vector<Index>& offsetAccessIndices,
+                                         const std::vector<Index>& multiCacheAccessIndices)
+{
+    mlir::AffineMap arrayToCacheMap = CreateArrayToCacheMap(rewriter,
+                                                            arrayRank,
+                                                            activeBlockOffsetMap,
+                                                            activeBlockToCacheMap,
+                                                            offsetAccessIndices.size(),
+                                                            multiCacheAccessIndices.size());
+
+    mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+    rewriter.setInsertionPoint(shapedMakeCacheOp);
+    auto replacementOp = rewriter.create<MakeCacheOp>(shapedMakeCacheOp.getLoc(),
+                                                      shapedMakeCacheOp.getType(),
+                                                      shapedMakeCacheOp.memorySpace(),
+                                                      arrayToCacheMap,
+                                                      offsetAccessIndices,
+                                                      multiCacheAccessIndices);
+
+    rewriter.eraseOp(shapedMakeCacheOp);
+    return replacementOp;
+}
+
 void UpdateCacheAccessContextForActiveBlockCache(PatternRewriter& rewriter,
                                                  CacheAccessContext& cacheAccessContext,
                                                  const ActiveBlockInfo& activeBlockInfo,
                                                  mlir::AffineMap activeBlockToCacheMap,
-                                                 const std::vector<mlir::Value>& multiCacheExternalSymbols,
-                                                 const std::vector<mlir::Value>& multiCacheSliceIVs)
+                                                 const std::vector<mlir::Value>& multiCacheExternalSymbols)
 {
     // Update the cache region relevant schedule index ranges and the access maps in the cacheAccessContext
     // based on the given ActiveBlockInfo
@@ -1133,8 +1241,7 @@ void UpdateCacheAccessContextForActiveBlockCache(PatternRewriter& rewriter,
         // which the memref region is parametric); then those corresponding to
         // the memref's original indices follow.
         auto dimExpr = rewriter.getAffineDimExpr(activeBlockInfo.externalSymbols.size() + i);
-        assert(activeBlockInfo.activeBlockOffsetMaps[i].getNumResults() == 1);
-        auto offsetExpr = activeBlockInfo.activeBlockOffsetMaps[i].getResult(0);
+        auto offsetExpr = activeBlockInfo.activeBlockOffsetMap.getResult(i);
         remapExprs.push_back(dimExpr - offsetExpr);
     }
     auto indexRemap = AffineMap::get(activeBlockInfo.externalSymbols.size() + rank, 0, remapExprs, rewriter.getContext());
@@ -1144,48 +1251,11 @@ void UpdateCacheAccessContextForActiveBlockCache(PatternRewriter& rewriter,
     cacheAccessContext.accessMaps.inputIndicesToActiveBlockCache = inputToCacheMap;
 }
 
-mlir::AffineApplyOp CreateConstantRangeForOpIterationCounter(mlir::OpBuilder& builder, const mlir::Location& loc, mlir::AffineForOp op)
-{
-    mlir::OpBuilder::InsertionGuard insertGuard(builder);
-    builder.setInsertionPointToStart(op.getBody());
-
-    assert(op.hasConstantBounds() && "AffineForOp must have constant bounds");
-    auto lowerBound = op.getConstantLowerBound();
-    auto step = op.getStep();
-
-    // Compute (iv - lowerBound) / step
-    auto iterCounterMap = AffineMap::get(1, 0, (builder.getAffineDimExpr(0) - builder.getAffineConstantExpr(lowerBound)).floorDiv(step));
-    return builder.create<mlir::AffineApplyOp>(loc, iterCounterMap, mlir::ValueRange{ op.getInductionVar() });
-}
-
-mlir::AffineMap ConcatenateAndShiftAffineDimsAndMaps(mlir::OpBuilder& builder, mlir::AffineMap leftMap, mlir::AffineMap rightMap)
-{
-    // Differs from mlir::concatAffineMaps in that it shifts the dimensions of the right-hand map
-    // and uses all of the dimensions from the two maps independently instead of merging the dimensions
-
-    unsigned dimShift = leftMap.getNumDims();
-    std::vector<mlir::AffineExpr> dimReplacements;
-    std::vector<mlir::AffineExpr> symReplacements;
-    for (unsigned originalDimIdx = 0; originalDimIdx < rightMap.getNumDims(); ++originalDimIdx)
-    {
-        dimReplacements.push_back(builder.getAffineDimExpr(originalDimIdx + dimShift));
-    }
-    auto shiftedRightMap = rightMap.replaceDimsAndSymbols(dimReplacements, symReplacements, rightMap.getNumDims() + dimShift, rightMap.getNumSymbols());
-
-    auto leftMapExprs = leftMap.getResults().vec();
-    auto concatedExprs = shiftedRightMap.getResults().vec();
-    concatedExprs.insert(concatedExprs.begin(), leftMapExprs.begin(), leftMapExprs.end());
-
-    auto concatedMap = mlir::AffineMap::get(shiftedRightMap.getNumDims(), shiftedRightMap.getNumSymbols(), concatedExprs, builder.getContext());
-
-    return concatedMap;
-}
-
 bool ShouldMergeMultiCacheInfos(const MultiCacheInfo& lhs, const MultiCacheInfo& rhs)
 {
     // If either cache usage is not read-only, then they have to be merged
     // If both are read-only caches, then check if their active blocks
-    // have the same shape and multi-cache external symbols, in which case they can be merged
+    // have the same shape and external symbols, in which case they can be merged
 
     // In general we should prefer to merge cache buffers to reduce complexity and unnecessary memory bloat.
     // Only when the caches are read-only or accumulate-only and have differing shapes then we should leave them as separate bufers
@@ -1194,11 +1264,12 @@ bool ShouldMergeMultiCacheInfos(const MultiCacheInfo& lhs, const MultiCacheInfo&
     bool cachesAreAccumulateOnly = lhs.arrayAccessInfo.onlyReadsAreAccumulates && rhs.arrayAccessInfo.onlyReadsAreAccumulates;
     bool cachesHaveSameShape = lhs.activeBlockInfo.shape.size() == rhs.activeBlockInfo.shape.size() &&
                                std::equal(lhs.activeBlockInfo.shape.begin(), lhs.activeBlockInfo.shape.end(), rhs.activeBlockInfo.shape.begin());
+    bool multiCachesHaveSameShape = std::equal(lhs.multiCacheIterationCounts.begin(), lhs.multiCacheIterationCounts.end(), rhs.multiCacheIterationCounts.begin());
 
     bool cachesHaveSameExternalSymbols = lhs.multiCacheExternalSymbols.size() == rhs.multiCacheExternalSymbols.size() &&
                                          std::equal(lhs.multiCacheExternalSymbols.begin(), lhs.multiCacheExternalSymbols.end(), rhs.multiCacheExternalSymbols.begin());
 
-    bool sameShapeAndSymbols = cachesHaveSameShape && cachesHaveSameExternalSymbols;
+    bool sameShapeAndSymbols = multiCachesHaveSameShape && cachesHaveSameShape && cachesHaveSameExternalSymbols;
 
     bool keepSeparateCacheBuffers = (cachesAreReadOnly || cachesAreAccumulateOnly) && !sameShapeAndSymbols;
 
@@ -1274,6 +1345,68 @@ mlir::AffineMap ComputeLoopIVDefinitionOrderToCurrentOrderMap(const std::vector<
     auto currentToDefinitionOrderMap = ComputeLoopIVToDefinitionOrderMap(ivs, context);
     auto definitionToCurrentOrderMap = mlir::inversePermutation(currentToDefinitionOrderMap);
     return definitionToCurrentOrderMap;
+}
+
+// Create an AffineLoadOp that understands how to access caches
+mlir::AffineLoadOp CreateLoad(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value src, const std::vector<mlir::Value>& baseArrayPosition)
+{
+    if (auto srcCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(src.getDefiningOp()))
+    {
+        mlir::AffineValueMap loadAccessInfo = srcCacheOp.insertCachePosition(builder.getInsertionBlock(), baseArrayPosition);
+        return builder.create<mlir::AffineLoadOp>(loc, src, loadAccessInfo.getAffineMap(), loadAccessInfo.getOperands());
+    }
+    else
+    {
+        return builder.create<mlir::AffineLoadOp>(loc, src, baseArrayPosition);
+    }
+}
+
+// Create an AffineStoreOp that understands how to access caches
+mlir::AffineStoreOp CreateStore(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value value, mlir::Value dst, const std::vector<mlir::Value>& baseArrayPosition)
+{
+    if (auto dstCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(dst.getDefiningOp()))
+    {
+        mlir::AffineValueMap storeAccessInfo = dstCacheOp.insertCachePosition(builder.getInsertionBlock(), baseArrayPosition);
+        return builder.create<mlir::AffineStoreOp>(loc, value, dst, storeAccessInfo.getAffineMap(), storeAccessInfo.getOperands());
+    }
+    else
+    {
+        return builder.create<mlir::AffineStoreOp>(loc, value, dst, baseArrayPosition);
+    }
+}
+
+// Get the base array position for an AffineLoadOp that understands how to access caches
+template <typename LoadStoreOp>
+std::vector<mlir::Value> GetBaseArrayPosition(mlir::OpBuilder& builder, mlir::Location loc, LoadStoreOp loadStoreOp)
+{
+    auto memref = loadStoreOp.memref();
+    typename LoadStoreOp::Adaptor adaptor{ loadStoreOp };
+    if (auto cache = mlir::dyn_cast_or_null<MakeCacheOp>(memref.getDefiningOp()))
+    {
+        return cache.getBaseArrayPosition(loadStoreOp);
+    }
+    else
+    {
+        auto accessMap = loadStoreOp.getAffineMapAttr().getValue();
+        std::vector<mlir::Value> affineIndices(adaptor.indices().begin(), adaptor.indices().end());
+        auto resolvedAccessIndices = util::MultiDimAffineApply(builder, loc, accessMap, affineIndices);
+        return resolvedAccessIndices;
+    }
+}
+
+bool IsCacheRegionEmpty(BeginCacheRegion beginRegion)
+{
+    auto endOp = mlir::dyn_cast<EndCacheRegion>(beginRegion.getEndOp());
+
+    auto parentBlock = beginRegion->getBlock();
+
+    bool emptyRegion = true;
+    parentBlock->walk(++mlir::Block::iterator(beginRegion), mlir::Block::iterator(endOp), [&](Operation* op) {
+        emptyRegion = false;
+        return WalkResult::interrupt();
+    });
+
+    return emptyRegion;
 }
 
 } // namespace
@@ -1545,8 +1678,11 @@ LogicalResult MultiCacheCopyOpRewrite::matchAndRewrite(MultiCacheCopyOp multiCac
     });
     auto multiCacheStepSizes = util::ConvertArrayAttrToIntVector(multiCacheStepsArrayAttr);
 
+    std::vector<Index> multiCacheIndexIds = util::ConvertArrayAttrToIndexVector(adaptor.multiCacheLoopIndexIds());
+
     assert(multiCacheLBMaps.size() == multiCacheUBMaps.size());
     assert(multiCacheLBMaps.size() == multiCacheStepSizes.size());
+    assert(multiCacheLBMaps.size() == multiCacheIndexIds.size());
     auto multiCacheLoopCount = multiCacheLBMaps.size();
 
     std::vector<mlir::Value> multiCacheIVs;
@@ -1558,9 +1694,10 @@ LogicalResult MultiCacheCopyOpRewrite::matchAndRewrite(MultiCacheCopyOp multiCac
     for (unsigned multiCacheDim = 0; multiCacheDim < multiCacheLoopCount; ++multiCacheDim)
     {
         auto forOp = mlir::createCanonicalizedAffineForOp(currentBuilder, loc, emptyOperands, multiCacheLBMaps[multiCacheDim], emptyOperands, multiCacheUBMaps[multiCacheDim], multiCacheStepSizes[multiCacheDim]);
+        forOp->setAttr("index", IndexAttr::get(multiCacheIndexIds[multiCacheDim], currentBuilder.getContext()));
         currentBuilder = mlir::OpBuilder::atBlockTerminator(forOp.getBody());
-        mlir::AffineApplyOp iterCounterOp = CreateConstantRangeForOpIterationCounter(currentBuilder, loc, forOp);
-        multiCacheIterCounters.push_back(iterCounterOp.getResult());
+        mlir::Value iterCounter = util::CreateConstantRangeForOpIterationCounter(currentBuilder, loc, forOp);
+        multiCacheIterCounters.push_back(iterCounter);
 
         multiCacheIVs.push_back(forOp.getInductionVar());
     }
@@ -1593,7 +1730,6 @@ LogicalResult MultiCacheCopyOpRewrite::matchAndRewrite(MultiCacheCopyOp multiCac
                                                   multiCacheIterCounters,
                                                   multiCacheCopyOp.activeBlockLowerBoundMaps(),
                                                   multiCacheCopyOp.activeBlockUpperBoundMaps(),
-                                                  multiCacheCopyOp.activeBlockOffsetMaps(),
                                                   multiCacheCopyOp.activeBlockToCacheMap(),
                                                   true); // True because a MultiCacheCopyOp only copies into the cache
 
@@ -1645,16 +1781,10 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
 
     auto lbMapsArrayAttr = adaptor.lbMaps();
     auto ubMapsArrayAttr = adaptor.ubMaps();
-    auto activeBlockOffsetMapsArrayAttr = adaptor.activeBlockOffsetMaps();
     auto lbMaps = util::ArrayAttrToVector<mlir::AffineMap, mlir::AffineMapAttr>(lbMapsArrayAttr, [](const mlir::AffineMapAttr& mapAttr) -> mlir::AffineMap {
         return mapAttr.getValue();
     });
     auto ubMaps = util::ArrayAttrToVector<mlir::AffineMap, mlir::AffineMapAttr>(ubMapsArrayAttr, [](const mlir::AffineMapAttr& mapAttr) -> mlir::AffineMap {
-        return mapAttr.getValue();
-    });
-    // the activeBlockOffsetMaps are single-result maps that are really just individual AffineExpr's that
-    // are leveraging AffineMapAttr for serialization
-    auto activeBlockOffsetMaps = util::ArrayAttrToVector<mlir::AffineMap, mlir::AffineMapAttr>(activeBlockOffsetMapsArrayAttr, [](const mlir::AffineMapAttr& mapAttr) -> mlir::AffineMap {
         return mapAttr.getValue();
     });
 
@@ -1669,11 +1799,8 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
     }));
 
     unsigned rank = memRefType.getRank();
-    assert(lbMaps.size() == rank && "wrong number of lb maps");
-    assert(ubMaps.size() == rank && "wrong number of ub maps");
+    assert(lbMaps.size() == ubMaps.size() && "mismatched number of lb and ub maps");
 
-    llvm::SmallVector<mlir::AffineExpr, 4> activeBlockOffsettingExprs;
-    llvm::SmallVector<mlir::Value, 4> activeBlockOffsetMapOperands;
     OpBuilder currentBuilder = rewriter;
 
     auto constantShapeOpt = GetConstantActiveBlockShape(lbMaps, ubMaps);
@@ -1713,44 +1840,17 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
                 mlir::Value lbMapApplied = currentBuilder.create<mlir::AffineApplyOp>(loc, lbMaps[arrayDim], lbOperands);
                 mlir::Value lbOffsetIV = currentBuilder.create<mlir::AffineApplyOp>(loc, sumMap, mlir::ValueRange{ lbMapApplied, orderedSymbolicIndexOpValues[arrayDim] });
                 lowerBoundOffsetIVs.push_back(lbOffsetIV);
-
-                auto activeBlockOffsetMap = mlir::AffineMap::get(lbOperands.size(), 0, activeBlockOffsetMaps[arrayDim].getResult(0));
-                auto offset = currentBuilder.create<AffineApplyOp>(loc, activeBlockOffsetMap, lbOperands);
-                activeBlockOffsettingExprs.push_back(currentBuilder.getAffineDimExpr(2 * arrayDim + 1) -
-                                                     currentBuilder.getAffineDimExpr(2 * arrayDim));
-                activeBlockOffsetMapOperands.push_back(offset);
-                activeBlockOffsetMapOperands.push_back(lbOffsetIV);
             }
-
-            auto activeBlockOffsetMap = mlir::AffineMap::get(2 * rank, 0, activeBlockOffsettingExprs, currentBuilder.getContext());
-            activeBlockOffsetMap = mlir::simplifyAffineMap(activeBlockOffsetMap);
-
-            auto activeBlockToCacheMap = cacheCopyOp.activeBlockToCacheMap();
-
-            auto fullActiveBlockCacheMap = activeBlockToCacheMap.compose(activeBlockOffsetMap);
-
-            // Insert the multiCache slice operands into the map and operands
-            // Shift the dimensions used in the fullActiveBlockCacheMap so that the first several
-            // dimensions are the multiCache slicing dimensions
-            // TODO : get subviews with linalg.range working so we don't need to do this here
-
-            auto multiCacheSliceOperands = cacheCopyOp.multiCacheSliceOperands();
-            unsigned numMultiCacheDims = multiCacheSliceOperands.size();
-            auto multiCacheSliceMap = mlir::AffineMap::getMultiDimIdentityMap(numMultiCacheDims, rewriter.getContext());
-            auto fullCacheMap = ConcatenateAndShiftAffineDimsAndMaps(rewriter, multiCacheSliceMap, fullActiveBlockCacheMap);
-
-            llvm::SmallVector<mlir::Value, 4> multiCacheSlicingActiveBlockAccessOperands = activeBlockOffsetMapOperands;
-            multiCacheSlicingActiveBlockAccessOperands.insert(multiCacheSlicingActiveBlockAccessOperands.begin(), multiCacheSliceOperands.begin(), multiCacheSliceOperands.end());
 
             if (arrayToCache)
             {
-                auto load = currentBuilder.create<mlir::AffineLoadOp>(loc, array, lowerBoundOffsetIVs);
-                currentBuilder.create<mlir::AffineStoreOp>(loc, load, cache, fullCacheMap, multiCacheSlicingActiveBlockAccessOperands);
+                mlir::Value loadedValue = CreateLoad(currentBuilder, loc, array, lowerBoundOffsetIVs);
+                CreateStore(currentBuilder, loc, loadedValue, cache, lowerBoundOffsetIVs);
             }
             else
             {
-                auto load = currentBuilder.create<mlir::AffineLoadOp>(loc, cache, fullCacheMap, multiCacheSlicingActiveBlockAccessOperands);
-                currentBuilder.create<mlir::AffineStoreOp>(loc, load, array, lowerBoundOffsetIVs);
+                mlir::Value loadedValue = CreateLoad(currentBuilder, loc, cache, lowerBoundOffsetIVs);
+                CreateStore(currentBuilder, loc, loadedValue, array, lowerBoundOffsetIVs);
             }
         });
         // Bounds check cache copy loads/stores so we don't introduce
@@ -1763,7 +1863,7 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
     }
     else
     {
-        llvm::SmallVector<mlir::Value, 4> copyIVs;
+        std::vector<mlir::Value> copyIVs;
 
         // Are we able to replace these with loopnests? we don't have a way to construct loopnests with affine map lower/upper bounds currently
         for (unsigned arrayDim = 0; arrayDim < rank; ++arrayDim)
@@ -1771,51 +1871,19 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
             auto forOp = mlir::createCanonicalizedAffineForOp(currentBuilder, loc, lbOperands, lbMaps[arrayDim], ubOperands, ubMaps[arrayDim]);
             currentBuilder = mlir::OpBuilder::atBlockTerminator(forOp.getBody());
 
-            auto activeBlockOffsetMap = mlir::AffineMap::get(lbOperands.size(), 0, activeBlockOffsetMaps[arrayDim].getResult(0));
-            auto offset = currentBuilder.create<AffineApplyOp>(loc, activeBlockOffsetMap, lbOperands);
-
-            // Construct the subscript for the fast memref being copied into/from:
-            // x - offset_x.
-            activeBlockOffsettingExprs.push_back(currentBuilder.getAffineDimExpr(2 * arrayDim + 1) -
-                                                 currentBuilder.getAffineDimExpr(2 * arrayDim));
-            activeBlockOffsetMapOperands.push_back(offset);
-            activeBlockOffsetMapOperands.push_back(forOp.getInductionVar());
-
             // Subscript for the slow memref being copied.
             copyIVs.push_back(forOp.getInductionVar());
         }
 
-        auto activeBlockOffsetMap = mlir::AffineMap::get(2 * rank, 0, activeBlockOffsettingExprs, currentBuilder.getContext());
-        mlir::fullyComposeAffineMapAndOperands(&activeBlockOffsetMap, &activeBlockOffsetMapOperands);
-        activeBlockOffsetMap = mlir::simplifyAffineMap(activeBlockOffsetMap);
-        mlir::canonicalizeMapAndOperands(&activeBlockOffsetMap, &activeBlockOffsetMapOperands);
-
-        auto activeBlockToCacheMap = cacheCopyOp.activeBlockToCacheMap();
-
-        auto fullActiveBlockCacheMap = activeBlockToCacheMap.compose(activeBlockOffsetMap);
-
-        // Insert the multiCache slice operands into the map and operands
-        // Shift the dimensions used in the fullActiveBlockCacheMap so that the first several
-        // dimensions are the multiCache slicing dimensions
-        // TODO : get subviews with linalg.range working so we don't need to do this here
-
-        auto multiCacheSliceOperands = cacheCopyOp.multiCacheSliceOperands();
-        unsigned numMultiCacheDims = multiCacheSliceOperands.size();
-        auto multiCacheSliceMap = mlir::AffineMap::getMultiDimIdentityMap(numMultiCacheDims, rewriter.getContext());
-        auto fullCacheMap = ConcatenateAndShiftAffineDimsAndMaps(rewriter, multiCacheSliceMap, fullActiveBlockCacheMap);
-
-        llvm::SmallVector<mlir::Value, 4> multiCacheSlicingActiveBlockAccessOperands = activeBlockOffsetMapOperands;
-        multiCacheSlicingActiveBlockAccessOperands.insert(multiCacheSlicingActiveBlockAccessOperands.begin(), multiCacheSliceOperands.begin(), multiCacheSliceOperands.end());
-
         if (arrayToCache)
         {
-            auto load = currentBuilder.create<mlir::AffineLoadOp>(loc, array, copyIVs);
-            currentBuilder.create<mlir::AffineStoreOp>(loc, load, cache, fullCacheMap, multiCacheSlicingActiveBlockAccessOperands);
+            mlir::Value loadedValue = CreateLoad(currentBuilder, loc, array, copyIVs);
+            CreateStore(currentBuilder, loc, loadedValue, cache, copyIVs);
         }
         else
         {
-            auto load = currentBuilder.create<mlir::AffineLoadOp>(loc, cache, fullCacheMap, multiCacheSlicingActiveBlockAccessOperands);
-            currentBuilder.create<mlir::AffineStoreOp>(loc, load, array, copyIVs);
+            mlir::Value loadedValue = CreateLoad(currentBuilder, loc, cache, copyIVs);
+            CreateStore(currentBuilder, loc, loadedValue, array, copyIVs);
         }
     }
 
@@ -1865,16 +1933,10 @@ LogicalResult ActiveBlockCacheReduceOpRewrite::matchAndRewrite(ActiveBlockCacheR
 
     auto lbMapsArrayAttr = adaptor.lbMaps();
     auto ubMapsArrayAttr = adaptor.ubMaps();
-    auto activeBlockOffsetMapsArrayAttr = adaptor.activeBlockOffsetMaps();
     auto lbMaps = util::ArrayAttrToVector<mlir::AffineMap, mlir::AffineMapAttr>(lbMapsArrayAttr, [](const mlir::AffineMapAttr& mapAttr) -> mlir::AffineMap {
         return mapAttr.getValue();
     });
     auto ubMaps = util::ArrayAttrToVector<mlir::AffineMap, mlir::AffineMapAttr>(ubMapsArrayAttr, [](const mlir::AffineMapAttr& mapAttr) -> mlir::AffineMap {
-        return mapAttr.getValue();
-    });
-    // the activeBlockOffsetMaps are single-result maps that are really just individual AffineExpr's that
-    // are leveraging AffineMapAttr for serialization
-    auto activeBlockOffsetMaps = util::ArrayAttrToVector<mlir::AffineMap, mlir::AffineMapAttr>(activeBlockOffsetMapsArrayAttr, [](const mlir::AffineMapAttr& mapAttr) -> mlir::AffineMap {
         return mapAttr.getValue();
     });
 
@@ -1889,11 +1951,8 @@ LogicalResult ActiveBlockCacheReduceOpRewrite::matchAndRewrite(ActiveBlockCacheR
     }));
 
     unsigned rank = memRefType.getRank();
-    assert(lbMaps.size() == rank && "wrong number of lb maps");
-    assert(ubMaps.size() == rank && "wrong number of ub maps");
+    assert(lbMaps.size() == ubMaps.size() && "mismatched number of lb and ub maps");
 
-    llvm::SmallVector<mlir::AffineExpr, 4> activeBlockOffsettingExprs;
-    llvm::SmallVector<mlir::Value, 4> activeBlockOffsetMapOperands;
     OpBuilder currentBuilder = rewriter;
 
     auto scaleValue = CreateProductOfValues(rewriter, loc, baseArrayElementType, adaptor.scaleValues());
@@ -1935,27 +1994,13 @@ LogicalResult ActiveBlockCacheReduceOpRewrite::matchAndRewrite(ActiveBlockCacheR
                 mlir::Value lbMapApplied = currentBuilder.create<mlir::AffineApplyOp>(loc, lbMaps[arrayDim], lbOperands);
                 mlir::Value lbOffsetIV = currentBuilder.create<mlir::AffineApplyOp>(loc, sumMap, mlir::ValueRange{ lbMapApplied, orderedSymbolicIndexOpValues[arrayDim] });
                 lowerBoundOffsetIVs.push_back(lbOffsetIV);
-
-                auto activeBlockOffsetMap = mlir::AffineMap::get(lbOperands.size(), 0, activeBlockOffsetMaps[arrayDim].getResult(0));
-                auto offset = currentBuilder.create<AffineApplyOp>(loc, activeBlockOffsetMap, lbOperands);
-                activeBlockOffsettingExprs.push_back(currentBuilder.getAffineDimExpr(2 * arrayDim + 1) -
-                                                     currentBuilder.getAffineDimExpr(2 * arrayDim));
-                activeBlockOffsetMapOperands.push_back(offset);
-                activeBlockOffsetMapOperands.push_back(lbOffsetIV);
             }
 
-            auto activeBlockOffsetMap = mlir::AffineMap::get(2 * rank, 0, activeBlockOffsettingExprs, currentBuilder.getContext());
-            activeBlockOffsetMap = mlir::simplifyAffineMap(activeBlockOffsetMap);
-
-            auto activeBlockToCacheMap = cacheReduceOp.activeBlockToCacheMap();
-
-            auto fullCacheMap = activeBlockToCacheMap.compose(activeBlockOffsetMap);
-
-            auto loadedCacheValue = currentBuilder.create<mlir::AffineLoadOp>(loc, cache, fullCacheMap, activeBlockOffsetMapOperands);
+            mlir::Value loadedCacheValue = CreateLoad(currentBuilder, loc, cache, lowerBoundOffsetIVs);
             auto scaledCacheValue = currentBuilder.create<v::BinOp>(loc, BinaryOpPredicate::MUL, scaleValue, loadedCacheValue);
-            auto currentArrayValue = currentBuilder.create<mlir::AffineLoadOp>(loc, array, lowerBoundOffsetIVs);
+            mlir::Value currentArrayValue = CreateLoad(currentBuilder, loc, array, lowerBoundOffsetIVs);
             auto accumulatedValue = currentBuilder.create<v::BinOp>(loc, BinaryOpPredicate::ADD, currentArrayValue, scaledCacheValue);
-            currentBuilder.create<mlir::AffineStoreOp>(loc, accumulatedValue, array, lowerBoundOffsetIVs);
+            CreateStore(currentBuilder, loc, accumulatedValue, array, lowerBoundOffsetIVs);
         });
 
         // Bounds check cache copy loads/stores so we don't introduce
@@ -1968,40 +2013,21 @@ LogicalResult ActiveBlockCacheReduceOpRewrite::matchAndRewrite(ActiveBlockCacheR
     }
     else
     {
-        llvm::SmallVector<mlir::Value, 4> IVs;
+        std::vector<mlir::Value> IVs;
         for (unsigned arrayDim = 0; arrayDim < rank; ++arrayDim)
         {
             auto forOp = mlir::createCanonicalizedAffineForOp(currentBuilder, loc, lbOperands, lbMaps[arrayDim], ubOperands, ubMaps[arrayDim]);
             currentBuilder = mlir::OpBuilder::atBlockTerminator(forOp.getBody());
 
-            auto activeBlockOffsetMap = mlir::AffineMap::get(lbOperands.size(), 0, activeBlockOffsetMaps[arrayDim].getResult(0));
-            auto offset = currentBuilder.create<AffineApplyOp>(loc, activeBlockOffsetMap, lbOperands);
-
-            // Construct the subscript for the fast memref being copied into/from:
-            // x - offset_x.
-            activeBlockOffsettingExprs.push_back(currentBuilder.getAffineDimExpr(2 * arrayDim + 1) -
-                                                 currentBuilder.getAffineDimExpr(2 * arrayDim));
-            activeBlockOffsetMapOperands.push_back(offset);
-            activeBlockOffsetMapOperands.push_back(forOp.getInductionVar());
-
             // Subscript for the slow memref being copied.
             IVs.push_back(forOp.getInductionVar());
         }
 
-        auto activeBlockOffsetMap = mlir::AffineMap::get(2 * rank, 0, activeBlockOffsettingExprs, currentBuilder.getContext());
-        mlir::fullyComposeAffineMapAndOperands(&activeBlockOffsetMap, &activeBlockOffsetMapOperands);
-        activeBlockOffsetMap = mlir::simplifyAffineMap(activeBlockOffsetMap);
-        mlir::canonicalizeMapAndOperands(&activeBlockOffsetMap, &activeBlockOffsetMapOperands);
-
-        auto activeBlockToCacheMap = cacheReduceOp.activeBlockToCacheMap();
-
-        auto fullCacheMap = activeBlockToCacheMap.compose(activeBlockOffsetMap);
-
-        auto loadedCacheValue = currentBuilder.create<mlir::AffineLoadOp>(loc, cache, fullCacheMap, activeBlockOffsetMapOperands);
+        mlir::Value loadedCacheValue = CreateLoad(currentBuilder, loc, cache, IVs);
         auto scaledCacheValue = currentBuilder.create<v::BinOp>(loc, BinaryOpPredicate::MUL, scaleValue, loadedCacheValue);
-        auto currentArrayValue = currentBuilder.create<mlir::AffineLoadOp>(loc, array, IVs);
+        mlir::Value currentArrayValue = CreateLoad(currentBuilder, loc, array, IVs);
         auto accumulatedValue = currentBuilder.create<v::BinOp>(loc, BinaryOpPredicate::ADD, currentArrayValue, scaledCacheValue);
-        currentBuilder.create<mlir::AffineStoreOp>(loc, accumulatedValue, array, IVs);
+        CreateStore(currentBuilder, loc, accumulatedValue, array, IVs);
     }
     rewriter.eraseOp(cacheReduceOp);
 
@@ -2126,26 +2152,296 @@ llvm::SmallVector<mlir::Value, 4> ResolveParentRelevantScheduleIndices(mlir::Ope
     return resolvedRelevantScheduleIndices;
 }
 
+bool CacheMappingOpsConflict(BeginCacheMappingOp leftOp, BeginCacheMappingOp rightOp)
+{
+    // Returns true if the two cache mapping ops are for the same fromValue or baseCacheValue and should therefore
+    // not overlap
+    return leftOp.fromValue() == rightOp.fromValue() ||
+           leftOp.baseCacheValue() == rightOp.baseCacheValue() ||
+           leftOp.baseInput() == rightOp.baseInput() ||
+           leftOp.toValue() == rightOp.toValue();
+}
+
+bool OpUsesMappingRelatedBuffers(BeginCacheMappingOp mappingOp, mlir::Operation* op)
+{
+    auto fromValue = mappingOp.fromValue();
+    auto baseCacheValue = mappingOp.baseCacheValue();
+    auto baseInput = mappingOp.baseInput();
+    auto toValue = mappingOp.toValue();
+    bool usesFromValue = std::find(op->operand_begin(), op->operand_end(), fromValue) != op->operand_end();
+    bool usesBaseCacheValue = std::find(op->operand_begin(), op->operand_end(), baseCacheValue) != op->operand_end();
+    bool usesBaseInput = std::find(op->operand_begin(), op->operand_end(), baseInput) != op->operand_end();
+    bool usesToValue = std::find(op->operand_begin(), op->operand_end(), toValue) != op->operand_end();
+    return usesFromValue || usesBaseCacheValue || usesBaseInput || usesToValue;
+}
+
+LogicalResult AdjustHierarchicalCacheRegionPositionRewrite::matchAndRewrite(BeginCacheRegionOp beginCacheRegionOp, PatternRewriter& rewriter) const
+{
+    // Examine the block that the BeginCacheRegionOp is in and rearrange BeginCacheRegionOps and their corresponding
+    // EndCacheRegionOps such that the lowest cache hierarchy level regions begin first and end last, followed by the next lowest
+    // hierarchy levels and so on.
+    // This is to ensure that inner hierarchical cache regions are always fully contained within their outer hierarchical
+    // cache's region.
+    // While moving ops, don't move the regions past any AffineForOps as those subnests may have other cache regions inside of them
+    // that we don't want to affect
+
+    // TODO : we should explore using real MLIR blocks and regions for these cache regions so we don't have to worry about this issue as much.
+    //        Currently we don't use regions due to how the MLIR MemRefRegion access computation behaves, as it only plays nicely
+    //        with nested AffineForOps without any other ops nested in between.
+
+    auto parentBlock = beginCacheRegionOp->getBlock();
+    auto blockBegin = parentBlock->begin();
+    auto blockEnd = parentBlock->end();
+    auto endOp = mlir::dyn_cast<EndCacheRegionOp>(beginCacheRegionOp.getEndOp());
+
+    // First, find the range of BeginCacheRegionOps that we should consider moving this op before or after
+    // We need to find all of the BeginCacheRegionOps that both succeed and precede all of the same AffineForOps as this one
+    mlir::Block::iterator targetIter(beginCacheRegionOp);
+    mlir::Block::iterator startIter(blockBegin);
+    mlir::Block::iterator endIter(beginCacheRegionOp);
+
+    // Walk the block ops until we find beginCacheRegionOp. Any time we see an AffineForOp, adjust startIter to be after it
+    for (auto opIter = blockBegin; opIter != targetIter; ++opIter)
+    {
+        if (mlir::isa<mlir::AffineForOp>(&(*opIter)))
+        {
+            startIter = opIter->getIterator();
+            ++startIter;
+        }
+    }
+
+    // Now walk the block ops from the beginCacheRegionOp onwards until we either reach the end of the block or find an AffineForOp and set the endIter to that position
+    bool foundAffineForOp = false;
+    for (auto opIter = mlir::Block::iterator(beginCacheRegionOp); opIter != blockEnd; ++opIter)
+    {
+        endIter = opIter;
+        if (mlir::isa<mlir::AffineForOp>(&(*opIter)))
+        {
+            foundAffineForOp = true;
+            break;
+        }
+    }
+    if (!foundAffineForOp)
+    {
+        endIter = blockEnd;
+    }
+
+    // Now that we have the range of ops to consider positioning our beginCacheRegionOp against, we search that range for
+    // all of the BeginCacheRegionOps with the same baseInput that have already been positioned and position our beginCacheRegionOp
+    // accordingly.
+    // Note: if a BeginCacheRegionOp is missing the "hierarchical_positioned" UnitAttr, then this pass hasn't been run on it yet and
+    // it may get moved later, so we don't bother considering positioning against those. This also means that the very first BeginCacheRegionOp
+    // in a range won't get moved
+    for (auto opIter = startIter; opIter != endIter; ++opIter)
+    {
+        if (auto otherBeginOp = mlir::dyn_cast<BeginCacheRegionOp>(&(*opIter));
+            otherBeginOp != nullptr && otherBeginOp != beginCacheRegionOp)
+        {
+            if (otherBeginOp->hasAttrOfType<mlir::UnitAttr>("hierarchical_positioned") && otherBeginOp.baseInput() == beginCacheRegionOp.baseInput())
+            {
+                auto otherEndOp = mlir::dyn_cast<EndCacheRegionOp>(otherBeginOp.getEndOp());
+                assert(otherBeginOp.cacheHierarchyLevel() != beginCacheRegionOp.cacheHierarchyLevel() && "Two caches for the same input with the same cache hierarchy level are not supported in the same loop region");
+                if (otherBeginOp.cacheHierarchyLevel() < beginCacheRegionOp.cacheHierarchyLevel())
+                {
+                    // The other region's hierarchy is lower, so it is for the outer cache and this beginCacheRegionOp should
+                    // come after it, and the corresponding endOp should be before otherEndOp
+                    beginCacheRegionOp->moveAfter(otherBeginOp);
+
+                    // Only move the endOp if it is after the otherEndOp. In cases where there are multiple AffineForOps in the block
+                    // we don't want to move the end op if we don't have to for safety purposes. The begin ops have already accounted for
+                    // this
+                    // E.g. if we had a graph like:
+                    // begin_0
+                    //   begin_1
+                    //     affine.for ...
+                    //   end_1
+                    //   begin_1'
+                    //     affine.for ...
+                    //   end_1'
+                    // end_0
+                    // Then we wouldn't want to move end_1 to be before end_0 because that would affect another region
+                    if (util::GetFirstOp(endOp, otherEndOp) == otherEndOp)
+                    {
+                        endOp->moveBefore(otherEndOp);
+                    }
+                }
+                else
+                {
+                    // The other region's hierarchy is higher, so it is for an inner cache and this beginCacheRegionOp should
+                    // come before it, and the corresponding endOp should be after otherEndOp
+                    beginCacheRegionOp->moveBefore(otherBeginOp);
+
+                    // Similar to the other case, only move the endOp if it is before the otherEndOp
+                    if (util::GetFirstOp(endOp, otherEndOp) == endOp)
+                    {
+                        endOp->moveAfter(otherEndOp);
+                    }
+                }
+            }
+        }
+    }
+    beginCacheRegionOp->setAttr("hierarchical_positioned", rewriter.getUnitAttr());
+    return success();
+}
+
+LogicalResult AdjustCacheMappingPositionRewrite::matchAndRewrite(BeginCacheMappingOp beginCacheMappingOp, PatternRewriter& rewriter) const
+{
+    // Examine the block that the BeginCacheMappingOp is in and move the BeginCacheMappingOp ahead of any ops that precede it except
+    // for other BeginCacheMappingOps/EndCacheMappingOps that deal with the same fromValue or baseCacheValue or cache reduce / cache->array copies
+    // as those are for a previous mapping.
+    // Similarly, move the corresponding EndCacheMappingOp after any ops in the block except for other BeginCacheMappingOps for the same
+    // fromValue or baseCacheValue or MultiCacheCopy or array->cache copies as those are for a later mapping.
+    // Don't move the mappings past any AffineForOp subnests, as those could contain other caches for our base input that we don't want to mess with
+
+    auto parentBlock = beginCacheMappingOp->getBlock();
+    auto blockBegin = parentBlock->begin();
+    // If the parent block has a terminator op, then set our blockEnd iterator to point at it, otherwise point at the
+    // end iterator of the op list
+    auto blockEnd = parentBlock->end();
+    if (parentBlock->back().hasTrait<mlir::OpTrait::IsTerminator>())
+    {
+        blockEnd = mlir::Block::iterator(&(parentBlock->back()));
+    }
+
+    auto endOp = mlir::dyn_cast<EndCacheMappingOp>(beginCacheMappingOp.getEndOp());
+    mlir::Block::iterator initBeginPos(beginCacheMappingOp);
+    mlir::Block::iterator initEndPos(endOp);
+
+    auto fromValue = beginCacheMappingOp.fromValue();
+    auto baseCacheValue = beginCacheMappingOp.baseCacheValue();
+    auto toValue = beginCacheMappingOp.toValue();
+
+    // Walk the ops that precede this BeginCacheMappingOp in reverse order to find the new position for the BeginCacheMappingOp
+    auto newBeginPos = initBeginPos;
+    // Start at the first op before our mapping op
+    if (initBeginPos != blockBegin)
+    {
+        // Only try to move up the beginning of the mapping if it is not already the first op in the block (otherwise --mlir::Block::iterator(initBeginPos) will cycle around to the end of the block)
+        for (auto iter = --mlir::Block::iterator(initBeginPos); iter != --mlir::Block::iterator(blockBegin); --iter)
+        {
+            bool foundConflict = false;
+            TypeSwitch<Operation*>(&(*iter))
+                .Case([&](BeginCacheMappingOp predecessorBeginOp) {
+                    // If this cache mapping region deals with our array, base placeholder cache, or cache
+                    foundConflict |= CacheMappingOpsConflict(predecessorBeginOp, beginCacheMappingOp);
+                })
+                .Case([&](EndCacheMappingOp predecessorEndOp) {
+                    // If this cache mapping region deals with our array, base placeholder cache, or cache
+                    auto predecessorBeginOp = mlir::dyn_cast<BeginCacheMappingOp>(predecessorEndOp.getBeginOp());
+                    foundConflict |= CacheMappingOpsConflict(predecessorBeginOp, beginCacheMappingOp);
+                })
+                .Case([&](ActiveBlockCacheCopyOp predecessorCopyOp) {
+                    // If this copy deals with our array, base placeholder cache, or cache and it is a cache -> array copy, then don't step past it
+                    if (!predecessorCopyOp.toCache())
+                    {
+                        foundConflict |= OpUsesMappingRelatedBuffers(beginCacheMappingOp, predecessorCopyOp);
+                    }
+                })
+                .Case([&](ActiveElementCacheCopyOp predecessorCopyOp) {
+                    // If this copy deals with our array, base placeholder cache, or cache then don't step past it
+                    foundConflict |= OpUsesMappingRelatedBuffers(beginCacheMappingOp, predecessorCopyOp);
+                })
+                .Case([&](ActiveBlockCacheReduceOp predecessorReduceOp) {
+                    // If this reduce deals with our array, base placeholder cache, or cache then don't step past it
+                    foundConflict |= OpUsesMappingRelatedBuffers(beginCacheMappingOp, predecessorReduceOp);
+                })
+                .Case([&](ActiveElementCacheReduceOp predecessorReduceOp) {
+                    // If this reduce deals with our array, base placeholder cache, or cache then don't step past it
+                    foundConflict |= OpUsesMappingRelatedBuffers(beginCacheMappingOp, predecessorReduceOp);
+                })
+                .Case([&](AffineForOp forOp) {
+                    foundConflict = true;
+                });
+            if (foundConflict)
+            {
+                break;
+            }
+            else
+            {
+                newBeginPos = iter;
+            }
+        }
+    }
+
+    // Now find the new position for the end op
+
+    // Walk the ops after this EndCacheMappingOp in order to find the new position for the EndCacheMappingOp
+    // Start at the first op after our end op
+    auto newEndPos = std::find_if(++mlir::Block::iterator(initEndPos), blockEnd, [&](Operation& op) {
+        bool foundConflict = false;
+        TypeSwitch<Operation*>(&op)
+            .Case([&](BeginCacheMappingOp successorBeginOp) {
+                // If this cache mapping region deals with our array, base placeholder cache, or cache
+                foundConflict |= CacheMappingOpsConflict(successorBeginOp, beginCacheMappingOp);
+            })
+            .Case([&](EndCacheMappingOp successorEndOp) {
+                // If this cache mapping region deals with our array, base placeholder cache, or cache
+                auto successorBeginOp = mlir::dyn_cast<BeginCacheMappingOp>(successorEndOp.getBeginOp());
+                foundConflict |= CacheMappingOpsConflict(successorBeginOp, beginCacheMappingOp);
+            })
+            .Case([&](MultiCacheCopyOp successorCopyOp) {
+                // If this copy deals with our array, base placeholder cache, or cache and it is an array -> cache array copy, then don't step past it
+                foundConflict |= OpUsesMappingRelatedBuffers(beginCacheMappingOp, successorCopyOp);
+            })
+            .Case([&](ActiveBlockCacheCopyOp successorCopyOp) {
+                // If this copy deals with our array, base placeholder cache, or cache and it is an array -> cache array copy, then don't step past it
+                if (successorCopyOp.toCache())
+                {
+                    foundConflict |= OpUsesMappingRelatedBuffers(beginCacheMappingOp, successorCopyOp);
+                }
+            })
+            .Case([&](ActiveElementCacheCopyOp successorCopyOp) {
+                // If this copy deals with our array, base placeholder cache, or cache then don't step past it
+                foundConflict |= OpUsesMappingRelatedBuffers(beginCacheMappingOp, successorCopyOp);
+            })
+            .Case([&](ActiveElementCacheReduceOp successorReduceOp) {
+                // If this reduce deals with our array, base placeholder cache, or cache then don't step past it
+                foundConflict |= OpUsesMappingRelatedBuffers(beginCacheMappingOp, successorReduceOp);
+            })
+            .Case([&](AffineForOp forOp) {
+                foundConflict = true;
+            });
+        return foundConflict;
+    });
+
+    if (newEndPos != initEndPos)
+    {
+        // newEndPos points at the earliest successor op that we shouldn't move past
+        endOp->moveBefore(parentBlock, newEndPos);
+    }
+
+    if (newBeginPos != initBeginPos)
+    {
+        // newBeginPos points at the earliest predecessor op that we should move past (note: this is different from the newEndPos case)
+        beginCacheMappingOp->moveBefore(parentBlock, newBeginPos);
+    }
+    return success();
+}
+
 LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp beginCacheMappingOp, PatternRewriter& rewriter) const
 {
     // BeginCacheMappingOp examines the subgraph contained between it and its corresponding EndCacheMappingOp,
     // replacing instances of cacheMappingOp.input() with cacheMappingOp.cache()
 
-    EndCacheMappingOp endOp = beginCacheMappingOp.getEndOp();
+    // Ensure the cache mapping ops are resolved in outermost-to-innermost order to handle hierarchical caches appropriately
+    // To do this, if there is another BeginCacheMappingOp in any ancestor block or in the parent block preceding this op,
+    // then return failure so that the other ones get handled first
+
+    if (!util::IsOutermostOpOfType(beginCacheMappingOp))
+    {
+        return failure();
+    }
+
+    EndCacheMappingOp endOp = mlir::dyn_cast<EndCacheMappingOp>(beginCacheMappingOp.getEndOp());
 
     auto loc = beginCacheMappingOp.getLoc();
 
-    auto parentBlock = beginCacheMappingOp.getOperation()->getBlock();
+    auto parentBlock = beginCacheMappingOp->getBlock();
     auto parentRegion = parentBlock->getParent();
     auto parentOp = parentRegion->getParentOp();
     bool isActiveBlockCache = beginCacheMappingOp.activeBlockCache();
 
-    bool emptyRegion = true;
-    parentBlock->walk(++mlir::Block::iterator(beginCacheMappingOp), mlir::Block::iterator(endOp), [&](Operation* op) {
-        emptyRegion = false;
-        return WalkResult::interrupt();
-    });
-    if (emptyRegion)
+    if (IsCacheRegionEmpty(beginCacheMappingOp))
     {
         rewriter.eraseOp(endOp);
         rewriter.eraseOp(beginCacheMappingOp);
@@ -2153,10 +2449,16 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
     }
 
     Value fromValue = beginCacheMappingOp.fromValue();
+    Value baseCacheValue = beginCacheMappingOp.baseCacheValue();
     Value toValue = beginCacheMappingOp.toValue();
     CacheAccessContext toValueAccessContext = beginCacheMappingOp.getToValueAccessContext();
 
     auto cacheMap = isActiveBlockCache ? toValueAccessContext.accessMaps.inputIndicesToActiveBlockCache : toValueAccessContext.accessMaps.relevantIndicesToActiveElementCache;
+
+    // Map any ops that are referencing the original non-multicache cache value
+    parentBlock->walk(++mlir::Block::iterator(beginCacheMappingOp), mlir::Block::iterator(endOp), [&](Operation* op) {
+        op->replaceUsesOfWith(baseCacheValue, toValue);
+    });
 
     // Only replace each op once so we don't loop infinitely if we're remapping a cache value to itself
     // with different access maps
@@ -2176,106 +2478,99 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
     {
         auto replacementOpsIter = fromValueReplacementOps.begin();
         Operation* op = *replacementOpsIter;
-        // TODO : support active block cache ops
         TypeSwitch<Operation*>(op)
             .Case([&](mlir::AffineLoadOp loadOp) {
                 mlir::AffineLoadOp::Adaptor loadAdaptor{ loadOp };
                 rewriter.setInsertionPoint(loadOp);
-                auto accessMap = loadOp.getAffineMapAttr().getValue();
-                std::vector<mlir::Value> affineLoadIndices(loadAdaptor.indices().begin(), loadAdaptor.indices().end());
-                auto resolvedAccessIndices = util::MultiDimAffineApply(rewriter, loc, accessMap, affineLoadIndices);
-                // TODO : better merge the indexing for the (auto) active elements and the (manual) active block caches
-                llvm::SmallVector<mlir::Value, 4> accessIndices;
                 if (isActiveBlockCache)
                 {
-                    accessIndices.insert(accessIndices.end(), toValueAccessContext.externalRelevantScheduleIndices.begin(), toValueAccessContext.externalRelevantScheduleIndices.end());
-                    accessIndices.insert(accessIndices.end(), resolvedAccessIndices.begin(), resolvedAccessIndices.end());
+                    auto baseArrayPosition = GetBaseArrayPosition(rewriter, loc, loadOp);
+                    mlir::AffineLoadOp newLoadOp = CreateLoad(rewriter, loc, toValue, baseArrayPosition);
+                    loadOp.replaceAllUsesWith(newLoadOp.getResult());
+                    rewriter.eraseOp(loadOp);
                 }
                 else
                 {
-                    accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    rewriter.replaceOpWithNewOp<AffineLoadOp>(loadOp, toValueAccessContext.value, cacheMap, accessIndices);
                 }
-
-                rewriter.replaceOpWithNewOp<AffineLoadOp>(loadOp, toValueAccessContext.value, cacheMap, accessIndices);
             })
             .Case([&](mlir::AffineStoreOp storeOp) {
                 mlir::AffineStoreOp::Adaptor storeAdaptor{ storeOp };
                 rewriter.setInsertionPoint(storeOp);
-                auto accessMap = storeOp.getAffineMapAttr().getValue();
-                std::vector<mlir::Value> affineStoreIndices(storeAdaptor.indices().begin(), storeAdaptor.indices().end());
-                auto resolvedAccessIndices = util::MultiDimAffineApply(rewriter, loc, accessMap, affineStoreIndices);
-                llvm::SmallVector<mlir::Value, 4> accessIndices;
                 if (isActiveBlockCache)
                 {
-                    accessIndices.insert(accessIndices.end(), toValueAccessContext.externalRelevantScheduleIndices.begin(), toValueAccessContext.externalRelevantScheduleIndices.end());
-                    accessIndices.insert(accessIndices.end(), resolvedAccessIndices.begin(), resolvedAccessIndices.end());
+                    auto baseArrayPosition = GetBaseArrayPosition(rewriter, loc, storeOp);
+                    CreateStore(rewriter, loc, storeAdaptor.value(), toValue, baseArrayPosition);
+                    rewriter.eraseOp(storeOp);
                 }
                 else
                 {
-                    accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
                 }
-                rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
             })
             .Case([&](mlir::memref::LoadOp loadOp) {
                 rewriter.setInsertionPoint(loadOp);
                 mlir::memref::LoadOp::Adaptor loadAdaptor{ loadOp };
-                llvm::SmallVector<mlir::Value, 4> accessIndices;
                 if (isActiveBlockCache)
                 {
-                    accessIndices.insert(accessIndices.end(), toValueAccessContext.externalRelevantScheduleIndices.begin(), toValueAccessContext.externalRelevantScheduleIndices.end());
-                    accessIndices.insert(accessIndices.end(), loadAdaptor.indices().begin(), loadAdaptor.indices().end());
+                    std::vector<mlir::Value> baseArrayPosition(loadAdaptor.indices().begin(), loadAdaptor.indices().end());
+                    mlir::AffineLoadOp newLoadOp = CreateLoad(rewriter, loc, toValue, baseArrayPosition);
+                    loadOp.replaceAllUsesWith(newLoadOp.getResult());
+                    rewriter.eraseOp(loadOp);
                 }
                 else
                 {
-                    accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    rewriter.replaceOpWithNewOp<AffineLoadOp>(loadOp, toValueAccessContext.value, cacheMap, accessIndices);
                 }
-
-                rewriter.replaceOpWithNewOp<AffineLoadOp>(loadOp, toValueAccessContext.value, cacheMap, accessIndices);
             })
             .Case([&](memref::StoreOp storeOp) {
                 rewriter.setInsertionPoint(storeOp);
                 mlir::memref::StoreOp::Adaptor storeAdaptor{ storeOp };
-                llvm::SmallVector<mlir::Value, 4> accessIndices;
                 if (isActiveBlockCache)
                 {
-                    accessIndices.insert(accessIndices.end(), toValueAccessContext.externalRelevantScheduleIndices.begin(), toValueAccessContext.externalRelevantScheduleIndices.end());
-                    accessIndices.insert(accessIndices.end(), storeAdaptor.indices().begin(), storeAdaptor.indices().end());
+                    std::vector<mlir::Value> baseArrayPosition(storeAdaptor.indices().begin(), storeAdaptor.indices().end());
+                    CreateStore(rewriter, loc, storeAdaptor.value(), toValue, baseArrayPosition);
+                    rewriter.eraseOp(storeOp);
                 }
                 else
                 {
-                    accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
                 }
-                rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
             })
             .Case([&](v::LoadOp loadOp) {
                 rewriter.setInsertionPoint(loadOp);
                 v::LoadOp::Adaptor loadAdaptor{ loadOp };
-                llvm::SmallVector<mlir::Value, 4> accessIndices;
                 if (isActiveBlockCache)
                 {
-                    accessIndices.insert(accessIndices.end(), toValueAccessContext.externalRelevantScheduleIndices.begin(), toValueAccessContext.externalRelevantScheduleIndices.end());
-                    accessIndices.insert(accessIndices.end(), loadAdaptor.indices().begin(), loadAdaptor.indices().end());
+                    std::vector<mlir::Value> baseArrayPosition(loadAdaptor.indices().begin(), loadAdaptor.indices().end());
+                    mlir::AffineLoadOp newLoadOp = CreateLoad(rewriter, loc, toValue, baseArrayPosition);
+                    loadOp.replaceAllUsesWith(newLoadOp.getResult());
+                    rewriter.eraseOp(loadOp);
                 }
                 else
                 {
-                    accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    rewriter.replaceOpWithNewOp<AffineLoadOp>(loadOp, toValueAccessContext.value, cacheMap, accessIndices);
                 }
-                rewriter.replaceOpWithNewOp<AffineLoadOp>(loadOp, toValueAccessContext.value, cacheMap, accessIndices);
             })
             .Case([&](v::StoreOp storeOp) {
                 rewriter.setInsertionPoint(storeOp);
                 v::StoreOp::Adaptor storeAdaptor{ storeOp };
-                llvm::SmallVector<mlir::Value, 4> accessIndices;
                 if (isActiveBlockCache)
                 {
-                    accessIndices.insert(accessIndices.end(), toValueAccessContext.externalRelevantScheduleIndices.begin(), toValueAccessContext.externalRelevantScheduleIndices.end());
-                    accessIndices.insert(accessIndices.end(), storeAdaptor.indices().begin(), storeAdaptor.indices().end());
+                    std::vector<mlir::Value> baseArrayPosition(storeAdaptor.indices().begin(), storeAdaptor.indices().end());
+                    CreateStore(rewriter, loc, storeAdaptor.value(), toValue, baseArrayPosition);
+                    rewriter.eraseOp(storeOp);
                 }
                 else
                 {
-                    accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
                 }
-                rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
             })
             .Case([&](ActiveElementCacheCopyOp cacheCopyOp) {
                 rewriter.setInsertionPoint(cacheCopyOp);
@@ -2314,9 +2609,6 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 {
                     assert(false && "Cache mapping target found in ActiveElementCacheCopyOp but not as the source or destination");
                 }
-            })
-            .Case([&](ActiveBlockCacheCopyOp cacheCopyOp) {
-                assert(false && "Hierarchical caching of active block caches is not currently supported");
             })
             .Case([&](ActiveElementCacheReduceOp cacheReduceOp) {
                 rewriter.setInsertionPoint(cacheReduceOp);
@@ -2360,15 +2652,14 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                     assert(false && "Cache mapping target found in ActiveElementCacheReduceOp but not as the source or destination");
                 }
             })
-            .Case([&](ActiveBlockCacheReduceOp cacheReduceOp) {
-                assert(false && "Hierarchical caching of active block caches is not currently supported");
-            })
             .Case([&](BeginCacheMappingOp innerCacheMappingOp) {
                 rewriter.setInsertionPoint(innerCacheMappingOp);
                 if (innerCacheMappingOp.fromValue() == fromValue)
                 {
                     rewriter.replaceOpWithNewOp<BeginCacheMappingOp>(innerCacheMappingOp,
                                                                      toValue,
+                                                                     innerCacheMappingOp.baseCacheValue(),
+                                                                     innerCacheMappingOp.baseInput(),
                                                                      innerCacheMappingOp.getToValueAccessContext(),
                                                                      innerCacheMappingOp.idAttr().getInt(),
                                                                      innerCacheMappingOp.activeBlockCache());
@@ -2377,14 +2668,24 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 {
                     rewriter.replaceOpWithNewOp<BeginCacheMappingOp>(innerCacheMappingOp,
                                                                      innerCacheMappingOp.fromValue(),
+                                                                     innerCacheMappingOp.baseCacheValue(),
+                                                                     innerCacheMappingOp.baseInput(),
                                                                      toValueAccessContext,
                                                                      innerCacheMappingOp.idAttr().getInt(),
                                                                      innerCacheMappingOp.activeBlockCache());
                 }
-                else
-                {
-                    assert(false && "Cache mapping target found in CacheMappingOp but not as the fromValue or toValue");
-                }
+            })
+            .Case([&](MultiCacheCopyOp cacheCopyOp) {
+                // Nothing to do here, replacing the base cache with the mapping toValue cache is all that is needed
+            })
+            .Case([&](ActiveBlockCacheCopyOp cacheCopyOp) {
+                // Nothing to do here, replacing the base cache with the mapping toValue cache is all that is needed
+            })
+            .Case([&](ActiveBlockCacheReduceOp cacheReduceOp) {
+                // Nothing to do here, replacing the base cache with the mapping toValue cache is all that is needed
+            })
+            .Case([&](CacheZeroOp cacheZeroOp) {
+                // Nothing to do here, replacing the base cache with the mapping toValue cache is all that is needed
             })
             .Default([&](Operation* defaultOp) {
                 assert(false && "Usage of mapped op found that doesn't have an op conversion registered!");
@@ -2399,75 +2700,182 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
     return success();
 }
 
+bool IsValueUsedToAccessArray(mlir::Value array, mlir::Value value)
+{
+    for (auto& use : value.getUses())
+    {
+        auto op = use.getOwner();
+        if (std::any_of(op->operand_begin(), op->operand_end(), [&](mlir::Value operand) {
+                return operand == array;
+            }))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+mlir::AffineForOp ComputeHoistingDestinationLoop(mlir::Value arrayToBeCached, mlir::AffineForOp parentLoop)
+{
+    mlir::AffineForOp result;
+    while (parentLoop != nullptr)
+    {
+        auto loopIV = parentLoop.getInductionVar();
+        if (IsValueUsedToAccessArray(arrayToBeCached, loopIV))
+        {
+            break;
+        }
+        else
+        {
+            result = parentLoop;
+            auto parentOp = parentLoop->getParentOp();
+            if (auto affineForOp = mlir::dyn_cast<mlir::AffineForOp>(parentOp))
+            {
+                parentLoop = affineForOp;
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+std::pair<mlir::Block*, std::vector<mlir::AffineForOp>> GetCacheTriggerLevelBlockAndActiveLevelLoops(BeginCacheRegionOp beginCacheRegionOp)
+{
+    auto parentBlock = beginCacheRegionOp->getBlock();
+    auto endOp = mlir::dyn_cast<EndCacheRegionOp>(beginCacheRegionOp.getEndOp());
+    auto cacheLevelIndex = beginCacheRegionOp.cacheIndex().getValue();
+    auto triggerLevelIndex = beginCacheRegionOp.triggerIndex().getValue();
+
+    mlir::Block* triggerLevelBlock = nullptr; // Keep track of the trigger level blocks since all trigger level loops need to be in the same block
+    std::vector<mlir::AffineForOp> triggerLevelLoops;
+    std::vector<mlir::AffineForOp> cacheLevelLoops;
+    parentBlock->walk(mlir::Block::iterator(beginCacheRegionOp), mlir::Block::iterator(endOp), [&](mlir::AffineForOp loop) {
+        if (auto indexAttr = loop->getAttrOfType<IndexAttr>("index"))
+        {
+            if (indexAttr.getValue() == cacheLevelIndex)
+            {
+                cacheLevelLoops.push_back(loop);
+            }
+            if (indexAttr.getValue() == triggerLevelIndex)
+            {
+                triggerLevelLoops.push_back(loop);
+                auto currentBlock = loop->getBlock();
+                if (triggerLevelBlock == nullptr)
+                {
+                    triggerLevelBlock = currentBlock;
+                }
+                else
+                {
+                    assert(triggerLevelBlock == currentBlock && "All trigger level loops must be in the same block");
+                }
+            }
+        }
+    });
+
+    return std::make_pair(triggerLevelBlock, cacheLevelLoops);
+}
+
 LogicalResult HoistCacheRegionOpsRewrite::matchAndRewrite(BeginCacheRegionOp beginCacheRegionOp, PatternRewriter& rewriter) const
 {
     // Hoist cache regions out past loops that don't affect the cache region
+
+    // Hoist the outermost cache region ops before the innermost ones to preserve
+    // the relative cache region order
+
+    if (beginCacheRegionOp->hasAttrOfType<mlir::UnitAttr>("hoisted"))
+    {
+        return success();
+    }
+    if (!util::IsOutermostOpOfType(beginCacheRegionOp, "hoisted"))
+    {
+        return failure();
+    }
 
     auto loc = beginCacheRegionOp.getLoc();
 
     auto sourceBlock = beginCacheRegionOp.getOperation()->getBlock();
 
-    EndCacheRegionOp endOp = beginCacheRegionOp.getEndOp();
+    EndCacheRegionOp endOp = mlir::dyn_cast<EndCacheRegionOp>(beginCacheRegionOp.getEndOp());
 
     mlir::Block* destBlock = beginCacheRegionOp.getOperation()->getBlock();
     mlir::Block::iterator beginIter(beginCacheRegionOp);
     mlir::Block::iterator endIter(endOp);
     auto parentOp = beginCacheRegionOp->getParentOp();
+    auto baseArray = beginCacheRegionOp.baseInput();
+
+    // Compute the trigger level hoisting destination
     mlir::AffineForOp newTriggerLoopLevel;
-    while (parentOp != nullptr)
+    if (auto parentLoop = mlir::dyn_cast<mlir::AffineForOp>(parentOp))
     {
-        bool isUser = false;
-        if (auto affineForOp = mlir::dyn_cast<mlir::AffineForOp>(parentOp))
-        {
-            auto loopIV = affineForOp.getInductionVar();
-            for (mlir::Operation* loopUser : loopIV.getUsers())
-            {
-                if (loopUser == beginCacheRegionOp.getOperation())
-                {
-                    isUser = true;
-                    break;
-                }
-            }
-            if (isUser)
-            {
-                break;
-            }
-            newTriggerLoopLevel = affineForOp;
-            destBlock = affineForOp.getOperation()->getBlock();
-            beginIter = mlir::Block::iterator(affineForOp);
-            endIter = mlir::Block::iterator(affineForOp);
-            endIter++;
-
-            parentOp = parentOp->getParentOp();
-        }
-        else
-        {
-            break;
-        }
+        newTriggerLoopLevel = ComputeHoistingDestinationLoop(baseArray, parentLoop);
     }
 
-    if (sourceBlock == destBlock)
-    {
-        // Don't move any of the ops if we haven't changed the level we're caching at
-        return success();
-    }
-    else
+    BeginCacheRegionOp hoistedBeginCacheRegionOp = beginCacheRegionOp;
+    if (newTriggerLoopLevel)
     {
         mlir::BlockAndValueMapping mapping;
-        rewriter.setInsertionPoint(destBlock, beginIter);
+        rewriter.setInsertionPoint(newTriggerLoopLevel);
         auto clonedBeginOp = rewriter.clone(*beginCacheRegionOp.getOperation(), mapping);
-        auto clonedBeginCacheRegionOp = mlir::dyn_cast<BeginCacheRegionOp>(clonedBeginOp);
+        hoistedBeginCacheRegionOp = mlir::dyn_cast<BeginCacheRegionOp>(clonedBeginOp);
         auto triggerLoopIndexAttr = newTriggerLoopLevel->getAttrOfType<IndexAttr>("index");
-        clonedBeginCacheRegionOp.triggerIndexAttr(triggerLoopIndexAttr);
+        hoistedBeginCacheRegionOp.triggerIndexAttr(triggerLoopIndexAttr);
 
-        rewriter.setInsertionPoint(destBlock, endIter);
+        rewriter.setInsertionPointAfter(newTriggerLoopLevel);
         auto clonedEndOp = rewriter.clone(*endOp.getOperation(), mapping);
 
         rewriter.eraseOp(endOp);
         rewriter.eraseOp(beginCacheRegionOp);
-
-        return success();
     }
+    hoistedBeginCacheRegionOp->setAttr("hoisted", rewriter.getUnitAttr());
+
+    // Compute the active level hoisting destination
+    auto [cacheTriggerLevelBlock, cacheActiveLevelLoops] = GetCacheTriggerLevelBlockAndActiveLevelLoops(hoistedBeginCacheRegionOp);
+
+    std::vector<Index> newActiveLevelIndices;
+    for (auto& cacheActiveLevelLoop : cacheActiveLevelLoops)
+    {
+        if (auto parentLoop = mlir::dyn_cast<mlir::AffineForOp>(cacheActiveLevelLoop->getParentOp()))
+        {
+            mlir::AffineForOp newActiveLevelLoop = ComputeHoistingDestinationLoop(baseArray, parentLoop);
+            if (newActiveLevelLoop)
+            {
+                assert(newActiveLevelLoop->hasAttrOfType<IndexAttr>("index"));
+                auto indexAttr = newActiveLevelLoop->getAttrOfType<IndexAttr>("index");
+                newActiveLevelIndices.push_back(indexAttr.getValue());
+            }
+        }
+    }
+    // We should have either determined that there is no new active level loop, in which case newActiveLevelIndices should
+    // be empty, or we should have determined that all of the active level loops should move to the same new index
+    assert(newActiveLevelIndices.empty() || newActiveLevelIndices.size() == cacheActiveLevelLoops.size());
+    if (!newActiveLevelIndices.empty())
+    {
+        auto newActiveLevelIndex = newActiveLevelIndices.front();
+        assert(std::all_of(newActiveLevelIndices.begin(), newActiveLevelIndices.end(), [&](Index index) {
+            return index == newActiveLevelIndex;
+        }));
+        hoistedBeginCacheRegionOp.cacheIndexAttr(IndexAttr::get(newActiveLevelIndex, rewriter.getContext()));
+    }
+
+    return success();
+}
+
+mlir::AffineForOp GetOutermostAffineForOp(BeginCacheRegion beginCacheRegionOp)
+{
+    auto endOp = beginCacheRegionOp.getEndOp();
+
+    mlir::Block::iterator endIter(endOp);
+    for (auto iter = mlir::Block::iterator(beginCacheRegionOp); iter != endIter; iter++)
+    {
+        if (auto forOp = mlir::dyn_cast<mlir::AffineForOp>(*iter))
+        {
+            return forOp;
+        }
+    }
+    return nullptr;
 }
 
 LogicalResult MergeCacheRegionOpsRewrite::matchAndRewrite(BeginCacheRegionOp beginCacheRegionOp, PatternRewriter& rewriter) const
@@ -2478,21 +2886,39 @@ LogicalResult MergeCacheRegionOpsRewrite::matchAndRewrite(BeginCacheRegionOp beg
 
     auto block = beginCacheRegionOp.getOperation()->getBlock();
 
-    EndCacheRegionOp endOp = beginCacheRegionOp.getEndOp();
+    EndCacheRegionOp endOp = mlir::dyn_cast<EndCacheRegionOp>(beginCacheRegionOp.getEndOp());
 
-    // Examine ops in the block, and for each BeginCacheRegionOp that has the same operands with this one,
-    // and only preserve the first BeginCacheRegionOp and the last associated EndCacheRegionOp in the block
+    // Examine ops in the block, and for each BeginCacheRegionOp that has the same operands as this one,
+    // merge the cache regions if the outermost loops they wrap don't affect the buffer region being examined.
+    // This means that boundary condition loops that produce differently shaped caches stay as separate regions,
+    // while boundary condition loops on unrelated indices that don't affect the shape of the cache get merged
+    // into a single region
 
     mlir::Operation* firstBeginOp = nullptr;
     mlir::Operation* lastEndOp = nullptr;
     std::vector<mlir::Operation*> beginOpsForRemoval;
     std::vector<mlir::Operation*> endOpsForRemoval;
+
+    auto baseArray = beginCacheRegionOp.baseInput();
+    // If the outermost loop in this cache region is used to index into the base array then the cache regions cannot be merged
+    // as they will have different access patterns
+
+    auto baseRegionOutermostAffineForOp = GetOutermostAffineForOp(beginCacheRegionOp);
+
     for (auto& op : block->getOperations())
     {
         if (auto otherBeginCacheRegionOp = mlir::dyn_cast<BeginCacheRegionOp>(&op))
         {
             if (util::OperationsAreEqual(beginCacheRegionOp, otherBeginCacheRegionOp))
             {
+                assert(baseArray == otherBeginCacheRegionOp.baseInput());
+                // Check whether the outermost loop IV is used to access the array
+                auto otherOutermostAffineForOp = GetOutermostAffineForOp(otherBeginCacheRegionOp);
+                if (baseRegionOutermostAffineForOp != otherOutermostAffineForOp)
+                {
+                    continue;
+                }
+
                 auto otherEndOp = otherBeginCacheRegionOp.getEndOp();
                 if (firstBeginOp == nullptr)
                 {
@@ -2511,11 +2937,11 @@ LogicalResult MergeCacheRegionOpsRewrite::matchAndRewrite(BeginCacheRegionOp beg
     }
     if (beginCacheRegionOp != firstBeginOp)
     {
-        beginCacheRegionOp.getOperation()->moveBefore(firstBeginOp);
+        beginCacheRegionOp->moveBefore(firstBeginOp);
     }
     if (endOp != lastEndOp)
     {
-        endOp.getOperation()->moveAfter(lastEndOp);
+        endOp->moveAfter(lastEndOp);
     }
     for (auto op : endOpsForRemoval)
     {
@@ -2524,6 +2950,13 @@ LogicalResult MergeCacheRegionOpsRewrite::matchAndRewrite(BeginCacheRegionOp beg
     for (auto op : beginOpsForRemoval)
     {
         rewriter.eraseOp(op);
+    }
+
+    if (IsCacheRegionEmpty(beginCacheRegionOp) || GetOutermostAffineForOp(beginCacheRegionOp) == nullptr)
+    {
+        rewriter.eraseOp(endOp);
+        rewriter.eraseOp(beginCacheRegionOp);
+        return success();
     }
 
     return success();
@@ -2553,26 +2986,30 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
     // ( CacheCopyOp, None )            - If the input value is read from, but never written to, then use a CacheCopyOp prologue and no epilogue op
     // ( CacheCopyOp, CacheCopyOp )     - If we aren't in any of the other scenarios, then default to a CacheCopyOp prologue and a CacheCopyOp epilogue
 
-    EndCacheRegionOp endOp = beginCacheRegionOp.getEndOp();
+    EndCacheRegionOp endOp = mlir::dyn_cast<EndCacheRegionOp>(beginCacheRegionOp.getEndOp());
 
     auto loc = beginCacheRegionOp.getLoc();
 
     auto parentBlock = beginCacheRegionOp.getOperation()->getBlock();
 
     // If the region is empty, just erase this op and move on
-    bool emptyRegion = true;
-    parentBlock->walk(++mlir::Block::iterator(beginCacheRegionOp), mlir::Block::iterator(endOp), [&](Operation* op) {
-        emptyRegion = false;
-        return WalkResult::interrupt();
-    });
-    if (emptyRegion)
+    if (IsCacheRegionEmpty(beginCacheRegionOp) || GetOutermostAffineForOp(beginCacheRegionOp) == nullptr)
     {
         rewriter.eraseOp(endOp);
         rewriter.eraseOp(beginCacheRegionOp);
         return success();
     }
 
-    Value input = beginCacheRegionOp.input();
+    // Lower BeginCacheRegionOps outermost-to-innermost to ensure nested mappings are created in the same
+    // nested order as the cache region ops
+
+    if (!util::IsOutermostOpOfType(beginCacheRegionOp))
+    {
+        return failure();
+    }
+
+    mlir::Value baseInput = beginCacheRegionOp.baseInput();
+
     auto cacheAccessContext = beginCacheRegionOp.getCacheAccessContext();
 
     // Determine the level of the loopnest that defines the cache active block.
@@ -2584,33 +3021,8 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
     // The BeginCacheRegionOp should precede the loop op that is the trigger level loop
     // and in non-multiCache scenarios this is also the cache level
     // In multiCache scenarios, we need to walk deeper into the loopnest to find the cache level loop
-    auto cacheLevelIndex = beginCacheRegionOp.cacheIndex().getValue();
-    auto triggerLevelIndex = beginCacheRegionOp.triggerIndex().getValue();
-    std::vector<mlir::AffineForOp> cacheLevelLoops;
-    mlir::Block* triggerLevelBlock = nullptr;
 
-    parentBlock->walk(mlir::Block::iterator(beginCacheRegionOp), mlir::Block::iterator(endOp), [&](mlir::AffineForOp loop) {
-        if (auto indexAttr = loop->getAttrOfType<IndexAttr>("index"))
-        {
-            if (indexAttr.getValue() == cacheLevelIndex)
-            {
-                cacheLevelLoops.push_back(loop);
-            }
-            if (indexAttr.getValue() == triggerLevelIndex)
-            {
-                auto currentBlock = loop.getOperation()->getBlock();
-                if (triggerLevelBlock == nullptr)
-                {
-                    triggerLevelBlock = currentBlock;
-                }
-                else
-                {
-                    assert(triggerLevelBlock == currentBlock && "All trigger level loops must be in the same block");
-                }
-            }
-        }
-        return WalkResult::advance();
-    });
+    auto [triggerLevelBlock, cacheLevelLoops] = GetCacheTriggerLevelBlockAndActiveLevelLoops(beginCacheRegionOp);
     assert(!cacheLevelLoops.empty() && "Couldn't find cache level loop(s)");
     assert(triggerLevelBlock != nullptr && "Couldn't find trigger level block");
 
@@ -2626,6 +3038,7 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
     for (auto& cacheLevelLoop : cacheLevelLoops)
     {
         MultiCacheInfo currentMultiCacheInfo(loc);
+        currentMultiCacheInfo.originalCacheOp = mlir::dyn_cast<MakeCacheOp>(beginCacheRegionOp.cache().getDefiningOp());
         currentMultiCacheInfo.activeBlockRegionInfos.emplace(cacheLevelLoop, MultiCacheInfo::ActiveBlockRegionInfo{});
         auto& currentActiveBlockRegionInfo = currentMultiCacheInfo.activeBlockRegionInfos[cacheLevelLoop];
         currentActiveBlockRegionInfo.cacheAccessContext = cacheAccessContext;
@@ -2634,7 +3047,7 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
         mlir::Block::iterator cacheLevelEndOp(cacheLevelLoop);
         cacheLevelEndOp++;
 
-        auto arrayAccessInfo = ComputeAccessInfoForArrayAtLevel(rewriter, input, cacheLevelStartOp, cacheLevelEndOp, beginCacheRegionOp.activeBlockCache());
+        auto arrayAccessInfo = ComputeAccessInfoForArrayAtLevel(rewriter, baseInput, cacheLevelStartOp, cacheLevelEndOp, beginCacheRegionOp.activeBlockCache());
         if (!arrayAccessInfo.cacheUsedInRegion)
         {
             // The cache isn't used inside this cacheLevelLoop, so don't bother computing anything else
@@ -2681,6 +3094,7 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
 
             // Since we walked from the inner loops to the outer loops, our multiCacheLoops need to be reversed to get the shape starting from the outer loops going inwards
             std::reverse(multiCacheLoops.begin(), multiCacheLoops.end());
+            currentMultiCacheInfo.multiCacheLoops = multiCacheLoops;
 
             // Collect the loop shapes that the MultiCacheCopyOp needs to create
             // Since Accera loopnests operate with fixed-size loops, we will assume that the multiCache loops
@@ -2698,6 +3112,8 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                 currentMultiCacheInfo.multiCacheLBMaps.push_back(mlir::AffineMap::get(0, 0, rewriter.getAffineConstantExpr(lowerBound)));
                 currentMultiCacheInfo.multiCacheUBMaps.push_back(mlir::AffineMap::get(0, 0, rewriter.getAffineConstantExpr(upperBound)));
                 currentMultiCacheInfo.multiCacheStepSizes.push_back(step);
+                assert(multiCacheLoop->hasAttrOfType<IndexAttr>("index"));
+                currentMultiCacheInfo.multiCacheLoopIndexIds.push_back(multiCacheLoop->getAttrOfType<IndexAttr>("index").getValue());
 
                 // Create an mlir::Value computing the iteration count for this loop so we can use this to index into the multiCache.
                 // We need to compute (iv - lowerBound) / step
@@ -2708,14 +3124,11 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                 mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPointToStart(multiCacheLoop.getBody());
 
-                auto iterCounterMap = AffineMap::get(1, 0, (rewriter.getAffineDimExpr(0) - rewriter.getAffineConstantExpr(lowerBound)).floorDiv(step));
-                mlir::AffineApplyOp iterCounterOp = CreateConstantRangeForOpIterationCounter(rewriter, loc, multiCacheLoop);
-                currentActiveBlockRegionInfo.multiCacheLoopIterationCounters.push_back(iterCounterOp.getResult());
-                currentActiveBlockRegionInfo.multiCacheSliceIVs.push_back(multiCacheLoop.getInductionVar());
+                mlir::Value iterCounter = util::CreateConstantRangeForOpIterationCounter(rewriter, loc, multiCacheLoop);
 
                 auto constantTripCountOpt = mlir::getConstantTripCount(multiCacheLoop);
                 assert(constantTripCountOpt.hasValue() && "AffineForOps in Accera loop nests must have constant trip counts");
-                multiCacheIterationCounts.push_back(constantTripCountOpt.getValue());
+                currentMultiCacheInfo.multiCacheIterationCounts.push_back(constantTripCountOpt.getValue());
             }
 
             // The MultiCacheCopyOp will reconstruct the loops that are external to the active block but internal to the multiCache region
@@ -2766,54 +3179,17 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                 // AND-in the onlyReadsAreAccumulates flag since if this is false for one of the active block regions it is then false for the entire multicache
                 matchingExistingInfoIter->arrayAccessInfo.onlyReadsAreAccumulates &= currentMultiCacheInfo.arrayAccessInfo.onlyReadsAreAccumulates;
 
-                currentActiveBlockRegionInfo.cacheAccessContext.value = matchingExistingInfoIter->multiCache;
+                // Union the active block regions if the shapes differ but we still need to merge
+                bool cachesHaveSameShape = matchingExistingInfoIter->activeBlockInfo.shape.size() == currentMultiCacheInfo.activeBlockInfo.shape.size() &&
+                                           std::equal(matchingExistingInfoIter->activeBlockInfo.shape.begin(), matchingExistingInfoIter->activeBlockInfo.shape.end(), currentMultiCacheInfo.activeBlockInfo.shape.begin());
 
-                UpdateCacheAccessContextForActiveBlockCache(rewriter,
-                                                            currentActiveBlockRegionInfo.cacheAccessContext,
-                                                            matchingExistingInfoIter->activeBlockInfo,
-                                                            matchingExistingInfoIter->activeBlockToCacheMap,
-                                                            matchingExistingInfoIter->multiCacheExternalSymbols,
-                                                            currentActiveBlockRegionInfo.multiCacheSliceIVs);
-            }
-            else
-            {
-                // This multiCache info doesn't match any existing ones we have, so create a new cache buffer for it
+                if (!cachesHaveSameShape)
+                {
+                    auto unionResult = matchingExistingInfoIter->arrayAccessInfo.activeBlock.unionBoundingBox(currentMultiCacheInfo.arrayAccessInfo.activeBlock);
+                    assert(succeeded(unionResult));
+                    matchingExistingInfoIter->arrayAccessInfo.activeBlock.cst.removeRedundantConstraints();
+                }
 
-                auto makeCacheOperation = beginCacheRegionOp.cache().getDefiningOp();
-                auto makeCacheOp = mlir::dyn_cast<MakeCacheOp>(makeCacheOperation);
-                assert(makeCacheOp != nullptr);
-                mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPointAfter(makeCacheOp);
-                auto cloneMakeCacheOperation = rewriter.clone(*makeCacheOperation);
-                auto cloneMakeCacheOp = mlir::dyn_cast<MakeCacheOp>(cloneMakeCacheOperation);
-                assert(cloneMakeCacheOp != nullptr);
-
-                currentMultiCacheInfo.multiCache = UpdateActiveBlockCacheShape(rewriter, cloneMakeCacheOp, currentActiveBlockRegionInfo.cacheAccessContext, currentMultiCacheInfo.activeBlockInfo, multiCacheIterationCounts);
-
-                currentMultiCacheInfo.activeBlockToCacheMap = CreateActiveBlockToCacheMap(rewriter, currentActiveBlockRegionInfo.cacheAccessContext);
-
-                currentActiveBlockRegionInfo.cacheAccessContext.value = currentMultiCacheInfo.multiCache;
-
-                UpdateCacheAccessContextForActiveBlockCache(rewriter,
-                                                            currentActiveBlockRegionInfo.cacheAccessContext,
-                                                            currentMultiCacheInfo.activeBlockInfo,
-                                                            currentMultiCacheInfo.activeBlockToCacheMap,
-                                                            currentMultiCacheInfo.multiCacheExternalSymbols,
-                                                            currentActiveBlockRegionInfo.multiCacheSliceIVs);
-            }
-
-            // Insert the multiCache slicing operands and map entries for this particular cacheAccessContext (specific to this active block region rather than the entire multicache)
-            // TODO : once the linalg.slice issues are worked out these additional (duplicated) indices shouldn't be needed
-            currentActiveBlockRegionInfo.allCacheExternalSymbols.insert(currentActiveBlockRegionInfo.allCacheExternalSymbols.end(), currentActiveBlockRegionInfo.multiCacheLoopIterationCounters.begin(), currentActiveBlockRegionInfo.multiCacheLoopIterationCounters.end());
-            currentActiveBlockRegionInfo.allCacheExternalSymbols.insert(currentActiveBlockRegionInfo.allCacheExternalSymbols.end(), currentMultiCacheInfo.activeBlockInfo.externalSymbols.begin(), currentMultiCacheInfo.activeBlockInfo.externalSymbols.end());
-            currentActiveBlockRegionInfo.cacheAccessContext.externalRelevantScheduleIndices = currentActiveBlockRegionInfo.allCacheExternalSymbols;
-
-            auto multiCacheSliceMap = mlir::AffineMap::getMultiDimIdentityMap(currentActiveBlockRegionInfo.multiCacheLoopIterationCounters.size(), rewriter.getContext());
-            auto fullCacheMap = ConcatenateAndShiftAffineDimsAndMaps(rewriter, multiCacheSliceMap, currentActiveBlockRegionInfo.cacheAccessContext.accessMaps.inputIndicesToActiveBlockCache);
-            currentActiveBlockRegionInfo.cacheAccessContext.accessMaps.inputIndicesToActiveBlockCache = fullCacheMap;
-
-            if (matchingExistingInfoIter != multiCacheInfos.end())
-            {
                 // Append this active block region info to the multiCache info we're merging into
                 matchingExistingInfoIter->activeBlockRegionInfos[cacheLevelLoop] = currentMultiCacheInfo.activeBlockRegionInfos[cacheLevelLoop];
             }
@@ -2846,6 +3222,59 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
         }
     }
 
+    // Now that we've merged all the caches we may need to merge, compute the cache buffer shapes
+    if (beginCacheRegionOp.activeBlockCache())
+    {
+        for (auto& currentMultiCacheInfo : multiCacheInfos)
+        {
+            auto makeCacheOperation = beginCacheRegionOp.cache().getDefiningOp();
+            auto makeCacheOp = mlir::dyn_cast<MakeCacheOp>(makeCacheOperation);
+            assert(makeCacheOp != nullptr);
+            mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointAfter(makeCacheOp);
+
+            auto& tempActiveBlockRegionInfo = currentMultiCacheInfo.activeBlockRegionInfos.begin()->second;
+
+            // Recompute this after any merging we did
+            currentMultiCacheInfo.activeBlockInfo = ConvertMemRefRegionToActiveBlockInfo(rewriter, currentMultiCacheInfo.arrayAccessInfo.activeBlock);
+
+            auto shapedMakeCacheOp = UpdateActiveBlockCacheShape(rewriter,
+                                                                 makeCacheOp,
+                                                                 tempActiveBlockRegionInfo.cacheAccessContext,
+                                                                 currentMultiCacheInfo.activeBlockInfo,
+                                                                 currentMultiCacheInfo.multiCacheIterationCounts);
+
+            currentMultiCacheInfo.activeBlockToCacheMap = CreateActiveBlockToCacheMap(rewriter, tempActiveBlockRegionInfo.cacheAccessContext);
+
+            size_t activeBlockRank = currentMultiCacheInfo.activeBlockInfo.shape.size();
+            std::vector<mlir::Value> multiCacheIVs;
+            std::transform(currentMultiCacheInfo.multiCacheLoops.begin(), currentMultiCacheInfo.multiCacheLoops.end(), std::back_inserter(multiCacheIVs), [&](mlir::AffineForOp loop) {
+                return loop.getInductionVar();
+            });
+            auto multiCacheAccessIndices = util::GetIndicesForLoopIVs(multiCacheIVs);
+            auto offsetAccessIndices = util::GetIndicesForLoopIVs(currentMultiCacheInfo.activeBlockInfo.externalSymbols);
+            currentMultiCacheInfo.multiCache = UpdateActiveBlockCacheAccess(rewriter,
+                                                                            shapedMakeCacheOp,
+                                                                            activeBlockRank,
+                                                                            currentMultiCacheInfo.activeBlockInfo.activeBlockOffsetMap,
+                                                                            currentMultiCacheInfo.activeBlockToCacheMap,
+                                                                            offsetAccessIndices,
+                                                                            multiCacheAccessIndices);
+
+            for (auto& currentActiveBlockRegionInfoEntry : currentMultiCacheInfo.activeBlockRegionInfos)
+            {
+                auto& currentActiveBlockRegionInfo = currentActiveBlockRegionInfoEntry.second;
+                currentActiveBlockRegionInfo.cacheAccessContext.value = currentMultiCacheInfo.multiCache;
+
+                UpdateCacheAccessContextForActiveBlockCache(rewriter,
+                                                            currentActiveBlockRegionInfo.cacheAccessContext,
+                                                            currentMultiCacheInfo.activeBlockInfo,
+                                                            currentMultiCacheInfo.activeBlockToCacheMap,
+                                                            currentMultiCacheInfo.multiCacheExternalSymbols);
+            }
+        }
+    }
+
     for (auto& multiCacheInfo : multiCacheInfos)
     {
         if (multiCacheInfo.arrayAccessInfo.cacheUsedInRegion)
@@ -2865,21 +3294,21 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                 if (beginCacheRegionOp.activeBlockCache())
                 {
                     rewriter.create<MultiCacheCopyOp>(loc,
-                                                      input,
+                                                      beginCacheRegionOp.input(),
                                                       multiCacheInfo.multiCache,
                                                       multiCacheInfo.multiCacheExternalSymbols,
                                                       rewriter.getAffineMapArrayAttr(multiCacheInfo.multiCacheLBMaps),
                                                       rewriter.getAffineMapArrayAttr(multiCacheInfo.multiCacheUBMaps),
                                                       rewriter.getI64ArrayAttr(multiCacheInfo.multiCacheStepSizes),
+                                                      util::ConvertIndexVectorToArrayAttr(multiCacheInfo.multiCacheLoopIndexIds, rewriter.getContext()),
                                                       rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.lbMaps),
                                                       rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.ubMaps),
-                                                      rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.activeBlockOffsetMaps),
                                                       multiCacheInfo.multiCacheExternalSymbolsPermutationMap,
                                                       multiCacheInfo.activeBlockToCacheMap);
                 }
                 else
                 {
-                    rewriter.create<ActiveElementCacheCopyOp>(loc, input, cacheAccessContext);
+                    rewriter.create<ActiveElementCacheCopyOp>(loc, beginCacheRegionOp.input(), cacheAccessContext);
                 }
             }
 
@@ -2896,10 +3325,13 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                 cacheLevelEndOp++;
 
                 rewriter.setInsertionPoint(cacheLevelBlock, cacheLevelStartOp);
+
                 // TODO : refactor out CacheAccessContext and simplify this
                 currentActiveBlockRegionInfo.cacheAccessContext.externalRelevantScheduleIndices = currentActiveBlockRegionInfo.allCacheExternalSymbols;
                 BeginCacheMappingOp cacheMappingOp = rewriter.create<BeginCacheMappingOp>(loc,
-                                                                                          input,
+                                                                                          beginCacheRegionOp.input(),
+                                                                                          multiCacheInfo.originalCacheOp,
+                                                                                          beginCacheRegionOp.baseInput(),
                                                                                           currentActiveBlockRegionInfo.cacheAccessContext,
                                                                                           beginCacheRegionOp.id(),
                                                                                           beginCacheRegionOp.activeBlockCache());
@@ -2921,18 +3353,17 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                     if (beginCacheRegionOp.activeBlockCache())
                     {
                         rewriter.create<ActiveBlockCacheReduceOp>(loc,
-                                                                  input,
+                                                                  beginCacheRegionOp.input(),
                                                                   multiCacheInfo.multiCache,
                                                                   multiCacheInfo.activeBlockInfo.externalSymbols,
                                                                   multiCacheInfo.activeBlockInfo.externalSymbols,
                                                                   rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.lbMaps),
                                                                   rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.ubMaps),
-                                                                  rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.activeBlockOffsetMaps),
                                                                   multiCacheInfo.activeBlockToCacheMap);
                     }
                     else
                     {
-                        rewriter.create<ActiveElementCacheReduceOp>(loc, cacheAccessContext, input);
+                        rewriter.create<ActiveElementCacheReduceOp>(loc, cacheAccessContext, beginCacheRegionOp.input());
                     }
                 }
                 else
@@ -2940,20 +3371,19 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                     if (beginCacheRegionOp.activeBlockCache())
                     {
                         rewriter.create<ActiveBlockCacheCopyOp>(loc,
-                                                                input,
+                                                                beginCacheRegionOp.input(),
                                                                 multiCacheInfo.multiCache,
                                                                 multiCacheInfo.activeBlockInfo.externalSymbols,
                                                                 multiCacheInfo.activeBlockInfo.externalSymbols,
                                                                 mlir::ValueRange{},
                                                                 rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.lbMaps),
                                                                 rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.ubMaps),
-                                                                rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.activeBlockOffsetMaps),
                                                                 multiCacheInfo.activeBlockToCacheMap,
                                                                 false);
                     }
                     else
                     {
-                        rewriter.create<ActiveElementCacheCopyOp>(loc, cacheAccessContext, input);
+                        rewriter.create<ActiveElementCacheCopyOp>(loc, cacheAccessContext, beginCacheRegionOp.input());
                     }
                 }
             }
@@ -2962,6 +3392,152 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
 
     rewriter.eraseOp(endOp);
     rewriter.eraseOp(beginCacheRegionOp);
+
+    return success();
+}
+
+LogicalResult MaxElementCacheRegionOpRewrite::matchAndRewrite(BeginMaxElementCacheRegionOp beginMaxElementCacheRegionOp, PatternRewriter& rewriter) const
+{
+    // Compute where this cache region should be, based on the max element budget, then create a BeginCacheRegionOp at that level and a corresponding EndCacheRegionOp
+
+    auto loc = beginMaxElementCacheRegionOp.getLoc();
+    EndCacheRegionOp endOp = mlir::dyn_cast<EndCacheRegionOp>(beginMaxElementCacheRegionOp.getEndOp());
+
+    // If the region is empty, then erase it an move on
+    if (IsCacheRegionEmpty(beginMaxElementCacheRegionOp))
+    {
+        rewriter.eraseOp(endOp);
+        rewriter.eraseOp(beginMaxElementCacheRegionOp);
+        return success();
+    }
+
+    auto input = beginMaxElementCacheRegionOp.input();
+    auto cache = beginMaxElementCacheRegionOp.cache();
+    auto baseInput = beginMaxElementCacheRegionOp.baseInput();
+
+    int64_t maxElementBudget = beginMaxElementCacheRegionOp.maxElements();
+
+    mlir::Block* newBlock = beginMaxElementCacheRegionOp->getBlock();
+    mlir::Block::iterator newBeginPoint(beginMaxElementCacheRegionOp);
+    mlir::Block::iterator newEndPoint(endOp);
+
+    ArrayAccessInfo arrayAccessInfo = ComputeAccessInfoForArrayAtLevel(rewriter,
+                                                                       baseInput,
+                                                                       mlir::Block::iterator(beginMaxElementCacheRegionOp),
+                                                                       mlir::Block::iterator(endOp),
+                                                                       true /* computeActiveBlock */);
+    int64_t initialActiveBlockVolume = GetActiveBlockVolume(arrayAccessInfo.activeBlock);
+
+    if (initialActiveBlockVolume == 0)
+    {
+        // If the array isn't used in this block, then the active block volume is 0 and we don't need to create a cache region
+        rewriter.eraseOp(endOp);
+        rewriter.eraseOp(beginMaxElementCacheRegionOp);
+        return success();
+    }
+
+    mlir::AffineForOp cacheLevelLoop;
+
+    if (initialActiveBlockVolume > maxElementBudget)
+    {
+        // If the max element budget is so small that even the innermost loop is too much, then create a dummy loop inside of it
+        // TODO : make cache regions work as regions so that this dummy loop isn't needed
+        mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+        auto originalInnerLoop = GetOutermostAffineForOp(beginMaxElementCacheRegionOp);
+        auto& originalInnerBlock = originalInnerLoop->getRegion(0).front();
+        rewriter.setInsertionPointToStart(&originalInnerBlock);
+        auto newInnermostLoop = rewriter.create<mlir::AffineForOp>(loc, 0, 1);
+        // Set an index attr on this loop so it can work with the rest of the caching ops. This doesn't need to be anything in particular,
+        // but it must be unique from the other indices and the Index auto-incrementing ID will ensure this.
+        Index dummyIndex("internal_dummy_loop");
+        newInnermostLoop->setAttr("index", IndexAttr::get(dummyIndex, rewriter.getContext()));
+        cacheLevelLoop = newInnermostLoop;
+
+        // Move all of the original innermost loop contents into the new dummy loop body
+
+        auto originalInnerLoopTerminatorOp = originalInnerBlock.getTerminator();
+        auto newInnerLoopTerminatorOp = newInnermostLoop.getLoopBody().front().getTerminator();
+        auto originalInnerLoopOpsBegin = ++mlir::Block::iterator(newInnermostLoop); // The new loop was inserted at the beginning of the block, so the original ops are all after it
+        auto originalInnerLoopOpsEnd = mlir::Block::iterator(originalInnerLoopTerminatorOp);
+        mlir::BlockAndValueMapping mapping;
+        rewriter.setInsertionPoint(newInnerLoopTerminatorOp);
+        std::stack<Operation*> opsToErase;
+        for (auto originalOpsIter = originalInnerLoopOpsBegin; originalOpsIter != originalInnerLoopOpsEnd; ++originalOpsIter)
+        {
+            rewriter.clone(*originalOpsIter, mapping);
+            opsToErase.push(&(*originalOpsIter));
+        }
+
+        while (!opsToErase.empty())
+        {
+            auto eraseOp = opsToErase.top();
+            if (eraseOp->use_empty())
+            {
+                rewriter.eraseOp(eraseOp);
+            }
+            opsToErase.pop();
+        }
+
+        newBlock = newInnermostLoop->getBlock();
+        newBeginPoint = newInnermostLoop->getIterator();
+        newEndPoint = newInnermostLoop->getIterator();
+        ++newEndPoint;
+    }
+    else
+    {
+
+        // Find the level to hoist the cache region to
+        int64_t nextActiveBlockVolume = initialActiveBlockVolume;
+        auto parentOp = GetOutermostAffineForOp(beginMaxElementCacheRegionOp);
+        mlir::Block::iterator nextStart(parentOp);
+        mlir::Block::iterator nextEnd = ++mlir::Block::iterator(parentOp);
+        while (parentOp && nextActiveBlockVolume <= maxElementBudget)
+        {
+            newBlock = parentOp->getBlock();
+            newBeginPoint = nextStart;
+            newEndPoint = nextEnd;
+
+            cacheLevelLoop = parentOp;
+
+            parentOp = parentOp->getParentOfType<mlir::AffineForOp>();
+            if (parentOp)
+            {
+                nextStart = mlir::Block::iterator(parentOp);
+                nextEnd = ++mlir::Block::iterator(parentOp);
+                ArrayAccessInfo nextArrayAccessInfo = ComputeAccessInfoForArrayAtLevel(rewriter, baseInput, nextStart, nextEnd, true /* computeActiveBlock */);
+                nextActiveBlockVolume = GetActiveBlockVolume(nextArrayAccessInfo.activeBlock);
+            }
+        }
+    }
+
+    CacheAccessContext cacheAccessContext;
+    cacheAccessContext.value = cache;
+    cacheAccessContext.accessMaps = CacheAccessMaps::FromAttr(beginMaxElementCacheRegionOp.cacheAccessMaps());
+    cacheAccessContext.activeBlockCache = true;
+    cacheAccessContext.dimReorderCache = beginMaxElementCacheRegionOp.dimReorderCache();
+
+    auto cacheIndex = cacheLevelLoop->getAttrOfType<IndexAttr>("index").getValue();
+
+    rewriter.setInsertionPoint(newBlock, newEndPoint);
+    rewriter.replaceOpWithNewOp<EndCacheRegionOp>(endOp, endOp.regionId());
+
+    rewriter.setInsertionPoint(newBlock, newBeginPoint);
+    auto newBeginOp = rewriter.create<BeginCacheRegionOp>(loc,
+                                                          input,
+                                                          cacheAccessContext,
+                                                          baseInput,
+                                                          cacheIndex, // triggerIndex
+                                                          cacheIndex,
+                                                          beginMaxElementCacheRegionOp.id(),
+                                                          beginMaxElementCacheRegionOp.cacheHierarchyLevel(),
+                                                          true, // activeBlockCache
+                                                          beginMaxElementCacheRegionOp.dimReorderCache());
+
+    // This new cache region op has already been hoisted as high as we want to hoist it
+    newBeginOp->setAttr("hoisted", rewriter.getUnitAttr());
+
+    // Replace uses and erase the original BeginCacheRegionOp
+    rewriter.replaceOp(beginMaxElementCacheRegionOp, newBeginOp.getResult());
 
     return success();
 }
@@ -3773,7 +4349,6 @@ LogicalResult HoistScalingToCacheReduceRewrite::matchAndRewrite(mlir::AffineStor
                                                                   cacheReduceOpAdaptor.ubOperands(),
                                                                   cacheReduceOpAdaptor.lbMaps(),
                                                                   cacheReduceOpAdaptor.ubMaps(),
-                                                                  cacheReduceOpAdaptor.activeBlockOffsetMaps(),
                                                                   cacheReduceOpAdaptor.activeBlockToCacheMap(),
                                                                   scaleValues);
         }
@@ -4218,6 +4793,11 @@ void populateExecutionPlanCopyReducePatterns(mlir::OwningRewritePatternList& pat
                     CacheZeroOpRewrite>(patterns.getContext());
 }
 
+void populateExecutionPlanMaxElementCacheRegionPatterns(mlir::OwningRewritePatternList& patterns)
+{
+    patterns.insert<MaxElementCacheRegionOpRewrite>(patterns.getContext());
+}
+
 void populateExecutionPlanCacheRegionHoistingPatterns(mlir::OwningRewritePatternList& patterns)
 {
     patterns.insert<HoistCacheRegionOpsRewrite>(patterns.getContext());
@@ -4236,6 +4816,16 @@ void populateExecutionPlanCacheRegionPatterns(mlir::OwningRewritePatternList& pa
 void populateExecutionPlanCacheMappingPatterns(mlir::OwningRewritePatternList& patterns)
 {
     patterns.insert<BeginCacheMappingOpRewrite>(patterns.getContext());
+}
+
+void populateExecutionPlanAdjustHierarchicalCacheRegionPositionPatterns(mlir::OwningRewritePatternList& patterns)
+{
+    patterns.insert<AdjustHierarchicalCacheRegionPositionRewrite>(patterns.getContext());
+}
+
+void populateExecutionPlanAdjustCacheMappingPositionPatterns(mlir::OwningRewritePatternList& patterns)
+{
+    patterns.insert<AdjustCacheMappingPositionRewrite>(patterns.getContext());
 }
 
 void populateExecutionPlanVectorizePatterns(bool printVectorizationDetails, mlir::OwningRewritePatternList& patterns)

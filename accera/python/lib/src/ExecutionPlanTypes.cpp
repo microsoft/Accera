@@ -9,6 +9,8 @@
 
 #include <ir/include/value/ValueEnums.h>
 
+#include <variant>
+
 namespace py = pybind11;
 namespace value = accera::value;
 namespace ir = accera::ir;
@@ -80,7 +82,7 @@ namespace
 
     void DefineExecutionPlanClasses(py::module& module)
     {
-        py::class_<value::Cache>(module, "Cache");
+        py::class_<value::Cache>(module, "_Cache");
 
         py::class_<value::Plan>(module, "_ExecutionPlan")
             .def(py::init([](value::Plan& plan) {
@@ -90,7 +92,7 @@ namespace
             .def(
                 "add_cache",
                 [](value::Plan& plan,
-                   value::ViewAdapter target,
+                   const std::variant<value::ViewAdapter, value::Cache*>& target,
                    const std::optional<value::ScalarIndex>& outermostIncludedSplitIndex,
                    const std::optional<value::ScalarIndex>& triggerIndex,
                    const std::optional<int64_t>& maxElements,

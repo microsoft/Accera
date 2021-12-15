@@ -184,12 +184,12 @@ class Package:
         for delayed_param, value in parameters.items():
             delayed_param.set_value(value)
 
-        def validate_target(target):
+        def validate_target(target: Target):
             # can't use set because targets are mutable (therefore unhashable)
             for f in self._fns.values():
-                if f.target != target:
+                if not target.is_compatible_with(f.target):
                     raise NotImplementedError(
-                        "Adding functions for multiple targets is not supported"
+                        "Function target being added is currently incompatible with existing functions in package"
                     )
 
         # Function names must begin with an _ or alphabetical character
@@ -294,12 +294,12 @@ class Package:
         # add_check_all_close will modify the self._fns dictionary (because
         # it is adding debug functions), to avoid this, we first gather information
         # about the functions to add
-        fns_to_add = {name : get_args_to_debug(wrapped_func) \
+        fns_to_add = {name : (wrapped_func, get_args_to_debug(wrapped_func)) \
             for name, wrapped_func in self._fns.items()}
 
         # only add if there are actually arguments to debug
         return add_debugging_functions(self,
-            {name : args for name, args in fns_to_add.items() if args},
+            {name : fn_and_args for name, fn_and_args in fns_to_add.items() if fn_and_args[1]},
             atol=tolerance)
 
     def _generate_target_options(self, platform: Platform, mode: Mode = Mode.RELEASE):

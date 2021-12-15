@@ -55,6 +55,9 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
         auto snapshotter = _intrapassSnapshotter.MakeSnapshotPipe();
         snapshotter.Snapshot("Initial", vFuncOp);
 
+        mlir::GreedyRewriteConfig topDownConfig; // Some patterns require a top-down handling of ops to ensure relative orders stay consistent
+        topDownConfig.useTopDownTraversal = true;
+
         while (std::exchange(shouldRun, false))
         {
             {
@@ -131,8 +134,15 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
 
             {
                 OwningRewritePatternList patterns(context);
-                xptr::populateExecutionPlanCacheRegionHoistingPatterns(patterns);
+                xptr::populateExecutionPlanMaxElementCacheRegionPatterns(patterns);
                 applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                snapshotter.Snapshot("ExecutionPlanMaxElementCachePositioning", vFuncOp);
+            }
+
+            {
+                OwningRewritePatternList patterns(context);
+                xptr::populateExecutionPlanCacheRegionHoistingPatterns(patterns);
+                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
                 snapshotter.Snapshot("ExecutionPlanCacheRegionHoisting", vFuncOp);
             }
 
@@ -152,15 +162,29 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
 
             {
                 OwningRewritePatternList patterns(context);
+                xptr::populateExecutionPlanAdjustHierarchicalCacheRegionPositionPatterns(patterns);
+                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
+                snapshotter.Snapshot("ExecutionPlanAdjustHierarchicalCacheRegionPosition", vFuncOp);
+            }
+
+            {
+                OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanCacheRegionPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
                 snapshotter.Snapshot("ExecutionPlanCacheRegion", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
-                xptr::populateExecutionPlanCacheMappingPatterns(patterns);
+                xptr::populateExecutionPlanAdjustCacheMappingPositionPatterns(patterns);
                 applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                snapshotter.Snapshot("ExecutionPlanAdjustCacheMappingPosition", vFuncOp);
+            }
+
+            {
+                OwningRewritePatternList patterns(context);
+                xptr::populateExecutionPlanCacheMappingPatterns(patterns);
+                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
                 snapshotter.Snapshot("ExecutionPlanCacheMapping", vFuncOp);
             }
 

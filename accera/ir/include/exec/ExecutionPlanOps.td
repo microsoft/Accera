@@ -11,6 +11,7 @@ include "ir/include/nest/LoopNestExportedInterfaces.td"
 include "ir/include/nest/LoopNestAttrs.td"
 include "ir/include/value/ValueAttrs.td"
 include "ir/include/exec/ExecutionPlanAttrs.td"
+include "ir/include/exec/ExecutionPlanInterfaces.td"
 
 // Provide a definition of the dialect in the ODS framework so that we can define our operations.
 def ExecutionPlan_Dialect : Dialect {
@@ -73,12 +74,36 @@ def rcxp_MakeCacheOp : rcxp_Op<"make_cache"> {
   let summary = "Operation to infer and allocate a cache shape and viewing maps";
   let description = [{
     The "accxp.make_cache" operation lowers to an allocated cache in global memory.
+    If given an offsetArrayToCacheAccessMap, multiCacheAccessIndices, and offsetAccessIndices,
+    then applying the offsetArrayToCacheAccessMap to the
+    list of { multiCacheAccessIndices, offset access indices IVs..., array access indices... } will access the
+    corresponding position in the cache.
   }];
-  let arguments = (ins MemorySpaceAttr:$memorySpace);
+  let arguments = (ins MemorySpaceAttr:$memorySpace,
+                   AffineMapAttr:$offsetArrayToCacheAccessMap,
+                   ArrayAttr:$offsetAccessIndices,
+                   ArrayAttr:$multiCacheAccessIndices);
   let results = (outs AnyMemRef:$cache);
   let builders = [
-    OpBuilder<(ins "MemorySpace":$memorySpace)>
+    OpBuilder<(ins 
+      "mlir::MemRefType":$cache,
+      "MemorySpace":$memorySpace)>,
+    OpBuilder<(ins
+      "mlir::MemRefType":$cache,
+      "MemorySpace":$memorySpace,
+      "AffineMap":$offsetArrayToCacheAccessMap,
+      "const std::vector<Index>&":$offsetAccessIndices,
+      "const std::vector<Index>&":$multiCacheAccessIndices
+    )>,
   ];
+
+  let extraClassDeclaration = [{
+    mlir::AffineValueMap insertCachePosition(const std::vector<mlir::Value>& multiCacheIndexIterationCounters, const std::vector<mlir::Value>& offsetAccessIVs, const std::vector<mlir::Value>& baseArrayIndices);
+    mlir::AffineValueMap insertCachePosition(mlir::Operation* where, const std::vector<mlir::Value>& baseArrayIndices);
+    mlir::AffineValueMap insertCachePosition(mlir::Block* where, const std::vector<mlir::Value>& baseArrayIndices);
+    std::vector<mlir::Value> getBaseArrayPosition(mlir::AffineLoadOp loadOp);
+    std::vector<mlir::Value> getBaseArrayPosition(mlir::AffineStoreOp storeOp);
+  }];
 }
 
 //
@@ -135,7 +160,6 @@ def rcxp_ActiveBlockCacheCopyOp : rcxp_Op<"active_block_cache_copy", [AttrSizedO
                         Variadic<Index>:$multiCacheSliceOperands,
                         ArrayAttr:$lbMaps,
                         ArrayAttr:$ubMaps,
-                        ArrayAttr:$activeBlockOffsetMaps,
                         AffineMapAttr:$activeBlockToCacheMap,
                         UnitAttr:$toCache);
 }
@@ -156,9 +180,9 @@ def rcxp_MultiCacheCopyOp : rcxp_Op<"multi_cache_copy"> {
                         ArrayAttr:$multiCacheLoopLowerBoundMaps,
                         ArrayAttr:$multiCacheLoopUpperBoundMaps,
                         ArrayAttr:$multiCacheLoopStepSizes,
+                        ArrayAttr:$multiCacheLoopIndexIds,
                         ArrayAttr:$activeBlockLowerBoundMaps,
                         ArrayAttr:$activeBlockUpperBoundMaps,
-                        ArrayAttr:$activeBlockOffsetMaps,
                         AffineMapAttr:$externalSymbolsPermutationMap,
                         AffineMapAttr:$activeBlockToCacheMap);
 }
@@ -230,7 +254,6 @@ def rcxp_ActiveBlockCacheReduceOp : rcxp_Op<"active_block_cache_reduce", [AttrSi
                         Variadic<Index>:$ubOperands,
                         ArrayAttr:$lbMaps,
                         ArrayAttr:$ubMaps,
-                        ArrayAttr:$activeBlockOffsetMaps,
                         AffineMapAttr:$activeBlockToCacheMap,
                         Variadic<AnyType>:$scaleValues);
 
@@ -242,7 +265,6 @@ def rcxp_ActiveBlockCacheReduceOp : rcxp_Op<"active_block_cache_reduce", [AttrSi
       "ValueRange":$ubOperands,
       "mlir::ArrayAttr":$lbMaps,
       "mlir::ArrayAttr":$ubMaps,
-      "mlir::ArrayAttr":$activeBlockOffsetMaps,
       "mlir::AffineMap":$activeBlockToCacheMap
     )>];
 }
@@ -250,7 +272,9 @@ def rcxp_ActiveBlockCacheReduceOp : rcxp_Op<"active_block_cache_reduce", [AttrSi
 //
 // BeginCacheMappingOp
 //
-def rcxp_BeginCacheMappingOp : rcxp_Op<"begin_cache_mapping", [AttrSizedOperandSegments]> {
+def rcxp_BeginCacheMappingOp : rcxp_Op<"begin_cache_mapping",
+  [AttrSizedOperandSegments,
+  DeclareOpInterfaceMethods<rcxp_BeginCacheRegionOpInterface>]> {
   let summary = "Maps input replacement value to cache value and replaces registered operations as appropriate";
   let description = [{
     The "accxp.begin_cache_mapping" operation marks the start of the subgraph graph to
@@ -259,6 +283,8 @@ def rcxp_BeginCacheMappingOp : rcxp_Op<"begin_cache_mapping", [AttrSizedOperandS
   }];
 
   let arguments = (ins  AnyMemRef:$fromValue,
+                        AnyMemRef:$baseCacheValue,
+                        AnyMemRef:$baseInput,
                         AnyMemRef:$toValue,
                         Variadic<Index>:$fullRelevantIndices,
                         Variadic<Index>:$externalRelevantIndices,
@@ -272,19 +298,25 @@ def rcxp_BeginCacheMappingOp : rcxp_Op<"begin_cache_mapping", [AttrSizedOperandS
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<(ins "Value":$fromValue, "CacheAccessContext":$toValueContext, "int64_t":$id, "bool":$activeBlockCache)>
+    OpBuilder<(ins
+        "Value":$fromValue,
+        "Value":$baseCacheValue,
+        "Value":$baseInput,
+        "CacheAccessContext":$toValueContext,
+        "int64_t":$id,
+        "bool":$activeBlockCache)>
   ];
 
   let extraClassDeclaration = [{
     CacheAccessContext getToValueAccessContext();
-    EndCacheMappingOp getEndOp();
   }];
 }
 
 //
 // EndCacheMappingOp
 //
-def rcxp_EndCacheMappingOp : rcxp_Op<"end_cache_mapping"> {
+def rcxp_EndCacheMappingOp : rcxp_Op<"end_cache_mapping",
+  [DeclareOpInterfaceMethods<rcxp_EndCacheRegionOpInterface>]> {
   let summary = "Denotes the end of the graph section to replace mappings for";
   let description = [{
     The "accxp.end_cache_mapping" operation marks the end the of the subgraph to
@@ -293,17 +325,15 @@ def rcxp_EndCacheMappingOp : rcxp_Op<"end_cache_mapping"> {
   }];
 
   let arguments = (ins  Index:$mappingId);
-
-  let extraClassDeclaration = [{
-    BeginCacheMappingOp getBeginOp();
-  }];
 }
 
 //
 // BeginCacheRegionOp
 //
 def rcxp_BeginCacheRegionOp : rcxp_Op<"begin_cache_region",
-  [AttrSizedOperandSegments, DeclareOpInterfaceMethods<rcln_InjectableMappingOpInterface>]> {
+  [AttrSizedOperandSegments,
+   DeclareOpInterfaceMethods<rcln_InjectableMappingOpInterface>,
+   DeclareOpInterfaceMethods<rcxp_BeginCacheRegionOpInterface>]> {
   let summary = "Denotes the beginning of the subgraph where a cache is active. Lowers to the appropriate cache data moving ops and cache mapping ops";
   let description = [{
     The "accxp.begin_cache_region" operation marks the beginning of the subraph where the cache is active.
@@ -314,6 +344,7 @@ def rcxp_BeginCacheRegionOp : rcxp_Op<"begin_cache_region",
   // different subsets of those ops
   let arguments = (ins  AnyMemRef:$input,
                         AnyMemRef:$cache,
+                        AnyMemRef:$baseInput,
                         Variadic<Index>:$fullRelevantIndices,
                         Variadic<Index>:$externalRelevantIndices,
                         ArrayAttr:$cacheRegionRelevantIndexRanges,
@@ -322,6 +353,7 @@ def rcxp_BeginCacheRegionOp : rcxp_Op<"begin_cache_region",
                         rcln_IndexAttr:$triggerIndex,
                         rcln_IndexAttr:$cacheIndex,
                         I64Attr:$id,
+                        I64Attr:$cacheHierarchyLevel,
                         UnitAttr:$activeBlockCache,
                         UnitAttr:$dimReorderCache);
 
@@ -329,20 +361,29 @@ def rcxp_BeginCacheRegionOp : rcxp_Op<"begin_cache_region",
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<(ins "Value":$inputValue, "CacheAccessContext":$cacheAccessContext, "loopnest::Index":$triggerIndex, "loopnest::Index":$cacheIndex, "int64_t":$id, "bool":$activeBlockCache, "bool":$dimReorderCache)>
+    OpBuilder<(ins
+      "Value":$inputValue,
+      "CacheAccessContext":$cacheAccessContext,
+      "Value":$baseInput,
+      "loopnest::Index":$triggerIndex,
+      "loopnest::Index":$cacheIndex,
+      "int64_t":$id,
+      "int64_t":$cacheHierarchyLevel,
+      "bool":$activeBlockCache,
+      "bool":$dimReorderCache)>
   ];
 
   let extraClassDeclaration = [{
     CacheAccessContext getInputAccessContext();
     CacheAccessContext getCacheAccessContext();
-    EndCacheRegionOp getEndOp();
   }];
 }
 
 //
 // EndCacheRegionOp
 //
-def rcxp_EndCacheRegionOp : rcxp_Op<"end_cache_region"> {
+def rcxp_EndCacheRegionOp : rcxp_Op<"end_cache_region",
+  [DeclareOpInterfaceMethods<rcxp_EndCacheRegionOpInterface>]> {
   let summary = "Denotes the end of the graph section the cache is active for";
   let description = [{
     The "accxp.end_cache_region" operation marks the end the of the subgraph to
@@ -351,10 +392,47 @@ def rcxp_EndCacheRegionOp : rcxp_Op<"end_cache_region"> {
   }];
 
   let arguments = (ins  Index:$regionId);
+}
 
-  let extraClassDeclaration = [{
-    BeginCacheRegionOp getBeginOp();
+//
+// BeginMaxElementCacheRegionOp
+//
+def rcxp_BeginMaxElementCacheRegionOp : rcxp_Op<"begin_max_element_cache_region",
+  [DeclareOpInterfaceMethods<rcln_InjectableMappingOpInterface>,
+   DeclareOpInterfaceMethods<rcxp_BeginCacheRegionOpInterface>]> {
+  let summary = "Denotes the beginning of the subgraph where a max element cache is active. Lowers to a begin_cache_region op at the appropriate level for the element budget";
+  let description = [{
+    The "accxp.begin_max_element_cache_region" operation marks the beginning of the subraph where the max element cache is active.
+    It is an error for there not to be a symmetric accxp.end_cache_region op in the same block as accxp.begin_max_element_cache_region
   }];
+
+  // Requires most of arguments for CacheCopyOp, CacheReduceOp, CacheZeroOp, and CacheMappingOp since it will lower to
+  // different subsets of those ops
+  let arguments = (ins  AnyMemRef:$input,
+                        AnyMemRef:$cache,
+                        AnyMemRef:$baseInput,
+                        DictionaryAttr:$cacheAccessMaps,
+                        rcln_IndexAttr:$innermostLoopNestIndex, // The max element cache is initially positioned around the innermost loop index, but will be hoisted out as part of lowering
+                        I64Attr:$id,
+                        I64Attr:$cacheHierarchyLevel,
+                        I64Attr:$maxElements,
+                        UnitAttr:$dimReorderCache);
+
+  let results = (outs Index:$resultId);
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins
+      "Value":$input,
+      "Value":$cache,
+      "Value":$baseInput,
+      "CacheAccessMaps":$accessMaps,
+      "int64_t":$maxElements,
+      "loopnest::Index":$innermostLoopNestIndex,
+      "int64_t":$id,
+      "int64_t":$cacheHierarchyLevel,
+      "bool":$dimReorderCache)>
+  ];
 }
 
 #endif // EXECUTIONPLAN_OPS

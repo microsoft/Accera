@@ -24,10 +24,16 @@
 #include <llvm/ADT/TypeSwitch.h>
 
 #include <atomic>
+#include <mutex>
 #include <optional>
 #include <set>
 
 namespace vir = accera::ir::value;
+
+namespace
+{
+static std::mutex _globalInsertMutex;
+}
 
 namespace accera::ir
 {
@@ -139,6 +145,8 @@ namespace util
         assert(module && "Expected to be inside a ValueModuleOp");
         auto body = module.getBody();
 
+        // Lock before accessing the global scope so that multi-threaded lowerings all access the appropriate global insert position
+        std::lock_guard<std::mutex> lock(_globalInsertMutex);
         builder.setInsertionPoint(body, body->begin());
         return builder.create<accera::ir::value::GlobalOp>(loc, bufferType, /* isConstant= */ false, globalName, Attribute{});
     }
@@ -351,6 +359,94 @@ namespace util
         return {};
     }
 
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Operation* where)
+    {
+        return GetCurrentIndexIVs(loopIndices, where->getBlock());
+    }
+
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Block* where)
+    {
+        std::vector<mlir::Value> ivs(loopIndices.size());
+
+        auto blockParentOp = where->getParentOp();
+        mlir::AffineForOp currentParentLoop;
+        if (mlir::isa<mlir::AffineForOp>(blockParentOp))
+        {
+            currentParentLoop = mlir::dyn_cast<mlir::AffineForOp>(blockParentOp);
+        }
+        else
+        {
+            currentParentLoop = blockParentOp->getParentOfType<mlir::AffineForOp>();
+        }
+
+        while (currentParentLoop != nullptr)
+        {
+            if (auto indexAttr = currentParentLoop->getAttrOfType<loopnest::IndexAttr>("index"))
+            {
+                auto currentIndex = indexAttr.getValue();
+                auto it = std::find(loopIndices.begin(), loopIndices.end(), currentIndex);
+                if (it != loopIndices.end())
+                {
+                    size_t idx = std::distance(loopIndices.begin(), it);
+                    assert(ivs[idx] == nullptr && "Found same index on multiple loops");
+                    ivs[idx] = currentParentLoop.getInductionVar();
+                }
+            }
+            currentParentLoop = currentParentLoop->getParentOfType<mlir::AffineForOp>();
+        }
+
+        for (auto iv : ivs)
+        {
+            assert(iv != nullptr && "Couldn't find all loop indices");
+        }
+
+        return ivs;
+    }
+
+    std::vector<loopnest::Index> GetIndicesForLoopIVs(const std::vector<mlir::Value>& loopIVs)
+    {
+        std::vector<loopnest::Index> loopIndices;
+
+        for (const auto& loopIV : loopIVs)
+        {
+            mlir::AffineForOp loop = mlir::getForInductionVarOwner(loopIV);
+            assert(loop != nullptr && "Couldn't find loop with the given IV");
+            if (auto indexAttr = loop->getAttrOfType<loopnest::IndexAttr>("index"))
+            {
+                loopIndices.push_back(indexAttr.getValue());
+            }
+            else
+            {
+                assert(false && "Found an AffineForOp with the given IV, but it did not have an IndexAttr");
+            }
+        }
+
+        return loopIndices;
+    }
+
+    mlir::AffineMap ConcatenateAndShiftAffineDimsAndMaps(mlir::OpBuilder& builder, mlir::AffineMap leftMap, mlir::AffineMap rightMap)
+    {
+        // Differs from mlir::concatAffineMaps in that it shifts the dimensions of the right-hand map
+        // and uses all of the dimensions from the two maps independently instead of merging the dimensions
+
+        unsigned dimShift = leftMap.getNumDims();
+        std::vector<mlir::AffineExpr> dimReplacements;
+        std::vector<mlir::AffineExpr> symReplacements;
+        for (unsigned originalDimIdx = 0; originalDimIdx < rightMap.getNumDims(); ++originalDimIdx)
+        {
+            dimReplacements.push_back(builder.getAffineDimExpr(originalDimIdx + dimShift));
+        }
+        auto shiftedRightMap = rightMap.replaceDimsAndSymbols(dimReplacements, symReplacements, rightMap.getNumDims() + dimShift, rightMap.getNumSymbols());
+
+        auto leftMapExprs = leftMap.getResults().vec();
+        auto concatedExprs = shiftedRightMap.getResults().vec();
+        concatedExprs.insert(concatedExprs.begin(), leftMapExprs.begin(), leftMapExprs.end());
+
+        auto concatedMap = mlir::AffineMap::get(shiftedRightMap.getNumDims(), shiftedRightMap.getNumSymbols(), concatedExprs, builder.getContext());
+
+        return concatedMap;
+    }
+
     bool IsSubdomainEmpty(mlir::Operation* where)
     {
         mlir::Operation* parentOp = where;
@@ -533,6 +629,40 @@ namespace util
         }
 
         return true;
+    }
+
+    mlir::Value CreateConstantRangeForOpIterationCounter(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineForOp forOp)
+    {
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+        builder.setInsertionPointToStart(forOp.getBody());
+
+        assert(forOp.hasConstantBounds() && "AffineForOp must have constant bounds");
+        auto lowerBound = forOp.getConstantLowerBound();
+        auto step = forOp.getStep();
+
+        // Compute (iv - lowerBound) / step
+        auto iterCounterMap = AffineMap::get(1, 0, (builder.getAffineDimExpr(0) - builder.getAffineConstantExpr(lowerBound)).floorDiv(step));
+        return builder.create<mlir::AffineApplyOp>(loc, iterCounterMap, mlir::ValueRange{ forOp.getInductionVar() });
+    }
+
+    mlir::Operation* GetFirstOp(mlir::Operation* left, mlir::Operation* right)
+    {
+        assert(left->getBlock() == right->getBlock() && "This utility only supports ops in the same block");
+        auto block = left->getBlock();
+        auto beginIter = block->begin();
+        auto endIter = block->end();
+        for (auto iter = beginIter; iter != endIter; ++iter)
+        {
+            if (&(*iter) == left)
+            {
+                return left;
+            }
+            else if (&(*iter) == right)
+            {
+                return right;
+            }
+        }
+        assert(false && "Neither op found in block");
     }
 
 } // namespace util

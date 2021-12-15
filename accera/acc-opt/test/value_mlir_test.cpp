@@ -1,3 +1,8 @@
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//  Copyright (c) Microsoft Corporation. All rights reserved.
+//  Licensed under the MIT License. See LICENSE in the project root for license information.
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 // RUN:  value_mlir_test | FileCheck %s
 
 // RUN:  value_mlir_test -r compact | python process_tests.py -p "jit_" | FileCheck --allow-empty --check-prefix=JIT %s
@@ -1830,24 +1835,24 @@ TEST_CASE("jit_int8_simple_matrix_multiply_test3")
                                      Value{ cType, MemoryLayout{ { M, N } } }) // C
                          .Inlined(FunctionInlining::never)
                          .Define([&](Array A, Array B, Array C) {
-                                Nest computeNest(MemoryShape{ M, N, K });
-                                auto [i, j, k] = computeNest.GetIndices<3>();
-                                auto schedule = computeNest.CreateSchedule();
-                                auto [kOuter, kInner] = schedule.Split(k, kernelK);
+                             Nest computeNest(MemoryShape{ M, N, K });
+                             auto [i, j, k] = computeNest.GetIndices<3>();
+                             auto schedule = computeNest.CreateSchedule();
+                             auto [kOuter, kInner] = schedule.Split(k, kernelK);
 
-                                auto computeKernel = Kernel("compute", [&, i = i, j = j, k = k]() {
-                                    auto a = UnsignedCast(A(i, k), cType);
-                                    auto b = Cast(B(k, j), cType);
-                                    auto prod = a * b;
-                                    C(i, j) += prod;
-                                });
+                             auto computeKernel = Kernel("compute", [&, i = i, j = j, k = k]() {
+                                 auto a = UnsignedCast(A(i, k), cType);
+                                 auto b = Cast(B(k, j), cType);
+                                 auto prod = a * b;
+                                 C(i, j) += prod;
+                             });
 
-                                schedule.AddKernel(computeKernel);
-                                schedule.SetOrder({ kOuter, i, j, kInner });
-                                schedule.SetSaturatedFlag(kInner);
+                             schedule.AddKernel(computeKernel);
+                             schedule.SetOrder({ kOuter, i, j, kInner });
+                             schedule.SetSaturatedFlag(kInner);
 
-                                auto plan = schedule.CreatePlan();
-                                plan.AddCache(B, j);
+                             auto plan = schedule.CreatePlan();
+                             plan.AddCache(B, j);
                          });
 
     auto accessFn = DeclareFunction("access")
@@ -1933,6 +1938,7 @@ TEST_CASE("jit_int8_cached_matrix_multiply_test")
             };
 
             const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+            const int vectorBytes = vectorSize * 4; // 4 bytes per float
             const int vectorUnits = 16; // AVX-2 has 16 256-bit registers
 
             auto matMulNest = simpleMatMul(A, B, C);
@@ -1946,7 +1952,7 @@ TEST_CASE("jit_int8_cached_matrix_multiply_test")
 
             schedule.Unroll(iInner);
             schedule.Unroll(jInner);
-            plan.Vectorize(jInner, { vectorSize, vectorUnits });
+            plan.Vectorize(jInner, { vectorBytes, vectorUnits });
 
             // JIT-LABEL: A*B:
             Print("A*B:\n"s);
@@ -2003,6 +2009,7 @@ TEST_CASE("jit_int8_expvec_matrix_multiply_test")
             };
 
             const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+            const int vectorBytes = vectorSize * 4; // 4 bytes per float
             const int vectorUnits = 16; // AVX-2 has 16 256-bit registers
 
             auto matMulNest = simpleMatMul(A, B, C);
@@ -2016,7 +2023,7 @@ TEST_CASE("jit_int8_expvec_matrix_multiply_test")
 
             schedule.Unroll(iInner);
             schedule.Unroll(jInner);
-            plan.Vectorize(jInner, { vectorSize, vectorUnits, true });
+            plan.Vectorize(jInner, { vectorBytes, vectorUnits, true });
 
             // JIT-LABEL: A*B:
             Print("A*B:\n"s);
@@ -2233,6 +2240,7 @@ TEST_CASE("jit_float_cached_matrix_multiply_test")
             };
 
             const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+            const int vectorBytes = vectorSize * 4; // 4 bytes per float
             const int vectorUnits = 16; // AVX-2 has 16 256-bit registers
 
             auto matMulNest = simpleMatMul(A, B, C);
@@ -2246,7 +2254,7 @@ TEST_CASE("jit_float_cached_matrix_multiply_test")
 
             schedule.Unroll(iInner);
             schedule.Unroll(jInner);
-            plan.Vectorize(jInner, { vectorSize, vectorUnits });
+            plan.Vectorize(jInner, { vectorBytes, vectorUnits });
 
             // JIT-LABEL: A*B:
             Print("A*B:\n"s);
@@ -2308,6 +2316,7 @@ TEST_CASE("jit_vectorize_outer_loop_test")
             };
 
             int vectorSize = 8;
+            int vectorBytes = vectorSize * 4; // 4 bytes per float
             int vectorUnits = 16;
 
             int64_t jBlock = 256;
@@ -2337,7 +2346,7 @@ TEST_CASE("jit_vectorize_outer_loop_test")
             // plan.AddCache(C, iInner);
 
             schedule.Unroll(kInner2);
-            plan.Vectorize(jInner3, { vectorSize, vectorUnits });
+            plan.Vectorize(jInner3, { vectorBytes, vectorUnits });
 
             // COM: JIT-LABEL: A*B:
             Print("A*B:\n"s);
@@ -3550,7 +3559,7 @@ TEST_CASE("vectorized_add_test")
             });
             auto schedule = computeNest.CreateSchedule();
             auto plan = schedule.CreatePlan();
-            plan.Vectorize(ii, { 8, 16 });
+            plan.Vectorize(ii, { 32, 16 });
 
             Print("X\n"s);
             Print(C);
@@ -3563,6 +3572,7 @@ TEST_CASE("vectorized_add_test")
 TEST_CASE("vectorized_sum_test")
 {
     const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+    const int vectorBytes = vectorSize * 4; // 4 bytes per float
     const int vectorUnits = 16; // AVX-2 has 16 256-bit registers
     const int M = 32;
     const int N = 500;
@@ -3596,7 +3606,7 @@ TEST_CASE("vectorized_sum_test")
             });
             auto schedule = computeNest.CreateSchedule();
             auto plan = schedule.CreatePlan();
-            plan.Vectorize(j, { vectorSize, vectorUnits });
+            plan.Vectorize(j, { vectorBytes, vectorUnits });
         });
 
     SUCCEED();
@@ -3606,6 +3616,7 @@ TEST_CASE("vectorized_sum_test")
 TEST_CASE("vectorized_max_test")
 {
     const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+    const int vectorBytes = vectorSize * 4; // 4 bytes per float
     const int vectorUnits = 16; // AVX-2 has 16 256-bit registers
     const int M = 32;
     const int N = 500;
@@ -3643,7 +3654,7 @@ TEST_CASE("vectorized_max_test")
             auto schedule = computeNest.CreateSchedule();
             schedule.SetOrder({ jj, ii });
             auto plan = schedule.CreatePlan();
-            plan.Vectorize(ii, { vectorSize, vectorUnits });
+            plan.Vectorize(ii, { vectorBytes, vectorUnits });
 
             Print(B);
         });
@@ -3655,6 +3666,7 @@ TEST_CASE("vectorized_max_test")
 TEST_CASE("vectorized_exp_test")
 {
     const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+    const int vectorBytes = vectorSize * 4; // 4 bytes per float
     const int vectorUnits = 16; // AVX-2 has 16 256-bit registers
     const int M = 32;
     const int N = 500;
@@ -3690,7 +3702,7 @@ TEST_CASE("vectorized_exp_test")
 
             schedule.SetOrder({ ii, jj });
             auto plan = schedule.CreatePlan();
-            plan.Vectorize(jj, { vectorSize, vectorUnits });
+            plan.Vectorize(jj, { vectorBytes, vectorUnits });
 
             Print(B);
         });

@@ -13,8 +13,8 @@ Accera requires the following tools and libraries:
 * LLVM OpenMP 5, if using parallelization
 
 ```shell
-sudo apt update -y
-sudo apt-get install -y gcc-8 g++-8 cmake python3.7 ninja-build ccache libomp-11-dev pkg-config
+sudo apt update
+sudo apt-get install gcc-8 g++-8 cmake python3 python3-pip ninja-build ccache libomp-11-dev pkg-config zip
 ```
 
 Some Ubuntu distributions will install an older version of CMake. Check the version of cmake using `cmake --version`, and [download](https://cmake.org/download/) a newer version if older than 3.14.
@@ -24,7 +24,7 @@ Some Ubuntu distributions will install an older version of CMake. Check the vers
 #### Install [git](https://git-scm.com/download) if you don't already have it:
 
 ```
-sudo apt-get install -y git
+sudo apt-get install git
 ```
 
 #### Clone the git repository:

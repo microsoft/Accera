@@ -10,7 +10,7 @@ from ..Parameter import DelayedParameter
 
 from .Array import Array
 from .Schedule import Schedule, IndexTransform
-from .Cache import Cache
+from .Cache import Cache, DelayedCache
 from .Function import Function
 from .LoopIndex import LoopIndex
 from .NativeLoopNestContext import NativeLoopNestContext
@@ -117,7 +117,8 @@ class ActionPlan:
               thrifty: bool = None,
               location: Any = None,
               level: Union[int, DelayedParameter] = None,
-              trigger_level: Union[int, DelayedParameter] = None):
+              trigger_level: Union[int, DelayedParameter] = None,
+              _delayed_cache: DelayedCache = None):
         """Adds a cache for a view target
 
         Args:
@@ -130,7 +131,15 @@ class ActionPlan:
             max_elements: The maximum elements to include in the cached region. Specify one and only one of `index`, `level`, `max_elements`.
             thrifty: Use thrifty caching (copy data into a cache only if the cached data differs from the original active block).
         """
-        if any([isinstance(arg, DelayedParameter) for arg in (index, trigger_index, level, trigger_level)]):
+        if any([isinstance(arg, DelayedParameter) for arg in (index, trigger_index, level, trigger_level)]) or \
+            (isinstance(source, DelayedCache) and not source.completed):
+            # If any of the cache level arguments are parameters, then this cache call is incomplete until those parameters
+            # have values. Additionally, if this is a hierarchical cache and an outer cache is parameterized,
+            # then this cache call is also incomplete until the outer cache's parameters have values
+
+            # Create an incomplete Cache object so hierarchical caches that depend on this cache handle can
+            # have an object to hold onto
+            delayed_cache = DelayedCache(plan=self, target=source)
             self._delayed_calls[
                 partial(
                     self.cache,
@@ -138,7 +147,8 @@ class ActionPlan:
                     layout=layout,
                     max_elements=max_elements,
                     thrifty=thrifty,
-                    location=location
+                    location=location,
+                    _delayed_cache = delayed_cache
                 )
             ] = {
                     "index" : index,
@@ -146,14 +156,7 @@ class ActionPlan:
                     "level" : level,
                     "trigger_level" : trigger_level
                 }
-            return None
-
-        if isinstance(source, Array):
-            target = source
-        else:
-            raise NotImplementedError(
-                "Hierarchical caching is not yet implemented"
-            )  # TODO
+            return delayed_cache
 
         if thrifty:
             raise NotImplementedError("Thrifty caching is not yet implemented")  # TODO
@@ -162,30 +165,96 @@ class ActionPlan:
             raise ValueError(
                 "Specify one and only one of index, level, or max_elements"
             )
-        
-        if (trigger_level or trigger_index):
-            if isinstance(source, Array) and source.role not in [Array.Role.CONST, Array.Role.INPUT]:
-                raise ValueError("Multicaching is only supported for CONST and INPUT arrays")
+
+        if max_elements is not None and max_elements <= 0:
+            raise ValueError("Max element count specified as a cache budget must be greater than 0")
+
+        if max_elements is None:
+            # Validate or set index / level values
+
+            # Validate that if index is specified, then level and trigger_level are not
+            if (index is not None) and (level is not None or trigger_level is not None):
+                raise ValueError("Can't specify both a cache index and a cache level or trigger level")
+
+            # Validate that if level is specified, then index and trigger_index are not
+            if (level is not None) and (index is not None or trigger_index is not None):
+                raise ValueError("Can't specify both a cache level and a cache index or trigger index")
+
+            if level:
+                # the level of the key-slices is the count of right-aligned wildcards, e.g. level 2 = (i[0], ..., *, *)
+                # therefore the index is at position -level, e.g. (i[0], ..., index, *)
+                # Note: this takes a snapshot of the schedule ordering
+                index = self._sched._indices[-level]
+            else:
+                self._add_index_attr(index, "cache")
+                index_pos = self._sched._indices.index(index)
+                level = len(self._sched._indices) - index_pos
+
+            if (trigger_level or trigger_index):
+                if isinstance(source, Array) and source.role not in [Array.Role.CONST, Array.Role.INPUT]:
+                    raise ValueError("Multicaching is only supported for CONST and INPUT arrays")
+
             if layout is None:
-                # Multi-caching is only supported for manual caching, so if a multicache is requested but a manual cache layout isn't provided, take the input array layout as the cache layout
-                # TODO : merge "active element" automatic caching and "active block" manual caching so this isn't needed
                 layout = source._requested_layout
 
-        if level:
-            # the level of the key-slices is the count of right-aligned wildcards, e.g. level 2 = (i[0], ..., *, *)
-            # therefore the index is at position -level, e.g. (i[0], ..., index, *)
-            # Note: this takes a snapshot of the schedule ordering
-            index = self._sched._indices[-level]
-        if trigger_level:
-            # the trigger level is the level of the loopnest to fill the cache at. Must be the same as level or precede it
-            # Note: this takes a snapshot of the schedule ordering
-            trigger_index = self._sched._indices[-trigger_level]
-        if index:
-            self._add_index_attr(index, "cache")
-        if trigger_index:
-            self._add_index_attr(trigger_index, "trigger")
+            # Validate or set trigger_index / trigger_level values
 
-        cache = Cache(self, target, index, trigger_index, layout, max_elements, thrifty, location)
+            if trigger_index is not None and trigger_level is not None:
+                raise ValueError("Can't specify both a trigger_index and a trigger_level")
+
+            if trigger_index is None and trigger_level is None:
+                trigger_index = index
+                trigger_level = level
+            elif trigger_level is not None:
+                # the trigger level is the level of the loopnest to fill the cache at. Must be the same as level or precede it
+                # Note: this takes a snapshot of the schedule ordering
+                trigger_index = self._sched._indices[-trigger_level]
+            else:
+                self._add_index_attr(trigger_index, "trigger")
+                trigger_index_pos = self._sched._indices.index(trigger_index)
+                trigger_level = len(self._sched._indices) - trigger_index_pos
+
+            if level > trigger_level:
+                raise ValueError("Cache level must be less than or equal to the cache trigger level")
+
+            if level <= 0:
+                raise ValueError("Cache level must be greater than or equal to 1")
+
+            if trigger_level <= 0:
+                raise ValueError("Cache trigger level must be greater than or equal to 1")
+
+        if isinstance(source, Cache):
+            # The outer cache must have a higher cache level and a higher trigger level than this cache, or a higher max element budget
+            if source.max_elements is None and (source.level is None or source.trigger_level is None):
+                # If the outer cache doesn't have a max element budget, then it must have both a cache level and a cache trigger_level
+                raise ValueError("Given source cache doesn't have a cache level, trigger_level, or max_elements")
+
+            if (source.max_elements is None) != (max_elements is None):
+                raise ValueError("Can only create a max element hierarchical caches of other max element caches")
+            if source.max_elements is not None:
+                if source.max_elements <= max_elements:
+                    raise ValueError("Outer max element cache for a hierarchical cache must have a larger budget than the inner cache")
+            else:
+                if source.level <= level:
+                    raise ValueError("Outer cache for a hierarchical cache must have a higher cache level than inner cache")
+                if source.level < trigger_level:
+                    raise ValueError("Outer cache for a hierarchical cache must have a greater or equal cache level than the inner cache's trigger_level")
+
+        cache = Cache(plan=self,
+                      target=source,
+                      index=index,
+                      trigger_index=trigger_index,
+                      level=level,
+                      trigger_level=trigger_level,
+                      layout=layout,
+                      max_elements=max_elements,
+                      thrifty=thrifty,
+                      location=location)
+
+        if _delayed_cache:
+            _delayed_cache.complete(cache)
+            cache = _delayed_cache
+
         self._commands.append(partial(self._add_cache, cache))
         return cache
 
@@ -196,21 +265,24 @@ class ActionPlan:
 
         trigger_index = context.mapping[id(cache.trigger_index)] if cache.trigger_index else last_in_index
 
-        target = context.mapping[id(cache.target)]
+        if isinstance(cache.target, Array):
+            target = context.mapping[id(cache.target)]
+        else:
+            target = cache.target.native_cache
 
         # TODO: support layout, location, thrifty
         if (isinstance(self._target, Target) and self._target.category == Target.Category.GPU):
-            context.plan.add_cache(target, last_in_index, trigger_index, cache.max_elements, MemorySpace.NONE)
+            cache.native_cache = context.plan.add_cache(target, last_in_index, trigger_index, cache.max_elements, MemorySpace.NONE)
         else:
-            context.plan.add_cache(target=target,
-                                   index=last_in_index,
-                                   trigger_index=trigger_index,
-                                   max_elements=cache.max_elements,
-                                   indexing=cache.indexing,
-                                   allocation=cache.allocation,
-                                   memory_space=cache.memory_space,
-                                   memory_map=cache.memory_map,
-                                   dim_order=cache.dimension_permutation)
+            cache.native_cache = context.plan.add_cache(target=target,
+                                                        index=last_in_index,
+                                                        trigger_index=trigger_index,
+                                                        max_elements=cache.max_elements,
+                                                        indexing=cache.indexing,
+                                                        allocation=cache.allocation,
+                                                        memory_space=cache.memory_space,
+                                                        memory_map=cache.memory_map,
+                                                        dim_order=cache.dimension_permutation)
 
     def pack_and_embed_buffer(self,
                               target,

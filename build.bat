@@ -1,5 +1,10 @@
 @echo off
+REM ####################################################################################################
+REM Copyright (c) Microsoft Corporation. All rights reserved.
+REM Licensed under the MIT License. See LICENSE in the project root for license information.
 REM Build script for the Accera Python package
+REM ####################################################################################################
+
 setlocal
 
 set ACCERA_ROOT=%~dp0
@@ -26,7 +31,7 @@ if exist "%ACCERA_ROOT%\CMake\LLVMSetupConan.cmake" (
 
 REM Build the accera package
 cd "%ACCERA_ROOT%"
-python setup.py clean --all build bdist_wheel
+python setup.py build bdist_wheel
 
 REM Build the subpackages
 cd "%ACCERA_ROOT%\accera\python\compilers"

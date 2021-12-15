@@ -16,6 +16,7 @@
 #include <ir/include/value/ValueEnums.h>
 
 #include <memory>
+#include <variant>
 #include <vector>
 
 namespace accera::ir::loopnest
@@ -55,7 +56,7 @@ namespace value
 
         // Manual caching versions
         Cache(accera::ir::loopnest::ScheduleOp schedule,
-              ViewAdapter value,
+              std::variant<ViewAdapter, Cache*> value,
               const std::optional<ScalarIndex>& keySliceIndex,
               const std::optional<ScalarIndex>& triggerIndex,
               const std::optional<int64_t>& maxElements,
@@ -66,7 +67,7 @@ namespace value
               ExecutionOptions execOptions = targets::CPU{});
 
         Cache(accera::ir::loopnest::ScheduleOp schedule,
-              ViewAdapter value,
+              std::variant<ViewAdapter, Cache*> value,
               const std::optional<ScalarIndex>& keySliceIndex,
               const std::optional<ScalarIndex>& triggerIndex,
               const std::optional<int64_t>& maxElements,
@@ -96,6 +97,8 @@ namespace value
         Cache& operator=(const Cache&) = delete;
         Cache& operator=(Cache&&) noexcept;
         ~Cache();
+
+        Value GetBaseValue();
 
     private:
         std::unique_ptr<CacheImpl> _impl;

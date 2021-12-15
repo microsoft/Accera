@@ -17,6 +17,7 @@
 #include "ir/include/value/ValueEnums.h"
 #include <utilities/include/MemoryLayout.h>
 
+#include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/Affine/IR/AffineValueMap.h>
 #include <mlir/IR/AffineMap.h>
 #include <mlir/IR/Attributes.h>
@@ -88,6 +89,8 @@ namespace executionPlan
 
     // Copied from ShapedType::kDynamicSize in mlir\include\mlir\IR\StandardTypes.h becuase gcc has linker issues with static constexpr constants
     const int64_t DynamicSizeSentinelValue = -1;
+
+#include "exec/ExecutionPlanInterfaces.h.inc"
 } // namespace executionPlan
 } // namespace accera::ir
 
@@ -121,6 +124,7 @@ struct CacheInfo
     MemRefType cacheType;
     bool activeBlockCache;
     bool dimReorderCache;
+    int64_t maxElementBudget = -1;
     CacheAllocation cacheAllocation;
     std::optional<loopnest::Index> cacheIndex;
     std::optional<loopnest::Index> triggerIndex;
@@ -157,7 +161,7 @@ CacheInfo MakeManualCacheInfo(
     loopnest::ScheduleOp schedule,
     const std::optional<loopnest::Index>& keySliceIndex,
     const std::optional<loopnest::Index>& triggerIndex,
-    const std::optional<int64_t>& maxElements, // TODO : maxElements caching doesn't work with manual caching because we don't know the size of the active block yet
+    const std::optional<int64_t>& maxElements,
     const std::variant<utilities::MemoryAffineCoefficients, utilities::DimensionOrder>& cacheMappingInfo,
     MemorySpace memorySpace);
 

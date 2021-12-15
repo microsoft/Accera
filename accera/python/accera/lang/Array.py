@@ -292,6 +292,7 @@ class SubArray(Array):
         self._shape = shape or source.shape
         self._element_type = source.element_type
         self._layout = source._layout
+        self._requested_layout = source._requested_layout
         self._offset = 0
 
         # TODO: support DelayedParameter

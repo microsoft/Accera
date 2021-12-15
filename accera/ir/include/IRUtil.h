@@ -19,11 +19,10 @@
 
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Visitors.h>
-
 
 #ifndef RC_FILE_LOC
 #define RC_FILE_LOC(rewriter) accera::ir::util::GetLocation(rewriter, __FILE__, __LINE__)
@@ -255,6 +254,14 @@ namespace util
 
     std::optional<int64_t> GetDimSizeAt(const loopnest::Index& dimensionIndex, mlir::Operation* where);
 
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Operation* where);
+
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Block* where);
+
+    std::vector<loopnest::Index> GetIndicesForLoopIVs(const std::vector<mlir::Value>& loopIVs);
+
+    mlir::AffineMap ConcatenateAndShiftAffineDimsAndMaps(mlir::OpBuilder& builder, mlir::AffineMap leftMap, mlir::AffineMap rightMap);
+
     bool IsSubdomainEmpty(mlir::Operation* where);
 
     void InlineAllRegionOpsBeforeOp(mlir::PatternRewriter& rewriter, mlir::Region& regionToInline, mlir::Operation* op);
@@ -264,6 +271,68 @@ namespace util
     mlir::LogicalResult PromoteIfSingleIteration(mlir::PatternRewriter& rewriter, mlir::AffineForOp forOp);
 
     bool OperationsAreEqual(mlir::Operation* lhs, mlir::Operation* rhs);
+
+    mlir::Value CreateConstantRangeForOpIterationCounter(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineForOp forOp);
+
+    mlir::Operation* GetFirstOp(mlir::Operation* left, mlir::Operation* right);
+
+    template <typename OpType>
+    bool IsOutermostOpOfType(OpType op, std::optional<std::string> ignoreAttrName = std::nullopt)
+    {
+        // First check if there is an OpType instance in an ancestor block
+        auto currentParentOp = op->getParentOp();
+        auto currentBlock = currentParentOp->getBlock();
+        while (currentParentOp != nullptr && currentBlock != nullptr)
+        {
+            for (auto& op : currentBlock->getOperations())
+            {
+                if (auto outerOp = mlir::dyn_cast_or_null<OpType>(&op))
+                {
+                    if (ignoreAttrName.has_value())
+                    {
+                        if (!outerOp->hasAttr(ignoreAttrName.value()))
+                        {
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+            }
+            currentParentOp = currentBlock->getParentOp();
+            if (currentParentOp)
+            {
+                currentBlock = currentParentOp->getBlock();
+            }
+        }
+
+        // Now check if there are any OpType siblings to the current one that occur before it in the block
+        auto parentBlock = op->getBlock();
+        for (auto& siblingOp : parentBlock->getOperations())
+        {
+            if (&siblingOp == op.getOperation())
+            {
+                break;
+            }
+            else if (auto outerOp = mlir::dyn_cast_or_null<OpType>(&siblingOp))
+            {
+                if (ignoreAttrName.has_value())
+                {
+                    if (!outerOp->hasAttr(ignoreAttrName.value()))
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
 
 } // namespace util
 } // namespace accera::ir

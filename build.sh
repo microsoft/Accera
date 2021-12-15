@@ -1,4 +1,8 @@
 #!/bin/sh
+####################################################################################################
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See LICENSE in the project root for license information.
+####################################################################################################
 set -e
 
 # Build script for the Accera Python package
@@ -27,7 +31,7 @@ fi
 
 # Build the accera package
 cd "$ACCERA_ROOT"
-python setup.py clean --all build bdist_wheel
+python setup.py build bdist_wheel
 
 # Build the subpackages
 cd "$ACCERA_ROOT/accera/python/compilers"

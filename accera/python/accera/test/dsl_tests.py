@@ -1878,7 +1878,7 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
             }
 
         schedule = nest.create_schedule()
-        ii = schedule.split(i, A.shape[0] // target.num_threads)
+        ii = schedule.split(i, A.shape[0] // min(4, target.num_threads))
         schedule.reorder(i, ii, j, k)  # set the index (k) that cannot be parallelized as innermost
 
         for policy in ["static", "dynamic"]:

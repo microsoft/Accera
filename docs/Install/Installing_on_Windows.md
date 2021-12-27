@@ -6,7 +6,7 @@
 
 #### Visual Studio
 
-Accera requires a C++ compiler that supports C++ 17. You can download [Visual Studio 2019 Enterprise Edition](https://my.visualstudio.com/Downloads?q=Visual%20Studio%202019) for free. Install Update 10 or later which includes the LLVM OpenMP libraries.
+Accera requires a C++ compiler that supports C++ 17. You can download [Visual Studio 2019 Enterprise Edition](https://my.visualstudio.com/Downloads?q=Visual%20Studio%202019) or [Visual Studio 2022 Community Edition](https://visualstudio.microsoft.com/vs/). Install Update 10 or later which includes the LLVM OpenMP libraries only for VS 2019.
 
 Select *Desktop Development with C++*.
 
@@ -17,7 +17,7 @@ Accera requires [Spectre-mitigated libraries](https://docs.microsoft.com/en-us/c
 
 #### CMake
 
-Accera requires [CMake](https://cmake.org/) 3.14 or newer. A version of CMake that satisfies this requirement is included with Visual Studio 2019.
+Accera requires [CMake](https://cmake.org/) 3.14 or newer.  A version of CMake that satisfies this requirement is included with Visual Studio 2019  and Visual Studio 2022.
 
 #### Python
 
@@ -35,7 +35,7 @@ conda activate py37
 
 ### Clone Accera
 
-Visual Studio 2019 includes a version of `git`. To use it, launch Visual Studio 2019, and select `Clone a repository`.
+Visual Studio 2019 and 2022 include a version of `git`. To use it, launch Visual Studio 2019 or 2022, and select `Clone a repository`.
 
 Repository location:
 
@@ -60,7 +60,19 @@ pip install -U dist\accera-0.0.1-cp37-cp37m-win_amd64.whl --find-links=dist
 
 ### Build and install using CMake
 
-Accera can also be built using CMake. This is for expert users only.
+Accera can also be built using CMake (intended for expert users).
+
+#### Install dependencies
+
+```shell
+cd <path_to_accera>
+git submodule init
+git submodule update
+external\vcpkg\bootstrap-vcpkg.bat
+external\vcpkg\vcpkg install catch2:x64-windows tomlplusplus:x64-windows accera-llvm:x64-windows --overlay-ports=external\llvm
+```
+
+The last command typically takes a few hours to build and then install Accera's fork of LLVM. We recommend you reserve at least 20GB of disk space for the LLVM build.
 
 #### Configure CMake
 
@@ -69,7 +81,11 @@ cd <path_to_accera>
 mkdir build
 cd build
 
-cmake .. -DCMAKE_BUILD_TYPE=Release -G"Visual Studio 16 2019" -Ax64 [-DLLVM_SETUP_VARIANT=Default]
+# For Visual Studio 2019:
+cmake .. -DCMAKE_BUILD_TYPE=Release -G"Visual Studio 16 2019" -Ax64
+
+# For Visual Studio 2022:
+cmake .. -DCMAKE_BUILD_TYPE=Release -G"Visual Studio 17 2022" -Ax64
 ```
 
 #### Build and run tests
@@ -81,6 +97,58 @@ ctest -C Release
 
 #### Install
 
-```shell
+```
 cmake --build . --config Release --target install -- /m
+```
+
+#### Use MSVC Compiler from Command Line
+For benchmarking Accera, [benchmark\_hat\_package script](../../accera/benchmark-hat-package/README.md) use Microsoft C++ Compiler (cl.exe). However, it is
+not included in the `PATH` environment variable. Run the following command on the
+Anaconda Prompt or Command Prompt to get an access to `cl.exe`.
+
+- Locate and then call the `vcvarsall.bat` file from your **Microsoft Visual Studio 2019** install location, selecting the `x64` configuration:
+```
+> call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+```
+The output should look like (the actual version may vary for your install):
+```
+**********************************************************************
+** Visual Studio 2019 Developer Command Prompt v16.11.7
+** Copyright (c) 2021 Microsoft Corporation
+**********************************************************************
+[vcvarsall.bat] Environment initialized for: 'x64'
+```
+- Invoke `cl.exe` to test if the MSVC compiler is in the `PATH` (your installed version may vary):
+```
+> cl
+Microsoft (R) C/C++ Optimizing Compiler Version 19.29.30137 for x64
+```
+Please check the details on `vcvarsall.bat` [here](https://docs.microsoft.com/en-us/cpp/build/building-on-the-command-line?view=msvc-170).
+
+**NOTE:** If you are using **Visual Studio 2022**, locate and then call the `vcvarsall.bat` file from your Microsoft Visual
+Studio 2022 install location, selecting the `x64`cofniguration:
+```
+> call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
+```
+The output should look like (the actual version may vary for your install):
+```
+**********************************************************************
+** Visual Studio 2022 Developer Command Prompt v17.0.1
+** Copyright (c) 2021 Microsoft Corporation
+**********************************************************************
+[vcvarsall.bat] Environment initialized for: 'x64'
+```
+Invoke `cl.exe` to test if the MSVC compiler is in the `PATH` (your installed version mayvary):
+```
+> cl
+Microsoft (R) C/C++ Optimizing Compiler Version 19.30.30705 for x64
+```
+
+## Troubleshooting
+- Activate Conda for Python 3.7 or any other version that you are working with in an application that you are using for setting up Accera.
+- Update Microsoft Visual Studio from Microsoft Visual Studio Installer application if there are any errors similar to the ones shown below. Make sure to launch the Command Prompt again and follow the build/install steps for Accera from the beginning.
+```
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.20.27508\include\xtree(1164): error C2672: 'operator __surrogate_func': no matching overloaded function found [C:\accera\build\libraries\ir\ir.vcxproj]
+
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC\14.20.27508\include\xtree(1164): error C2893: Failed to specialize function template 'unknown-type std::less<void>::operator ()(_Ty1 &&,_Ty2 &&) noexcept(<expr>) const' [C:\accera\build\libraries\ir\ir.vcxproj]
 ```

@@ -33,6 +33,13 @@ class IndexEntry:
     def interval(self):
         return (self.start, self.stop, self.step)
 
+    def num_blocks(self):
+        if self.step > 1:
+            # Note: ceil is not applicable here because the boundary
+            # loop will be unswitched anyway
+            return (self.stop - self.start) // self.step
+        else:
+            return 1 # treat as a single block
 
 class Schedule:
     "Used for transforming an iteration space"
@@ -372,6 +379,40 @@ class Schedule:
             return actual_index
         return index
 
+    def _get_index_num_blocks(self, index: IndexEntry):
+        # Computes the number of split blocks for an index
+        # returns 1 if the index is never split
+        #
+        # Suppose i is split twice: 
+        #   ii = schedule.split(i, 4)
+        #   iii = schedule.split(ii, 8)
+        #
+        # The number of blocks is:
+        #   ceil(i_size/4) * ceil(ii_size/8) * 1
+        # iii is never split, so it counts as 1 contiguous block
+        if self._index_map[index].inners:
+            # a parent, recursively include its descendents
+            assert(len(self._index_map[index].inners) == 1)
+            return self._index_map[index].num_blocks() * \
+                self._get_index_num_blocks(self._index_map[index].inners[0])
+
+        return self._index_map[index].num_blocks()
+
+    def _get_num_split_blocks(self, indices: List[LoopIndex]):
+        # Calculate how many blocks the indices have been split into
+        # Assumes: schedule ordering is enforced by the caller
+        result = 0
+        visited = []
+        for i in list(map(self._resolve_index, indices)):
+            visited.append(i)
+            if (self._index_map[i].parent and
+                self._index_map[i].transform and
+                self._index_map[i].transform[0] is IndexTransform.SPLIT and
+                self._index_map[i].parent in visited
+            ):
+                continue # avoid double-counting this index
+            result += self._get_index_num_blocks(i)
+        return result
 
 class FusedSchedule(Schedule):
     def __init__(self, schedules: List[Schedule], partial: int = None):

@@ -27,7 +27,7 @@ Some Ubuntu distributions will install an older version of CMake. Check the vers
 sudo apt-get install git
 ```
 
-#### Clone the git repository:
+#### Clone the git repository
 
 ```shell
 git clone --recurse-submodules https://intelligentdevices.visualstudio.com/ELL/_git/Accera
@@ -52,24 +52,36 @@ pip install -U ./dist/accera-0.0.1-cp37-cp37m-linux_x86_64.whl --find-links=dist
 
 Accera can also be built using CMake (intended for expert users).
 
-#### Configure CMake:
+#### Install dependencies
+
+```shell
+cd <path_to_accera>
+git submodule init
+git submodule update
+./external/vcpkg/bootstrap-vcpkg.sh
+./external/vcpkg/vcpkg install catch2 tomlplusplus accera-llvm --overlay-ports=external/llvm
+```
+
+The last command typically takes a few hours to build and then install Accera's fork of LLVM. We recommend you reserve at least 20GB of disk space for the LLVM build.
+
+#### Configure CMake
 
 ```shell
 cd <path_to_accera>
 mkdir build
 cd build
 
-cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja [-DLLVM_SETUP_VARIANT=Default]
+cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja
 ```
 
-#### Build and run tests:
+#### Build and run tests
 
 ```shell
 cmake --build . --config Release
 ctest -C Release
 ```
 
-#### Install:
+#### Install
 
 ```shell
 cmake --build . --config Release --target install

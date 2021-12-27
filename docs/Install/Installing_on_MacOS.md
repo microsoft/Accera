@@ -66,6 +66,18 @@ pip install -U ./dist/accera-0.0.1-cp37-cp37-macosx_10_15_x86_64.whl --find-link
 
 Accera can also be built using CMake (intended for expert users).
 
+#### Install dependencies
+
+```shell
+cd <path_to_accera>
+git submodule init
+git submodule update
+./external/vcpkg/bootstrap-vcpkg.sh
+./external/vcpkg/vcpkg install catch2 tomlplusplus accera-llvm --overlay-ports=external/llvm
+```
+
+The last command typically takes a few hours to build and then install Accera's fork of LLVM. We recommend you reserve at least 20GB of disk space for the LLVM build.
+
 #### Configure CMake
 
 ```shell
@@ -73,7 +85,7 @@ cd <path_to_accera>
 mkdir build
 cd build
 
-cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja [-DLLVM_SETUP_VARIANT=Default]
+cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja
 ```
 
 #### Build and run tests

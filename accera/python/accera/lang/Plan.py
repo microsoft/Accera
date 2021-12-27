@@ -3,6 +3,7 @@
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
 
+import logging
 from typing import *
 from functools import partial
 
@@ -74,16 +75,23 @@ class ActionPlan:
     def _vectorize(self, index, vectorization_info, context: NativeLoopNestContext):
         context.plan.vectorize(context.mapping[id(index)], vectorization_info)
 
-    def parallelize(self, indices: Union[LoopIndex, Tuple[LoopIndex], DelayedParameter], pin: Union[Tuple[Any], DelayedParameter]=None, policy: Union[str, DelayedParameter]="static"):
+    def parallelize(self, indices: Union[LoopIndex, Tuple[LoopIndex], DelayedParameter],
+        pin: Union[Tuple[Any], DelayedParameter]=None, policy: Union[str, DelayedParameter]="static"):
         """Performs one or more loops in parallel on multiple cores or processors.
         Only available for targets with multiple cores or processors. 
 
         Args:
             indices: The iteration-space dimensions to run in parallel. 
+                To assign multiple threads to an index, first split that index,
+                then parallelize its split indices.
+                
+                Unsplit indices will be assigned one thread each, split indices
+                will be assigned threads based on the number of split blocks.
+                This is limited by the number of threads supported by the target.
             pin: Pin the computation to a subset of cores or processors.
             policy: The scheduling policy to apply ("dynamic" or "static").
         """
-        if isinstance(indices, DelayedParameter) or isinstance(pin, DelayedParameter) or isinstance(policy, DelayedParameter):
+        if any([isinstance(arg, DelayedParameter) for arg in [indices, pin, policy]]):
             self._delayed_calls[partial(self.parallelize)] = {"indices" : indices, "pin" : pin, "policy" : policy}
             return None
 
@@ -98,13 +106,17 @@ class ActionPlan:
         for index in indices:
             self._add_index_attr(index, "parallelized")
 
-        self._commands.append(
-            partial(self._parallelize, indices, policy, self._target.num_threads)
-        )
+        self._commands.append(partial(self._parallelize, indices, policy))
 
-    def _parallelize(self, indices, policy, num_threads, context: NativeLoopNestContext):
+    def _parallelize(self, indices, policy, context: NativeLoopNestContext):
         from .._lang_python._lang import _ParallelizationPolicy
+
+        # num_threads = number of split blocks, clamped by the number of threads supported by this target
+        num_threads = min(self._target.num_threads, self._sched._get_num_split_blocks(indices))
+        logging.debug(f"Parallelizing with {num_threads} thread(s)")
+
         idxs = [context.mapping[id(index)] for index in indices]
+
         context.plan.parallelize(idxs, num_threads, 
             _ParallelizationPolicy.DYNAMIC if policy == "dynamic" else _ParallelizationPolicy.STATIC)
 

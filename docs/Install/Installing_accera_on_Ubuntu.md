@@ -30,18 +30,8 @@ apt-get install libomp-11-dev
 
 ### Install Accera
 
-The 'accera` Python package is distributed as part of the Azure Artifacts feed. To consume the Python package from the command line, we will use pip (19.2+) and the Azure Artifacts keyring.
-
-Before proceeding, ensure that you have obtained your Personal Access Token (PAT) from https://intelligentdevices.pkgs.visualstudio.com. You will be prompted to enter the PAT later on when installing the package.
-
-Upgrade pip and install the Azure Artifacts keyring package:
+The `accera` Python package can be installed from PyPI:
 
 ```shell
-python3 -m pip install --upgrade pip
-pip3 install keyring artifacts-keyring
-```
-
-Install the package:
-```shell
-pip3 install -U accera --index-url https://intelligentdevices.pkgs.visualstudio.com/_packaging/Robopy/pypi/simple/
+pip install accera
 ```

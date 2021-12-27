@@ -43,7 +43,7 @@ xcode-select --install
 
 ### Install Accera
 
-The 'accera` Python package can be installed from PyPI:
+The `accera` Python package can be installed from PyPI:
 
 ```shell
 pip install accera

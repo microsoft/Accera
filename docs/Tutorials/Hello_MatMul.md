@@ -1,6 +1,7 @@
 ## Hello MatMul
 
 By the end of this tutorial, you will learn how to:
+
 * Implement a simple Matrix Multiplication (MatMul) function using Accera's Domain Specific Language (DSL)
 * Produce a [HAT](https://github.com/microsoft/hat) package containing the MatMul function
 * Call the function from C or C++ code

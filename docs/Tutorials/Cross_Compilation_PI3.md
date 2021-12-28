@@ -1,6 +1,7 @@
 ## Cross Compilation for PI3 using Hello MatMul
 
 By the end of this tutorial, you will learn how to:
+
 * Cross compile a simple Matrix Multiplication (MatMul) function for execution on a Raspberry Pi 3
 * Produce a [HAT](https://github.com/microsoft/hat) package containing the MatMul function that can be called on Pi 3 target
 * Call the function from C or C++ code on a Raspberry Pi 3

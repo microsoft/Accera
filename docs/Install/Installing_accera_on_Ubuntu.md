@@ -5,6 +5,7 @@
 ### Install dependencies
 
 Accera requires the following tools and libraries for building the generated code:
+
 * A C++ compiler, such as *GCC 8*
 * Python 3.7 or newer
 * OpenMP 5, if using parallelization

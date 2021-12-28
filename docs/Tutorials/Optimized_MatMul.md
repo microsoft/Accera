@@ -1,9 +1,9 @@
 ## Optimized MatMul
 
-In this tutorial.... Optimizing MatMul depends heavily on he target platform .... The code in the example below is optimized specifically for an Intel Xeon E5-2673 v3 CPU, but will work equally well on CPUs with similar hardware characteristics like AMD Epyc 7551 and so on.
+Optimizing MatMul depends heavily on the target platform. The code in the example below is optimized specifically for an Intel Xeon E5-2673 v3 CPU, but will work equally well on CPUs with similar hardware characteristics like AMD Epyc 7551 and so on.
 
-TODO: Turn this into a paragraph like above
 By the end of this tutorial, you will learn how to:
+
 * Implement a performant Matrix Multiplication (MatMul) function targetting AVX2 FMA3 CPUs like Intel Haswell or the AMD Epyc families, using Accera's Domain Specific Language (DSL)
 * Produce a [HAT](https://github.com/microsoft/hat) package containing the optimized MatMul function
 * Call the function from C or C++ code
@@ -35,6 +35,7 @@ for i in range(M):
 #### Accera Python DSL
 
 We will walk through how to specify an optimized Matrix Multiplication (MatMul) using Accera. This tutorial assumes the following:
+
 * Specific matrix sizes, input A is 784 x 128, B is 128 x 512, the output C is 784 x 512 elements. These represent an mid-level layer in a Resnet-50 model, where the A matrix contains the activation values from the previous layer and B matrix contains the weights of the neural network layer.
 * Row-major layout of the array elements.
 * The target hardware is capable of AVX2 FMA3 instructions, such as the Intel Xeon E5-2673 v3 or the AMD Epyc 7551.

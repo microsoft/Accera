@@ -1,7 +1,16 @@
 # to preview the site locally, run "mkdocs serve" from the repo root
 site_name: Accera
-repo_url: https://github.com/micorsoft/Accera/
 site_author: Microsoft
+copyright: Copyright &copy; 2021+ Microsoft [MIT License]
+repo_url: https://github.com/micorsoft/Accera/
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/microsoft/Accera
+
+plugins:
+  - search
 
 theme:
   name: material
@@ -24,6 +33,3 @@ theme:
       toggle:
         icon: material/toggle-switch
         name: Switch to light mode
-
-plugins:
-  - search

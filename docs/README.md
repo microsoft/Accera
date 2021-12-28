@@ -1,6 +1,8 @@
 [//]: # (Project: Accera)
 [//]: # (Version: 1.2.0)
 
+![logo](assets/Accera_darktext.png)
+
 # Accera 1.2.0 Documentation
 
 * [Installation Instructions](Install/README.md)

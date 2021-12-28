@@ -102,7 +102,7 @@ cmake --build . --config Release --target install -- /m
 ```
 
 #### Use MSVC Compiler from Command Line
-For benchmarking Accera, [benchmark\_hat\_package script](../../accera/benchmark-hat-package/README.md) use Microsoft C++ Compiler (cl.exe). However, it is
+For benchmarking Accera, [benchmark\_hat\_package script](https://github.com/microsoft/Accera/tree/main/accera/benchmark-hat-package) use Microsoft C++ Compiler (cl.exe). However, it is
 not included in the `PATH` environment variable. Run the following command on the
 Anaconda Prompt or Command Prompt to get an access to `cl.exe`.
 

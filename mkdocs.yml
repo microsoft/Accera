@@ -1,3 +1,4 @@
+# to preview the site locally, run "mkdocs serve" from the repo root
 site_name: Accera
 repo_url: https://github.com/micorsoft/Accera/
 site_author: Microsoft

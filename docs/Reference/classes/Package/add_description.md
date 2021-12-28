@@ -6,6 +6,7 @@
 ## `accera.Package.add_description([author, license, other, version])`
 Adds descriptive metadata to the HAT package.
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `author` | Name of the individual or group that authored the package. | string

@@ -7,6 +7,7 @@
 Adds an iteration logic function to a `Nest`.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `logic` | | Python function that represents the logic to run in the innermost loop of the nest

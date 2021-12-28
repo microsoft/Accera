@@ -7,6 +7,7 @@
 Builds a HAT package.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `name` | The package name. | string

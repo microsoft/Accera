@@ -11,6 +11,7 @@ Assume that the original size of dimension `i` was *n*: The `split` transformati
 If the split size does not divide the dimension size, empty elements are added such that the split size does divide the dimension size.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `index` | The dimension to split | `Index`

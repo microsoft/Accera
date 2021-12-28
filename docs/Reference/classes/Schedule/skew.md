@@ -7,6 +7,7 @@
 Transform a dimension with respect to a reference dimension into a parallelogram by padding with empty elements.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `index` | The dimension to skew | `Index`

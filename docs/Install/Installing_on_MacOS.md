@@ -5,6 +5,7 @@
 ### Install Dependencies
 
 Accera requires the following tools and libraries:
+
 * A C++ compiler that supports C++ 17, such as `clang`, which is bundled in XCode
 * CMake 3.14 or newer
 * Python 3.7 or newer

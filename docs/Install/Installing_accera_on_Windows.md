@@ -34,7 +34,7 @@ pip install accera
 ```
 
 ### Use MSVC Compiler from Command Line
-For benchmarking Accera, the [benchmark\_hat\_package script](../../accera/benchmark-hat-package/README.md) uses the Microsoft C++ (MSVC) Compiler (`cl.exe`) to build HAT packages.
+For benchmarking Accera, the [benchmark\_hat\_package script](https://github.com/microsoft/Accera/tree/main/accera/benchmark-hat-package) uses the Microsoft C++ (MSVC) Compiler (`cl.exe`) to build HAT packages.
 
 You can add `cl.exe` to the `PATH` environment variable for your command prompt by following these steps:
 

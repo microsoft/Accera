@@ -4,9 +4,9 @@
 # Accera 1.2.0 Reference
 
 # Module functions
-* [`accera.add_functions_from_grid`](<functions/add_functions_from_grid.md>) `(args, package, parameter_grid, source[, base_name])`
-* [`accera.create_parameters`](<functions/create_parameters.md>) `(number)`
-* [`accera.fuse`](<functions/fuse.md>) `(schedules[, partial])`
+* [`accera.create_parameters`](functions/create_parameters.md) `(number)`
+* [`accera.get_parameters_from_grid`](functions/get_parameters_from_grid.md) `(parameter_grid)`
+* [`accera.fuse`](functions/fuse.md) `(schedules[, partial])`
 
 # Top level enumerations
 * [`accera.ScalarType`](<enumerations/ScalarType.md>)

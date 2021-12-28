@@ -1,0 +1,29 @@
+# to preview the site locally, run "mkdocs serve" from the repo root
+site_name: Accera
+repo_url: https://github.com/micorsoft/Accera/
+site_author: Microsoft
+
+theme:
+  name: material
+  features:
+    - search.highlight
+    - search.share
+    - toc.integrate
+  font:
+    text: Open Sans
+    code: Source Code Pro
+  logo: assets/A_lighttext.png
+  palette:
+    - media: "(prefers-color-scheme: light)" 
+      scheme: default
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)" 
+      scheme: slate
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to light mode
+
+plugins:
+  - search

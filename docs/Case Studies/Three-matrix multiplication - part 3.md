@@ -2,10 +2,10 @@
 [//]: # (Version: 1.2.0)
 
 # Case study - Three-matrix multiplication (part 3)
-We now present a third scheduling strategy for three-matrix multiplication, which is different from the ones in [part 1](<Three-matrix%20multiplication%20-%20part%201.md>) and [part 2](<Three-matrix%20multiplication%20-%20part%202.md>).
+We now present a third scheduling strategy for three-matrix multiplication, which is different from the ones in [part 1](Three-matrix%20multiplication%20-%20part%201.md) and [part 2](Three-matrix%20multiplication%20-%20part%202.md).
 
 ## Defining the iteration-space dimensions
-Repeat the construction from [part 2](<Three-matrix%20multiplication%20-%20part%202.md>), up until the point where the two schedules are fused:
+Repeat the construction from [part 2](Three-matrix%20multiplication%20-%20part%202.md), up until the point where the two schedules are fused:
 ```python
 schedule = acc.fuse((schedule0, schedule1), partial=2)
 f, i, j, jj0, k0, j1, kk1 = schedule.get_indices()

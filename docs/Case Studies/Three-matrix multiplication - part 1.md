@@ -2,7 +2,7 @@
 [//]: # (Version: 1.2.0)
 
 # Case study - Three-matrix multiplication (part 1)
-In [Section 4 of the Accera manual](<../Manual/04%20Fusing.md>) we introduced fusing and showed how to fuse two matrix-matrix multiplications to get a three-matrix multiplication operation, the equivalent of `E += A @ B @ D` in Python. That example used a temporary array `C`, which held the results of `A @ B`, and we briefly discussed the strategy of computing `C` block-by-block, to avoid storing all of `C` in memory. We now revisit that example with a few changes.
+In [Section 4 of the Accera manual](../Manual/04%20Fusing.md) we introduced fusing and showed how to fuse two matrix-matrix multiplications to get a three-matrix multiplication operation, the equivalent of `E += A @ B @ D` in Python. That example used a temporary array `C`, which held the results of `A @ B`, and we briefly discussed the strategy of computing `C` block-by-block, to avoid storing all of `C` in memory. We now revisit that example with a few changes.
 
 First, assume that `A`, `D`, and `E` have a shape of (256, 32), `B` has a shape of (32, 256), and `C` has a shape of (256,256). Setting all of the dimension sizes to be powers of 2 simplifies our exposition. Moreover, the advantages of fusing are accentuated when the temporary array `C` is significantly larger than the others.
 

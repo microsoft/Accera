@@ -8,7 +8,7 @@ One of the most important features of the Accera language is that it can provide
 First, note that order-invariant schedules are obviously safe. This is because Accera transformations only change the order of the loop-nest iterations, never remove any iterations, and possibly add empty iterations in the form of padding. Recall that a `Nest` represents a simple nest, which is assumed to be order-invariant, and therefore any schedule that was created by a call to `create_schedule()` is safe.
 
 ## Safety and Fusing
-Another way to create a schedule is via fusing (see [Section 4 of the Accera manual](<../Manual/04%20Fusing.md>)). Say that we have a sequence of *n* schedules: `schedule0`, `schedule1`, ... and we partially fuse their first *m* dimensions. Namely,
+Another way to create a schedule is via fusing (see [Section 4 of the Accera manual](../Manual/04%20Fusing.md)). Say that we have a sequence of *n* schedules: `schedule0`, `schedule1`, ... and we partially fuse their first *m* dimensions. Namely,
 ```python
 schedule = acc.fuse((schedule0, schedule1, ...), partial=m)
 ```

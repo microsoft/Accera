@@ -54,7 +54,7 @@ B = acc.Array(role=acc.Array.Role.CONST, data=matrix)
 ```
 
 ### Temporary arrays
-Temporary arrays are mutable internal arrays, and are used when two Accera schedules are fused into one (more on fusing in [Section 4](<04%20Fusing.md>)). The elements of a temporary array are initialized to zeros and used to store intermediate values. Like constant arrays, temporary arrays can be laid out arbitrarily and, in fact, the Accera compiler can choose not to store them in physical memory at all (more on this later).
+Temporary arrays are mutable internal arrays, and are used when two Accera schedules are fused into one (more on fusing in [Section 4](04%20Fusing.md)). The elements of a temporary array are initialized to zeros and used to store intermediate values. Like constant arrays, temporary arrays can be laid out arbitrarily and, in fact, the Accera compiler can choose not to store them in physical memory at all (more on this later).
 
 
 <div style="page-break-after: always;"></div>

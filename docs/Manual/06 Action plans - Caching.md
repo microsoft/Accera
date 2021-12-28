@@ -14,7 +14,7 @@ In this section, we discuss how to add data caching strategies to an action plan
 
 ## Key slices
 
-Recall that a [slice](<03%20Schedules.md>) is a set of iteration space elements that match a coordinate template with wildcards, such as (1, \*, 3). A *key-slice* is a slice whose wildcards are right-aligned, such as (1, 2, \*) and (3, \*, \*). The *level* of a key-slice is the number of wildcards in its definition, so for example, (1, 2, \*) is a level 1 key-slice and (3, \*, \*) is a level 2 key slice.
+Recall that a [slice](03%20Schedules.md) is a set of iteration space elements that match a coordinate template with wildcards, such as (1, \*, 3). A *key-slice* is a slice whose wildcards are right-aligned, such as (1, 2, \*) and (3, \*, \*). The *level* of a key-slice is the number of wildcards in its definition, so for example, (1, 2, \*) is a level 1 key-slice and (3, \*, \*) is a level 2 key slice.
 
 Note that reordering the dimensions of an iteration space changes which slices are key-slices. However, it is always true that the entire *d*-dimensional iteration space is a level *d* key-slice and each individual element is a level zero key-slice. Each iteration belongs to one key-slice from each level, from zero to *d*, for a total of *d+1* different key-slices. When the schedule is executed, the key-slices that contain the current iteration are called the *current key-slices*.
 

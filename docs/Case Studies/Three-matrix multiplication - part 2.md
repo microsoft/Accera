@@ -2,7 +2,7 @@
 [//]: # (Version: 1.2.0)
 
 # Case study - Three-matrix multiplication (part 2)
-In [part 1](<Three-matrix%20multiplication%20-%20part%201.md>) we described a simple schedule for three-matrix multiplication. Next, we present an alternative schedule. Assume that all of the arrays are defined as in part 1.
+In [part 1](Three-matrix%20multiplication%20-%20part%201.md) we described a simple schedule for three-matrix multiplication. Next, we present an alternative schedule. Assume that all of the arrays are defined as in part 1.
 
 ## Defining the iteration-space dimensions
 For completeness, we repeat the definitions of `schedule0` and `schedule1`:

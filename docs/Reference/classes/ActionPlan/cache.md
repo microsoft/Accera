@@ -12,7 +12,7 @@ argument | description | type/default
 `source` | The array or cache from which this cache is copied. | `Array` or `Cache`
 `index` | The index used to determine the cache level. Specify one and only one of `index`, `level`, `max_elements`. | `Index`
 `trigger_index` | The index used to determine what level to fill the cache at. `trigger_index` can't come after `index` in the schedule order, and will default to `index` if not specified. Specify at most one of `trigger_index` or `trigger_level`. | `Index`
-`layout` | The affine memory map, if different from the source. | [`accera.Layout`](<../Array/Layout.md>)
+`layout` | The affine memory map, if different from the source. | [`accera.Layout`](../Array/Layout.md)
 `level` | The key-slice level to cache (the number of wildcard dimensions in a key-slice). Specify one and only one of `index`, `level`, `max_elements`. | positive integer
 `trigger_level` | The key-slice level to fill the cache at. `trigger_level` can't be smaller than `level`, and will default to `level` if not specified. Specify at most one of `trigger_index` or `trigger_level`. | positive integer
 `max_elements` | The maximum elements to include in the cached region. Specify one and only one of `index`, `level`, `max_elements`. | positive integer

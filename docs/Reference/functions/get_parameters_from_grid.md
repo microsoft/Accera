@@ -7,6 +7,7 @@
 Get parameters combinations from parameter gid.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `parameter_grid` | A set of different values for each parameter, which will be used to generate a list of all valid parameter combinations | dictionary

@@ -7,6 +7,7 @@
 Constructs an array.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `role` | The role of the array, which determines if the array scope is internal or external and if the array is mutable or immutable. | [`accera.Array.Role`](Role.md)

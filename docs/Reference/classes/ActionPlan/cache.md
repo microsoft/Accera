@@ -7,6 +7,7 @@
 Adds a caching strategy to an action plan.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `source` | The array or cache from which this cache is copied. | `Array` or `Cache`

@@ -11,6 +11,7 @@ These orders are not allowed:
 2. The *fusing dimension* created by a `fuse` operation must always precede any *unfused dimensions*.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `order` | Either the order of indices to set, or the outermost index if using variable arguments | tuple of `Index` or `Index`

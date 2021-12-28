@@ -7,6 +7,7 @@
 Adds a function to the package.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `source` | The source which defines the function's implementation. | `Nest` or `Schedule` or `ActionPlan`

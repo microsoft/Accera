@@ -9,6 +9,7 @@ The `fuse` operation combines multiple iteration spaces into a single "fused" it
 In cases where it doesn't make sense to fuse all of the iteration space dimensions, we can choose to fuse a prefix of the dimensions and leave the rest unfused.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `schedules` | Either the schedules to fuse if performing partial fusing, or the first schedule to fuse if fusing all dimensions | tuple of `Schedule` or `Schedule` |

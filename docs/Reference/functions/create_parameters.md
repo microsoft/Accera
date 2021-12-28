@@ -7,6 +7,7 @@
 Creates placeholder parameters.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `number` | number of parameters to create | positive integer

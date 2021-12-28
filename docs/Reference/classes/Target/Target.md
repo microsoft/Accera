@@ -8,6 +8,7 @@
 Defines the capabilities of a target processor.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `architecture` | The processor architecture | accera.Target.Architecture

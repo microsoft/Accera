@@ -2,7 +2,7 @@
 site_name: Accera
 site_author: Microsoft
 copyright: Copyright &copy; 2021+ Microsoft [MIT License]
-repo_url: https://github.com/micorsoft/Accera/
+repo_url: https://github.com/microsoft/Accera/
 
 extra:
   social:

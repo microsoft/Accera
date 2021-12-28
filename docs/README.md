@@ -7,4 +7,4 @@
 * [Accera Manual](Manual/README.md)
 * [Accera DSL Reference](Reference/accera.md)
 * [Tutorials](Tutorials/Tutorials.md)
-* [Case Studies](Case\ Studies/README.md)
+* [Case Studies](Case Studies/README.md)

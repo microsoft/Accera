@@ -38,7 +38,7 @@ for i in range(M):
                 C[i, j] += A[i + k, j + l] * B[k, l]
 ```
 
-While Accera supports arbitrary affine loop nests, the programmer defines the logic of their algorithm using simple nests. More complex nests are obtained by applying schedule transformations (see [Section 3](03%20Schedules.md)) or by fusing multiple schedules (see [Section 4](04%20Fusing.md)).
+While Accera supports arbitrary affine loop nests, the programmer defines the logic of their algorithm using simple nests. More complex nests are obtained by applying schedule transformations (see [Section 3](03 Schedules.md)) or by fusing multiple schedules (see [Section 4](04 Fusing.md)).
 
 ## Defining the loop nest logic
 The programmer's goal is to create a highly optimized target-specific implementation of an affine loop nest. The first step towards this goal is to define the logic of one or more simple nests. The logic is a target-independent pseudo-code of a simple nest, written without considering performance. For example, the following code defines the logic of the matrix-matrix multiplication loop nest:
@@ -199,7 +199,7 @@ package.build(format=acc.Package.Format.HAT, name="linear_algebra")
 
 It may not be immediately clear why so many stages are needed just to compile a simple nest. The importance of each step will hopefully become clear once we describe the stages in detail.
 
-In the example above, The call to `package.add_function` takes three arguments: the first is the action plan that defines the function's implementation; the second is the order of the input and input/output arrays in the function signature; and the third is a base name for the function. The full name of the function is the base name followed by an automatically-generated unique identifier. For example, the function in the example could appear in the package as `simple_matmul_8f24bef5`. The automatically-generated suffix ensures that each function in the package has a unique name. More details on function packages can be found in [Section 10](10%20Packages.md).
+In the example above, The call to `package.add_function` takes three arguments: the first is the action plan that defines the function's implementation; the second is the order of the input and input/output arrays in the function signature; and the third is a base name for the function. The full name of the function is the base name followed by an automatically-generated unique identifier. For example, the function in the example could appear in the package as `simple_matmul_8f24bef5`. The automatically-generated suffix ensures that each function in the package has a unique name. More details on function packages can be found in [Section 10](10 Packages.md).
 
 ## Convenience syntax
 For convenience, Accera also provides shortcuts to avoid unneeded verbosity. Specifically, we can create a function in a package directly from a nest, as follows:

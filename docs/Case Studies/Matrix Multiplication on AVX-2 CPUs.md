@@ -2,7 +2,7 @@
 [//]: # (Version: 1.2.0)
 
 # Case study - Float32 Matrix Multiplication on AVX-2 FMA3 CPUs
-We first introduced matrix multiplication in [Section 0](../Manual/00%20Introduction.md) of the manual with a definition of `C += A @ B`. Recall that for an `M`&times;`N` matrix `C`, an `M`&times;`S` matrix `A`, and a `S`&times;`N` matrix `B`, the logic for matrix multiplication can be expressed in Python as:
+We first introduced matrix multiplication in [Section 0](../Manual/00 Introduction.md) of the manual with a definition of `C += A @ B`. Recall that for an `M`&times;`N` matrix `C`, an `M`&times;`S` matrix `A`, and a `S`&times;`N` matrix `B`, the logic for matrix multiplication can be expressed in Python as:
 ```python
 # C += A @ B
 for i in range(M):
@@ -11,11 +11,11 @@ for i in range(M):
             C[i, j] += A[i, k] * B[k, j]
 ```
 
-In [Section 2](../Manual/02%20Simple%20Affine%20Loop%20Nests.md) of the manual we provided a sample Accera implementation of matrix multiplication. That example used a default schedule and action plan, which will compute the correct result but will not produce an efficient implementation.
+In [Section 2](../Manual/02 Simple Affine Loop Nests.md) of the manual we provided a sample Accera implementation of matrix multiplication. That example used a default schedule and action plan, which will compute the correct result but will not produce an efficient implementation.
 
 In this case study, we will focus on how to construct a Accera schedule and action plan to optimize matrix multiplication performance for `float32` element types on 64-bit CPUs with AVX-2 and FMA3 features. Many of these ideas will be valid on other CPUs, however some of the details will vary.
 
-To have a sufficiently general case that is also concrete, for this case study we assume `M = 1020, N = S = 1024`, and that matrices `A`, `B`, and `C` all have `FIRST_MAJOR` layout in memory (see [Section 1](../Manual/01%20Arrays.md) of the manual for a discussion of array layout). We will also discuss how to augment some scheduling choices to suit other sizes.
+To have a sufficiently general case that is also concrete, for this case study we assume `M = 1020, N = S = 1024`, and that matrices `A`, `B`, and `C` all have `FIRST_MAJOR` layout in memory (see [Section 1](../Manual/01 Arrays.md) of the manual for a discussion of array layout). We will also discuss how to augment some scheduling choices to suit other sizes.
 
 
 ## Target Hardware Characteristics
@@ -28,7 +28,7 @@ For concreteness, we assume that our target hardware has the following character
     * A CPU with two 256-bit FMA units. Most Intel Broadwell and later era chips and similar era AMD chips have two. To find how many FMA units your chip has, you can consult the optimization guide for your chip ( [Intel](https://software.intel.com/content/www/us/en/develop/articles/intel-sdm.html#optimization), [AMD](https://developer.amd.com/resources/developer-guides-manuals/) ). Alternatively you may examine the throughput or the port documentation for `vfmadd*` instructions for your chip [here](https://uops.info/table.html), the throughput is the average cycles per instruction, if your chip's average throughput for a `vfmadd` is `0.5` then it indicates you have 2 FMA units.
 
 ## Basic Setup
-The accera logic functions remains unchanged from [Section 2](../Manual/02%20Simple%20Affine%20Loop%20Nests.md). We include it here for completeness:
+The accera logic functions remains unchanged from [Section 2](../Manual/02 Simple Affine Loop Nests.md). We include it here for completeness:
 ```python
 import accera as acc
 
@@ -66,9 +66,9 @@ Due to matrix multiplication having a 3-dimensional iteration space and operatin
 While this data reuse cannot be avoided, we can make changes to reduce the performance penalty of revisiting elements. Once an element has been loaded, it will reside in the various hardware caches on our system, and reusing an element that is already in a hardware cache will be faster than using an element that was never in the hardware cache or has since been evicted.
 
 ### Iteration Space Tiling
-To achieve this reuse, we *tile* the iteration space, using the `tile()` API described in [Section 3](../Manual/03%20Schedules.md) of the manual, to break the iteration space into smaller blocks in which we will reuse data elements multiple times before moving on.
+To achieve this reuse, we *tile* the iteration space, using the `tile()` API described in [Section 3](../Manual/03 Schedules.md) of the manual, to break the iteration space into smaller blocks in which we will reuse data elements multiple times before moving on.
 
-We will use Accera Parameters, defined in [Section 9](../Manual/09%20Parameters.md) of the manual, to set our tile split sizes for each iteration space dimension and determine their values later based on hardware characteristics.
+We will use Accera Parameters, defined in [Section 9](../Manual/09 Parameters.md) of the manual, to set our tile split sizes for each iteration space dimension and determine their values later based on hardware characteristics.
 
 Let's add this tiling to our Accera implementation as a series of schedule splits:
 ```python
@@ -126,7 +126,7 @@ for j in range(0, 1024, n_tile_size):
 The "kernel" of our implementation is the innermost part of the loopnest which performs the computation, and it may consist of many of the innermost splits of the nest. Optimizing this kernel code will matter far more than any other optimization in our loopnest as the code spends the majority of its time in this innermost section.
 
 ### Register Size and Data Layout Considerations
-With Accera, we don't need to specifically plan out the exact machine code we want to achieve, but having the capabilities of the hardware in mind will be beneficial for generating performant code. For the AVX-2 / FMA3 CPUs we're targeting in this case study, there are 16 &times; 256-bit vector registers which can perform data-parallel computation when we structure our kernels appropriately. Since these registers are 256 bits wide, they can hold 8 32-bit floats, so we will want to structure our innermost loop so that the innermost 8 iterations can map data to positions in these registers. This innermost loop will be *vectorized*, as discussed in [Section 7](../Manual/07%20Action%20plans%20-%20Vectorization%20and%20Parallelization.md) of the manual.
+With Accera, we don't need to specifically plan out the exact machine code we want to achieve, but having the capabilities of the hardware in mind will be beneficial for generating performant code. For the AVX-2 / FMA3 CPUs we're targeting in this case study, there are 16 &times; 256-bit vector registers which can perform data-parallel computation when we structure our kernels appropriately. Since these registers are 256 bits wide, they can hold 8 32-bit floats, so we will want to structure our innermost loop so that the innermost 8 iterations can map data to positions in these registers. This innermost loop will be *vectorized*, as discussed in [Section 7](../Manual/07 Action plans - Vectorization and Parallelization.md) of the manual.
 
 Consider what happens to the matrix multiplication logic if each of the 3 iteration domain dimensions are selected to be the inner split dimension of size 8. Accera vectorization will mark the loop as a data-parallel loop, unroll it, and attempt to vectorize instructions inside of it, so it is helpful to consider the unrolled version of the loop and what the data flow will look like:
 
@@ -308,7 +308,7 @@ So far we have determined our tiling sizes and designed our kernel, however our 
 
 If we examine our loop schedule and specifically what elements of `B` it reads, we see that it reads 16 elements from a row of `B` in the `jjj` and `jjjj` loops, then as the `kkk` loop iterates it jumps down to the next row and reads 16 elements from that row, and so on. Finally when the `jj` loop iterates, it will read the second set of 16 elements from the first row, and so on. This is sometimes called a Z-order traversal, and if we can arrange our `B` matrix data in memory such that the first 16 elements of each row are followed by the first 16 elements of the next row (sometimes called "Z-order packing") and so on, then the CPU's hardware prefetcher will ensure that we're consistently getting hardware cache hits as we read `B` data. For this case study, we will pack an entire `128`&times;`256` tile of `B` matrix data at a time.
 
-As discussed in [Section 6](../Manual/06%20Action%20plans%20-%20Caching.md) of the manual, Accera has a built-in "cache" utility that will examine the access pattern of a given array and create a temporary buffer holding a local copy of array data that can be packed such that the buffer is read sequentially from front-to-back by the loopnest. The act of packing this temporary buffer serves to fill the L2 hardware cache with the data we're interested in, however it also takes some amount of time so for very small matrices it is not worthwhile. For the `1020`&times;`1024`&times;`1024` scenario in this case study, however, the matrices are plenty large enough to make using a Accera cache on the `B` matrix tiles worthwhile.
+As discussed in [Section 6](../Manual/06 Action plans - Caching.md) of the manual, Accera has a built-in "cache" utility that will examine the access pattern of a given array and create a temporary buffer holding a local copy of array data that can be packed such that the buffer is read sequentially from front-to-back by the loopnest. The act of packing this temporary buffer serves to fill the L2 hardware cache with the data we're interested in, however it also takes some amount of time so for very small matrices it is not worthwhile. For the `1020`&times;`1024`&times;`1024` scenario in this case study, however, the matrices are plenty large enough to make using a Accera cache on the `B` matrix tiles worthwhile.
 
 Since individual elements are read from the `A` matrix and our kernel examines the same 6 rows of `A` for a longer period of time, we don't see benefits empirically from creating a Accera cache for `A` in the same way, however this may differ on different hardware or for different input sizes.
 

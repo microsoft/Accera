@@ -2,7 +2,7 @@
 [//]: # (Version: 1.2.0)
 
 # Section 3: Schedules
-We begin this section with `nest` from [Section 2](02%20Simple%20Affine%20Loop%20Nests.md), which captures the logic of matrix-matrix multiplication. We use `nest` to create a `Schedule`, which controls the execution order of the nest iterations. Schedules are target-independent, in the sense that the same schedule can be used to emit code for multiple target platforms.
+We begin this section with `nest` from [Section 2](02 Simple Affine Loop Nests.md), which captures the logic of matrix-matrix multiplication. We use `nest` to create a `Schedule`, which controls the execution order of the nest iterations. Schedules are target-independent, in the sense that the same schedule can be used to emit code for multiple target platforms.
 
 We create a default schedule as follows:
 ```python
@@ -64,13 +64,13 @@ for k in range(11):
 
 Some orders are not allowed. Describing the restrictions in full requires concepts that have not yet been introduced, so we merely mention the restrictions here and explain them in detail later on. The restrictions are:
 1. The *inner dimension* created by a `split` transformation (see below) always comes after its corresponding *outer dimension*.
-2. The *fusing dimension* created by a `fuse` operation (see [Section 4](04%20Fusing.md)) must always precede any *unfused dimensions*.
+2. The *fusing dimension* created by a `fuse` operation (see [Section 4](04 Fusing.md)) must always precede any *unfused dimensions*.
 
 Also note that `reorder` can also have the following overloaded form:
 ```python
 schedule.reorder(order=(k, i, j))
 ```
-This form is better suited for use with parameters (see [Section 9](09%20Parameters.md)).
+This form is better suited for use with parameters (see [Section 9](09 Parameters.md)).
 
 ### `split`
 ```python
@@ -82,7 +82,7 @@ From the iteration space point-of-view, the `split` transformation takes a dimen
 
 In loop terms, `ii = split(i, size)` splits loop `i` into two loops: an inner loop `ii` and an outer loop, which inherits the original name `i`. Note that the outer loop always precedes the corresponding inner loop in the loop ordering.
 
-For example, starting from `nest` defined in [Section 2](02%20Simple%20Affine%20Loop%20Nests.md), we could write:
+For example, starting from `nest` defined in [Section 2](02 Simple Affine Loop Nests.md), we could write:
 ```python
 schedule = nest.create_schedule()
 jj = schedule.split(j, 5)
@@ -278,7 +278,7 @@ We say that a schedule is *order-invariant* if its underlying logic doesn't depe
 
 We say that a schedule is *safe* if its underlying logic is guaranteed not to change, regardless of how we transform it. Not all schedules are safe, but order-invariant schedules are. This is because all of the transformations introduced in this section merely change the order in which iterations are executed, without adding or removing any work.
 
-In [Section 4](04%20Fusing.md), we introduce fused schedules, which are not order-invariant, but may still be safe.
+In [Section 4](04 Fusing.md), we introduce fused schedules, which are not order-invariant, but may still be safe.
 
 
 <div style="page-break-after: always;"></div>

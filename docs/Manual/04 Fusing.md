@@ -2,7 +2,7 @@
 [//]: # (Version: 1.2.0)
 
 # Section 4: Fusing
-Multiple schedules can be combined into a single schedule using the `fuse` operation. The fused schedule represents the union of the work in the original schedules. The fused schedule can be transformed using any of the transformations presented in [Section 3](03%20Schedules.md).
+Multiple schedules can be combined into a single schedule using the `fuse` operation. The fused schedule represents the union of the work in the original schedules. The fused schedule can be transformed using any of the transformations presented in [Section 3](03 Schedules.md).
 
 ## Full fusing
 ```python
@@ -119,7 +119,7 @@ for i in range(0, 16, 4):
 ```
 
 ### Constraint 1: the fusing dimension is executed sequentially
-The fusing dimension has a special constraint, which does not apply to other dimensions. Specifically, the fusing dimension cannot be parallelized or vectorized (parallelization and vectorization are presented in [Section 7](07%20Action plans%20-%20Vectorization%20and%20Parallelization.md) ) and it must be executed sequentially. This constraint enables the safety guarantee discussed below.
+The fusing dimension has a special constraint, which does not apply to other dimensions. Specifically, the fusing dimension cannot be parallelized or vectorized (parallelization and vectorization are presented in [Section 7](07 Action plans - Vectorization and Parallelization.md) ) and it must be executed sequentially. This constraint enables the safety guarantee discussed below.
 
 ### Safety
 The fused schedule (before applying any subsequent transformations) is always logically equivalent to executing the original schedules one-by-one. However, is it safe? Recall that a schedule is considered safe if its underlying logic is guaranteed not to change, regardless of how we transform it. The safety of a fully fused schedule depends on the circumstances:
@@ -328,7 +328,7 @@ for i in range(0, 16, 4):
                 for j1 in range(7):
                     E[i+ii, j1] += C[i+ii, j+jj] * D[j+jj, j1]
 ```
-A more in-depth analysis of three-matrix multiplication can be found in [this case study](../Case%20Studies/Three-matrix%20multiplication%20-%20part%201.md).
+A more in-depth analysis of three-matrix multiplication can be found in [this case study](../Case Studies/Three-matrix multiplication - part 1.md).
 
 
 <div style="page-break-after: always;"></div>

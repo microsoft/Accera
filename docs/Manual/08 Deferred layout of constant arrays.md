@@ -2,7 +2,7 @@
 [//]: # (Version: 1.2.0)
 
 # Section 8: Deferred layout of constant arrays
-We revisit the topic of memory layout of constant arrays. As mentioned in [Section 1](01%20Arrays.md), the contents of constant arrays are known at compile time, they are immutable, and they are not externally visible. This allows Accera to store them using a non-standard layout, optimized for a specific action plan. In some cases, there may even be a benefit to storing multiple copies of each array element (e.g., storing a matrix in both row-major and column-major layouts).
+We revisit the topic of memory layout of constant arrays. As mentioned in [Section 1](01 Arrays.md), the contents of constant arrays are known at compile time, they are immutable, and they are not externally visible. This allows Accera to store them using a non-standard layout, optimized for a specific action plan. In some cases, there may even be a benefit to storing multiple copies of each array element (e.g., storing a matrix in both row-major and column-major layouts).
 
 ## Deferred layout based on a cache
 A Accera cache strategy makes local copies of an array's active blocks. The constant array can be laid out based on a defined cache. Namely, the array is stored by serializing its active blocks one-after-the-other. If the caching strategy is `thrifty=True`, no data needs to be copied at runtime and the active blocks are ready to use.

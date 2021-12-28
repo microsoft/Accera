@@ -112,7 +112,7 @@ The `kernelize` instruction is a convenience syntax and does not provide any uni
 
 A typical Accera design pattern is to break a loop-nest into tiles and then apply an optimized kernel to each tile. For example, imagine that the loop nest multiplies two 256&times;256 matrices and the kernel is a highly optimized procedure for multiplying 4&times;4 matrices. In the future, Accera will introduce different ways to write highly optimized kernels, but currently, it only supports *automatic kernelization* using the `kernelize` instruction. As mentioned above, `kernelize` is shorthand for unrolling and vectorizing. These instructions structure the code in a way that makes it easy for downstream compiler heuristics to automatically generate kernels.
 
-Consider, once again, the matrix multiplication example we saw previously in [Section 2](02%20Simple%20Affine%20Loop%20Nests.md).
+Consider, once again, the matrix multiplication example we saw previously in [Section 2](02 Simple Affine Loop Nests.md).
 Imagine we declare the schedule and reorder as follows:
 
 ```python

@@ -7,6 +7,7 @@
 Pads the beginning of a specified dimension of the iteration-space with empty (no-op) elements.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `index` | The dimension to pad | `Index`

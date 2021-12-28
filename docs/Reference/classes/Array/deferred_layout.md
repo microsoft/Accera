@@ -7,6 +7,7 @@
 Specifies the layout for a `Array.Role.CONST` array based on a `Cache`. For more details, see [Deferred layout of constant arrays](<../../../Manual/08%20Deferred%20layout%20of%20constant%20arrays.md>)
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `layout` | The layout to set. | `accera.Array.Layout`

@@ -7,6 +7,7 @@
 Only available for targets that have SIMD registers and support vector instructions. Marks a dimension of the iteration-space for vectorization.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `index` | The index to vectorize. | `Index`

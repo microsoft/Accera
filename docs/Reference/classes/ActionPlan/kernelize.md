@@ -7,6 +7,7 @@
 A convenience method for a sequence of `unroll` instructions followed by a possible sequence of `vectorize` instructions
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `unroll_indices` | The iteration-space dimensions to unroll | tuple of `accera.Index`

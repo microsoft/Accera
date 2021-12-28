@@ -7,6 +7,7 @@
 Creates an affine loop nest.
 
 ## Arguments
+
 argument | description | type/default
 --- | --- | ---
 `shape` | The shape of the iteration space | tuple of positive integers

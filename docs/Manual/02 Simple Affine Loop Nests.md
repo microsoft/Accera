@@ -169,6 +169,7 @@ __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
 ## Accera program stages
 We take a step back to describe the stages of a Accera program:
+
 * `Nest`: A nest captures the logic of a simple nest, without any optimizations or implementation details.
 * `Schedule`: A `Nest` is used to create a schedule. The schedule controls the order in which the nest iterations are visited. Multiple schedules can be fused into a single schedule, which may no longer represent a simple nest.
 * `ActionPlan`: A `Schedule` is used to create an action plan. An action plan controls the implementation details that are specific to a specific target platform (e.g., data caching strategy, vectorization, assignment of arrays and caches to different types of memory).
@@ -177,6 +178,7 @@ We take a step back to describe the stages of a Accera program:
 Once a package is emitted, the Accera functions contained in it can be called from external client code. This external code is typically not written using Accera.
 
 Accera currently supports the following package formats:
+
 * [HAT](https://github.com/microsoft/hat), which is a schematized version of a standard C library. The external client code can be written in C or C++ and linked with the HAT package.
 * [MLIR](https://mlir.llvm.org), which uses standard MLIR dialects. The external code must also be in MLIR.
 

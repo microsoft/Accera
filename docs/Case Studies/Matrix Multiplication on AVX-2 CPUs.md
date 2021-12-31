@@ -20,6 +20,7 @@ To have a sufficiently general case that is also concrete, for this case study w
 
 ## Target Hardware Characteristics
 For concreteness, we assume that our target hardware has the following characteristics:
+
 * It is a single-core CPU with AVX-2 and FMA3 instruction set extensions.
 * Intel Haswell/Broadwell-era common hardware cache sizes such as:
     * L1 cache size of `32KB` (per core)

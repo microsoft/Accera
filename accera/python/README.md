@@ -12,6 +12,7 @@ binaries and provide an API that uses them. These are used to compile the
 output from the Accera compiler to machine code.
 
 From LLVM, the following binaries are included in the `accera-llvm` package:
+
 * llc
 * opt
 * mlir-translate

@@ -15,6 +15,7 @@ schedule = acc.fuse((schedule0, schedule1, ...), partial=m)
 At this point, `schedule` is equivalent to executing the individual schedules one-by-one. However, is `schedule` safe in the sense defined above? In other words, does `schedule` guarantee that its underlying logic is preserved, regardless of how it is transformed?
 
 The dimensions of `schedule` fall into three categories:
+
 * *Fusing dimensions*: at first, this category contains a single dimension, which is the first dimension of `schedule`. However, if this dimension is split, then its derived dimensions are added to the category.
 * *Fused dimensions*: at first, this category contains the next *m* dimensions in `schedule`. If any of these dimensions are split, the derived dimensions are also added to the category.
 * *Unfused dimensions*: includes all the remaining dimensions.

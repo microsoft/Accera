@@ -74,6 +74,7 @@ Compare the above to the schedules from parts 1 and 2. Here, the vectorized oper
 We have already chosen `n` = `t` = 8 and it remains to set `m`. The number of cached elements is identical to our calculation in part 2. Therefore, if we set `m`=64, the total number of elements again fits in our cache budget.
 
 ### TODO
+
 * Try swapping the order of `i` and `j`
 * Try all permutations of `ii, jj0, k0`.
 * Try swapping `ii1` and `j1`.

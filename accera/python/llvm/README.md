@@ -17,6 +17,7 @@ Accera has three goals:
 The `accera-llvm` package contains pre-compiled custom LLVM binaries used to produce optimized code using the Accera eDSL. It is not designed for standalone use, but is automatically installed when you `pip install accera`. You can find documentation and examples on [Github](https://github.com/microsoft/Accera).
 
 Supported platforms:
+
 * Linux (manylinux) x64
 * macOS x64
 * Windows x64

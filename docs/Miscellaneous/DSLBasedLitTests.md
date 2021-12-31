@@ -1,4 +1,4 @@
-# Getting started with DSL based lit tests
+# Getting started with DSL lit tests
 
 ## Summary
 This guide will walk you through the process of adding a unit test for the Accera eDSLs. This unit test will make use of the [Catch2](https://github.com/catchorg/Catch2) testing library. Additionally, it will also make use of the [LLVM Integrated Tester (lit)](https://www.llvm.org/docs/CommandGuide/lit.html) to verify the emitted IR output.

@@ -8,6 +8,7 @@ First, assume that `A`, `D`, and `E` have a shape of (256, 32), `B` has a shape 
 
 ## Target hardware characteristics
 For concreteness, assume that the target hardware has the following characteristics:
+
 * It is a single-core CPU.
 * It supports vector instructions with a width of 8 elements.
 * It has 24KB of hardware cache memory available for us to use.
@@ -128,6 +129,7 @@ total | 64 &middot; (`m` + `n`) + `m` &middot; `n` = 512 + 72 &middot; `n`
 If we set `n`=64, the total number of elements comes out to 5120, or roughly 20KB, which fits in the specified cache budget. Alternatively, we could empirically tune `n` by generating a grid of possible values and measuring their speed on the target platform.
 
 ## TODO
+
 * Try swapping the order of `i` and `j`
 * Try all permutations of `jj, k0, j1`
 * Why are all the caches keyed on `f`?

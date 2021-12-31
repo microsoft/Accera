@@ -1,4 +1,6 @@
-# to preview the site locally, run "mkdocs serve" from the repo root
+# To preview the site locally, run this from the repo root
+#   pip install mkdocs-material
+#   mkdocs serve
 site_name: Accera
 site_author: Microsoft
 copyright: Copyright &copy; 2021+ Microsoft [MIT License]
@@ -15,6 +17,8 @@ plugins:
 theme:
   name: material
   features:
+    - navigation.tabs
+    - navigation.tabs.sticky
     - search.highlight
     - search.share
     - toc.integrate
@@ -33,3 +37,6 @@ theme:
       toggle:
         icon: material/toggle-switch
         name: Switch to light mode
+
+markdown_extensions:
+  - pymdownx.superfences # workaround for bullet-point code blocks rendering

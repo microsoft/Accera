@@ -109,6 +109,7 @@ We have already chosen `n` = `s` = 8 and it remains to set `m`. As in part 1, th
 64 &middot; (`m` + `n`) + `m` &middot; `n`, which in this case equals 72 &middot; `m` + 512. If we set `m`=64, the total number of elements comes out to 5120, or roughly 20KB, which fits in the cache budget.
 
 ### TODO
+
 * Try swapping the order of `i` and `j`
 * Try swapping `ii` and `k0`.
 * Try permuting `j1, ii, kk1`.

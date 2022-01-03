@@ -8,5 +8,5 @@
 * [Installation Instructions](Install/README.md)
 * [Accera Manual](<Manual/README.md>)
 * [Accera DSL Reference](<Reference/accera.md>)
-* [Tutorials](<Tutorials/Tutorials.md>)
+* [Tutorials](<Tutorials/README.md>)
 * [Case Studies](<Case%20Studies/README.md>)

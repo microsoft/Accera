@@ -1,10 +1,16 @@
 # To preview the site locally, run this from the repo root
-#   pip install mkdocs-material
+#   pip install mkdocs-material mkdocs-git-revision-date-plugin
 #   mkdocs serve
-site_name: Accera
+site_name: Accera - Speedup your loops
 site_author: Microsoft
+site_description: >-
+  Accera is a programming model, a domain-specific programming language
+  embedded in Python (eDSL), and an optimizing cross-compiler for
+  compute-intensive code.
 copyright: Copyright &copy; 2021+ Microsoft [MIT License]
+repo_name: microsoft/Accera
 repo_url: https://github.com/microsoft/Accera/
+edit_uri: edit/main/docs/
 
 extra:
   social:
@@ -12,16 +18,22 @@ extra:
       link: https://github.com/microsoft/Accera
 
 plugins:
+  - git-revision-date
   - search
 
 theme:
   name: material
   features:
+    - navigation.sections
     - navigation.tabs
     - navigation.tabs.sticky
+    - navigation.top
+    - navigation.tracking
     - search.highlight
     - search.share
+    - search.suggest
     - toc.integrate
+  favicon: assets/favicon.png
   font:
     text: Open Sans
     code: Source Code Pro
@@ -29,11 +41,14 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)" 
       scheme: default
+      primary: indigo
       toggle:
         icon: material/toggle-switch-off-outline
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)" 
       scheme: slate
+      primary: blue
+      accent: light blue
       toggle:
         icon: material/toggle-switch
         name: Switch to light mode

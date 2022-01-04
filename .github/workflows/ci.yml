@@ -15,7 +15,7 @@ jobs:
         os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
         include:
           - os: 'windows-latest'
-            command: 'build.bat'
+            command: './build.bat'
           - os: 'ubuntu-latest'
             command: 'sh ./build.sh'
           - os: 'macos-latest'
@@ -28,8 +28,7 @@ jobs:
           submodules: 'recursive'
 
       - name: Build
-        run: >
-          ${{ matrix.command }}
+        run: ${{ matrix.command }}
 
       - name: Upload packages
         uses: actions/upload-artifact@v2

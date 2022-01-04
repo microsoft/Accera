@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
+        include:
+          - os: 'windows-latest'
+            command: 'build.bat'
+          - os: 'ubuntu-latest'
+            command: 'sh ./build.sh'
+          - os: 'macos-latest'
+            command: 'sh ./build.sh'
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+
+      - name: Build
+        run: >
+          ${{ matrix.command }}
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v2
+        with:
+          name: accera
+          path: dist/*.whl

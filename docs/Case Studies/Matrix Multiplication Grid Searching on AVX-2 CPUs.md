@@ -1,3 +1,6 @@
+[//]: # (Project: Accera)
+[//]: # (Version: 1.2.0)
+
 # Case Study - MatMul Grid Search
 
 In this case study, we will discuss how to construct a performant implementation for matrix multiplication on an AVX2 Machine using Accera. First, we will show how to create a parameterized Accera schedule and action plan, then we will discuss how to create a parameters grid, and how to benchmark each point in the grid in order to pick the best performant implementation. Note that for different target hardwares, the process would be similar, however, the results would be different.
@@ -12,14 +15,15 @@ for i in range(M):
 ```
 
 In this case study, we present the end-to-end steps needed to write a performant implementation for matrix multiplication as follows:
-- [Write a parameterized Accera implementation for matrix multiplication](#step-1---create-a-accera-matmul-function).
-- [Create a parameters grid for the parameterized implementation](#step-2---create-parameters-grid).
-- [Filter the parameters grid according to some constraints and intuitive rules](#step-3---filter-the-parameters-grid).
-- [Create a Accera package using the filtered parameters grid](#step-4---create-a-accera-package-with-all-parameters-choices-in-the-filtered-parameters-grid).
-- [Benchmark the package on the target hardware](#step-5---benchmark-the-package-on-the-target-hardware).
-- [Find the optimal parameters choice](#step-6---find-the-optimal-parameters-choice)
-- [Create a Accera package with the optimal function](#step-7---create-a-accera-package-with-the-optimal-function)
-- [Visualize the parameters grid as well as the benchmarking results](#step-8---visualize-the-parameters-grid).
+
+- [Write a parameterized Accera implementation for matrix multiplication](#step-1-create-a-accera-matmul-function)
+- [Create a parameters grid for the parameterized implementation](#step-2-create-parameters-grid)
+- [Filter the parameters grid according to some constraints and intuitive rules](#step-3-filter-the-parameters-grid)
+- [Create a Accera package using the filtered parameters grid](#step-4-create-a-accera-package-with-all-parameters-choices-in-the-filtered-parameters-grid)
+- [Benchmark the package on the target hardware](#step-5-benchmark-the-package-on-the-target-hardware)
+- [Find the optimal parameters choice](#step-6-find-the-optimal-parameters-choice)
+- [Create a Accera package with the optimal function](#step-7-create-a-accera-package-with-the-optimal-function)
+- [Visualize the parameters grid as well as the benchmarking results](#step-8-visualize-the-parameters-grid)
 
 
 ## Step 1 - Create a Accera Matmul Function
@@ -260,6 +264,7 @@ The next step would be to choose the right values for `m_split_size`, `n_split_s
 
 ## Step 2 - Create parameters grid
 As mentioned in the previous step, we assumed some values for the split sizes and the schedule loop order. However, for each different hardware the parameters values that produces the best performant implementation can be different. To ensure that the created Accera function is performant (i.e. has the right parameters), we define a parameters grid where our chosen parameters are:
+
 1. `m_split_size`
 2. `n_split_size`
 3. `s_split_size`
@@ -271,6 +276,7 @@ As mentioned in the previous step, we assumed some values for the split sizes an
 and our grid will consist of a set of possible values for those parameters.
 
 For example, we might want to:
+
 1. define the `m_split_size`, `n_split_size`, and `s_split_size` split sizes as the even numbers between 4 and 8,
    and the powers of 2 between 16 and 256.
 2. define the `n_split_2_size`, `n_split_3_size`, and `s_split_2_size` as the powers of 2 between 4 and 16.
@@ -308,6 +314,7 @@ parameters_grid = list(itertools.product(*parameters_choices))
 
 ## Step 3 - Filter the parameters grid
 The previous step would produce a **huge parameters grid**. For example, the chosen parameters choices in the previous step results in a parameters grid of size **59,719,680**, if each different point takes 1 second of evaluation, then this run would take **691.2 days**. This is unreasonable. However, we can notice that some points in the parameters grid might not be worth searching. For example:
+
 1. It is meaningless to choose a second split of size larger than the first split on the same dimension, so we can filter those cases out.
 2. We know that we need the active tiles of the input and output matrices to fit in the L2 cache without overflowing it, so we can choose the tile sizes such that the total memory needed for the active tiles of the input and output matrices are at least 50\% of the cache size, but less that its total size.
 3. Any loop order has to meet the Accera order constraint that "An inner dimension must not be ordered before its outer dimension". For example: The current kernel order in our function is "`i, j, k, jj, kk, kkk, ii, jjj, jjjj`", then `i` must always precede `ii` and `k` must always precede `kk` and so on, also we might want some indices to be fixed.
@@ -547,10 +554,10 @@ Then, we zoom in to the best performing 5% of implementations, and we color code
 
 ![Visualization](./figs/matmul_package_and_benchmarking_visualization_tile_volume.jpeg)
 
-We can notice that generally the points with smaller active tile volumes tend to perform better.
+Notice that generally the points with smaller active tile volumes tend to perform better.
 
 ## Pull it all together
-For convenience, we wrote all the code snippets used in this case study in `samples/Matrix Multiplication/matmul_gridsearch_case_study.py`. To run all the case study steps, the command below can be used.
-```
+For convenience, we wrote all the code snippets used in this case study [here](samples/Matrix Multiplication/matmul_gridsearch_case_study.py) and [here](samples/Matrix Multiplication/utils.py). To run all the case study steps, download the files and run the command below:
+```shell
 python matmul_gridsearch_case_study.py --matmul_dim 1020 1024 1024 --output_directory matmul_gridsearch_case_study
 ```

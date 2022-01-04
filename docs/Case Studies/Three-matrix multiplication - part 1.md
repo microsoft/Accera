@@ -128,10 +128,11 @@ total | 64 &middot; (`m` + `n`) + `m` &middot; `n` = 512 + 72 &middot; `n`
 
 If we set `n`=64, the total number of elements comes out to 5120, or roughly 20KB, which fits in the specified cache budget. Alternatively, we could empirically tune `n` by generating a grid of possible values and measuring their speed on the target platform.
 
-## TODO
+<!--
 
 * Try swapping the order of `i` and `j`
 * Try all permutations of `jj, k0, j1`
 * Why are all the caches keyed on `f`?
 * Try forcing the caches of `B` and `E` to specific layouts.
 * Add optimizations from the standard 2-matrix multiplication
+-->

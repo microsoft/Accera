@@ -1,7 +1,7 @@
 # To preview the site locally, run this from the repo root
 #   pip install mkdocs-material mkdocs-git-revision-date-plugin
 #   mkdocs serve
-site_name: Accera - Speedup your loops
+site_name: Accera
 site_author: Microsoft
 site_description: >-
   Accera is a programming model, a domain-specific programming language

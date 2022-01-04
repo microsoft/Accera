@@ -108,7 +108,7 @@ Compare the above to the schedule from part 1. There, the vectorized operations 
 We have already chosen `n` = `s` = 8 and it remains to set `m`. As in part 1, the number of cached elements is
 64 &middot; (`m` + `n`) + `m` &middot; `n`, which in this case equals 72 &middot; `m` + 512. If we set `m`=64, the total number of elements comes out to 5120, or roughly 20KB, which fits in the cache budget.
 
-### TODO
+<!-- TODO
 
 * Try swapping the order of `i` and `j`
 * Try swapping `ii` and `k0`.
@@ -117,3 +117,4 @@ We have already chosen `n` = `s` = 8 and it remains to set `m`. As in part 1, th
 * Why are all the caches keyed on `f`?
 * Add optimizations from the standard 2-matrix multiplication
 * Say more about how the strategy in part 2 compares to the strategy in part 1. How does it depend on the memory layout of the original arrays? How does it depend on the shapes of the original arrays?
+-->

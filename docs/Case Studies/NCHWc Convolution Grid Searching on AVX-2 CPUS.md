@@ -1,3 +1,6 @@
+[//]: # (Project: Accera)
+[//]: # (Version: 1.2.0)
+
 # Case Study - NCHWc 2D Convolution Grid Search
 
 In this case study, we will discuss how to construct a performant implementation for NCHWc 2D Convolution on an AVX2 Machine using Accera. First, we will show how to create a parameterized Accera schedule and action plan. Then we will discuss how to create a parameters grid, and how to benchmark each point in the grid in order to pick the best performant implementation.
@@ -36,14 +39,15 @@ for out_f in range(output_filters_blocks):
 ```
 
 In this case study, we present the end-to-end steps needed to write a performant implementation for NCHWc 2D Convolution as follows:
-- [Write a parameterized Accera implementation for NCHWc 2D Convolution](#step-1---create-a-accera-nchwc-2d-convolution-function).
-- [Create a parameters grid for the parameterized implementation](#step-2---create-parameters-grid).
-- [Filter the parameters grid according to some heuristics and intuitive rules](#step-3---filter-the-parameters-grid).
-- [Create a Accera package using the filtered parameters grid](#step-4---create-a-accera-package-with-all-parameters-candidates-in-the-filtered-parameters-grid).
-- [Benchmark the package on the target hardware](#step-5---benchmark-the-package-on-the-target-hardware).
-- [Find the optimal parameters choice](#step-6---find-the-optimal-parameters-choice)
-- [Create a Accera package with the optimal function](#step-7---create-a-accera-package-with-the-optimal-function)
-- [Visualize the parameters grid as well as the benchmarking results](#step-8---visualize-the-parameters-grid).
+
+- [Write a parameterized Accera implementation for NCHWc 2D Convolution](#step-1-create-a-accera-nchwc-convolution-function)
+- [Create a parameters grid for the parameterized implementation](#step-2-create-parameters-grid)
+- [Filter the parameters grid according to some heuristics and intuitive rules](#step-3-filter-the-parameters-grid)
+- [Create a Accera package using the filtered parameters grid](#step-4-create-a-accera-package-with-all-parameters-candidates-in-the-filtered-parameters-grid)
+- [Benchmark the package on the target hardware](#step-5-benchmark-the-package-on-the-target-hardware)
+- [Find the optimal parameters choice](#step-6-find-the-optimal-parameters-choice)
+- [Create a Accera package with the optimal function](#step-7-create-a-accera-package-with-the-optimal-function)
+- [Visualize the parameters grid as well as the benchmarking results](#step-8-visualize-the-parameters-grid)
 
 
 ## Step 1 - Create a Accera NCHWc Convolution Function

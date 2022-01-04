@@ -73,7 +73,7 @@ Compare the above to the schedules from parts 1 and 2. Here, the vectorized oper
 
 We have already chosen `n` = `t` = 8 and it remains to set `m`. The number of cached elements is identical to our calculation in part 2. Therefore, if we set `m`=64, the total number of elements again fits in our cache budget.
 
-### TODO
+<!--TODO
 
 * Try swapping the order of `i` and `j`
 * Try all permutations of `ii, jj0, k0`.
@@ -82,6 +82,7 @@ We have already chosen `n` = `t` = 8 and it remains to set `m`. The number of ca
 * Why are all the caches keyed on `f`?
 * Add optimizations from the standard 2-matrix multiplication
 * How to choose between the different schedules proposed on parts 1,2,3? Maybe just emit all of them and measure their performance empirically.
+-->
 
 ## Summary
 We presented three different schedule strategies, each with multiple variants. It is hard to guess which one will be the best.

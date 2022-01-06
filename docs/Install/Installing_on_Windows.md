@@ -40,7 +40,7 @@ Visual Studio 2019 and 2022 include a version of `git`. To use it, launch Visual
 Repository location:
 
 ```
-https://intelligentdevices.visualstudio.com/ELL/_git/Accera
+https://github.com/microsoft/Accera
 ```
 
 ### Build and install Accera

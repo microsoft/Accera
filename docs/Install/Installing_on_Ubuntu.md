@@ -31,7 +31,7 @@ sudo apt-get install git
 #### Clone the git repository
 
 ```shell
-git clone --recurse-submodules https://intelligentdevices.visualstudio.com/ELL/_git/Accera
+git clone --recurse-submodules https://github.com/microsoft/Accera
 ```
 
 ### Build and install Accera

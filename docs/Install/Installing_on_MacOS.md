@@ -46,7 +46,7 @@ A version of [git](https://git-scm.com/download) should already be included in X
 Clone the git repository:
 
 ```
-git clone --recurse-submodules https://intelligentdevices.visualstudio.com/ELL/_git/Accera
+git clone --recurse-submodules https://github.com/microsoft/Accera
 ```
 
 ### Build and install Accera

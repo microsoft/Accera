@@ -1,4 +1,4 @@
-![Accera logo](docs/assets/Accera_darktext.png)
+![Accera logo](https://raw.githubusercontent.com/microsoft/Accera/main/docs/assets/Accera_darktext.png)
 <div style="margin-bottom:30px"></div>
 
 <a href="https://pypi.org/accera"><img src="https://badge.fury.io/py/accera.svg" alt="PyPI package version"/></a> <a href="https://pypi.org/accera"><img src="https://img.shields.io/pypi/pyversions/accera" alt="Python versions"/></a> ![MIT License](https://img.shields.io/github/license/microsoft/Accera)
@@ -14,10 +14,10 @@ Accera has three goals:
 * Writability: a user-friendly programming model, designed for agility.
 
 ## Installation
-Read the [Install](docs/Install/README.md) instructions for how to build Accera from source or install pre-built packages.
+Read the [Install](https://raw.githubusercontent.com/microsoft/Accera/main/docs/Install/README.md) instructions for how to build Accera from source or install pre-built packages.
 
 ## Documentation
-Get to know Accera by reading the [documentation](docs/README.md).
+Get to know Accera by reading the [Documentation](https://raw.githubusercontent.com/microsoft/Accera/main/docs/README.md).
 
 ## Contributing
 

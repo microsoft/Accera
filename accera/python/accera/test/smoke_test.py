@@ -1129,6 +1129,52 @@ class SmokeTest(unittest.TestCase):
                                        tolerance=1e-5)
         print(mean_time_secs)
 
+    def test_large_cache_vectorized(self) -> None:
+        M = 1024
+        N = 1024
+        S = 1024
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, S))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(S, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N, S))
+
+        i, j, k = nest.get_indices()
+
+        # Define the iteration logic
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii = schedule.split(i, 512)
+        jj = schedule.split(j, 512)
+        kk = schedule.split(k, 512)
+
+        # Apply re-ordering
+        schedule.reorder(i, j, k, ii, jj, kk)
+
+        plan = schedule.create_action_plan()
+
+        # Cache input and output arrays
+        plan.cache(B, index=ii, layout=Array.Layout.FIRST_MAJOR)
+
+        # Vectorize
+        plan.vectorize(kk)
+
+        package = Package()
+        function = package.add_function(plan, args=(A, B, C), base_name="test_large_cache_vectorized")
+
+        package_name = "test_large_cache_vectorized"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, package_name, output_dir):
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+
     def test_cross_compile(self) -> None:
         from accera import Target
         M = 128

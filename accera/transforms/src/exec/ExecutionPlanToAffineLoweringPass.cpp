@@ -668,22 +668,27 @@ std::tuple<NestOp, ScheduleOp, ExecPlanOp> CreateCacheLoopnestHelper(
 
         // reduce the budget based on how large the innermost vectorized loop is
         auto innermostLoopRange = loopnestInfo.fullySplitRanges.back();
-        budget /= innermostLoopRange.NumIterations();
 
-        // Determine how much of the nest can be vectorized and set the vectorization info on those loops
-        int numVectorizedLoops = 1;
-        for (size_t loopCounter = 1; loopCounter < loopnestInfo.fullySplitRanges.size(); ++loopCounter)
+        // If the budget is greater than the number of iterations of the innermost loop
+        // then we can vectorize more loops in the nest
+        if (budget > innermostLoopRange.NumIterations())
         {
-            size_t loopIdx = loopnestInfo.fullySplitRanges.size() - loopCounter - 1; // Vectorize loops from the innermost to the outermost as long as we still have vector registers to work with
-            auto loopRange = loopnestInfo.fullySplitRanges[loopIdx];
-            auto loopUnrollFactor = std::min(budget, loopRange.NumIterations());
-            InPlaceUnrollInfo inPlaceUnrollInfo{ loopUnrollFactor };
-            numVectorizedLoops++;
-            SetInPlaceUnrollInfo(cacheNestSchedule, cacheNestScheduleOrder[loopIdx], inPlaceUnrollInfo);
-            budget /= loopUnrollFactor;
-            if (budget <= 1) // if there is only 1 in-place op unroll left in the budget then we're done vectorizing
+            // Determine how much of the nest can be vectorized and set the vectorization info on those loops
+            budget /= innermostLoopRange.NumIterations();
+            int numVectorizedLoops = 1;
+            for (size_t loopCounter = 1; loopCounter < loopnestInfo.fullySplitRanges.size(); ++loopCounter)
             {
-                break;
+                size_t loopIdx = loopnestInfo.fullySplitRanges.size() - loopCounter - 1; // Vectorize loops from the innermost to the outermost as long as we still have vector registers to work with
+                auto loopRange = loopnestInfo.fullySplitRanges[loopIdx];
+                auto loopUnrollFactor = std::min(budget, loopRange.NumIterations());
+                InPlaceUnrollInfo inPlaceUnrollInfo{ loopUnrollFactor };
+                numVectorizedLoops++;
+                SetInPlaceUnrollInfo(cacheNestSchedule, cacheNestScheduleOrder[loopIdx], inPlaceUnrollInfo);
+                budget /= loopUnrollFactor;
+                if (budget <= 1) // if there is only 1 in-place op unroll left in the budget then we're done vectorizing
+                {
+                    break;
+                }
             }
         }
     }

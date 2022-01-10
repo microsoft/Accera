@@ -33,6 +33,11 @@ jobs:
       - name: Setup
         run: ${{ matrix.setup }}
 
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.9' # TODO: use a matrix
+          architecture: 'x64'
+
       - name: Build
         run: ${{ matrix.command }}
 

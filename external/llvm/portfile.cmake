@@ -40,7 +40,7 @@ vcpkg_configure_cmake(
         -DLLVM_INCLUDE_DOCS=OFF
         -DLLVM_BUILD_EXAMPLES=OFF
         -DLLVM_BUILD_UTILS=OFF # using custom targets for FileCheck
-        -DLLVM_BUILD_TOOLS=OFF # using custom targets for opt, llc, etc
+        -DLLVM_BUILD_TOOLS=OFF # using custom targets for opt, llc, mlir-translate
         -DLLVM_ENABLE_ASSERTIONS=ON
         -DLLVM_ENABLE_EH=ON
         -DLLVM_ENABLE_RTTI=ON
@@ -80,6 +80,8 @@ file(INSTALL ${CMAKE_CURRENT_LIST_DIR}/llvm_usage DESTINATION ${CURRENT_PACKAGES
 vcpkg_fixup_cmake_targets(CONFIG_PATH "share/mlir" TARGET_PATH "share/mlir" DO_NOT_DELETE_PARENT_CONFIG_PATH)
 file(INSTALL ${SOURCE_PATH}/mlir/LICENSE.TXT DESTINATION ${CURRENT_PACKAGES_DIR}/share/mlir RENAME copyright)
 file(INSTALL ${CMAKE_CURRENT_LIST_DIR}/mlir_usage DESTINATION ${CURRENT_PACKAGES_DIR}/share/mlir RENAME usage)
+# Fixup mlir-translate installation since LLVM_BUILD_TOOLS=OFF
+file(INSTALL "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel/bin/mlir-translate${VCPKG_TARGET_EXECUTABLE_SUFFIX}" DESTINATION ${CURRENT_PACKAGES_DIR}/tools/llvm)
 
 vcpkg_fixup_cmake_targets(CONFIG_PATH "share/lld" TARGET_PATH "share/lld" DO_NOT_DELETE_PARENT_CONFIG_PATH)
 file(INSTALL ${SOURCE_PATH}/lld/LICENSE.TXT DESTINATION ${CURRENT_PACKAGES_DIR}/share/lld RENAME copyright)

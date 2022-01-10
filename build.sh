@@ -17,7 +17,7 @@ git submodule update
 pip install -r requirements.txt
 cd external/vcpkg
 ./bootstrap-vcpkg.sh
-./vcpkg install catch2 tomlplusplus --overlay-ports=../llvm
+./vcpkg install catch2 tomlplusplus --overlay-ports=../llvm --clean-after-build
 
 if [ -f "$ACCERA_ROOT/CMake/LLVMSetupConan.cmake" ]; then
     echo Using LLVM from Conan
@@ -26,7 +26,7 @@ else
     echo Using LLVM from vcpkg
     export LLVM_SETUP_VARIANT=Default
     # Install LLVM (takes a couple of hours and ~20GB of space)
-    ./vcpkg install accera-llvm --overlay-ports=../llvm
+    ./vcpkg install accera-llvm --overlay-ports=../llvm --clean-after-build
 fi
 
 # Build the accera package

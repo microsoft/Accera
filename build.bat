@@ -17,7 +17,7 @@ REM Install dependencies
 pip install -r requirements.txt
 cd external\vcpkg
 call bootstrap-vcpkg.bat
-vcpkg install catch2:x64-windows tomlplusplus:x64-windows --overlay-ports=..\llvm
+vcpkg install catch2:x64-windows tomlplusplus:x64-windows --overlay-ports=..\llvm --clean-after-build
 
 if exist "%ACCERA_ROOT%\CMake\LLVMSetupConan.cmake" (
     echo Using LLVM from Conan
@@ -26,7 +26,7 @@ if exist "%ACCERA_ROOT%\CMake\LLVMSetupConan.cmake" (
     echo Using LLVM from vcpkg
     set LLVM_SETUP_VARIANT=Default
     REM Install LLVM (takes a couple of hours and ~20GB of space)
-    vcpkg install accera-llvm:x64-windows --overlay-ports=..\llvm
+    vcpkg install accera-llvm:x64-windows --overlay-ports=..\llvm --clean-after-build
 )
 
 REM Build the accera package

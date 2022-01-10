@@ -39,14 +39,14 @@ vcpkg_configure_cmake(
         -DLLVM_INCLUDE_TESTS=OFF
         -DLLVM_INCLUDE_DOCS=OFF
         -DLLVM_BUILD_EXAMPLES=OFF
-        -DLLVM_BUILD_UTILS=ON # FileCheck
-        -DLLVM_BUILD_TOOLS=ON # opt, llc, mlir-translate
+        -DLLVM_BUILD_UTILS=OFF # using custom targets for FileCheck
+        -DLLVM_BUILD_TOOLS=OFF # using custom targets for opt, llc, etc
         -DLLVM_ENABLE_ASSERTIONS=ON
         -DLLVM_ENABLE_EH=ON
         -DLLVM_ENABLE_RTTI=ON
         -DLLVM_ENABLE_ZLIB=OFF
-        -DLLVM_INSTALL_UTILS=ON # FileCheck
-        "-DLLVM_ENABLE_PROJECTS=mlir;lld"
+        -DLLVM_INSTALL_UTILS=OFF # using custom targets for FileCheck
+        "-DLLVM_ENABLE_PROJECTS=lld;mlir"
         "-DLLVM_TARGETS_TO_BUILD=host;X86;ARM;NVPTX;AMDGPU"
         -DPACKAGE_VERSION=${LLVM_VERSION}
         # Force TableGen to be built with optimization. This will significantly improve build time.
@@ -63,6 +63,13 @@ vcpkg_configure_cmake(
     OPTIONS_DEBUG
         -DCMAKE_DEBUG_POSTFIX=d
 )
+
+# Build and install individual custom targets to speed up the build
+set(CUSTOM_TARGETS FileCheck llc llvm-tblgen opt)
+foreach(target ${CUSTOM_TARGETS})
+    vcpkg_build_cmake(TARGET ${target})
+    file(INSTALL "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel/bin/${target}${VCPKG_TARGET_EXECUTABLE_SUFFIX}" DESTINATION ${CURRENT_PACKAGES_DIR}/tools/llvm)
+endforeach()
 
 vcpkg_install_cmake()
 
@@ -83,7 +90,7 @@ file(INSTALL ${SOURCE_PATH}/llvm/LICENSE.TXT DESTINATION ${CURRENT_PACKAGES_DIR}
 vcpkg_copy_tool_dependencies(${CURRENT_PACKAGES_DIR}/tools/${PORT})
 
 # Post-build validation does not like duplication in the /debug hierarchy
-if(NOT DEFINED VCPKG_BUILD_TYPE OR VCPKG_BUILD_TYPE STREQUAL "debug")
+if(NOT DEFINED VCPKG_BUILD_TYPE)
     file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/include)
     file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/share)
     file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/tools)

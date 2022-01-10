@@ -40,7 +40,7 @@ vcpkg_configure_cmake(
         -DLLVM_INCLUDE_DOCS=OFF
         -DLLVM_BUILD_EXAMPLES=OFF
         -DLLVM_BUILD_UTILS=OFF # using custom targets for FileCheck
-        -DLLVM_BUILD_TOOLS=OFF # using custom targets for opt, llc, mlir-translate
+        -DLLVM_BUILD_TOOLS=ON # mlir-translate
         -DLLVM_ENABLE_ASSERTIONS=ON
         -DLLVM_ENABLE_EH=ON
         -DLLVM_ENABLE_RTTI=ON

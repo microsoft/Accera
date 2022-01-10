@@ -21,7 +21,7 @@ jobs:
             setup: 'sudo apt-get install -y ninja-build ccache libomp-11-dev pkg-config zip'
             command: 'sh ./build.sh'
           - os: 'macos-latest'
-            setup: 'brew update && brew install ninja-build ccache libomp'
+            setup: 'brew update && brew install cmake ninja ccache libomp'
             command: 'sh ./build.sh'
 
     runs-on: ${{ matrix.os }}

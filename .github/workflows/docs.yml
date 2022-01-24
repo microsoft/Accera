@@ -11,5 +11,7 @@ jobs:
       - uses: actions/setup-python@v2
         with:
           python-version: 3.x
-      - run: pip install mkdocs-material mkdocs-git-revision-date-plugin
-      - run: mkdocs gh-deploy --force
+      - run: |
+          pip install mkdocs-material mkdocs-git-revision-date-plugin
+          cp -f README.md docs/README.md
+          mkdocs gh-deploy --force

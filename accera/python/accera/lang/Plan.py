@@ -16,16 +16,21 @@ from .Function import Function
 from .LoopIndex import LoopIndex
 from .NativeLoopNestContext import NativeLoopNestContext
 from ..Targets import Target
+from ..Platforms import LibraryDependency
 
 from .._lang_python._lang import CacheIndexing
 
-class ActionPlan:
+class Plan:
     def __init__(self, schedule: Schedule, target: Target = Target.HOST):
         self._sched = schedule
         self._target = target
         self._commands = []
         self._delayed_calls = {}
         self._index_attrs: Mapping[LoopIndex, List[str]] = {}
+        self._dynamic_dependencies = set()
+
+        if target.category == Target.Category.GPU:
+            self._dynamic_dependencies.add(LibraryDependency.VULKAN)
 
     def _add_index_attr(self, index: LoopIndex, attr: str):
         attrs = self._index_attrs.get(index, [])
@@ -78,19 +83,22 @@ class ActionPlan:
     def parallelize(self, indices: Union[LoopIndex, Tuple[LoopIndex], DelayedParameter],
         pin: Union[Tuple[Any], DelayedParameter]=None, policy: Union[str, DelayedParameter]="static"):
         """Performs one or more loops in parallel on multiple cores or processors.
-        Only available for targets with multiple cores or processors. 
+        Only available for targets with multiple cores or processors.
 
         Args:
-            indices: The iteration-space dimensions to run in parallel. 
+            indices: The iteration-space dimensions to run in parallel.
                 To assign multiple threads to an index, first split that index,
                 then parallelize its split indices.
-                
+
                 Unsplit indices will be assigned one thread each, split indices
                 will be assigned threads based on the number of split blocks.
                 This is limited by the number of threads supported by the target.
             pin: Pin the computation to a subset of cores or processors.
             policy: The scheduling policy to apply ("dynamic" or "static").
         """
+        if self._target.category == Target.Category.CPU:
+            self._dynamic_dependencies.add(LibraryDependency.OPENMP)
+
         if any([isinstance(arg, DelayedParameter) for arg in [indices, pin, policy]]):
             self._delayed_calls[partial(self.parallelize)] = {"indices" : indices, "pin" : pin, "policy" : policy}
             return None
@@ -117,7 +125,7 @@ class ActionPlan:
 
         idxs = [context.mapping[id(index)] for index in indices]
 
-        context.plan.parallelize(idxs, num_threads, 
+        context.plan.parallelize(idxs, num_threads,
             _ParallelizationPolicy.DYNAMIC if policy == "dynamic" else _ParallelizationPolicy.STATIC)
 
     def cache(self,
@@ -447,10 +455,10 @@ class ActionPlan:
 
             # lookup the split factors for each loop index
             assert isinstance(self._sched, Schedule)
-            
-            index_to_splitfactor_map = {i: self._sched.get_index_transform(i)[1] 
-                            for i in self._sched.get_indices() 
-                                if self._sched.get_index_transform(i) and 
+
+            index_to_splitfactor_map = {i: self._sched.get_index_transform(i)[1]
+                            for i in self._sched.get_indices()
+                                if self._sched.get_index_transform(i) and
                                     self._sched.get_index_transform(i)[0] is IndexTransform.SPLIT}
 
             n = min(len(block_dims), len(nest._shape))
@@ -474,9 +482,9 @@ class ActionPlan:
             context.options = _GPU(
                 grid=_Dim3(*grid_dims, 1), block=_Dim3(*block_dims, 1)
             )
-            context.plan = context.schedule.create_gpu_action_plan(context.options)
+            context.plan = context.schedule.create_gpu_plan(context.options)
         else:
-            context.plan = context.schedule.create_action_plan()
+            context.plan = context.schedule.create_plan()
 
     def _build_with_native_context(self, context: NativeLoopNestContext):
         for cmd in self._commands:
@@ -493,7 +501,7 @@ class ActionPlan:
                 delayed_call(*resolved_params)
 
 
-def _build_native_nest(plan: "ActionPlan", nest_args: List[Array]):
+def _build_native_nest(plan: "Plan", nest_args: List[Array]):
     from .._lang_python._lang import _Valor
 
     sched = plan._sched
@@ -532,7 +540,7 @@ def _build_native_nest(plan: "ActionPlan", nest_args: List[Array]):
 
 
 def _create_function(
-    plan: "ActionPlan", args: List[Array], public: bool = True, no_inline: bool = False
+    plan: "Plan", args: List[Array], public: bool = True, no_inline: bool = False
 ) -> Function:
     from secrets import token_hex
 
@@ -548,4 +556,4 @@ def _create_function(
     )
 
 
-ActionPlan._create_function = _create_function
+Plan._create_function = _create_function

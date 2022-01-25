@@ -24,6 +24,7 @@ set(LLVM_TARGET_DEFINITIONS LoopNestOps.td)
 mlir_tablegen(LoopNestOps.h.inc -gen-op-decls)
 mlir_tablegen(LoopNestOps.cpp.inc -gen-op-defs)
 mlir_tablegen(LoopNestDialect.h.inc -gen-dialect-decls -dialect=accln)
+mlir_tablegen(LoopNestDialect.cpp.inc -gen-dialect-defs -dialect=accln)
 add_public_tablegen_target(LoopNestOpsIncGen)
 
 add_accera_ir_doc(LoopNestOps -gen-dialect-doc LoopNestDialect references/markdown/)

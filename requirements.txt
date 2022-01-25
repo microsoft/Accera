@@ -11,3 +11,4 @@ mkdocs-material
 packaging
 plotly
 kaleido
+hatlib

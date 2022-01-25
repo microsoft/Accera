@@ -80,7 +80,12 @@ class CMakeBuild(build_ext):
 
     def build_extension(self, ext):
         with ChdirRepoRoot():    # CMake must be run at the repository root
-            cfg = "Debug" if self.debug else "RelWithDebInfo"
+            if self.debug:
+                cfg = "Debug"
+            elif developer_mode():
+                cfg = "RelWithDebInfo"
+            else:
+                cfg = "Release"
 
             # CMake lets you override the generator - we need to check this.
             # Can be set with Conda-Build, for example.

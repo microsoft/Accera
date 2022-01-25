@@ -5,6 +5,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "accera/AcceraOps.h"
+#include "accera/AcceraDialect.cpp.inc"
 
 #include <mlir/IR/AffineMap.h>
 #include <mlir/IR/Builders.h>

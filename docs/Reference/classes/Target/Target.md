@@ -26,28 +26,36 @@ argument | description | type/default
 `vector_bytes` | Bytes per vector register | positive number
 `vector_registers` | total number of SIMD registers | positive number
 
-## Supported CPU Targets
+## Pre-defined CPU Targets
 
-Accera supports various CPU target architectures ranging from Intel Core Processors (7th Generation to 12th Generation),
-Raspberry Pi3, Raspberry Pi Zero. We also support GPU target architectures, such as NVIDIA Tesla V100.
+Accera provides pre-defined targets for various CPU target architectures including Intel, AMD, and Raspberry Pi. 
 
-For CPU target architecture, the detailed list of Intel processors is mentioned below.
-- Intel Core Processors
+These pre-defined targets provide typical hardware settings and may not fit exactly to your specific hardware characteristics. If your target matches closely with (but not exactly to) one of these targets, you can always start with a pre-defined target and update the properties accordingly.
 
-| Generation  | Intel Core Processor | Instruction Set Extensions             | Family       | Vector Registers | Vector Bytes |
-| :---------  | :------------------- | :------------------------------------- | :--------------------------| :--| :----------- |
-| 7th Gen     | Only Intel Core i7   | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Skylake-X                  | 16 | 32           |
-| 8th Gen     | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Coffee Lake                | 16 | 32           |
-| 9th Gen     | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Coffee Lake                | 16 | 32           |
-| 10th Gen    | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Comet Lake                 | 16 | 32           |
-| 11th Gen    | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2, Intel AVX-512 | Rocket Lake | 32 | 64           |
-| 12th Gen    | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Alder Lake                 | 16 | 32           |
+### AMD
+
+| Family    | Vector Registers | Vector Bytes | Target Name               |
+| :---------| :--------------- | :----------- | :------------------------ |
+| EPYC      |                  |              | `Target.Model.AMD_EPYC`   |
+| Ryzen     |                  |              | `Target.Model.AMD_Ryzen`  |
+| Zen       |                  |              | `Target.Model.AMD_Zen`    |
+
+### Intel
+
+| Generation  | Intel Core Processor | Instruction Set Extensions             | Family       | Vector Registers | Vector Bytes | Target Name                             |
+| :---------  | :------------------- | :------------------------------------- | :--------------------------| :--| :----------- | :-------------------------------------- |
+| 7th Gen     | Intel Core i7        | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Skylake-X                  | 16 | 32           | `Target.Model.INTEL_CORE_GENERATION_7`  |
+| 8th Gen     | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Coffee Lake                | 16 | 32           | `Target.Model.INTEL_CORE_GENERATION_8`  |
+| 9th Gen     | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Coffee Lake                | 16 | 32           | `Target.Model.INTEL_CORE_GENERATION_9`  |
+| 10th Gen    | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Comet Lake                 | 16 | 32           | `Target.Model.INTEL_CORE_GENERATION_10` |
+| 11th Gen    | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2, Intel AVX-512 | Rocket Lake | 32 | 64           | `Target.Model.INTEL_CORE_GENERATION_11` |
+| 12th Gen    | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Alder Lake                 | 16 | 32           | `Target.Model.INTEL_CORE_GENERATION_12` |
 
 - Intel Xeon Processors
 
 | Processor              | Instruction Set Extensions              | Additional Comments |
 | :-----------           | :---------                              | :------------------ |
-| Intel Xeon E Processor |  Intel SSE4.1, Intel SSE4.2, Intel AVX2 | All products launched in this family support this subset of instruction set extensions. However, the latest prodduct launched in Intel Xeon E processor in 2021 also supports AVX-512 extension.|
+| Intel Xeon E Processor |  Intel SSE4.1, Intel SSE4.2, Intel AVX2 | All products launched in this family support this subset of instruction set extensions. However, the latest product launched in Intel Xeon E processor in 2021 also supports AVX-512 extension.|
 
 
 There are other kinds of Intel Xeon Processors, such as Intel Xeon W, Intel Xeon E5 V2, Intel Xeon E5 V3, and
@@ -58,16 +66,28 @@ To create targets for a given Intel Xeon processor, you will need to consult its
 [here](https://ark.intel.com/content/www/us/en/ark/products/96901/intel-xeon-processor-e52699r-v4-55m-cache-2-20-ghz.html)
 and define a target specifically for it.
 
+### Raspberry Pi
+
+| Model                  | Cores | Target Name                   |
+| :--------------------- | :---- | :---------------------------- |
+| Raspberry Pi Zero      | 1     | `Target.Model.RASPBERRY_PI0`  |
+| Raspberry Pi 3 Model B | 4     | `Target.Model.RASPBERRY_PI3`  |
+| Raspberry Pi 4 Model B | 4     | `Target.Model.RASPBERRY_PI4`  |
+
+## GPU Targets
+
+Pre-defined GPU targets are a work in progress.
+
 ## Examples
 
-- Define CPU Targets
 Let's take a look at some examples to understand how to define a CPU target in Accera.
+
 Create a custom CPU target:
 ```python
 cpu_target = acc.Target(name="Custom processor", category=acc.Target.Category.CPU, architecture=acc.Target.Architecture.X86_64, num_cores=10)
 ```
 
-We further craete a known CPU target representing a 10th Generation Intel Core Processor
+Create a pre-defined CPU target representing a 10th Generation Intel Core Processor
 
 ```python
 gen10 = acc.Target(
@@ -83,18 +103,19 @@ gen10 = acc.Target(
 You can use this example as a starting point to define any other Intel Core Processor and the specifications
 of them are listed in the table above.
 
-- Define GPU Targets
+
+Craete a pre-defined GPU target representing an NVidia Tesla v100 processor:
+
+```python
+v100 = acc.Target(model=acc.Target.Model.NVIDIA_TESLA_V100)
+```
+
 Here is another example to create a custom GPU target:
 
 ```python
 gpu_target = acc.Target(name="Custom GPU processor", category=acc.Target.Category.GPU, default_block_size=16)
 ```
 
-Craete a known GPU target representing an NVidia Tesla v100:
-
-```python
-v100 = acc.Target(model=acc.Target.Model.NVIDIA_TESLA_V100)
-```
 
 ## Additional Notes on Instruction Set Extensions
 The details on extensions are important to identify the number of vector registers and vector bytes of each SIMD

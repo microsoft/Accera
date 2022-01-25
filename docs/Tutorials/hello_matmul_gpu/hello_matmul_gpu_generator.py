@@ -38,17 +38,17 @@ jj = schedule.split(j, block_y)
 # Set the dimension order
 schedule.reorder(i, j, ii, jj, k)
 
-# Create the GPU action plan
+# Create the GPU plan
 target = acc.Target(category=acc.Target.Category.GPU)
-plan = schedule.create_action_plan(target)
+plan = schedule.create_plan(target)
 
 # Bind dimensions to a grid of execution units
-plan.bind((i, j, ii, jj), grid=(acc.BLOCK_X, acc.BLOCK_Y, acc.THREAD_X, acc.THREAD_Y))
+plan.bind((i, j, ii, jj), grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y))
 
-# Create a package and add a function to the package based on the action plan
+# Create a package and add a function to the package based on the plan
 package = acc.Package()
-package.add_function(plan, args=(A, B, C), base_name="hello_matmul_gpu")
+package.add(plan, args=(A, B, C), base_name="hello_matmul_gpu")
 
-# Build the HAT package
-# Change format=acc.Package.Format.HAT to format=acc.Package.Format.MLIR to also generate MLIR to _tmp/hello_matmul_gpu
-package.build("hello_matmul_gpu", format=acc.Package.Format.HAT)
+# Build a staically-linked HAT package to be consumed by the C++ runner
+# Change format=acc.Package.Format.HAT_STATIC to format=acc.Package.Format.MLIR_STATIC to also generate MLIR to _tmp/hello_matmul_gpu
+package.build("hello_matmul_gpu", format=acc.Package.Format.HAT_STATIC)

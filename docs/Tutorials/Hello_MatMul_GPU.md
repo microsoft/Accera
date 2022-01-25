@@ -77,7 +77,7 @@ We have finished defining the logic of MatMul. Notice how up to this point, this
 schedule = nest.create_schedule()
 ```
 
-In order to execute this efficiently on our chosen hardware target, we will transform the iteration space and change the action plan according to some predefined constants. The values of these constants can come either from hardware target characteristics and the shapes of the arrays, or can be found through auto-tuning. These will be explained in more detail in a subsequent tutorial. For now, define:
+In order to execute this efficiently on our chosen hardware target, we will transform the iteration space and change the plan according to some predefined constants. The values of these constants can come either from hardware target characteristics and the shapes of the arrays, or can be found through auto-tuning. These will be explained in more detail in a subsequent tutorial. For now, define:
 ```python
 block_x = 16
 block_y = 16
@@ -94,29 +94,29 @@ Set the order to traverse the iteration space. Note that on the precise order of
 schedule.reorder(i, j, ii, jj, k)
 ```
 
-Create an action plan from the schedule. The action plan allows us to control specific execution behavior on the hardware target, such grid launch dimensions and thread blocks sizes, which are essential for high performance:
+Create a plan from the schedule. The plan allows us to control specific execution behavior on the hardware target, such grid launch dimensions and thread blocks sizes, which are essential for high performance:
 ```python
 target = acc.Target(category=acc.Target.Category.GPU)
-plan = schedule.create_action_plan(target)
+plan = schedule.create_plan(target)
 ```
 
 Bind dimensions of the schedule to execution units on the GPU. Use the outer dimensions _i_, _j_ to be the block indices _x_,_y_ in the grid, and the _ii_ and _jj_ dimensions to be the thread indices _x_,_y_ in the block:
 ```python
-plan.bind((i, j, ii, jj), grid=(acc.BLOCK_X, acc.BLOCK_Y, acc.THREAD_X, acc.THREAD_Y))
+plan.bind((i, j, ii, jj), grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y))
 ```
 
-Use the action plan to add a callable function named `hello_matmul_gpu` to a HAT package.
+Use the plan to add a callable function named `hello_matmul_gpu` to a HAT package.
 
 ```python
-# Create a package and add a function to the package based on the action plan
+# Create a package and add a function to the package based on the plan
 package = acc.Package()
-package.add_function(plan, args=(A, B, C), base_name="hello_matmul_gpu")
+package.add(plan, args=(A, B, C), base_name="hello_matmul_gpu")
 ```
 
 Finally, we build the HAT package:
 ```python
-# Build the HAT package
-package.build(name="hello_matmul_gpu", format=acc.Package.Format.HAT)
+# Build a staically-linked HAT package to be consumed by the C++ runner
+package.build(name="hello_matmul_gpu", format=acc.Package.Format.HAT_STATIC)
 ```
 
 By now, you have all the code necessary to generate a Accera MatMul function that runs on the GPU. You can also find the complete Python script [here](hello_matmul_gpu/hello_matmul_gpu_generator.py).

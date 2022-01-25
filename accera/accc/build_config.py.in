@@ -28,5 +28,3 @@ class BuildConfig:
     shared_library_prefix = r"@SHARED_LIB_PREFIX@"
     exe_extension = r"@EXE_EXTENSION@"
     vulkan_runtime_wrapper_shared_library = os.path.join(root_dir, r"@RC_VULKAN_RUNTIME_WRAPPER_REL_PATH@")
-    vulkan_loader_library = r'@VULKAN_LIBRARY_PATH@'
-    openmp_library = r'@OPENMP_LIBRARY_PATH@'

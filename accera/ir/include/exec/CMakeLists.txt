@@ -9,6 +9,7 @@ set(LLVM_TARGET_DEFINITIONS ExecutionPlanOps.td)
 mlir_tablegen(ExecutionPlanOps.h.inc -gen-op-decls)
 mlir_tablegen(ExecutionPlanOps.cpp.inc -gen-op-defs)
 mlir_tablegen(ExecutionPlanDialect.h.inc -gen-dialect-decls -dialect=accxp)
+mlir_tablegen(ExecutionPlanDialect.cpp.inc -gen-dialect-defs -dialect=accxp)
 add_public_tablegen_target(ExecutionPlanOpsIncGen)
 
 set(LLVM_TARGET_DEFINITIONS ExecutionPlanAttrs.td)

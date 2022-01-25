@@ -26,7 +26,7 @@ def _():
 
 schedule = nest.create_schedule()
 
-# Define constants used in the schedule and action plan. The values are
+# Define constants used in the schedule and plan. The values are
 # either hardware target characteristics or can be found through auto-tuning.
 tile_size_i = 6
 tile_size_j = 128
@@ -49,7 +49,7 @@ jjjj = schedule.split(jjj, target.vector_bytes // 4) # Each SIMD register holds 
 
 schedule.reorder(j, k, i, jj, ii, kk, kkk, iii, jjj, jjjj)
 
-plan = schedule.create_action_plan(target)
+plan = schedule.create_plan(target)
 
 # Add caching
 # Cache the B array by prefetching and packing the memory footprint along slices of the jj dimension.
@@ -62,9 +62,9 @@ plan.cache(C, ii)
 # Kernelize the inner dimensions, which applies unroll and vectorize transformations
 plan.kernelize(unroll_indices=[jjj, iii, kkk], vectorize_indices=jjjj)
 
-# Create a package and add a function to the package based on the action plan
+# Create a package and add a function to the package based on the plan
 package = acc.Package()
-package.add_function(plan, args=(A, B, C), base_name="optimized_matmul_py")
+package.add(plan, args=(A, B, C), base_name="optimized_matmul_py")
 
-# Build the HAT package
-package.build(name="optimized_matmul", format=acc.Package.Format.HAT)
+# Build a staically-linked HAT package to be consumed by the C++ runner
+package.build(name="optimized_matmul", format=acc.Package.Format.HAT_STATIC)

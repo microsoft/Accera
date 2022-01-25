@@ -217,7 +217,9 @@ def _emit_hat_package_for_model(model, package_name, target, output_dir, large_m
     if not isinstance(model, onnx.ModelProto):
         model = onnx.load(model)
 
-    if target == "pi3":
+    if target == "pi4":
+        target_device = Target(model=Target.Model.RASPBERRY_PI4)
+    elif target == "pi3":
         target_device = Target(model=Target.Model.RASPBERRY_PI3)
     elif target == "host":
          target_device = Target.HOST

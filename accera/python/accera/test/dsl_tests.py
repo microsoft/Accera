@@ -28,7 +28,7 @@ from accera import ScalarType, Array, Function, Target, Package
 from accera.test import verifiers
 
 TEST_MODE = Package.Mode.DEBUG if DEV_MODE else Package.Mode.RELEASE
-TEST_FORMAT = Package.Format.MLIR if DEV_MODE else Package.Format.HAT
+TEST_FORMAT = Package.Format.MLIR_DYNAMIC if DEV_MODE else Package.Format.HAT_DYNAMIC
 
 TEST_PACKAGE_DIR = "test_acccgen"
 
@@ -65,61 +65,70 @@ def expectedFailure(reason: FailedReason, msg: str, condition: bool = True) -> C
 
 class DSLTest_01Arrays(unittest.TestCase):
     def _verify_nest(self, nest, args: Tuple[Array], package_name, correctness_check_values=None) -> None:
-        from accera.tuning import CorrectnessCheck
 
         # create a HAT package and add the function to it
         package = Package()
-        function = package.add_function(nest, args, base_name="array_nest_test")
+        function = package.add(nest, args, base_name="array_nest_test")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
         # build the HAT package
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE,
                           output_dir=output_dir)
-
-        if correctness_check_values:
-            checker = CorrectnessCheck(output_dir)
-            checker.run(function.name, before=correctness_check_values["pre"], after=correctness_check_values["post"])
+            if correctness_check_values:
+                v.check_correctness(function.name, before=correctness_check_values["pre"],
+                                    after=correctness_check_values["post"])
 
     def test_input_array(self) -> None:
-        A = Array(shape=(10, 20), role=Array.Role.INPUT, element_type=ScalarType.float32)
+        A = Array(shape=(10, 20), role=Array.Role.INPUT,
+                  element_type=ScalarType.float32)
         self.assertIsNotNone(A)
 
     def test_input_array_standard_layout(self) -> None:
-        A = Array(shape=(10, 20), role=Array.Role.INPUT, layout=Array.Layout.LAST_MAJOR)
+        A = Array(shape=(10, 20), role=Array.Role.INPUT,
+                  layout=Array.Layout.LAST_MAJOR)
         # A = Array(shape=(10, 20), layout=Array.Layout.LAST_MAJOR, role=Array.Role.INPUT, element_type=ScalarType.float32)
         self.assertIsNotNone(A)
 
     def test_input_array_dimension_layout(self) -> None:
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, 20), layout=(1, 10))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
+                  shape=(10, 20), layout=(1, 10))
         self.assertIsNotNone(A)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, 20), layout=(10, 1))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
+                  shape=(10, 20), layout=(10, 1))
         self.assertIsNotNone(A)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, ), layout=(1, ))
+        A = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(10, ), layout=(1, ))
         self.assertIsNotNone(A)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, 20, 50), layout=(1, 10, 200))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
+                  shape=(10, 20, 50), layout=(1, 10, 200))
         self.assertIsNotNone(A)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, 20, 50), layout=(200, 10, 1))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
+                  shape=(10, 20, 50), layout=(200, 10, 1))
         self.assertIsNotNone(A)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, 20, 50), layout=(1, 200, 10))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
+                  shape=(10, 20, 50), layout=(1, 200, 10))
         self.assertIsNotNone(A)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, 20, 50), layout=(10, 200, 1))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
+                  shape=(10, 20, 50), layout=(10, 200, 1))
         self.assertIsNotNone(A)
 
     def test_input_array_infinite_major_dimension(self) -> None:
         from accera import Nest, inf
 
         with self.assertRaises(ValueError):
-            Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(inf, inf))
+            Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(inf, inf))
 
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(10, inf))
+        A = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(10, inf))
         self.assertIsNotNone(A)
         self.assertEqual(A.shape[1], inf)
 
@@ -131,7 +140,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             A[i, j] += A[i, j]
 
         package = Package()
-        package.add_function(nest, (A, ), base_name="inf_test")
+        package.add(nest, (A, ), base_name="inf_test")
         self.assertEqual(A.shape[1], 16)
 
         package_name = "input_array_inf_test"
@@ -140,7 +149,8 @@ class DSLTest_01Arrays(unittest.TestCase):
                           mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_input_output_array(self) -> None:
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(10, 20))
+        A = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(10, 20))
         self.assertIsNotNone(A)
 
     def test_const_array(self) -> None:
@@ -155,13 +165,16 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         D = np.ones((128, 256), dtype=np.float64)
         for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64, ScalarType.float32, ScalarType.float64]:
-            A = Array(role=Array.Role.CONST, element_type=t, layout=Array.Layout.LAST_MAJOR, data=D)
+            A = Array(role=Array.Role.CONST, element_type=t,
+                      layout=Array.Layout.LAST_MAJOR, data=D)
             self.assertIsNotNone(A)
 
     def test_temp_array(self) -> None:
-        A = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, layout=Array.Layout.LAST_MAJOR, shape=(10, 20))
+        A = Array(role=Array.Role.TEMP, element_type=ScalarType.float32,
+                  layout=Array.Layout.LAST_MAJOR, shape=(10, 20))
         self.assertIsNotNone(A)
-        B = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, layout=Array.Layout.FIRST_MAJOR, shape=(10, 20))
+        B = Array(role=Array.Role.TEMP, element_type=ScalarType.float32,
+                  layout=Array.Layout.FIRST_MAJOR, shape=(10, 20))
         self.assertIsNotNone(B)
 
     def test_temp_array_materialization_1(self) -> None:
@@ -169,7 +182,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         from accera import Nest, Package
 
         def make_test_fn(package, A, B, C):
-            T = Array(role=Array.Role.TEMP, element_type=A.element_type, shape=A.shape)
+            T = Array(role=Array.Role.TEMP,
+                      element_type=A.element_type, shape=A.shape)
 
             nest = Nest(A.shape)
             i, j = nest.get_indices()
@@ -179,7 +193,7 @@ class DSLTest_01Arrays(unittest.TestCase):
                 T[i, j] = A[i, j] + B[i, j]
                 C[i, j] += T[i, j] ** 2.
 
-            return package.add_function(nest, args=(A, B, C))
+            return package.add(nest, args=(A, B, C))
 
         A = Array(shape=(256, 32), role=Array.Role.INPUT)
         B = Array(shape=(256, 32), role=Array.Role.INPUT)
@@ -208,7 +222,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             def _():
                 A[i, j] = 3.14
 
-            return package.add_function(nest, args=(A,))
+            return package.add(nest, args=(A,))
         init_fn = make_init_function(package, B)
 
         def make_helper_function2(package, A, B):
@@ -220,15 +234,16 @@ class DSLTest_01Arrays(unittest.TestCase):
             def _():
                 B[i, j] += A[i, j] * 2.
 
-            return package.add_function(nest, args=(A, B))
+            return package.add(nest, args=(A, B))
         helper_fn2 = make_helper_function2(package, A, B)
 
         def test_fn(A, B):
-            T = Array(role=Array.Role.TEMP, element_type=A.element_type, shape=A.shape)
+            T = Array(role=Array.Role.TEMP,
+                      element_type=A.element_type, shape=A.shape)
             init_fn(T)
             helper_fn2(T, B)
             helper_fn2(A, B)
-        package.add_function(test_fn, args=(A, B))
+        package.add(test_fn, args=(A, B))
 
         package_name = "test_temp_array_materialization_2"
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
@@ -236,17 +251,17 @@ class DSLTest_01Arrays(unittest.TestCase):
                           mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
         def test_fn_wrong_role(A, B):
-            T = Array(role=Array.Role.INPUT_OUTPUT, element_type=A.element_type, shape=A.shape)
+            T = Array(role=Array.Role.INPUT_OUTPUT,
+                      element_type=A.element_type, shape=A.shape)
             init_fn(T)
             helper_fn2(T, B)
             helper_fn2(A, B)
-        package.add_function(test_fn_wrong_role, args=(A, B))
+        package.add(test_fn_wrong_role, args=(A, B))
 
         package_name = "test_temp_array_materialization_2_wrong_role"
         with self.assertRaises(ValueError):
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
-
 
     def test_temp_array_materialization_3(self) -> None:
         # Materializes (allocates) a TEMP array within some nest iteration logic
@@ -262,7 +277,8 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         @nest.iteration_logic
         def _():
-            T = Array(role=Array.Role.TEMP, element_type=A.element_type, shape=(1,))
+            T = Array(role=Array.Role.TEMP,
+                      element_type=A.element_type, shape=(1,))
 
             # TODO: inject via introspection if we need to support this scenario
             T._allocate()
@@ -272,16 +288,16 @@ class DSLTest_01Arrays(unittest.TestCase):
             B[i, j] += A[i, j] * 2.
             A[i, j] = T[0]
 
-        package.add_function(nest, args=(A, B))
+        package.add(nest, args=(A, B))
         package_name = "test_temp_array_materialization_3"
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
-
     def test_first_major_array_access(self) -> None:
         from accera import Nest
-        A = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR)
+        A = Array(shape=(256, 32), role=Array.Role.INPUT,
+                  layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(256, 32))
         i, j = nest.get_indices()
@@ -302,7 +318,8 @@ class DSLTest_01Arrays(unittest.TestCase):
 
     def test_last_major_array_access(self) -> None:
         from accera import Nest
-        A = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.LAST_MAJOR)
+        A = Array(shape=(256, 32), role=Array.Role.INPUT,
+                  layout=Array.Layout.LAST_MAJOR)
 
         nest = Nest(shape=(256, 32))
         i, j = nest.get_indices()
@@ -311,21 +328,23 @@ class DSLTest_01Arrays(unittest.TestCase):
         def _():
             A[i, j] = 5.0
 
-        A_test = np.random.random((256, 32)).astype(np.float32)
-        A_expected = np.ndarray((256, 32)).astype(np.float32)
+        A_test = np.random.random((256, 32)).astype(np.float32, order="F")
+        A_expected = np.ndarray((256, 32)).astype(np.float32, order="F")
         A_expected.fill(5.0)
         correctness_check_values = {
             "pre": (A_test,),
             "post": (A_expected,)
         }
-        self._verify_nest(nest, (A,), "test_last_major_array_access", correctness_check_values=correctness_check_values)
+        self._verify_nest(nest, (A,), "test_last_major_array_access",
+                          correctness_check_values=correctness_check_values)
 
     @expectedFailure(FailedReason.BUG, "Debug mode doesn't support sub-arrays", TEST_MODE == Package.Mode.DEBUG)
     def test_subarray(self) -> None:
         from accera import Nest
         package = Package()
 
-        arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(256, 256))
+        arr = Array(role=Array.Role.INPUT_OUTPUT,
+                    element_type=ScalarType.float32, shape=(256, 256))
         arr0 = arr.sub_array(offsets=(0, 0), shape=(128, 128))
         self.assertEqual(arr0.shape, [128, 128])
         self.assertEqual(arr0.element_type, arr.element_type)
@@ -340,7 +359,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             def _():
                 arr0[i, j] += 1.
 
-            return package.add_function(nest, args=(arr0,))
+            return package.add(nest, args=(arr0,))
         subarray_fn = make_subarray_fn(arr0)
 
         # add a function that instantiates a subarray of the input array and calls the function above
@@ -349,7 +368,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             print(arr1.layout)
             self.assertEqual(arr0.layout, arr1.layout)
             subarray_fn(arr1)
-        package.add_function(main, args=(arr,))
+        package.add(main, args=(arr,))
 
         package_name = "test_subarray"
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
@@ -361,7 +380,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         from accera import Nest
         package = Package()
 
-        arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(256, 256))
+        arr = Array(role=Array.Role.INPUT_OUTPUT,
+                    element_type=ScalarType.float32, shape=(256, 256))
         arr0 = arr.sub_array(offsets=(0, 0), shape=(128, 128))
         self.assertEqual(arr0.shape, [128, 128])
         self.assertEqual(arr0.element_type, arr.element_type)
@@ -378,7 +398,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             def _():
                 A[i, j] += 1.
 
-            return package.add_function(nest, args=(A,))
+            return package.add(nest, args=(A,))
         subarray_fn = make_fn(arr0)
         subarray_fn1 = make_fn(arr00)
 
@@ -391,12 +411,13 @@ class DSLTest_01Arrays(unittest.TestCase):
             self.assertEqual(arr00.layout, arr11.layout)
             subarray_fn(arr1)
             subarray_fn1(arr11)
-        package.add_function(main, args=(arr,))
+        package.add(main, args=(arr,))
 
         package_name = "test_subarray_l2"
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+
 
 class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
     def _create_nest(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
@@ -407,7 +428,8 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
         A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
         B = Array(role=Array.Role.INPUT, element_type=type, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=type, shape=(M, N))
 
         return Nest(shape=(M, N, S)), A, B, C
 
@@ -416,7 +438,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
         # create a HAT package and add the nest to it
         package = Package()
-        package.add_function(nest, args, base_name="op_test")
+        package.add(nest, args, base_name="op_test")
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
@@ -504,7 +526,8 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 C[i, j] += A[i, k] % B[k, j]
                 C[i, j] += A[i, k]**B[k, j]
 
-            self._build_nest(nest, [A, B, C], f"test_arithmetic_operations_{t}")
+            self._build_nest(
+                nest, [A, B, C], f"test_arithmetic_operations_{t}")
 
     def test_relational_operations(self) -> None:
         from accera._lang_python._lang import _If
@@ -627,7 +650,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
         package = Package()
         package_name = "test_convenience_syntax_2"
-        package.add_function(nest, args=(A, B, C), base_name="matmul")
+        package.add(nest, args=(A, B, C), base_name="matmul")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=TEST_FORMAT,
@@ -642,11 +665,11 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
         def _():
             C[i, j] += A[i, k] * B[k, j]
 
-        plan = nest.create_action_plan()
+        plan = nest.create_plan()
 
         package = Package()
         package_name = "test_convenience_syntax_2"
-        package.add_function(plan, args=(A, B, C), base_name="matmul")
+        package.add(plan, args=(A, B, C), base_name="matmul")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=TEST_FORMAT,
@@ -661,27 +684,26 @@ class DSLTest_03Schedules(unittest.TestCase):
 
         A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
         B = Array(role=Array.Role.INPUT, element_type=type, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=type, shape=(M, N))
 
         return Nest(shape=(M, N, S)), A, B, C
 
     def _verify_schedule(self, schedule, args: Tuple[Array], package_name, correctness_check_values=None) -> None:
-        from accera.tuning import CorrectnessCheck
 
         # create a HAT package and add the function to it
         package = Package()
-        function = package.add_function(schedule, args, base_name="schedule_test")
+        function = package.add(schedule, args, base_name="schedule_test")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
         # build the HAT package
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE,
                           output_dir=output_dir)
-
-        if correctness_check_values:
-            checker = CorrectnessCheck(output_dir)
-            checker.run(function.name, before=correctness_check_values["pre"], after=correctness_check_values["post"])
+            if correctness_check_values:
+                v.check_correctness(function.name, before=correctness_check_values["pre"],
+                                    after=correctness_check_values["post"])
 
     def test_schedule_reorder(self) -> None:
         nest, A, B, C = self._create_nest((16, 10, 11))
@@ -785,7 +807,8 @@ class DSLTest_03Schedules(unittest.TestCase):
         self.assertIsNotNone(iii)
         self.assertIsNotNone(kkk)
         self.assertEqual(schedule1._indices, [i, iii, j, k, kkk])
-        self._verify_schedule(schedule1, [A, B, C], "test_schedule_tile_subset")
+        self._verify_schedule(
+            schedule1, [A, B, C], "test_schedule_tile_subset")
 
     def test_schedule_skew(self) -> None:
         from accera import Nest
@@ -817,12 +840,14 @@ class DSLTest_03Schedules(unittest.TestCase):
 
                 # Skew dimension i with respect to dimension j.
                 schedule.skew(i, j)
-                self._verify_schedule(schedule, [A, B, C], f"test_schedule_skew_i_j_{N}_{K}", correctness_check_values)
+                self._verify_schedule(
+                    schedule, [A, B, C], f"test_schedule_skew_i_j_{N}_{K}", correctness_check_values)
 
                 # Skew dimension j with respect to dimension i.
                 schedule1 = nest.create_schedule()
                 schedule1.skew(j, i)
-                self._verify_schedule(schedule1, [A, B, C], f"test_schedule_skew_j_i_{N}_{K}", correctness_check_values)
+                self._verify_schedule(
+                    schedule1, [A, B, C], f"test_schedule_skew_j_i_{N}_{K}", correctness_check_values)
 
     def test_schedule_skew_unrolling(self) -> None:
         from accera import Nest
@@ -853,12 +878,14 @@ class DSLTest_03Schedules(unittest.TestCase):
         # Skew dimension i with respect to dimension j, with unrolling.
         schedule = nest.create_schedule()
         schedule.skew(i, j, unroll_loops_smaller_than=3)
-        self._verify_schedule(schedule, [A, B, C], "test_schedule_skew_i_j_with_unrolling", correctness_check_values)
+        self._verify_schedule(schedule, [
+                              A, B, C], "test_schedule_skew_i_j_with_unrolling", correctness_check_values)
 
         # Skew dimension j with respect to dimension i, with unrolling.
         schedule1 = nest.create_schedule()
         schedule1.skew(j, i, unroll_loops_smaller_than=3)
-        self._verify_schedule(schedule1, [A, B, C], f"test_schedule_skew_j_i_with_unrolling", correctness_check_values)
+        self._verify_schedule(schedule1, [
+                              A, B, C], f"test_schedule_skew_j_i_with_unrolling", correctness_check_values)
 
     def test_schedule_pad(self) -> None:
         nest, A, B, C = self._create_nest((16, 10, 11))
@@ -899,7 +926,8 @@ class DSLTest_03Schedules(unittest.TestCase):
             "pre": [A_test, B_test, C_test],
             "post": [A_test, B_test, C_test + A_test @ B_test]
         }
-        self._verify_schedule(schedule, [A, B, C], "test_schedule_pad", correctness_check_values)
+        self._verify_schedule(
+            schedule, [A, B, C], "test_schedule_pad", correctness_check_values)
 
     def test_convenience_syntax(self) -> None:
 
@@ -914,7 +942,7 @@ class DSLTest_03Schedules(unittest.TestCase):
 
         package = Package()
         package_name = "test_convenience_syntax"
-        package.add_function(schedule, args=(A, B, C), base_name="plan_test")
+        package.add(schedule, args=(A, B, C), base_name="plan_test")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=TEST_FORMAT,
@@ -924,21 +952,19 @@ class DSLTest_03Schedules(unittest.TestCase):
 class DSLTest_04Fusing(unittest.TestCase):
     def _verify_schedule(self, schedule, args: Tuple[Array], package_name,
                          correctness_check_values) -> None:
-        from accera.tuning import CorrectnessCheck
-
         # create a HAT package and add the function to it
         package = Package()
-        function = package.add_function(schedule, args, base_name="fusing_test")
+        function = package.add(schedule, args, base_name="fusing_test")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
         # build the HAT package
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE,
                           output_dir=output_dir)
-
-        checker = CorrectnessCheck(output_dir)
-        checker.run(function.name, before=correctness_check_values["pre"], after=correctness_check_values["post"])
+            if correctness_check_values:
+                v.check_correctness(function.name, before=correctness_check_values["pre"],
+                                    after=correctness_check_values["post"])
 
     def test_full_iteration_space_fusing(self) -> None:
         from accera import fuse, Nest
@@ -1017,7 +1043,8 @@ class DSLTest_04Fusing(unittest.TestCase):
 
         @nest1.iteration_logic
         def _():
-            C[i1, j1] = max(C[i1, j1], Scalar(0.))  # BUGBUG: should implicitly convert Scalar
+            # BUGBUG: should implicitly convert Scalar
+            C[i1, j1] = max(C[i1, j1], Scalar(0.))
 
         schedule1 = nest1.create_schedule()
 
@@ -1200,7 +1227,8 @@ class DSLTest_04Fusing(unittest.TestCase):
             "pre": [A_test, B_test],
             "post": [A_ref, B_ref]
         }
-        self._verify_schedule(fused, (A, B), "test_concat_fusing_1", correctness_check_values)
+        self._verify_schedule(
+            fused, (A, B), "test_concat_fusing_1", correctness_check_values)
 
     @expectedFailure(FailedReason.BUG, "Concat fusing is broken")
     def test_concat_fusing_2(self) -> None:
@@ -1258,7 +1286,8 @@ class DSLTest_04Fusing(unittest.TestCase):
             "pre": [A_test, B_test, C_test],
             "post": [A_ref, B_ref, C_ref]
         }
-        self._verify_schedule(fused, (A, B, C), "test_concat_fusing_2", correctness_check_values)
+        self._verify_schedule(
+            fused, (A, B, C), "test_concat_fusing_2", correctness_check_values)
 
     def test_concat_fusing_3(self) -> None:
         from accera import fuse, Nest
@@ -1304,7 +1333,8 @@ class DSLTest_04Fusing(unittest.TestCase):
             "pre": [A_test, B_test],
             "post": [A_ref, B_ref]
         }
-        self._verify_schedule(fused, (A, B), "test_concat_fusing_3", correctness_check_values)
+        self._verify_schedule(
+            fused, (A, B), "test_concat_fusing_3", correctness_check_values)
 
     @expectedFailure(FailedReason.BUG, "Concat fusing is broken")
     def test_concat_fusing_4(self) -> None:
@@ -1365,7 +1395,8 @@ class DSLTest_04Fusing(unittest.TestCase):
             "pre": [A_test, B_test, C_test],
             "post": [A_ref, B_ref, C_ref]
         }
-        self._verify_schedule(fused, (A, B, C), "test_concat_fusing_4", correctness_check_values)
+        self._verify_schedule(
+            fused, (A, B, C), "test_concat_fusing_4", correctness_check_values)
 
     @unittest.skip("BUG: Compilation takes too long")
     def test_multi_concat_fusing_1(self) -> None:
@@ -1428,16 +1459,21 @@ class DSLTest_04Fusing(unittest.TestCase):
             "pre": [A_test, B_test, C_test, D_test],
             "post": [A_test + A_test, B_test * B_test, C_test * C_test, D_test * D_test]
         }
-        self._verify_schedule(fused3, (A, B, C, D), "test_multi_concat_fusing_1", correctness_check_values)
+        self._verify_schedule(
+            fused3, (A, B, C, D), "test_multi_concat_fusing_1", correctness_check_values)
+
 
 class DSLTest_05Targets(unittest.TestCase):
     def test_known_targets(self) -> None:
-        intel_generation_7 = Target(model=Target.Model.INTEL_CORE_GENERATION_7, num_threads=44)
-        self.assertEqual(intel_generation_7.model, Target.Model.INTEL_CORE_GENERATION_7)
+        intel_generation_7 = Target(
+            model=Target.Model.INTEL_CORE_GENERATION_7, num_threads=44)
+        self.assertEqual(intel_generation_7.model,
+                         Target.Model.INTEL_CORE_GENERATION_7)
         self.assertEqual(intel_generation_7.num_threads, 44)  # override
         self.assertEqual(intel_generation_7.vector_bytes, 32)  # default
         self.assertEqual(intel_generation_7.vector_registers, 16)  # default
-        self.assertEqual(intel_generation_7.category, Target.Category.CPU)  # default
+        self.assertEqual(intel_generation_7.category,
+                         Target.Category.CPU)  # default
 
         pi3 = Target(model=Target.Model.RASPBERRY_PI3, frequency_GHz=1.2)
         self.assertEqual(pi3.model, Target.Model.RASPBERRY_PI3)
@@ -1450,7 +1486,8 @@ class DSLTest_05Targets(unittest.TestCase):
             category=Target.Category.CPU,
             architecture="x86_64",
             family="Broadwell",
-            extensions=["MMX", "SSE", "SSE2", "SSE3", "SSSE3", "SSE4", "SSE4.1", "SSE4.2", "AVX", "AVX2", "FMA3"],
+            extensions=["MMX", "SSE", "SSE2", "SSE3", "SSSE3",
+                        "SSE4", "SSE4.1", "SSE4.2", "AVX", "AVX2", "FMA3"],
             num_cores=22,
             num_threads=44,
             frequency_GHz=3.2,
@@ -1469,7 +1506,7 @@ class DSLTest_05Targets(unittest.TestCase):
         self.assertEqual(v100.category, Target.Category.GPU)
 
 
-class DSLTest_06ActionPlansCaching(unittest.TestCase):
+class DSLTest_06PlansCaching(unittest.TestCase):
     def _create_plan(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
         from accera import Nest
 
@@ -1478,7 +1515,8 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
         A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
         B = Array(role=Array.Role.INPUT, element_type=type, shape=(S, N),
                   layout=Array.Layout.LAST_MAJOR)    # use a different caching layout
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=type, shape=(M, N))
 
         nest = Nest(shape=(M, N, S))
         i, j, k = nest.get_indices()
@@ -1487,27 +1525,24 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
         def _():
             C[i, j] += A[i, k] * B[k, j]
 
-        plan = nest.create_action_plan()
+        plan = nest.create_plan()
 
         return plan, [A, B, C], [i, j, k]
 
     def _verify_plan(self, plan, args: Tuple[Array], package_name, correctness_check_values=None) -> None:
-        from accera.tuning import CorrectnessCheck
-
         # create a HAT package and add the function to it
         package = Package()
-        function = package.add_function(plan, args, base_name="caching_test")
+        function = package.add(plan, args, base_name="caching_test")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
         # build the HAT package
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE,
                           output_dir=output_dir)
-
-        if correctness_check_values:
-            checker = CorrectnessCheck(output_dir)
-            checker.run(function.name, before=correctness_check_values["pre"], after=correctness_check_values["post"])
+            if correctness_check_values:
+                v.check_correctness(function.name, before=correctness_check_values["pre"],
+                                    after=correctness_check_values["post"])
 
     def test_caching_by_level(self) -> None:
         plan, args, indices = self._create_plan((16, 10, 11))
@@ -1517,7 +1552,8 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
         AA = plan.cache(A, level=2)
         self.assertEqual(AA.index, j)
 
-        BB = plan.cache(B, level=2, layout=Array.Layout.FIRST_MAJOR)    # input, different layout
+        # input, different layout
+        BB = plan.cache(B, level=2, layout=Array.Layout.FIRST_MAJOR)
         self.assertEqual(BB.index, j)
 
         self._verify_plan(plan, [A, B, C], "test_caching_by_level")
@@ -1533,7 +1569,8 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
         AA = plan.cache(A, index=j)    # input
         self.assertEqual(AA.index, j)
 
-        BB = plan.cache(B, index=j, layout=Array.Layout.FIRST_MAJOR)    # input, different layout
+        # input, different layout
+        BB = plan.cache(B, index=j, layout=Array.Layout.FIRST_MAJOR)
         self.assertEqual(BB.index, j)
 
         CC = plan.cache(C, index=j)    # input/output
@@ -1581,7 +1618,7 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
             A[i] += 2
 
         v100 = Target(model=Target.Model.NVIDIA_TESLA_V100, num_threads=16)
-        plan = nest.create_action_plan(v100)
+        plan = nest.create_plan(v100)
 
         plan.cache(i, type=v100.MemoryType.SHARED)
         self._verify_plan(plan, [A], "test_cache_mapping")
@@ -1604,7 +1641,7 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
         jj = schedule.split(j, 256)
         schedule.reorder(i, j, ii, jj)
 
-        plan = schedule.create_action_plan()
+        plan = schedule.create_plan()
 
         plan.cache(A, index=ii, trigger_index=j)
 
@@ -1638,7 +1675,7 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
         ii = schedule.split(i, 6)
 
         schedule.reorder(j, k, i, jj, kk, kkk, ii, jjj, jjjj)
-        plan = schedule.create_action_plan()
+        plan = schedule.create_plan()
         plan.cache(B, index=kkk, trigger_index=k, layout=Array.Layout.FIRST_MAJOR)
 
         A_test = np.random.random(A.shape).astype(np.float32)
@@ -1649,7 +1686,8 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
             "post": [A_test, B_test, C_test + A_test @ B_test]
         }
 
-        self._verify_plan(plan, [A, B, C], "test_cache_trigger_level_matmul", correctness_check_values=correctness_check_values)
+        self._verify_plan(plan, [A, B, C], "test_cache_trigger_level_matmul",
+                          correctness_check_values=correctness_check_values)
 
     def test_hierachical_caching(self) -> None:
         from accera import Nest
@@ -1679,12 +1717,16 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
         ii = schedule.split(i, 6)
 
         schedule.reorder(j, k, i, jj, kk, kkk, ii, jjj, jjjj)
-        plan = schedule.create_action_plan()
+        plan = schedule.create_plan()
 
-        AA = plan.cache(A, level=5, trigger_level=7, layout=Array.Layout.FIRST_MAJOR)
-        AAA = plan.cache(AA, level=3, trigger_level=5, layout=Array.Layout.LAST_MAJOR)
-        BB = plan.cache(B, level=6, trigger_level=7, layout=Array.Layout.FIRST_MAJOR)
-        BBB = plan.cache(BB, level=2, trigger_level=5, layout=Array.Layout.LAST_MAJOR)
+        AA = plan.cache(A, level=5, trigger_level=7,
+                        layout=Array.Layout.FIRST_MAJOR)
+        AAA = plan.cache(AA, level=3, trigger_level=5,
+                         layout=Array.Layout.LAST_MAJOR)
+        BB = plan.cache(B, level=6, trigger_level=7,
+                        layout=Array.Layout.FIRST_MAJOR)
+        BBB = plan.cache(BB, level=2, trigger_level=5,
+                         layout=Array.Layout.LAST_MAJOR)
         CC = plan.cache(C, level=8, layout=Array.Layout.FIRST_MAJOR)
         CCC = plan.cache(CC, level=6, layout=Array.Layout.LAST_MAJOR)
 
@@ -1696,25 +1738,24 @@ class DSLTest_06ActionPlansCaching(unittest.TestCase):
             "post": [A_test, B_test, C_test + A_test @ B_test]
         }
 
-        self._verify_plan(plan, [A, B, C], "test_hierarchical_caching", correctness_check_values=correctness_check_values)
+        self._verify_plan(plan, [A, B, C], "test_hierarchical_caching",
+                          correctness_check_values=correctness_check_values)
 
 
-class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
+class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
     def _verify_plan(self, plan, args: Tuple[int], package_name, correctness_check_values=None) -> None:
-        from accera.tuning import CorrectnessCheck
-
         package = Package()
-        function = package.add_function(plan, args, base_name="vectorization_parallelization_test")
+        function = package.add(
+            plan, args, base_name="vectorization_parallelization_test")
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE,
                           output_dir=output_dir)
-
-        if correctness_check_values:
-            checker = CorrectnessCheck(output_dir)
-            checker.run(function.name, before=correctness_check_values["pre"], after=correctness_check_values["post"])
+            if correctness_check_values:
+                v.check_correctness(function.name, before=correctness_check_values["pre"],
+                                    after=correctness_check_values["post"])
 
     def test_unroll(self) -> None:
         from accera import Target, Nest
@@ -1730,11 +1771,11 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
         def _():
             A[i, j] *= 2.0
 
-        plan1 = nest.create_action_plan(my_target)
+        plan1 = nest.create_plan(my_target)
         plan1.unroll(index=j)
         self._verify_plan(plan1, [A], "test_unroll1")
 
-        plan2 = nest.create_action_plan(my_target)
+        plan2 = nest.create_plan(my_target)
         plan2.unroll(index=i)
         self._verify_plan(plan2, [A], "test_unroll2")
 
@@ -1745,7 +1786,8 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, shape=(64, ))
         C = Array(role=Array.Role.INPUT_OUTPUT, shape=(64, ))
 
-        my_target = Target(category=Target.Category.CPU, vector_bytes=16, vector_registers=2)
+        my_target = Target(category=Target.Category.CPU,
+                           vector_bytes=16, vector_registers=2)
 
         nest = Nest(shape=(64, ))
         i = nest.get_indices()
@@ -1754,7 +1796,7 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
         def _():
             C[i] = A[i] * B[i]
 
-        plan = nest.create_action_plan(my_target)
+        plan = nest.create_plan(my_target)
         plan.vectorize(index=i)
         self._verify_plan(plan, [A, B, C], "test_vectorize")
 
@@ -1773,7 +1815,7 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
             C[i, j] += A[i, k] * B[k, j]
 
         my_target = Target(category=Target.Category.CPU, vector_bytes=16, vector_registers=2)
-        plan = nest.create_action_plan(my_target)
+        plan = nest.create_plan(my_target)
 
         # Shorthand for:
         # plan.unroll(i)
@@ -1797,7 +1839,7 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
             C[i, j] += A[i, k] * B[k, j]
 
         my_target = Target(category=Target.Category.CPU, vector_bytes=16, vector_registers=2)
-        plan = nest.create_action_plan(my_target)
+        plan = nest.create_plan(my_target)
 
         # Shorthand for:
         # plan.unroll(i)
@@ -1822,9 +1864,10 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
             C[i, j] += A[i, k] * B[k, j]
 
         target = Target(model=Target.Model.HOST, num_threads=16)
-        plan = nest.create_action_plan(target)
+        plan = nest.create_plan(target)
 
-        plan.parallelize(indices=(i, j, k), pin=(target.cores[0], target.cores[1]))    # TODO: confirm syntax
+        plan.parallelize(indices=(i, j, k), pin=(
+            target.cores[0], target.cores[1]))    # TODO: confirm syntax
         self._verify_plan(plan, [A, B, C], "test_cpu_bind")
 
     @expectedFailure(FailedReason.NOT_IN_PY, "Update bind syntax to accept GridUnits")
@@ -1843,9 +1886,10 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
             C[i, j] += A[i, k] * B[k, j]
 
         v100 = Target(model=Target.Model.NVIDIA_TESLA_V100, num_threads=16)
-        plan = nest.create_action_plan(v100)
+        plan = nest.create_plan(v100)
 
-        plan.bind(indices=(i, j, k), map=(v100.GridUnit.BLOCK_X, v100.GridUnit.THREAD_X, v100.GridUnit.THREAD_Y))
+        plan.bind(indices=(i, j, k), map=(v100.GridUnit.BLOCK_X,
+                  v100.GridUnit.THREAD_X, v100.GridUnit.THREAD_Y))
         self._verify_plan(plan, [A, B, C], "test_bind")
 
     def test_scheduling_strategies(self) -> None:
@@ -1879,10 +1923,11 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
 
         schedule = nest.create_schedule()
         ii = schedule.split(i, A.shape[0] // min(4, target.num_threads))
-        schedule.reorder(i, ii, j, k)  # set the index (k) that cannot be parallelized as innermost
+        # set the index (k) that cannot be parallelized as innermost
+        schedule.reorder(i, ii, j, k)
 
         for policy in ["static", "dynamic"]:
-            plan = schedule.create_action_plan(target)
+            plan = schedule.create_plan(target)
 
             # wrong order
             with self.assertRaises(ValueError):
@@ -1898,19 +1943,19 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
                               correctness_check_values)
 
             # parallelizing middle index
-            plan_ii = schedule.create_action_plan(target)
+            plan_ii = schedule.create_plan(target)
             plan_ii.parallelize(indices=ii, policy=policy)
             self._verify_plan(plan_ii, [A, B, C], f"test_parallelize_ii_{policy}",
                               correctness_check_values)
 
             # partial collapsed
-            plan_partial = schedule.create_action_plan(target)
+            plan_partial = schedule.create_plan(target)
             plan_partial.parallelize(indices=(i, ii, j), policy=policy)
             self._verify_plan(plan_partial, [A, B, C], f"test_parallelize_i_ii_j_{policy}",
                               correctness_check_values)
 
             # partial collapsed inner indices
-            plan_partial_inner = schedule.create_action_plan(target)
+            plan_partial_inner = schedule.create_plan(target)
             plan_partial_inner.parallelize(indices=(ii, j), policy=policy)
             self._verify_plan(plan_partial_inner, [A, B, C], f"test_parallelize_ii_j_{policy}",
                               correctness_check_values)
@@ -1921,19 +1966,17 @@ class DSLTest_07ActionPlansVectorizationParallelization(unittest.TestCase):
 
 class DSLTest_08DeferredLayout(unittest.TestCase):
     def _verify_package(self, plan, args, package_name, correctness_check_values) -> None:
-        from accera.tuning import CorrectnessCheck
-
         package = Package()
-        function = package.add_function(plan, args, base_name="deferred_layout")
+        function = package.add(plan, args, base_name="deferred_layout")
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE,
                           output_dir=output_dir)
-
-        checker = CorrectnessCheck(output_dir)
-        checker.run(function.name, before=correctness_check_values["pre"], after=correctness_check_values["post"])
+            if correctness_check_values:
+                v.check_correctness(function.name, before=correctness_check_values["pre"],
+                                    after=correctness_check_values["post"])
 
     @expectedFailure(FailedReason.BUG, "Debug mode doesn't support deferred layouts", TEST_MODE == Package.Mode.DEBUG)
     def test_deferred_layout_predefined(self) -> None:
@@ -1944,8 +1987,10 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
         B_test = np.random.random(matrix.shape).astype(np.float32)
 
         for layout in [Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR]:
-            A = Array(role=Array.Role.CONST, data=matrix, layout=Array.Layout.DEFERRED)
-            B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=matrix.shape)
+            A = Array(role=Array.Role.CONST, data=matrix,
+                      layout=Array.Layout.DEFERRED)
+            B = Array(role=Array.Role.INPUT_OUTPUT,
+                      element_type=ScalarType.float32, shape=matrix.shape)
 
             nest = Nest(shape=matrix.shape)
             i, j = nest.get_indices()
@@ -1955,11 +2000,11 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
                 B[i, j] += A[i, j]
 
             # create a cache for the constant array
-            plan1 = nest.create_action_plan()
+            plan1 = nest.create_plan()
             AA = plan1.cache(A, i, layout=layout)  # , thrifty=True) # TODO
 
-            # create another cache, using a different action plan, for testing purposes
-            plan2 = nest.create_action_plan()
+            # create another cache, using a different plan, for testing purposes
+            plan2 = nest.create_plan()
             BB = plan2.cache(B, i)
 
             with self.assertRaises(ValueError):
@@ -1975,10 +2020,11 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
             with self.assertRaises(ValueError):
                 A.deferred_layout(cache=AA)  # duplicate
 
-            package_name = f"test_deferred_layout_predefined_{layout}".replace(".", "_")  # sanitize path name
+            package_name = f"test_deferred_layout_predefined_{layout}".replace(
+                ".", "_")  # sanitize path name
 
             self._verify_package(plan1, (B, ), package_name,
-                                {"pre": [B_test], "post": [B_test + matrix]})
+                                 {"pre": [B_test], "post": [B_test + matrix]})
 
     @expectedFailure(FailedReason.BUG, "Debug mode doesn't support deferred layouts", TEST_MODE == Package.Mode.DEBUG)
     def test_deferred_layout_coefficients(self) -> None:
@@ -1989,8 +2035,10 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
         B_test = np.random.random(matrix.shape).astype(np.float32)
 
         for layout in [(128, 1), (1, 128)]:
-            A = Array(role=Array.Role.CONST, data=matrix, layout=Array.Layout.DEFERRED)
-            B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=matrix.shape)
+            A = Array(role=Array.Role.CONST, data=matrix,
+                      layout=Array.Layout.DEFERRED)
+            B = Array(role=Array.Role.INPUT_OUTPUT,
+                      element_type=ScalarType.float32, shape=matrix.shape)
 
             nest = Nest(shape=matrix.shape)
             i, j = nest.get_indices()
@@ -1999,14 +2047,15 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
             def _():
                 B[i, j] += A[i, j]
 
-            plan = nest.create_action_plan()
+            plan = nest.create_plan()
             AA = plan.cache(A, i, layout=layout)  # , thrifty=True) # TODO
 
             A.deferred_layout(cache=AA)
             self.assertEqual(A.layout, AA.layout)
 
             package_name = f"test_deferred_layout_coefficients_{'_'.join(map(str, layout))}"
-            self._verify_package(plan, (B, ), package_name, {"pre": [B_test], "post": [B_test + matrix]})
+            self._verify_package(plan, (B, ), package_name, {
+                                 "pre": [B_test], "post": [B_test + matrix]})
 
 
 class DSLTest_09Parameters(unittest.TestCase):
@@ -2015,9 +2064,12 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         P0, P1, P2, P3 = create_parameters(4)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(P0, P1))
+        A = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(P2, P1))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(P0, P1))
 
         nest = Nest(shape=(P0, P1, P2))
         i, j, k = nest.get_indices()
@@ -2030,24 +2082,24 @@ class DSLTest_09Parameters(unittest.TestCase):
         package_name = "test_parameterization_1"
 
         # Use the templated nest to add two different functions to the package
-        package.add_function(nest,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 16,
-                                 P1: 16,
-                                 P2: 16,
-                                 P3: 1.0
-                             },
-                             base_name="matmul_16_16_16_1")
-        package.add_function(nest,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 32,
-                                 P1: 32,
-                                 P2: 32,
-                                 P3: 2.0
-                             },
-                             base_name="matmul_32_32_32_2")
+        package.add(nest,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 16,
+                        P1: 16,
+                        P2: 16,
+                        P3: 1.0
+                    },
+                    base_name="matmul_16_16_16_1")
+        package.add(nest,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 32,
+                        P1: 32,
+                        P2: 32,
+                        P3: 2.0
+                    },
+                    base_name="matmul_32_32_32_2")
 
         P4, P5 = create_parameters(2)
 
@@ -2058,23 +2110,23 @@ class DSLTest_09Parameters(unittest.TestCase):
         P6 = create_parameters(1)
         schedule.reorder(order=P6)
 
-        # Create a parameterized action plan
-        plan = schedule.create_action_plan()
+        # Create a parameterized plan
+        plan = schedule.create_plan()
         plan.cache(A, level=P5)
 
         # Add another function to the package
-        package.add_function(plan,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 16,
-                                 P1: 16,
-                                 P2: 16,
-                                 P3: 1.0,
-                                 P4: 4,
-                                 P5: 2,
-                                 P6: (j, k, i, ii)
-                             },
-                             base_name="alternative_matmul_16_16_16")
+        package.add(plan,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 16,
+                        P1: 16,
+                        P2: 16,
+                        P3: 1.0,
+                        P4: 4,
+                        P5: 2,
+                        P6: (j, k, i, ii)
+                    },
+                    base_name="alternative_matmul_16_16_16")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(name=package_name, format=TEST_FORMAT,
@@ -2085,9 +2137,12 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         P0, P1, P2, P3 = create_parameters(4)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(P0, P1))
+        A = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(P2, P1))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(P0, P1))
 
         nest = Nest(shape=(P0, P1, P2))
         i, j, k = nest.get_indices()
@@ -2110,26 +2165,26 @@ class DSLTest_09Parameters(unittest.TestCase):
         P6, P7, P8 = create_parameters(3)
         schedule.reorder(order=P6)
 
-        # Create a parameterized action plan
-        plan = schedule.create_action_plan()
+        # Create a parameterized plan
+        plan = schedule.create_plan()
         plan.cache(A, level=P5)
         plan.kernelize(unroll_indices=P7, vectorize_indices=P8)
 
         # Add another function to the package
-        package.add_function(plan,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 256,
-                                 P1: 256,
-                                 P2: 256,
-                                 P3: 1.0,
-                                 P4: 4,
-                                 P5: 2,
-                                 P6: (j, k, i, ii, jj, kk),
-                                 P7: (ii, jj),
-                                 P8: kk
-                             },
-                             base_name="matmul_256_256_256")
+        package.add(plan,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 256,
+                        P1: 256,
+                        P2: 256,
+                        P3: 1.0,
+                        P4: 4,
+                        P5: 2,
+                        P6: (j, k, i, ii, jj, kk),
+                        P7: (ii, jj),
+                        P8: kk
+                    },
+                    base_name="matmul_256_256_256")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(name=package_name, format=TEST_FORMAT,
@@ -2137,7 +2192,6 @@ class DSLTest_09Parameters(unittest.TestCase):
 
     def test_parameterization_3(self) -> None:
         from accera import create_parameters, Nest
-        from accera.tuning import CorrectnessCheck
 
         for N in [10, 224]:  # input sizes
             for K in [1, 3, 5]:  # filter sizes
@@ -2172,24 +2226,22 @@ class DSLTest_09Parameters(unittest.TestCase):
                 # create a HAT package and add the function to it
                 package = Package()
                 package_name = f"test_parameterization_3_skew_i_j_{N}_{K}"
-                function = package.add_function(schedule, args=(A, B, C), parameters={
-                                                P: 0}, base_name=f"schedule_test_skew_i_j_{N}_{K}")
+                function = package.add(schedule, args=(A, B, C), parameters={
+                    P: 0}, base_name=f"schedule_test_skew_i_j_{N}_{K}")
                 output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
                 # build the HAT package
-                with verifiers.VerifyPackage(self, package_name, output_dir):
+                with verifiers.VerifyPackage(self, package_name, output_dir) as v:
                     package.build(package_name, format=TEST_FORMAT,
                                   mode=TEST_MODE,
                                   output_dir=output_dir)
-
-                if correctness_check_values:
-                    checker = CorrectnessCheck(output_dir)
-                    checker.run(function.name, before=correctness_check_values["pre"],
-                                after=correctness_check_values["post"])
+                    if correctness_check_values:
+                        v.check_correctness(
+                            function.name, before=correctness_check_values["pre"],
+                            after=correctness_check_values["post"])
 
     def test_parameterization_4(self) -> None:
         from accera import create_parameters, Nest
-        from accera.tuning import CorrectnessCheck
 
         M = 16
         N = 10
@@ -2197,7 +2249,8 @@ class DSLTest_09Parameters(unittest.TestCase):
         type = ScalarType.float32
         A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
         B = Array(role=Array.Role.INPUT, element_type=type, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=type, shape=(M, N))
 
         nest = Nest(shape=(M, N, S))
 
@@ -2244,24 +2297,22 @@ class DSLTest_09Parameters(unittest.TestCase):
         # create a HAT package and add the function to it
         package = Package()
         package_name = "test_parameterization_4_pad"
-        function = package.add_function(schedule, args=(A, B, C), parameters={
-                                        P1: 2, P2: 3, P3: 3, P4: 3, P5: 11, P6: 4}, base_name="schedule_test_pad_parameter")
+        function = package.add(schedule, args=(A, B, C), parameters={
+            P1: 2, P2: 3, P3: 3, P4: 3, P5: 11, P6: 4}, base_name="schedule_test_pad_parameter")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
         # build the HAT package
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE,
                           output_dir=output_dir)
-
-        if correctness_check_values:
-            checker = CorrectnessCheck(output_dir)
-            checker.run(function.name, before=correctness_check_values["pre"],
-                        after=correctness_check_values["post"])
+            if correctness_check_values:
+                v.check_correctness(
+                    function.name, before=correctness_check_values["pre"],
+                    after=correctness_check_values["post"])
 
     def test_parameterization_5(self) -> None:
         from accera import Nest, Target, create_parameters
-        from accera.tuning import CorrectnessCheck
 
         A = Array(role=Array.Role.INPUT, shape=(256, 1024))
         B = Array(role=Array.Role.INPUT, shape=(1024, 512))
@@ -2291,100 +2342,97 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         schedule = nest.create_schedule()
         ii = schedule.split(i, A.shape[0] // target.num_threads)
-        schedule.reorder(i, ii, j, k)  # set the index (k) that cannot be parallelized as innermost
+        # set the index (k) that cannot be parallelized as innermost
+        schedule.reorder(i, ii, j, k)
 
         P1, P2, P3, P4, P5, P6, P7, P8 = create_parameters(8)
 
         for policy in ["static", "dynamic"]:
-            plan = schedule.create_action_plan(target)
+            plan = schedule.create_plan(target)
 
             # non-collapsed
             plan.parallelize(indices=P1, policy=P2)
 
             package_name = f"parameterized_test_parallelize_i_{policy}"
             package = Package()
-            function = package.add_function(plan, args=[A, B, C], parameters={
-                                            P1: i, P2: policy}, base_name=f"parameterized_vectorization_parallelization_test_i_{policy}")
+            function = package.add(plan, args=[A, B, C], parameters={
+                P1: i, P2: policy}, base_name=f"parameterized_vectorization_parallelization_test_i_{policy}")
 
             output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
-            with verifiers.VerifyPackage(self, package_name, output_dir):
+            with verifiers.VerifyPackage(self, package_name, output_dir) as v:
                 package.build(package_name, format=TEST_FORMAT,
                               mode=TEST_MODE,
                               output_dir=output_dir)
-
-            if correctness_check_values:
-                checker = CorrectnessCheck(output_dir)
-                checker.run(function.name, before=correctness_check_values["pre"],
-                            after=correctness_check_values["post"])
+                if correctness_check_values:
+                    v.check_correctness(
+                        function.name, before=correctness_check_values["pre"],
+                        after=correctness_check_values["post"])
 
             # parallelizing middle index
-            plan_ii = schedule.create_action_plan(target)
+            plan_ii = schedule.create_plan(target)
             plan_ii.parallelize(indices=P3, policy=P4)
 
             package_name = f"parameterized_test_parallelize_ii_{policy}"
             package_ii = Package()
-            function_ii = package_ii.add_function(plan_ii, args=[A, B, C], parameters={
-                                                  P3: ii, P4: policy}, base_name=f"parameterized_vectorization_parallelization_test_ii_{policy}")
+            function_ii = package_ii.add(plan_ii, args=[A, B, C], parameters={
+                P3: ii, P4: policy}, base_name=f"parameterized_vectorization_parallelization_test_ii_{policy}")
 
             output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
-            with verifiers.VerifyPackage(self, package_name, output_dir):
+            with verifiers.VerifyPackage(self, package_name, output_dir) as v:
                 package_ii.build(package_name, format=TEST_FORMAT,
                                  mode=TEST_MODE,
                                  output_dir=output_dir)
-
             if correctness_check_values:
-                checker = CorrectnessCheck(output_dir)
-                checker.run(function_ii.name, before=correctness_check_values["pre"],
-                            after=correctness_check_values["post"])
+                v.check_correctness(function_ii.name, before=correctness_check_values["pre"],
+                                    after=correctness_check_values["post"])
 
             # partial collapsed
-            plan_partial = schedule.create_action_plan(target)
+            plan_partial = schedule.create_plan(target)
             plan_partial.parallelize(indices=P5, policy=P6)
 
             package_name = f"parameterized_test_parallelize_i_ii_j_{policy}"
             package_partial = Package()
-            function_partial = package_partial.add_function(plan_ii, args=[A, B, C], parameters={P5: (
+            function_partial = package_partial.add(plan_ii, args=[A, B, C], parameters={P5: (
                 i, ii, j), P6: policy}, base_name=f"parameterized_vectorization_parallelization_test_i_ii_j_{policy}")
 
             output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
-            with verifiers.VerifyPackage(self, package_name, output_dir):
+            with verifiers.VerifyPackage(self, package_name, output_dir) as v:
                 package_partial.build(package_name, format=TEST_FORMAT,
                                       mode=TEST_MODE,
                                       output_dir=output_dir)
-
-            if correctness_check_values:
-                checker = CorrectnessCheck(output_dir)
-                checker.run(function_partial.name, before=correctness_check_values["pre"],
-                            after=correctness_check_values["post"])
+                if correctness_check_values:
+                    v.check_correctness(function_partial.name, before=correctness_check_values["pre"],
+                                        after=correctness_check_values["post"])
 
             # partial collapsed inner indices
-            plan_partial_inner = schedule.create_action_plan(target)
+            plan_partial_inner = schedule.create_plan(target)
             plan_partial_inner.parallelize(indices=P7, policy=P8)
 
             package_name = f"parameterized_test_parallelize_ii_j_{policy}"
             package_partial_inner = Package()
-            function_partial_inner = package_partial_inner.add_function(plan, args=[A, B, C], parameters={P7: (
+            function_partial_inner = package_partial_inner.add(plan, args=[A, B, C], parameters={P7: (
                 ii, j), P8: policy}, base_name=f"parameterized_vectorization_parallelization_test_ii_j_{policy}")
 
             output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
-            with verifiers.VerifyPackage(self, package_name, output_dir):
+            with verifiers.VerifyPackage(self, package_name, output_dir) as v:
                 package_partial_inner.build(package_name, format=TEST_FORMAT,
                                             mode=TEST_MODE,
                                             output_dir=output_dir)
-
-            if correctness_check_values:
-                checker = CorrectnessCheck(output_dir)
-                checker.run(function_partial_inner.name, before=correctness_check_values["pre"],
-                            after=correctness_check_values["post"])
+                if correctness_check_values:
+                    v.check_correctness(function_partial_inner.name, before=correctness_check_values["pre"],
+                                        after=correctness_check_values["post"])
 
     def test_parameterization_grid(self) -> None:
         from accera import create_parameters, get_parameters_from_grid, Nest, Schedule
 
         P0, P1, P2, P3, P4 = create_parameters(5)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(P0, P1))
+        A = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(P2, P1))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(P0, P1))
 
         nest = Nest(shape=(P0, P1, P2))
         i, j, k = nest.get_indices()
@@ -2408,10 +2456,10 @@ class DSLTest_09Parameters(unittest.TestCase):
         }
 
         parameters = get_parameters_from_grid(parameter_grid)
-        package.add_functions(sched,
-                              args=(A, B, C),
-                              base_name="matmul",
-                              parameters=parameters)
+        package.add(sched,
+                    args=(A, B, C),
+                    base_name="matmul",
+                    parameters=parameters)
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(name=package_name, format=TEST_FORMAT,
@@ -2421,7 +2469,8 @@ class DSLTest_09Parameters(unittest.TestCase):
         from accera import create_parameters, Nest, fuse
 
         A = Array(role=Array.Role.INPUT, element_type=float, shape=(32,))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(32,))
+        B = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=float, shape=(32,))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(1,))
 
         n0 = Nest([32, 32])
@@ -2464,25 +2513,26 @@ class DSLTest_09Parameters(unittest.TestCase):
         package = Package()
         package_name = "test_fusion_parameterization_1"
 
-        package.add_function(
+        package.add(
             fs_up,
             args=(A, B, C),
             base_name="fuse_unparameterized_1"
         )
 
-        package.add_function(fs,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 16,
-                             },
-                             base_name="fuse_1")
-        package.add_function(fs,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 3,
-                             },
-                             base_name="fuse_2")
-        package.add_functions(fs, args=(A, B, C), parameters=[{P0: 5}, {P0: 7}], base_name="fuse_3")
+        package.add(fs,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 16,
+                    },
+                    base_name="fuse_1")
+        package.add(fs,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 3,
+                    },
+                    base_name="fuse_2")
+        package.add(fs, args=(A, B, C), parameters=[
+                    {P0: 5}, {P0: 7}], base_name="fuse_3")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(name=package_name, format=TEST_FORMAT,
@@ -2497,7 +2547,8 @@ class DSLTest_09Parameters(unittest.TestCase):
         from accera import create_parameters, Nest, fuse
 
         A = Array(role=Array.Role.INPUT, element_type=float, shape=(32,))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(32,))
+        B = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=float, shape=(32,))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(1,))
 
         n0 = Nest([32, 32])
@@ -2524,7 +2575,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         package = Package()
         package_name = "test_fusion_parameterization_2"
 
-        package.add_function(
+        package.add(
             s0,
             args=(A, B),
             parameters={
@@ -2532,7 +2583,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             },
             base_name="s0_1"
         )
-        package.add_function(
+        package.add(
             s0,
             args=(A, B),
             parameters={
@@ -2540,7 +2591,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             },
             base_name="s0_2"
         )
-        package.add_function(
+        package.add(
             s1,
             args=(C, B),
             parameters={
@@ -2548,18 +2599,18 @@ class DSLTest_09Parameters(unittest.TestCase):
             },
             base_name="s1_1"
         )
-        package.add_function(fs,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 16,
-                             },
-                             base_name="fuse_1")
-        package.add_function(fs,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 32,
-                             },
-                             base_name="fuse_2")
+        package.add(fs,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 16,
+                    },
+                    base_name="fuse_1")
+        package.add(fs,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 32,
+                    },
+                    base_name="fuse_2")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(name=package_name, format=TEST_FORMAT,
@@ -2569,7 +2620,8 @@ class DSLTest_09Parameters(unittest.TestCase):
         from accera import create_parameters, Nest, fuse
 
         A = Array(role=Array.Role.INPUT, element_type=float, shape=(32,))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(32,))
+        B = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=float, shape=(32,))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(1,))
 
         n0 = Nest([32, 32])
@@ -2599,20 +2651,20 @@ class DSLTest_09Parameters(unittest.TestCase):
         package = Package()
         package_name = "test_fusion_parameterization_3"
 
-        package.add_function(fs,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 16,
-                                 P1: 8
-                             },
-                             base_name="fuse_1")
-        package.add_function(fs,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 32,
-                                 P1: 4,
-                             },
-                             base_name="fuse_2")
+        package.add(fs,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 16,
+                        P1: 8
+                    },
+                    base_name="fuse_1")
+        package.add(fs,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 32,
+                        P1: 4,
+                    },
+                    base_name="fuse_2")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(name=package_name, format=TEST_FORMAT,
@@ -2622,7 +2674,8 @@ class DSLTest_09Parameters(unittest.TestCase):
         from accera import create_parameters, Nest, fuse, get_parameters_from_grid
 
         A = Array(role=Array.Role.INPUT, element_type=float, shape=(128,))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(128,))
+        B = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=float, shape=(128,))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(1,))
 
         n0 = Nest([128, 128])
@@ -2668,14 +2721,14 @@ class DSLTest_09Parameters(unittest.TestCase):
         #         if f == 1:
         #             for ii in range(P1):
         #                 ...
-        package.add_function(fs,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 16,
-                                 P1: 8,
-                                 P2: 4
-                             },
-                             base_name="fuse_1")
+        package.add(fs,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 16,
+                        P1: 8,
+                        P2: 4
+                    },
+                    base_name="fuse_1")
 
         # Expected loop structure
         # P0 = 32
@@ -2692,19 +2745,19 @@ class DSLTest_09Parameters(unittest.TestCase):
         #         if f == 1:
         #             for ii in range(P1):
         #                 ...
-        package.add_function(fs,
-                             args=(A, B, C),
-                             parameters={
-                                 P0: 32,
-                                 P1: 4,
-                                 P2: 8
-                             },
-                             base_name="fuse_2")
-        package.add_functions(fs,
-                              args=(A, B, C),
-                              parameters=get_parameters_from_grid(
-                                  {P0: [64, 8], P1: [12, 16, 20], P2: [2, 10]}),
-                              base_name="fuse_grid")
+        package.add(fs,
+                    args=(A, B, C),
+                    parameters={
+                        P0: 32,
+                        P1: 4,
+                        P2: 8
+                    },
+                    base_name="fuse_2")
+        package.add(fs,
+                    args=(A, B, C),
+                    parameters=get_parameters_from_grid(
+                        {P0: [64, 8], P1: [12, 16, 20], P2: [2, 10]}),
+                    base_name="fuse_grid")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(name=package_name, format=TEST_FORMAT,
@@ -2724,7 +2777,7 @@ class DSLTest_10Packages(unittest.TestCase):
         def _():
             A[i] += 2.
 
-        plan = nest.create_action_plan(target)
+        plan = nest.create_plan(target)
         return plan, A
 
     def test_HAT_packages(self) -> None:
@@ -2735,23 +2788,25 @@ class DSLTest_10Packages(unittest.TestCase):
 
         package = Package()
         package_name = "MyPackage"
-        package.add_function(plan, args=(A, ), base_name="func1")
-        package.add_function(plan, args=(A, ), base_name="func2")
+        package.add(plan, args=(A, ), base_name="func1")
+        package.add(plan, args=(A, ), base_name="func2")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=TEST_FORMAT,
-                          mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=Package.Format.HAT_STATIC,
+                          mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR,
+                          platform=Package.Platform.RASPBIAN)
 
     def test_MLIR_packages(self) -> None:
         plan, A = self._create_plan()
 
         package = Package()
         package_name = "MyPackage"
-        package.add_function(plan, args=(A, ), base_name="func1")
-        package.add_function(plan, args=(A, ), base_name="func2")
+        package.add(plan, args=(A, ), base_name="func1")
+        package.add(plan, args=(A, ), base_name="func2")
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=Package.Format.MLIR, output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=Package.Format.MLIR_STATIC,
+                          output_dir=TEST_PACKAGE_DIR)
 
     def test_default_output_dir(self) -> None:
 
@@ -2759,8 +2814,8 @@ class DSLTest_10Packages(unittest.TestCase):
 
         package = Package()
         package_name = "MyPackage"
-        package.add_function(plan, args=(A, ), base_name="func1")
-        package.add_function(plan, args=(A, ), base_name="func2")
+        package.add(plan, args=(A, ), base_name="func1")
+        package.add(plan, args=(A, ), base_name="func2")
 
         with verifiers.VerifyPackage(self, package_name):
             package.build(package_name, format=TEST_FORMAT,
@@ -2768,15 +2823,18 @@ class DSLTest_10Packages(unittest.TestCase):
 
     def test_debug_mode_1(self) -> None:
         from accera import Nest
-        from accera.tuning import CorrectnessCheck
 
         M = N = K = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
+
         @nest.iteration_logic
         def _():
             C[i, j] += A[i, k] * B[k, j]
@@ -2785,38 +2843,40 @@ class DSLTest_10Packages(unittest.TestCase):
 
         ii = schedule.split(i, 4)
         schedule.reorder(i, k, j, ii)
-        plan = schedule.create_action_plan()
+        plan = schedule.create_plan()
         plan.unroll(ii)
 
         package = Package()
         package_name = "MyDebugPackage"
-        function = package.add_function(plan, args=(A, B, C), base_name="func1")
+        function = package.add(plan, args=(A, B, C), base_name="func1")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           output_dir=output_dir, mode=Package.Mode.DEBUG,
                           tolerance=1e-5)
 
-        A_test = np.random.random(A.shape).astype(np.float32)
-        B_test = np.random.random(B.shape).astype(np.float32)
-        C_test = np.random.random(C.shape).astype(np.float32)
+            A_test = np.random.random(A.shape).astype(np.float32)
+            B_test = np.random.random(B.shape).astype(np.float32)
+            C_test = np.random.random(C.shape).astype(np.float32)
 
-        check = CorrectnessCheck(output_dir)
-        check.run(function.name, before=[A_test, B_test, C_test],
-                  after=[A_test, B_test, C_test + A_test @ B_test])
+            v.check_correctness(function.name, before=[A_test, B_test, C_test],
+                                after=[A_test, B_test, C_test + A_test @ B_test])
 
     def test_debug_mode_2(self) -> None:
         from accera import Nest
-        from accera.tuning import CorrectnessCheck
 
         M = N = K = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
+
         @nest.iteration_logic
         def _():
             C[i, j] += A[i, k] * B[k, j]
@@ -2825,42 +2885,45 @@ class DSLTest_10Packages(unittest.TestCase):
 
         ii = schedule.split(i, 4)
         schedule.reorder(i, k, j, ii)
-        plan = schedule.create_action_plan()
+        plan = schedule.create_plan()
         plan.unroll(ii)
-        plan.parallelize(indices=k) # deliberately introduce a correctness issue
+        # deliberately introduce a correctness issue
+        plan.parallelize(indices=k)
 
         package = Package()
         package_name = "MyDebugPackageIncorrect"
-        function = package.add_function(plan, args=(A, B, C), base_name="func1")
+        function = package.add(plan, args=(A, B, C), base_name="func1")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           output_dir=output_dir, mode=Package.Mode.DEBUG,
                           tolerance=1e-5)
 
-        A_test = np.random.random(A.shape).astype(np.float32)
-        B_test = np.random.random(B.shape).astype(np.float32)
-        C_test = np.random.random(C.shape).astype(np.float32)
+            A_test = np.random.random(A.shape).astype(np.float32)
+            B_test = np.random.random(B.shape).astype(np.float32)
+            C_test = np.random.random(C.shape).astype(np.float32)
 
-        try:
-            check = CorrectnessCheck(output_dir)
-            check.run(function.name, before=[A_test, B_test, C_test],
-                     after=[A_test, B_test, C_test + A_test @ B_test])
-        except Exception as e:
-            print(e)
+            try:
+                v.check_correctness(function.name, before=[A_test, B_test, C_test],
+                                    after=[A_test, B_test, C_test + A_test @ B_test])
+            except Exception as e:
+                print(e)
 
     def test_debug_mode_fusion_1(self) -> None:
         from accera import Nest, fuse
-        from accera.tuning import CorrectnessCheck
 
         M = N = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
 
         nest0 = Nest(shape=(M, N))
         i0, j0 = nest0.get_indices()
+
         @nest0.iteration_logic
         def _():
             C[i0, j0] += A[i0, j0]
@@ -2869,6 +2932,7 @@ class DSLTest_10Packages(unittest.TestCase):
 
         nest1 = Nest(shape=(M, N))
         i1, j1 = nest1.get_indices()
+
         @nest1.iteration_logic
         def _():
             C[i1, j1] *= B[i1, j1]
@@ -2882,33 +2946,36 @@ class DSLTest_10Packages(unittest.TestCase):
 
         package = Package()
         package_name = "MyFusionDebugPackage"
-        function = package.add_function(schedule, args=(A, B, C), base_name="fusion_func1")
+        function = package.add(schedule, args=(
+            A, B, C), base_name="fusion_func1")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           output_dir=output_dir, mode=Package.Mode.DEBUG,
                           tolerance=1e-5)
 
-        A_test = np.random.random(A.shape).astype(np.float32)
-        B_test = np.random.random(B.shape).astype(np.float32)
-        C_test = np.random.random(C.shape).astype(np.float32)
+            A_test = np.random.random(A.shape).astype(np.float32)
+            B_test = np.random.random(B.shape).astype(np.float32)
+            C_test = np.random.random(C.shape).astype(np.float32)
 
-        check = CorrectnessCheck(output_dir)
-        check.run(function.name, before=[A_test, B_test, C_test],
-                after=[A_test, B_test, (C_test + A_test) * B_test])
+            v.check_correctness(function.name, before=[A_test, B_test, C_test],
+                                after=[A_test, B_test, (C_test + A_test) * B_test])
 
     def test_debug_mode_fusion_2(self) -> None:
         from accera import Nest, fuse
-        from accera.tuning import CorrectnessCheck
 
         M = N = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
 
         nest0 = Nest(shape=(M, N))
         i0, j0 = nest0.get_indices()
+
         @nest0.iteration_logic
         def _():
             C[i0, j0] += A[i0, j0]
@@ -2917,6 +2984,7 @@ class DSLTest_10Packages(unittest.TestCase):
 
         nest1 = Nest(shape=(M, N))
         i1, j1 = nest1.get_indices()
+
         @nest1.iteration_logic
         def _():
             C[i1, j1] *= B[i1, j1]
@@ -2936,36 +3004,39 @@ class DSLTest_10Packages(unittest.TestCase):
 
         package = Package()
         package_name = "MyFusionDebugPackageIncorrect"
-        function = package.add_function(schedule, args=(A, B, C), base_name="fusion_func1")
+        function = package.add(schedule, args=(
+            A, B, C), base_name="fusion_func1")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           output_dir=output_dir, mode=Package.Mode.DEBUG,
                           tolerance=1e-5)
 
-        A_test = np.random.random(A.shape).astype(np.float32)
-        B_test = np.random.random(B.shape).astype(np.float32)
-        C_test = np.random.random(C.shape).astype(np.float32)
+            A_test = np.random.random(A.shape).astype(np.float32)
+            B_test = np.random.random(B.shape).astype(np.float32)
+            C_test = np.random.random(C.shape).astype(np.float32)
 
-        try:
-            check = CorrectnessCheck(output_dir)
-            check.run(function.name, before=[A_test, B_test, C_test],
-                    after=[A_test, B_test, (C_test + A_test) * B_test])
-        except Exception as e:
-            print(e)
+            try:
+                v.check_correctness(function.name, before=[A_test, B_test, C_test],
+                                    after=[A_test, B_test, (C_test + A_test) * B_test])
+            except Exception as e:
+                print(e)
 
     def test_debug_mode_fusion_cascading_1(self) -> None:
         from accera import Nest, fuse
-        from accera.tuning import CorrectnessCheck
 
         M = N = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
 
         nest0 = Nest(shape=(M, N))
         i0, j0 = nest0.get_indices()
+
         @nest0.iteration_logic
         def _():
             C[i0, j0] += A[i0, j0]
@@ -2974,6 +3045,7 @@ class DSLTest_10Packages(unittest.TestCase):
 
         nest1 = Nest(shape=(M, N))
         i1, j1 = nest1.get_indices()
+
         @nest1.iteration_logic
         def _():
             C[i1, j1] *= B[i1, j1]
@@ -2986,6 +3058,7 @@ class DSLTest_10Packages(unittest.TestCase):
 
         nest2 = Nest(shape=(M, N))
         i2, j2 = nest2.get_indices()
+
         @nest2.iteration_logic
         def _():
             C[i2, j2] -= 1.0
@@ -2996,33 +3069,36 @@ class DSLTest_10Packages(unittest.TestCase):
 
         package = Package()
         package_name = "MyFusionDebugPackageCascade1"
-        function = package.add_function(schedule_f2, args=(A, B, C), base_name="fusion_func1")
+        function = package.add(schedule_f2, args=(
+            A, B, C), base_name="fusion_func1")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           output_dir=output_dir, mode=Package.Mode.DEBUG,
                           tolerance=1e-5)
 
-        A_test = np.random.random(A.shape).astype(np.float32)
-        B_test = np.random.random(B.shape).astype(np.float32)
-        C_test = np.random.random(C.shape).astype(np.float32)
+            A_test = np.random.random(A.shape).astype(np.float32)
+            B_test = np.random.random(B.shape).astype(np.float32)
+            C_test = np.random.random(C.shape).astype(np.float32)
 
-        check = CorrectnessCheck(output_dir)
-        check.run(function.name, before=[A_test, B_test, C_test],
-                  after=[A_test, B_test, (C_test + A_test) * B_test - 1.0])
+            v.check_correctness(function.name, before=[A_test, B_test, C_test],
+                                after=[A_test, B_test, (C_test + A_test) * B_test - 1.0])
 
     def test_debug_mode_fusion_cascading_2(self) -> None:
         from accera import Nest, fuse
-        from accera.tuning import CorrectnessCheck
 
         M = N = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Array.Role.INPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
 
         nest0 = Nest(shape=(M, N))
         i0, j0 = nest0.get_indices()
+
         @nest0.iteration_logic
         def _():
             C[i0, j0] += A[i0, j0]
@@ -3031,6 +3107,7 @@ class DSLTest_10Packages(unittest.TestCase):
 
         nest1 = Nest(shape=(M, N))
         i1, j1 = nest1.get_indices()
+
         @nest1.iteration_logic
         def _():
             C[i1, j1] *= B[i1, j1]
@@ -3043,6 +3120,7 @@ class DSLTest_10Packages(unittest.TestCase):
 
         nest2 = Nest(shape=(M, N))
         i2, j2 = nest2.get_indices()
+
         @nest2.iteration_logic
         def _():
             C[i2, j2] -= 1.0
@@ -3053,31 +3131,31 @@ class DSLTest_10Packages(unittest.TestCase):
 
         package = Package()
         package_name = "MyFusionDebugPackageCascade2"
-        function = package.add_function(schedule_f2, args=(A, B, C), base_name="fusion_func1")
+        function = package.add(schedule_f2, args=(
+            A, B, C), base_name="fusion_func1")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
-        with verifiers.VerifyPackage(self, package_name, output_dir):
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(package_name, format=TEST_FORMAT,
                           output_dir=output_dir, mode=Package.Mode.DEBUG,
                           tolerance=1e-5)
 
-        A_test = np.random.random(A.shape).astype(np.float32)
-        B_test = np.random.random(B.shape).astype(np.float32)
-        C_test = np.random.random(C.shape).astype(np.float32)
+            A_test = np.random.random(A.shape).astype(np.float32)
+            B_test = np.random.random(B.shape).astype(np.float32)
+            C_test = np.random.random(C.shape).astype(np.float32)
 
-        check = CorrectnessCheck(output_dir)
-        check.run(function.name, before=[A_test, B_test, C_test],
-                  after=[A_test, B_test, (C_test - 1.0 + A_test) * B_test])
+            v.check_correctness(function.name, before=[A_test, B_test, C_test],
+                                after=[A_test, B_test, (C_test - 1.0 + A_test) * B_test])
 
     def test_add_description(self) -> None:
-        from accera.hat import HATFile
+        from hatlib import HATFile
 
         plan, A, = self._create_plan()
 
         package = Package()
         package_name = "MyPackage"
-        package.add_function(plan, args=(A, ), base_name="func1")
-        package.add_function(plan, args=(A, ), base_name="func2")
+        package.add(plan, args=(A, ), base_name="func1")
+        package.add(plan, args=(A, ), base_name="func2")
 
         description1 = {
             "Dependencies": ["numpy", "onnx", "scipy"],
@@ -3103,15 +3181,20 @@ class DSLTest_10Packages(unittest.TestCase):
             package.build(package_name, format=TEST_FORMAT,
                           mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
-        hat_file = HATFile.Deserialize(pathlib.Path(TEST_PACKAGE_DIR) / f"{package_name}.hat")
+        hat_file = HATFile.Deserialize(pathlib.Path(
+            TEST_PACKAGE_DIR) / f"{package_name}.hat")
         hat_description = hat_file.description.auxiliary
-        self.assertEqual(hat_description["Dependencies"], description1["Dependencies"])
-        self.assertEqual(hat_description["Documentation"], description2["Documentation"])
+        self.assertEqual(
+            hat_description["Dependencies"], description1["Dependencies"])
+        self.assertEqual(
+            hat_description["Documentation"], description2["Documentation"])
         self.assertNotIn("SHA", hat_description)
-        self.assertEqual(hat_description["Release Notes"], description2["Release Notes"])
+        self.assertEqual(
+            hat_description["Release Notes"], description2["Release Notes"])
         self.assertEqual(hat_file.description.version, "2.0")
         self.assertEqual(hat_file.description.author, "Microsoft Research")
-        self.assertEqual(hat_file.description.license_url, "https://mit-license.org")
+        self.assertEqual(hat_file.description.license_url,
+                         "https://mit-license.org")
 
 
 if __name__ == '__main__':

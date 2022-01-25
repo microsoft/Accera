@@ -6,8 +6,11 @@
 
 type | description
 --- | ---
-`accera.Package.Format.HAT` | HAT package format
-`accera.Package.Format.MLIR` | MLIR (debugging) package format
+`accera.Package.Format.HAT_DYNAMIC` | HAT package format, dynamically linked
+`accera.Package.Format.HAT_STATIC` | HAT package format, statically linked
+`accera.Package.Format.MLIR_DYNAMIC` | MLIR (debugging) package format, dynamically linked
+`accera.Package.Format.MLIR_STATIC` | MLIR (debugging) package format, statically linked
 
+When cross-compiling, use either `accera.Package.Format.HAT_STATIC` or `accera.Package.Format.MLIR_STATIC`.
 
 <div style="page-break-after: always;"></div>

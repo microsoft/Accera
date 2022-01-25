@@ -12,7 +12,7 @@ from .._lang_python._lang import CacheIndexing, _CacheAllocation, _MemorySpace, 
 
 @dataclass
 class Cache:
-    plan: "accera.ActionPlan"
+    plan: "accera.Plan"
     target: Union[Array, Any]
     index: LoopIndex = None
     trigger_index: LoopIndex = None

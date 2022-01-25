@@ -28,7 +28,7 @@ macro(InstallAcceraHeaders)
   endforeach()
 endmacro()
 
-# Adds a Accera library target for installation.
+# Macros to install libraries
 function(InstallAcceraLibrary library_name)
   install(TARGETS ${library_name}
           EXPORT AcceraTargets
@@ -36,7 +36,7 @@ function(InstallAcceraLibrary library_name)
   set_property(GLOBAL APPEND PROPERTY ACCERA_EXPORTED_LIBS ${library_name})
 endfunction()
 
-function(InstallAcceraCppRuntimeLibrary library_name)
+function(InstallAcceraCppLibrary library_name)
   install(TARGETS ${library_name}
           EXPORT AcceraTargets
           LIBRARY)
@@ -63,8 +63,13 @@ function(InstallAcceraPyLibrary library_name component destination)
   )
 endfunction()
 
+# Macros to install runtimes (binaries)
+function(InstallAcceraRuntime runtime_name)
+  install(TARGETS ${runtime_name} RUNTIME)
+endfunction()
+
 function(InstallAcceraPyRuntimeLibrary library_name component destination)
-  install(TARGETS ${library_name} RUNTIME)
+  InstallAcceraRuntime(${library_name})
   InstallAcceraPyLibrary(${library_name} ${component} ${destination})
 endfunction()
 

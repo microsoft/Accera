@@ -6,5 +6,4 @@
 * [Install Accera](Install/README.md)
 * [Read the Manual](<Manual/README.md>)
 * [Tutorials](<Tutorials/README.md>)
-* [Case Studies](<Case%20Studies/README.md>)
 * [DSL Reference](<Reference/accera.md>)

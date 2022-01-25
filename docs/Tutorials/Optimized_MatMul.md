@@ -82,7 +82,7 @@ We have finished defining the logic of MatMul, and let's define the schedule whi
 schedule = nest.create_schedule()
 ```
 
-In order to execute this efficiently on our chosen hardware target, we will transform the iteration space and change the action plan according to some predefined constants. The values of these constants come either from hardware target characteristics and the shapes of the arrays, or can be found through auto-tuning. These will be explained in more detail in a subsequent tutorial. For now, define:
+In order to execute this efficiently on our chosen hardware target, we will transform the iteration space and change the plan according to some predefined constants. The values of these constants come either from hardware target characteristics and the shapes of the arrays, or can be found through auto-tuning. These will be explained in more detail in a subsequent tutorial. For now, define:
 ```python
 tile_size_i = 6
 tile_size_j = 256
@@ -118,9 +118,9 @@ Set the order to traverse the iteration space. We start with the outer indices t
 schedule.reorder(j, k, i, jj, kk, ii, kkk, iii, jjj, jjjj)
 ```
 
-Create an action plan from the schedule and the current target. The action plan allows us to control specific execution behavior on the hardware target, such as vectorization and caching, which are essential for high performance:
+Create a plan from the schedule and the current target. The plan allows us to control specific execution behavior on the hardware target, such as vectorization and caching, which are essential for high performance:
 ```python
-plan = schedule.create_action_plan(target)
+plan = schedule.create_plan(target)
 ```
 
 Add caching. We use an input cache for the B array exceeds our threshold. The B matrix cache will be packed according to the access pattern specified by the schedule. We use an input/output cache for the C array. See [Section 5 caching](TODO:...) for more information:
@@ -138,17 +138,17 @@ Kernelize the inner dimensions, which applies unroll and vectorize transformatio
 plan.kernelize(unroll_indices=[jjj, iii, kkk], vectorize_indices=jjjj)
 ```
 
-Use the action plan to add a callable function named `optimized_matmul_py` to a HAT package.
+Use the plan to add a callable function named `optimized_matmul_py` to a HAT package.
 ```python
-# Create a package and add a function to the package based on the action plan
+# Create a package and add a function to the package based on the plan
 package = acc.Package()
-package.add_function(plan, args=(A, B, C), base_name="optimized_matmul_py")
+package.add(plan, args=(A, B, C), base_name="optimized_matmul_py")
 ```
 
 Finally, we build the HAT package:
 ```python
-# Build the HAT package
-package.build(name="optimized_matmul", format=acc.Package.Format.HAT)
+# Build a staically-linked HAT package to be consumed by the C++ runner
+package.build(name="optimized_matmul", format=acc.Package.Format.HAT_STATIC)
 ```
 
 By now, you should have all the code necessary to generate an optimized Accera MatMul function. You can also find the complete Python script [here](optimized_matmul/optimized_matmul_generator.py).
@@ -191,7 +191,7 @@ void optimized_matmul_py_4a6286d9(float*, float*, float*);
 
 Accera automatically appends a unique identifier to the function implementation, such as `optimized_matmul_py_4a6286d9` to support auto-tuning. This name is re-generated every time the HAT package is rebuilt. To make it easier for client code to use the function, Accera also provides a fixed-name alias, `optimized_matmul_py`, for the same function.
 
-To see how Accera has handled the code generation given the iteration space transformations and the final action plan, you can change the `format=HAT` to `format=MLIR`, which will output MLIR for each of the major lowering phases. Stepping through the progression of lowerings, you can see how Accera moves from simple representation of the [Accera DSL](optimized_matmul/mlir/1_Canonicalizer.mlir), to the final [optimized assembly](optimized_matmul/mlir/optimized_matmul_llvm.mlir).
+To see how Accera has handled the code generation given the iteration space transformations and the final plan, you can change the `format=HAT` to `format=MLIR`, which will output MLIR for each of the major lowering phases. Stepping through the progression of lowerings, you can see how Accera moves from simple representation of the [Accera DSL](optimized_matmul/mlir/1_Canonicalizer.mlir), to the final [optimized assembly](optimized_matmul/mlir/optimized_matmul_llvm.mlir).
 
 Compare this to the previous tutorial, whose naive DSL is repsesented [here](hello_matmul/mlir/1_Canonicalizer.mlir), and whose final assembly can be viewed [here](hello_matmul/mlir/hello_matmul_llvm.mlir).
 

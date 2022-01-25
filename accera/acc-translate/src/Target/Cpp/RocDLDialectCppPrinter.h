@@ -1,13 +1,8 @@
-//===- RocDLDialectCppPrinter.h - RocDL Dialect Printer -----------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//  Copyright (c) Microsoft Corporation. All rights reserved.
+//  Licensed under the MIT License. See LICENSE in the project root for license information.
+//  Authors: Abdul Dakkak
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifndef ROCDL_DIALECT_CPP_PRINTER_H_
 #define ROCDL_DIALECT_CPP_PRINTER_H_
@@ -23,8 +18,10 @@ namespace cpp_printer
 
     struct RocDLDialectCppPrinter : public DialectCppPrinter
     {
-        RocDLDialectCppPrinter(CppPrinter* printer) :
-            DialectCppPrinter(printer) {}
+        RocDLDialectCppPrinter(CppPrinter* printer_) :
+            DialectCppPrinter(printer_) {}
+
+        std::string getName() override { return "RocDL"; }
 
         /// print Operation from GPU Dialect
         LogicalResult printDialectOperation(Operation* op, bool* skipped, bool* consumed) override;

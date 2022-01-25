@@ -1,139 +1,252 @@
-//===- GpuDialectCppPrinter.cpp - GPU Dialect Printer ---------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//  Copyright (c) Microsoft Corporation. All rights reserved.
+//  Licensed under the MIT License. See LICENSE in the project root for license information.
+//  Authors: Abdul Dakkak
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "GpuDialectCppPrinter.h"
+#include <llvm/ADT/None.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/raw_ostream.h>
+#include <mlir/Support/LogicalResult.h>
+
+#include <ir/include/IRUtil.h>
 
 using namespace mlir::gpu;
 
-namespace mlir {
-namespace cpp_printer {
+namespace mlir
+{
+namespace cpp_printer
+{
 
-LogicalResult GpuDialectCppPrinter::printBarrierOp(BarrierOp barrierOp) {
-  if (!isCuda) {
-    return barrierOp.emitError("non-cuda version is not supported yet");
-  }
+    LogicalResult GpuDialectCppPrinter::printBarrierOp(BarrierOp barrierOp)
+    {
+        if (!isCuda)
+        {
+            return barrierOp.emitError("non-cuda version is not supported yet");
+        }
 
-  os << "__syncthreads()";
-  return success();
-}
+        os << "__syncthreads()";
+        return success();
+    }
 
-LogicalResult GpuDialectCppPrinter::printGridDimOp(GridDimOp gdimOp) {
-  if (!isCuda) {
-    return gdimOp.emitError("non-cuda version is not supported yet");
-  }
+    static int dimIndexToInteger(llvm::StringRef dim)
+    {
+        if (dim == "x")
+        {
+            return 0;
+        }
+        else if (dim == "y")
+        {
+            return 1;
+        }
+        else if (dim == "z")
+        {
+            return 2;
+        }
+        else
+        {
+            return -1;
+        }
+    }
 
-  auto idx = state.nameState.getOrCreateName(
-      gdimOp.getResult(), SSANameState::SSANameKind::Variable);
-  os << "int " << idx << " = gridDim." << gdimOp.dimension();
-  return success();
-}
+    static Optional<uint64_t> getGridDim(Operation* op, llvm::StringRef dim)
+    {
 
-LogicalResult GpuDialectCppPrinter::printBlockDimOp(BlockDimOp bdimOp) {
-  if (!isCuda) {
-    return bdimOp.emitError("non-cuda version is not supported yet");
-  }
+        if (auto fn = op->getParentOfType<FuncOp>())
+        {
+            if (!fn->hasAttrOfType<ArrayAttr>("gridSize"))
+            {
+                return llvm::None;
+            }
+            auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(fn->getAttrOfType<ArrayAttr>("gridSize"));
+            auto idx = dimIndexToInteger(dim);
+            if (idx == -1) return llvm::None;
+            return arrayAttr[idx].getInt();
+        }
+        return llvm::None;
+    }
 
-  auto idx = state.nameState.getOrCreateName(
-      bdimOp.getResult(), SSANameState::SSANameKind::Variable);
-  os << "int " << idx << " = blockDim." << bdimOp.dimension();
-  return success();
-}
+    static Optional<uint64_t> getBlockDim(Operation* op, llvm::StringRef dim)
+    {
+        if (auto fn = op->getParentOfType<FuncOp>())
+        {
+            if (!fn->hasAttrOfType<ArrayAttr>("blockSize"))
+            {
+                return llvm::None;
+            }
+            auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(fn->getAttrOfType<ArrayAttr>("blockSize"));
+            auto idx = dimIndexToInteger(dim);
+            if (idx == -1) return llvm::None;
+            return arrayAttr[idx].getInt();
+        }
+        return llvm::None;
+    }
 
-LogicalResult GpuDialectCppPrinter::printBlockIdOp(BlockIdOp bidOp) {
-  if (!isCuda) {
-    return bidOp.emitError("non-cuda version is not supported yet");
-  }
+    LogicalResult GpuDialectCppPrinter::printGridDimOp(GridDimOp gridDimOp)
+    {
+        if (!isCuda)
+        {
+            return gridDimOp.emitError("non-cuda version is not supported yet");
+        }
 
-  auto idx = state.nameState.getOrCreateName(
-      bidOp.getResult(), SSANameState::SSANameKind::Variable);
-  os << "int " << idx << " = blockIdx." << bidOp.dimension();
-  return success();
-}
+        const std::string varPrefix = std::string("gridDim_") + gridDimOp.dimension().str() + "_";
+        auto idx = state.nameState.getOrCreateName(
+            gridDimOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
+        os << "const uint " << idx << " = ";
+        if (auto c = getGridDim(gridDimOp, gridDimOp.dimension()); c)
+        {
+            os << c.getValue();
+        }
+        else
+        {
+            os << "gridDim." << gridDimOp.dimension();
+        }
+        return success();
+    }
 
-LogicalResult GpuDialectCppPrinter::printThreadIdOp(ThreadIdOp tidOp) {
-  if (!isCuda) {
-    return tidOp.emitError("non-cuda version is not supported yet");
-  }
+    LogicalResult GpuDialectCppPrinter::printBlockDimOp(BlockDimOp blockDimOp)
+    {
+        if (!isCuda)
+        {
+            return blockDimOp.emitError("non-cuda version is not supported yet");
+        }
 
-  auto idx = state.nameState.getOrCreateName(
-      tidOp.getResult(), SSANameState::SSANameKind::Variable);
-  os << "int " << idx << " = threadIdx." << tidOp.dimension();
-  return success();
-}
+        const std::string varPrefix = std::string("blockDim_") + blockDimOp.dimension().str() + "_";
+        auto idx = state.nameState.getOrCreateName(
+            blockDimOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
+        os << "const uint " << idx << " = ";
+        if (auto c = getBlockDim(blockDimOp, blockDimOp.dimension()); c)
+        {
+            os << c.getValue();
+        }
+        else
+        {
+            os << "blockDim." << blockDimOp.dimension();
+        }
+        return success();
+    }
 
-LogicalResult GpuDialectCppPrinter::printDialectOperation(Operation *op,
-                                                          bool * /*skipped*/,
-                                                          bool *consumed) {
-  *consumed = true;
+    LogicalResult GpuDialectCppPrinter::printBlockIdOp(BlockIdOp bidOp)
+    {
+        if (!isCuda)
+        {
+            return bidOp.emitError("non-cuda version is not supported yet");
+        }
 
-  if (auto barrierOp = dyn_cast<BarrierOp>(op))
-    return printBarrierOp(barrierOp);
+        const std::string varPrefix = std::string("blockIdx_") + bidOp.dimension().str() + "_";
+        auto idx = state.nameState.getOrCreateName(
+            bidOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
+        os << "const uint " << idx << " = ";
+        if (auto c = getGridDim(bidOp, bidOp.dimension()); c)
+        {
+            os << "(blockIdx." << bidOp.dimension() << "%" << c.getValue() << ")";
+        }
+        else
+        {
 
-  if (auto gdimOp = dyn_cast<GridDimOp>(op))
-    return printGridDimOp(gdimOp);
+            os << "blockIdx." << bidOp.dimension();
+        }
+        return success();
+    }
 
-  if (auto bdimOp = dyn_cast<BlockDimOp>(op))
-    return printBlockDimOp(bdimOp);
+    LogicalResult GpuDialectCppPrinter::printThreadIdOp(ThreadIdOp tidOp)
+    {
+        if (!isCuda)
+        {
+            return tidOp.emitError("non-cuda version is not supported yet");
+        }
 
-  if (auto bidOp = dyn_cast<BlockIdOp>(op))
-    return printBlockIdOp(bidOp);
+        const std::string varPrefix = std::string("threadIdx_") + tidOp.dimension().str() + "_";
+        auto idx = state.nameState.getOrCreateName(
+            tidOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
+        os << "const uint " << idx << " = ";
+        if (auto c = getBlockDim(tidOp, tidOp.dimension()); c)
+        {
+            os << "(threadIdx." << tidOp.dimension() << "%" << c.getValue() << ")";
+        }
+        else
+        {
+            os << "threadIdx." << tidOp.dimension();
+        }
+        return success();
+    }
 
-  if (auto tidOp = dyn_cast<ThreadIdOp>(op))
-    return printThreadIdOp(tidOp);
+    LogicalResult GpuDialectCppPrinter::printDialectOperation(Operation* op,
+                                                              bool* /*skipped*/,
+                                                              bool* consumed)
+    {
+        *consumed = true;
 
-  *consumed = false;
-  return success();
-}
+        if (auto barrierOp = dyn_cast<BarrierOp>(op))
+            return printBarrierOp(barrierOp);
 
-LogicalResult GpuDialectCppPrinter::printGpuFP16VectorType(VectorType vecType,
-                                                           StringRef vecVar) {
-  if (vecType.getNumDynamicDims()) {
-    os << "<<VectorType with dynamic dims is not supported yet>>";
-    return failure();
-  }
+        if (auto gridDimOp = dyn_cast<GridDimOp>(op))
+            return printGridDimOp(gridDimOp);
 
-  auto rank = vecType.getRank();
-  if (rank == 0) {
-    os << "<<zero-ranked Vectortype is not supported yet>>";
-    return failure();
-  }
+        if (auto blockDimOp = dyn_cast<BlockDimOp>(op))
+            return printBlockDimOp(blockDimOp);
 
-  auto shape = vecType.getShape();
-  if (shape[rank - 1] % 2) {
-    os << "<<can't be represented by " << printer->float16VecT() << ">>";
-    return failure();
-  }
+        if (auto bidOp = dyn_cast<BlockIdOp>(op))
+            return printBlockIdOp(bidOp);
 
-  os << printer->float16VecT() << " " << vecVar;
-  int i = 0;
-  for (; i < rank - 1; i++) {
-    os << "[" << shape[i] << "]";
-  }
-  os << "[" << shape[i] / 2 << "]";
-  return success();
-}
+        if (auto tidOp = dyn_cast<ThreadIdOp>(op))
+            return printThreadIdOp(tidOp);
 
-LogicalResult GpuDialectCppPrinter::printVectorTypeArrayDecl(VectorType vecType,
-                                                             StringRef vecVar) {
-  assert(isCuda && "not for cuda?");
+        *consumed = false;
+        return success();
+    }
 
-  auto elemType = vecType.getElementType();
-  // TODO: support more vector types
-  if (elemType.isa<Float16Type>()) {
-    return printGpuFP16VectorType(vecType, vecVar);
-  } else {
-    os << "<<only support fp16 vec type>>";
-    return failure();
-  }
-}
+    LogicalResult GpuDialectCppPrinter::printGpuFPVectorType(VectorType vecType,
+                                                             StringRef vecVar)
+    {
+        if (vecType.getNumDynamicDims())
+        {
+            os << "<<VectorType with dynamic dims is not supported yet>>";
+            return failure();
+        }
+
+        auto rank = vecType.getRank();
+        if (rank == 0)
+        {
+            os << "<<zero-ranked Vectortype is not supported yet>>";
+            return failure();
+        }
+
+        auto shape = vecType.getShape();
+        if (shape[rank - 1] % 2)
+        {
+            os << "<<can't be represented by " << printer->floatVecT<32>(shape[rank - 1]) << " as it is not a multiple of 2>>";
+            return failure();
+        }
+
+        RETURN_IF_FAILED(printer->printType(VectorType::get({ shape[rank - 1] }, vecType.getElementType())));
+        os << " " << vecVar;
+
+        for (int i = 0; i < rank - 1; i++)
+        {
+            os << "[" << shape[i] << "]";
+        }
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printVectorTypeArrayDecl(VectorType vecType,
+                                                                 StringRef vecVar)
+    {
+        assert(isCuda && "not for cuda?");
+
+        auto elemType = vecType.getElementType();
+        // TODO: support more vector types
+        if (elemType.isa<Float32Type>() || elemType.isa<Float16Type>())
+        {
+            return printGpuFPVectorType(vecType, vecVar);
+        }
+        else
+        {
+            os << "<<only support fp32 and fp16 vec type>>";
+            return failure();
+        }
+    }
 
 } // namespace cpp_printer
 } // namespace mlir

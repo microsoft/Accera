@@ -47,10 +47,10 @@ def add_check_allclose(package: Package, array: Array, atol: float = 1e-5, targe
     def _():
         CheckAllClose(actual, desired, Scalar(atol))
 
-    plan = nest.create_action_plan(target)
+    plan = nest.create_plan(target)
 
-    return package.add_function(plan, args=(actual, desired),
-                                base_name=f"_debug_check_allclose_{shape_str}")
+    return package.add(plan, args=(actual, desired),
+                       base_name=f"_debug_check_allclose_{shape_str}")
 
 
 def add_debugging_functions(

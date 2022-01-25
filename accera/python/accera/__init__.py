@@ -14,7 +14,6 @@ from .Parameter import DelayedParameter, create_parameters, get_parameters_from_
 from .Constants import *
 from .Package import Package
 
-from .hat import *
 from .lang import *
 from ._lang_python import CompilerOptions, ScalarType, _GetTargetDeviceFromName
 from ._lang_python import (abs, max, min, ceil, floor, sqrt, exp, log, log10, log2, sin, cos, tan, sinh, cosh, tanh,

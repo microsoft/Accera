@@ -4,6 +4,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "exec/ExecutionPlanOps.h"
+#include "exec/ExecutionPlanDialect.cpp.inc"
 #include "IRUtil.h"
 #include "exec/ExecutionPlanAttributes.h"
 #include "exec/ExecutionPlanEnums.cpp.inc"

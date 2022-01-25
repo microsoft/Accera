@@ -88,7 +88,7 @@ def RuntimeInitCacheMLAS(A: Array, B: Array, C: Array, pack_fn_name: str, packed
 
     schedule.reorder(j, k, i, jj, kk, kkk, ii, jjj, jjjj)
 
-    plan = schedule.create_action_plan()
+    plan = schedule.create_plan()
 
     plan.emit_runtime_init_pack(B, pack_fn_name, packed_buffer_size_fn_name)
     plan.cache(C, ii)
@@ -174,7 +174,7 @@ def EmitTimeCacheMLAS(A: Array, B: Array, C: Array, opts=Options(), wrapper_fn_n
 
     schedule.reorder(j, k, i, jj, kk, kkk, ii, jjj, jjjj)
 
-    plan = schedule.create_action_plan(target)
+    plan = schedule.create_plan(target)
 
     # BUGBUG: TODO: need to resolve constant reference for B during _pack_and_embed_buffer
     # Assertion failed: !symbolRef.empty() && "expected valid symbol reference", file C:\dev\external\llvm-project\mlir\lib\IR\AsmPrinter.cpp, line 1256

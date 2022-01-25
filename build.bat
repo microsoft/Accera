@@ -25,6 +25,11 @@ if exist "%ACCERA_ROOT%\CMake\LLVMSetupConan.cmake" (
 ) else (
     echo Using LLVM from vcpkg
     set LLVM_SETUP_VARIANT=Default
+
+    REM Uncomment these lines below to build a debug version (will include release as well, due to vcpkg quirks)
+    REM set LLVM_BUILD_TYPE=debug
+    REM set VCPKG_KEEP_ENV_VARS=LLVM_BUILD_TYPE
+
     REM Install LLVM (takes a couple of hours and ~20GB of space)
     vcpkg install accera-llvm:x64-windows --overlay-ports=..\llvm
 )

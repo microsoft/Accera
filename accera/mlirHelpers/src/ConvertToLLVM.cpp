@@ -11,6 +11,7 @@
 #include <mlir/Conversion/AffineToStandard/AffineToStandard.h>
 #include <mlir/Conversion/LinalgToLLVM/LinalgToLLVM.h>
 #include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
+#include <mlir/Conversion/LLVMCommon/LoweringOptions.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
 #include <mlir/Dialect/Affine/Passes.h>
 #include <mlir/Dialect/Linalg/Passes.h>

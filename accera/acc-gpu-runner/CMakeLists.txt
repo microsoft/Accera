@@ -66,7 +66,7 @@ else()
     set_property(TARGET ${util_name} PROPERTY FOLDER "accera")
 
     add_dependencies(${util_name} acc-vulkan-runtime-wrappers)
-    install(TARGETS ${util_name} RUNTIME)
+    InstallAcceraRuntime(${util_name})
 
     #
     # Deploy python acc-gpu-runner tools

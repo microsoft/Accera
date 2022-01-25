@@ -1,7 +1,7 @@
 ![Accera logo](https://microsoft.github.io/Accera/assets/Accera_darktext.png)
 <div style="margin-bottom:30px"></div>
 
-<a href="https://pypi.org/accera"><img src="https://badge.fury.io/py/accera.svg" alt="PyPI package version"/></a> <a href="https://pypi.org/accera"><img src="https://img.shields.io/pypi/pyversions/accera" alt="Python versions"/></a> ![MIT License](https://img.shields.io/pypi/l/accera)
+<a href="https://pypi.org/project/accera/"><img src="https://badge.fury.io/py/accera.svg" alt="PyPI package version"/></a> <a href="https://pypi.org/project/accera/"><img src="https://img.shields.io/pypi/pyversions/accera" alt="Python versions"/></a> ![MIT License](https://img.shields.io/pypi/l/accera)
 
 Accera is a programming model, a domain-specific programming language embedded in Python (eDSL), and an optimizing cross-compiler for compute-intensive code. Accera currently supports CPU and GPU targets and focuses on optimization of nested for-loops.
 
@@ -13,30 +13,112 @@ Accera has three goals:
 * Readability: do so without sacrificing code readability and maintainability.
 * Writability: a user-friendly programming model, designed for agility.
 
-## Installation
-Read the [Install](https://microsoft.github.io/Accera/Install/) instructions for how to build Accera from source or install pre-built packages.
+
+## Install
+
+To install for Linux, macOS, or Windows (requires Python 3.7-3.9):
+
+```shell
+pip install accera
+```
+
+See the [Install Instructions](https://microsoft.github.io/Accera/Install/) for more details on installing pre-built Python 3 packages and how to build Accera from source.
+
+
+### Quickstart
+
+#### Try Accera in your browser
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/microsoft/Accera/HEAD?labpath=docs%2Fdemos%2Fbinder%2Fquickstart.ipynb)
+
+No installation required.
+
+#### Run Accera on your local machine
+
+In this quickstart example, you will:
+
+* Implement a simple `hello_accera` function that performs basic matrix multiplication with a ReLU activation
+* Build a [HAT](https://github.com/microsoft/hat) package with a dynamic (shared) library that exports this function
+* Call the `hello_accera` function in the dynamic library with some NumPy arrays, and checks against a NumPy implementation
+
+1. Create a Python 3 script called `quickstart.py`
+
+```python
+import accera as acc
+import hatlib as hat
+import numpy as np
+
+A = acc.Array(role=acc.Array.Role.INPUT, shape=(16, 16))
+B = acc.Array(role=acc.Array.Role.INPUT, shape=(16, 16))
+C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(16, 16))
+
+matmul = acc.Nest(shape=(16, 16, 16))
+i1, j1, k1 = matmul.get_indices()
+
+@matmul.iteration_logic
+def _():
+    C[i1, j1] += A[i1, k1] * B[k1, j1]
+
+relu = acc.Nest(shape=(16, 16))
+i2, j2 = relu.get_indices()
+
+@relu.iteration_logic
+def _():
+    C[i2, j2] = acc.max(C[i2, j2], 0.0)
+
+matmul_schedule = matmul.create_schedule()
+relu_schedule = relu.create_schedule()
+
+# fuse the first 2 indices of matmul and relu
+schedule = acc.fuse(matmul_schedule, relu_schedule, partial=2)
+
+package = acc.Package()
+package.add(schedule, args=(A, B, C), base_name="hello_accera")
+
+# build a dynamically-linked HAT package
+package.build(name="mypackage", format=acc.Package.Format.HAT_DYNAMIC)
+
+# load the package and call the function with random test input
+hat_package = hat.load("mypackage.hat")
+hello_accera = hat_package["hello_accera"]
+
+A_test = np.random.rand(16, 16).astype(np.float32)
+B_test = np.random.rand(16, 16).astype(np.float32)
+C_test = np.zeros((16, 16)).astype(np.float32)
+
+# compute using NumPy as a comparison
+C_np = np.maximum(C_test + A_test @ B_test, 0)
+
+hello_accera(A_test, B_test, C_test)
+
+# compare the result with NumPy
+np.testing.assert_allclose(C_test, C_np)
+print(C_test)
+print(C_np)
+```
+
+2. Ensure that you have a compiler in your PATH:
+
+    * Windows: Install Microsoft Visual Studio and run `vcvars64.bat` to setup the command prompt
+    * Linux/macOS: Install gcc
+
+3. Install Accera:
+
+```shell
+pip install accera
+```
+
+4. Run the Python script:
+
+```python
+python quickstart.py
+```
+
+#### Next Steps
+
+The function can be optimized using [schedule transformations](https://microsoft.github.io/Accera/Manual/03%20Schedules/#schedule-transformations). The [Manual](https://microsoft.github.io/Accera/Manual/00%20Introduction/) is a good place to start for an introduction to the Accera programming model.
 
 ## Documentation
 Get to know Accera by reading the [Documentation](https://microsoft.github.io/Accera/).
 
-## Contributing
-
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
-
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
-
-## Trademarks
-
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
-trademarks or logos is subject to and must follow 
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
+You can find more step-by-step examples in the [Tutorials](https://microsoft.github.io/Accera/Tutorials).

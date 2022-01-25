@@ -15,6 +15,7 @@ PYTHON_EXE=$1
 DEST="${ACCERA_ROOT}/dist"
 
 cd "${ACCERA_ROOT}"
+${PYTHON_EXE} -m pip install -r requirements.txt
 ${PYTHON_EXE} setup.py build bdist_wheel -d ${DEST}
 
 # Build the subpackages
@@ -25,7 +26,8 @@ ${PYTHON_EXE} setup.py build bdist_wheel -d ${DEST}
 cd "${ACCERA_ROOT}/accera/python/gpu"
 ${PYTHON_EXE} setup.py build bdist_wheel -d ${DEST}
 
-${PYTHON_EXE} -m pip install auditwheel
+# Note: auditwheel 5.1.0 has a bug where whls do not get compressed
+${PYTHON_EXE} -m pip install auditwheel==5.0.0
 cd "${DEST}"
 ${PYTHON_EXE} -m auditwheel repair accera-*
 ${PYTHON_EXE} -m auditwheel repair accera_compilers*

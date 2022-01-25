@@ -14,6 +14,11 @@
 
 
 // fwd decls
+namespace llvm
+{
+class DataLayout;    
+}
+
 namespace mlir
 {
 class MLIRContext;

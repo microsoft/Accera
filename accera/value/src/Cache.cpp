@@ -21,6 +21,7 @@
 #include <llvm/Support/raw_os_ostream.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 

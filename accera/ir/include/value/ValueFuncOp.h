@@ -28,6 +28,7 @@ public:
     using Op::print;
 
     static StringRef getOperationName() { return "accv.func"; }
+    static ArrayRef<StringRef> getAttributeNames() { return {}; }
 
     static void build(mlir::OpBuilder& builder, mlir::OperationState& result, mlir::StringRef name, mlir::FunctionType type, ExecutionTarget target);
     static void build(mlir::OpBuilder& builder, mlir::OperationState& result, mlir::StringRef name, mlir::FunctionType type, ExecutionTarget target, ExternalFuncTag);

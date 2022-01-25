@@ -6,6 +6,7 @@
 from typing import List, Any
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from ._lang_python._lang import (BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z)
 
 
 @dataclass
@@ -56,17 +57,29 @@ class _TargetContainer:
                                   unroll_only=False)
 
 
+class GridUnits(dict):
+    # Not expected to change from GPU to GPU
+    BLOCK_X = BLOCK_X
+    BLOCK_Y = BLOCK_Y
+    BLOCK_Z = BLOCK_Z
+    THREAD_X = THREAD_X
+    THREAD_Y = THREAD_Y
+    THREAD_Z = THREAD_Z
+
+
 class Target(_TargetContainer):
     "Factory-like class for target information"
 
     class Model(Enum):
         HOST = auto()
         INTEL_CORE_GENERATION_7 = auto()
-        INTEL_CORE_GENERATION_8_AND_9 = auto()
+        INTEL_CORE_GENERATION_8 = auto()
+        INTEL_CORE_GENERATION_9 = auto()
         INTEL_CORE_GENERATION_10 = auto()
         INTEL_CORE_GENERATION_11 = auto()
         INTEL_CORE_GENERATION_12 = auto()
         NVIDIA_TESLA_V100 = auto()
+        RASPBERRY_PI4 = auto()
         RASPBERRY_PI3 = auto()
         RASPBERRY_PI0 = auto()
 
@@ -105,62 +118,70 @@ class Target(_TargetContainer):
 
         # initialize known defaults based on the model
         if self.model == Target.Model.HOST:
-            super().__init__(
-                category=Target.Category.CPU,
-                architecture=Target.Architecture.HOST,
-                vector_bytes=32,  # There are 32-bytes per full SIMD register
-                vector_registers=16,  # There are 16 YMM registers
-                extensions=["MMX", "SSE", "SSE2", "SSE3", "SSSE3", "SSE4", "SSE4.1", "SSE4.2", "AVX", "AVX2", "FMA3"])
+            # TODO: inspect target characteristics of HOST rather than assuming these defaults
+            if category == Target.Category.GPU:
+                self.GridUnit = GridUnits
+
+            super().__init__(category=category or Target.Category.CPU,
+                             architecture=Target.Architecture.HOST,
+                             vector_bytes=32,  # There are 32-bytes per full SIMD register
+                             vector_registers=16,  # There are 16 YMM registers
+                             extensions=["MMX", "SSE", "SSE2", "SSE3", "SSSE3", "SSE4", "SSE4.1", "SSE4.2", "AVX", "AVX2", "FMA3"])
+
 
         elif self.model == Target.Model.INTEL_CORE_GENERATION_7:
-            super().__init__(
-                category=Target.Category.CPU,
-                architecture=Target.Architecture.X86_64,
-                family="Skylake-X",
-                vector_bytes=32, # There are 32-bytes per SIMD register
-                vector_registers=16, # There are 16 YMM registers
-                extensions=["SSE4.1", "SSE4.2", "AVX2"],
-                _device_name="avx512")
+            super().__init__(category=Target.Category.CPU,
+                             architecture=Target.Architecture.X86_64,
+                             family="Skylake-X",
+                             vector_bytes=32, # There are 32-bytes per SIMD register
+                             vector_registers=16, # There are 16 YMM registers
+                             extensions=["SSE4.1", "SSE4.2", "AVX2"],
+                             _device_name="avx512")
 
-        elif self.model == Target.Model.INTEL_CORE_GENERATION_8_AND_9:
-            super().__init__(
-                category=Target.Category.CPU,
-                architecture=Target.Architecture.X86_64,
-                family="Coffee Lake",
-                vector_bytes=32,
-                vector_registers=16,
-                extensions=["SSE4.1", "SSE4.2", "AVX2"],
-                _device_name="avx512")
+        elif self.model == Target.Model.INTEL_CORE_GENERATION_8 or self.model == Target.Model.INTEL_CORE_GENERATION_9:
+            super().__init__(category=Target.Category.CPU,
+                             architecture=Target.Architecture.X86_64,
+                             family="Coffee Lake",
+                             vector_bytes=32,
+                             vector_registers=16,
+                             extensions=["SSE4.1", "SSE4.2", "AVX2"],
+                             _device_name="avx512")
 
         elif self.model == Target.Model.INTEL_CORE_GENERATION_10:
-            super().__init__(
-                category=Target.Category.CPU,
-                architecture=Target.Architecture.X86_64,
-                family="Comet Lake",
-                vector_bytes=32,
-                vector_registers=16,
-                extensions=["SSE4.1", "SSE4.2", "AVX2"],
-                _device_name="avx512")
+            super().__init__(category=Target.Category.CPU,
+                             architecture=Target.Architecture.X86_64,
+                             family="Comet Lake",
+                             vector_bytes=32,
+                             vector_registers=16,
+                             extensions=["SSE4.1", "SSE4.2", "AVX2"],
+                             _device_name="avx512")
 
         elif self.model == Target.Model.INTEL_CORE_GENERATION_11:
-            super().__init__(
-                category=Target.Category.CPU,
-                architecture=Target.Architecture.X86_64,
-                family="Rocket Lake",
-                vector_bytes=64, # Each SIMD register is 512 bits (64 bytes) wide
-                vector_registers=32, # There are 32 ZMM registers
-                extensions=["SSE4.1", "SSE4.2", "AVX2", "AVX512"],
-                _device_name="avx512")
+            super().__init__(category=Target.Category.CPU,
+                             architecture=Target.Architecture.X86_64,
+                             family="Rocket Lake",
+                             vector_bytes=64, # Each SIMD register is 512 bits (64 bytes) wide
+                             vector_registers=32, # There are 32 ZMM registers
+                             extensions=["SSE4.1", "SSE4.2", "AVX2", "AVX512"],
+                             _device_name="avx512")
 
         elif self.model == Target.Model.INTEL_CORE_GENERATION_12:
-            super().__init__(
-                category=Target.Category.CPU,
-                architecture=Target.Architecture.X86_64,
-                family="Alder Lake",
-                vector_bytes=32,
-                vector_registers=16,
-                extensions=["SSE4.1", "SSE4.2", "AVX2"],
-                _device_name="avx512")
+            super().__init__(category=Target.Category.CPU,
+                             architecture=Target.Architecture.X86_64,
+                             family="Alder Lake",
+                             vector_bytes=32,
+                             vector_registers=16,
+                             extensions=["SSE4.1", "SSE4.2", "AVX2"],
+                             _device_name="avx512")
+
+        elif self.model == Target.Model.RASPBERRY_PI4:
+            super().__init__(category=Target.Category.CPU,
+                             architecture=Target.Architecture.ARM,
+                             family="Broadcom BCM2711",
+                             num_cores=4,
+                             num_threads=8,
+                             frequency_GHz=1.5,
+                             _device_name="pi4")
 
         elif self.model == Target.Model.RASPBERRY_PI3:
             super().__init__(category=Target.Category.CPU,
@@ -181,7 +202,10 @@ class Target(_TargetContainer):
                              _device_name="pi0")
 
         elif self.model == Target.Model.NVIDIA_TESLA_V100:
-            super().__init__(category=Target.Category.GPU, default_block_size=16)
+            super().__init__(category=Target.Category.GPU,
+                             default_block_size=16)
+            self.GridUnit = GridUnits          
+            # TODO: MemorySpace
 
         # override with user-specified values, if any
         # KEEP THIS SORTED

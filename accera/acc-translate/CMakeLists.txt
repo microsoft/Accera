@@ -5,8 +5,7 @@
 
 set(util_name acc-translate)
 
-set(target_src
-    src/Target/Cpp/AcceraDialectCppPrinter.cpp
+set(target_src 
     src/Target/Cpp/AffineDialectCppPrinter.cpp
     src/Target/Cpp/CppPrinter.cpp
     src/Target/Cpp/CppPrinterUtils.cpp
@@ -15,10 +14,12 @@ set(target_src
     src/Target/Cpp/ScfDialectCppPrinter.cpp
     src/Target/Cpp/StdDialectCppPrinter.cpp
     src/Target/Cpp/TranslateToCpp.cpp
+    src/Target/Cpp/AMDGPU.cpp
+    src/Target/Cpp/VectorDialectCppPrinter.cpp
+    src/Target/Cpp/LLVMDialectCppPrinter.cpp
     )
 
-set(target_include
-    src/Target/Cpp/AcceraDialectCppPrinter.h
+set(target_include 
     src/Target/Cpp/AffineDialectCppPrinter.h
     src/Target/Cpp/CppPrinter.h
     src/Target/Cpp/CppPrinterUtils.h
@@ -27,7 +28,11 @@ set(target_include
     src/Target/Cpp/ScfDialectCppPrinter.h
     src/Target/Cpp/StdDialectCppPrinter.h
     src/Target/Cpp/TranslateToCpp.h
+    src/Target/Cpp/AMDGPU.h
+    src/Target/Cpp/VectorDialectCppPrinter.h
+    src/Target/Cpp/LLVMDialectCppPrinter.h
     )
+
 
 set(util_src ${target_src} src/AcceraTranslateMain.cpp)
 set(util_include ${target_include})

@@ -19,12 +19,14 @@
 #include <utilities/include/TypeTraits.h>
 
 #include <llvm/Support/raw_os_ostream.h>
-#include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
+
+#include <mlir/Conversion/LLVMCommon/LoweringOptions.h>
+#include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/Target/LLVMIR/TypeTranslation.h>
+#include <mlir/Target/LLVMIR/TypeToLLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Translation.h>
 

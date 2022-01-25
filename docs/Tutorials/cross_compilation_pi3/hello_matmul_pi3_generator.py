@@ -27,16 +27,16 @@ sched = nest.create_schedule()
 # Split the k loop into blocks of 4
 kk = sched.split(k, 4)
 
-# Create an action plan, specify the target to be a Raspberry Pi 3
+# Create a plan, specify the target to be a Raspberry Pi 3
 pi3 = acc.Target(model=acc.Target.Model.RASPBERRY_PI3)
-plan = sched.create_action_plan(pi3)
+plan = sched.create_plan(pi3)
 
 # Then unroll kk
 plan.unroll(kk)
 
-# Create a package and add a function to the package based on the action plan
+# Create a package and add a function to the package based on the plan
 package = acc.Package()
-package.add_function(plan, args=(A, B, C), base_name="hello_matmul_pi3_py")
+package.add(plan, args=(A, B, C), base_name="hello_matmul_pi3_py")
 
 # Build the HAT package
 package.build(name="hello_matmul_pi3", platform=acc.Package.Platform.RASPBIAN)

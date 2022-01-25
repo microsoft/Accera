@@ -33,7 +33,7 @@ i, j = nest.get_indices()
 def_():
     B[i, j] += A[i, j]
 
-plan = nest.create_action_plan()
+plan = nest.create_plan()
 
 # create a cache for the constant array
 AA = plan.cache(A, i, layout=acc.Array.Layout.FIRST_MAJOR, thrifty=True)

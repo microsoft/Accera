@@ -8,10 +8,8 @@
 ####################################################################################################
 
 from dataclasses import dataclass, field
+from hatlib import HATPackage, Function
 from pathlib import Path
-from .hat_package import HATPackage
-from .hat_file import Function
-
 
 @dataclass
 class ONNXHATFunction:

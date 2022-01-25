@@ -75,8 +75,8 @@ Returns:
 )pbdoc")
         .def("pad", py::overload_cast<value::ScalarIndex, int>(&value::Schedule::Pad), "i"_a, "size"_a)
         .def("skew", py::overload_cast<value::ScalarIndex, value::ScalarIndex>(&value::Schedule::Skew), "i"_a, "reference_index"_a)
-        .def("create_action_plan", &value::Schedule::CreatePlan, "Creates an action plan for the host")
-        .def("create_gpu_action_plan", &value::Schedule::CreateGPUPlan, "Creates an action plan for the GPU", "gpu_options"_a)
+        .def("create_plan", &value::Schedule::CreatePlan, "Creates a plan for the host")
+        .def("create_gpu_plan", &value::Schedule::CreateGPUPlan, "Creates a plan for the GPU", "gpu_options"_a)
         .def(
             "get_indices", [](value::Schedule& sched) { return sched.GetIndices(); }, "Returns the indices for this schedule, starting from the outermost index");
 }

@@ -78,17 +78,17 @@ class Schedule:
     def get_indices(self):
         return self._indices.copy()
 
-    def create_action_plan(
+    def create_plan(
         self, target: "accera.Target" = Target.HOST
-    ) -> "accera.ActionPlan":
-        """Creates an action plan for running this schedule
+    ) -> "accera.Plan":
+        """Creates a plan for running this schedule
 
         Args:
             target: Optional target specification. Defaults to the HOST
         """
-        from .Plan import ActionPlan
+        from .Plan import Plan
 
-        return ActionPlan(self, target)
+        return Plan(self, target)
 
     def get_index_range(self, index):
         return self._index_map[index].interval()

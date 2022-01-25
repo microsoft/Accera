@@ -13,16 +13,16 @@
 
 # Classes
 
-## `class accera.ActionPlan`
+## `class accera.Plan`
 A scheduled (ordered) loop nest with target-specific implementation details.
 
 ### Methods
-* [`cache`](<classes/ActionPlan/cache.md>) `(source[, index, layout, level, max_elements, thrifty, type])`
-* [`bind`](<classes/ActionPlan/bind.md>) `(indices, grid)`
-* [`kernelize`](<classes/ActionPlan/kernelize.md>) `(unroll_indices, vectorize_indices)`
-* [`parallelize`](<classes/ActionPlan/parallelize.md>) `(indices[, pin, policy])`
-* [`unroll`](<classes/ActionPlan/unroll.md>) `(index)`
-* [`vectorize`](<classes/ActionPlan/vectorize.md>) `(index)`
+* [`cache`](<classes/Plan/cache.md>) `(source[, index, layout, level, max_elements, thrifty, type])`
+* [`bind`](<classes/Plan/bind.md>) `(indices, grid)`
+* [`kernelize`](<classes/Plan/kernelize.md>) `(unroll_indices, vectorize_indices)`
+* [`parallelize`](<classes/Plan/parallelize.md>) `(indices[, pin, policy])`
+* [`unroll`](<classes/Plan/unroll.md>) `(index)`
+* [`vectorize`](<classes/Plan/vectorize.md>) `(index)`
 
 ---
 
@@ -50,7 +50,7 @@ A local copy of an `Array` block.
 
 ## `class accera.Index`
 
-An index that represents one of the loops in a `Nest` or one of the iteration-space dimensions of a `Schedule` or `ActionPlan`.
+An index that represents one of the loops in a `Nest` or one of the iteration-space dimensions of a `Schedule` or `Plan`.
 
 ---
 
@@ -63,7 +63,7 @@ The logic of a loop nest.
 
 ### Methods
 * [`iteration_logic`](<classes/Nest/iteration_logic.md>) `(logic)`
-* [`create_action_plan`](<classes/Nest/create_action_plan.md>) `([target])`
+* [`create_plan`](<classes/Nest/create_plan.md>) `([target])`
 * [`create_schedule`](<classes/Nest/create_schedule.md>) `()`
 * [`get_indices`](<classes/Nest/get_indices.md>) `()`
 
@@ -83,14 +83,14 @@ A collection of functions that can be built and emitted for use in client code.
 
 ### Methods
 * [`add_description`](<classes/Package/add_description.md>) `([author, license, other, version])`
-* [`add_function`](<classes/Package/add_function.md>) `(args, source[, base_name, parameters])`
+* [`add`](<classes/Package/add.md>) `(args, source[, base_name, parameters])`
 * [`build`](<classes/Package/build.md>) `(name[, error_path, format, mode, os, tolerance])`
 
 ---
 
 ## `class accera.Parameter`
 
-A placeholder that can used instead of concrete values when constructing or calling the methods of a `Nest`, `Schedule`, or `ActionPlan`.
+A placeholder that can used instead of concrete values when constructing or calling the methods of a `Nest`, `Schedule`, or `Plan`.
 
 ---
 
@@ -99,7 +99,7 @@ A placeholder that can used instead of concrete values when constructing or call
 A scheduled (ordered) loop nest with no target-specific implementation details.
 
 ### Methods
-* [`create_action_plan`](<classes/Schedule/create_action_plan.md>) `([target])`
+* [`create_plan`](<classes/Schedule/create_plan.md>) `([target])`
 * [`pad`](<classes/Schedule/pad.md>) `(index, size)`
 * [`reorder`](<classes/Schedule/reorder.md>) `(indices)`
 * [`skew`](<classes/Schedule/skew.md>) `(index, reference_index)`

@@ -9,6 +9,7 @@ mlir_tablegen(ValueOps.cpp.inc -gen-op-defs)
 mlir_tablegen(ValueOpsEnums.h.inc -gen-enum-decls)
 mlir_tablegen(ValueOpsEnums.cpp.inc -gen-enum-defs)
 mlir_tablegen(ValueDialect.h.inc -gen-dialect-decls -dialect=accv)
+mlir_tablegen(ValueDialect.cpp.inc -gen-dialect-defs -dialect=accv)
 add_public_tablegen_target(ValueOpsIncGen)
 
 set(LLVM_TARGET_DEFINITIONS ValueAttrs.td)

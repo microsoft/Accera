@@ -1,15 +1,12 @@
-//===- AffineDialectCppPrinter.cpp - Affine Dialect Printer ---------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//  Copyright (c) Microsoft Corporation. All rights reserved.
+//  Licensed under the MIT License. See LICENSE in the project root for license information.
+//  Authors: Abdul Dakkak
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "RocDLDialectCppPrinter.h"
+
+#include "AMDGPU.h"
 
 using namespace mlir;
 
@@ -93,7 +90,6 @@ namespace cpp_printer
         MFMA_FUNCTION_LIST(PRINT_MFMA_OP);
 #undef PRINT_MFMA_OP
         RETURN_IF_FAILED(printer->printOperationOperands(op));
-        os << ", 0, 0, 0";
         os << ")";
         return success();
     }

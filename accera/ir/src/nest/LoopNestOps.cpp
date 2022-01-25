@@ -7,6 +7,7 @@
 
 #include "nest/LoopNestAttributes.h"
 #include "nest/LoopNestOps.h"
+#include "nest/LoopNestDialect.cpp.inc"
 #include "nest/LoopNestTypes.h"
 #include "nest/Util.h"
 #include <ir/include/value/ValueDialect.h>

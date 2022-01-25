@@ -1,13 +1,8 @@
-//===- AffineDialectCppPrinter.h - Affine Dialect Printer -----------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//  Copyright (c) Microsoft Corporation. All rights reserved.
+//  Licensed under the MIT License. See LICENSE in the project root for license information.
+//  Authors: Abdul Dakkak
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifndef AFFINE_DIALECT_CPP_PRINTER_H_
 #define AFFINE_DIALECT_CPP_PRINTER_H_
@@ -17,91 +12,92 @@
 
 #include "CppPrinter.h"
 
-namespace mlir {
-namespace cpp_printer {
+namespace mlir
+{
+namespace cpp_printer
+{
 
-struct AffineDialectCppPrinter : public DialectCppPrinter {
-  AffineDialectCppPrinter(CppPrinter *printer)
-      : DialectCppPrinter(printer), needAffineMemCpy(false) {}
+    struct AffineDialectCppPrinter : public DialectCppPrinter
+    {
+        AffineDialectCppPrinter(CppPrinter* printer_) :
+            DialectCppPrinter(printer_), needAffineMemCpy(false) {}
 
-  LogicalResult printPrologue() override;
+        std::string getName() override { return "Affine"; }
 
-  /// print Operation from Affine Dialect
-  LogicalResult printDialectOperation(Operation *op, bool *skipped,
-                                      bool *consumed) override;
+        LogicalResult printPrologue() override;
 
-  LogicalResult printAffineApplyOp(AffineApplyOp affineApplyOp);
+        /// print Operation from Affine Dialect
+        LogicalResult printDialectOperation(Operation* op, bool* skipped, bool* consumed) override;
 
-  LogicalResult printAffineStoreOp(AffineStoreOp affineStoreOp);
+        LogicalResult printAffineApplyOp(AffineApplyOp affineApplyOp);
 
-  LogicalResult printAffineLoadOp(AffineLoadOp affineLoadOp);
+        LogicalResult printAffineStoreOp(AffineStoreOp affineStoreOp);
 
-  LogicalResult printAffineVectorLoadOp(AffineVectorLoadOp affineVecLoadOp);
+        LogicalResult printAffineLoadOp(AffineLoadOp affineLoadOp);
 
-  LogicalResult printAffineVectorStoreOp(AffineVectorStoreOp affineVecStoreOp);
+        LogicalResult printAffineVectorLoadOp(AffineVectorLoadOp affineVecLoadOp);
 
-  LogicalResult printAffineForOp(AffineForOp affineForOp);
+        LogicalResult printAffineVectorStoreOp(AffineVectorStoreOp affineVecStoreOp);
 
-  LogicalResult printAffineMapFunc(AffineMap map, StringRef funcName);
+        LogicalResult printAffineForOp(AffineForOp affineForOp);
 
-  LogicalResult printAffineExpr(AffineExpr affineExpr);
+        LogicalResult printAffineMapFunc(AffineMap map, StringRef funcName);
 
-  LogicalResult runPrePrintingPasses(Operation *op) override;
+        LogicalResult printAffineExpr(AffineExpr affineExpr);
 
-  llvm::DenseMap<AffineMap, std::string> &getAffineMapToFuncBaseName() {
-    return affineMapToFuncBaseName;
-  }
+        LogicalResult runPrePrintingPasses(Operation* op) override;
 
-  static constexpr const char *affineIdxTypeStr = "int64_t";
+        llvm::DenseMap<AffineMap, std::string>& getAffineMapToFuncBaseName()
+        {
+            return affineMapToFuncBaseName;
+        }
 
-  static constexpr const char *affineMemCpyStr = "affine_memcpy";
+        static constexpr const char* affineIdxTypeStr = "int64_t";
 
-  static constexpr const char *affineCeilDivStr = "affine_ceildiv";
+        static constexpr const char* affineCeilDivStr = "affine_ceildiv";
 
-  static constexpr const char *affineVecLoadFp16Str = "affine_vec_load_fp16";
+        static constexpr const char* affineMapFuncPrefix = "affine_map_func_";
 
-  static constexpr const char *affineVecStoreFp16Str = "affine_vec_store_fp16";
+        std::string makeAffineIdxFuncName(StringRef funcBaseName, int idx)
+        {
+            return funcBaseName.str() + "_i" + std::to_string(idx);
+        }
 
-  static constexpr const char *affineMapFuncPrefix = "affine_map_func_";
+        llvm::StringRef getFuncBaseName(AffineMap map)
+        {
+            auto iter = affineMapToFuncBaseName.find(map);
+            assert(iter != affineMapToFuncBaseName.end());
+            return iter->second;
+        }
 
-private:
-  void printAffineMemCpy();
+    private:
+        void checkAffineMemCpyPass(Operation* op);
 
-  void printAffineCeilDiv();
+        void checkDeadAffineOpsPass(Operation* op);
 
-  void checkAffineMemCpyPass(Operation *op);
+        void collectAffineMapsPass(Operation* op);
 
-  void checkDeadAffineOpsPass(Operation *op);
+        void printAffineMapResultIndices(AffineMap map,
+                                         Operation::operand_range origIndices,
+                                         llvm::SmallVector<StringRef, 4>& memIdxVars);
 
-  void collectAffineMapsPass(Operation *op);
+        LogicalResult
+        printMemRefAccessPtr(Value memRef,
+                             const llvm::SmallVector<StringRef, 4>& memIdxVars,
+                             std::string& srcMemRefPtr);
 
-  void printAffineMapResultIndices(AffineMap map,
-                                   Operation::operand_range origIndices,
-                                   llvm::SmallVector<StringRef, 4> &memIdxVars);
+        LogicalResult
+        printMemRefAccessValue(Value memRef,
+                               const llvm::SmallVector<StringRef, 4>& memIdxVars,
+                               std::string& memRefVal);
 
-  LogicalResult
-  printMemRefAccessPtr(Value memRef,
-                       const llvm::SmallVector<StringRef, 4> &memIdxVars,
-                       std::string &srcMemRefPtr);
+        bool needAffineMemCpy;
 
-  LogicalResult
-  printMemRefAccessValue(Value memRef,
-                         const llvm::SmallVector<StringRef, 4> &memIdxVars,
-                         std::string &memRefVal);
-
-  llvm::StringRef getFuncBaseName(AffineMap map) {
-    auto iter = affineMapToFuncBaseName.find(map);
-    assert(iter != affineMapToFuncBaseName.end());
-    return iter->second;
-  }
-
-  bool needAffineMemCpy;
-
-  // a map from an AffineMap to the base name of its corresponding function,
-  // where the base name will be used to create affine_map_func for individual
-  // indices.
-  llvm::DenseMap<AffineMap, std::string> affineMapToFuncBaseName;
-};
+        // a map from an AffineMap to the base name of its corresponding function,
+        // where the base name will be used to create affine_map_func for individual
+        // indices.
+        llvm::DenseMap<AffineMap, std::string> affineMapToFuncBaseName;
+    };
 
 } // namespace cpp_printer
 } // namespace mlir

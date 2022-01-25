@@ -131,7 +131,7 @@ class Array:
             elif shape[-1] == inf:
                 if (len(shape) > 1 and any([s == inf for s in shape[:-1]])):
                     raise ValueError("Only the last dimension can be inf")
-                return  # shape will be resolved in Package.add_function based on access index
+                return  # shape will be resolved in Package.add based on access index
 
         self._create_native_array()
 
@@ -267,13 +267,13 @@ class SubArray(Array):
                 A0[i, j] = 42.0
 
             # add a function that takes the subarray (A0) as argument
-            package.add_function(nest, args=(A0,), base_name="my_subarray_fn")
+            package.add(nest, args=(A0,), base_name="my_subarray_fn")
 
     2. For emitting code that creates a subarray view of another array
        (handled by _lang_python._lang.Array.sub_array())
 
             # emit the function defined above
-            my_subarray_fn = package.add_function(nest, args=(A0,), base_name="my_subarray_fn")
+            my_subarray_fn = package.add(nest, args=(A0,), base_name="my_subarray_fn")
 
             def main(A):
                 # take the subarray view of input A
@@ -281,7 +281,7 @@ class SubArray(Array):
                 my_subarray_fn(A0) # call function defined above, passing in the subarray view
 
             # add a function that receives the full array (A) as argument
-            package.add_function(main, args=(A,), base_name="main")
+            package.add(main, args=(A,), base_name="main")
 
     """
     def __init__(self, source: Array, offsets: Tuple[int], shape: Tuple[int]):

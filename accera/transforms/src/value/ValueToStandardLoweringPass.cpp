@@ -17,6 +17,7 @@
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/Linalg/IR/LinalgOps.h>
 #include <mlir/Dialect/Math/Transforms/Passes.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVAttributes.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
@@ -1285,13 +1286,13 @@ LogicalResult MergeDimOpLowering::matchAndRewrite(
 
     auto dim1 = static_cast<int64_t>(op.dim1());
     auto dim2 = static_cast<int64_t>(op.dim2());
-    std::vector<mlir::linalg::ReassociationIndices> mergeIndices;
+    std::vector<mlir::ReassociationIndices> mergeIndices;
     auto rank = resultType.getRank();
     for (int64_t i = 0; i < rank; ++i)
     {
         if (i != dim2)
         {
-            mlir::linalg::ReassociationIndices thisDimIndices;
+            mlir::ReassociationIndices thisDimIndices;
             thisDimIndices.push_back(i);
             if (i == dim1)
             {
@@ -1301,7 +1302,7 @@ LogicalResult MergeDimOpLowering::matchAndRewrite(
         }
     }
 
-    rewriter.replaceOpWithNewOp<linalg::CollapseShapeOp>(op, source, mergeIndices);
+    rewriter.replaceOpWithNewOp<memref::CollapseShapeOp>(op, source, mergeIndices);
 
     return success();
 }
@@ -2432,7 +2433,7 @@ void ValueToStdLoweringPass::runOnModule()
         scf::SCFDialect,
         vector::VectorDialect,
         omp::OpenMPDialect>(
-        Optional<ConversionTarget::DynamicLegalityCallbackFn>(isLegalOperation));
+        ConversionTarget::DynamicLegalityCallbackFn(isLegalOperation));
     target.addDynamicallyLegalOp<gpu::LaunchFuncOp>(isLegalOperation);
     target.addDynamicallyLegalOp<FuncOp>([&](FuncOp fn) {
         return typeConverter.isSignatureLegal(fn.getType()) && typeConverter.isLegal(&fn.getBody());

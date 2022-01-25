@@ -172,8 +172,8 @@ We take a step back to describe the stages of a Accera program:
 
 * `Nest`: A nest captures the logic of a simple nest, without any optimizations or implementation details.
 * `Schedule`: A `Nest` is used to create a schedule. The schedule controls the order in which the nest iterations are visited. Multiple schedules can be fused into a single schedule, which may no longer represent a simple nest.
-* `ActionPlan`: A `Schedule` is used to create an action plan. An action plan controls the implementation details that are specific to a specific target platform (e.g., data caching strategy, vectorization, assignment of arrays and caches to different types of memory).
-* `Package`: An `ActionPlan` is used to create a function in a function package. The package is then compiled and emitted.
+* `Plan`: A `Schedule` is used to create a plan. A plan controls the implementation details that are specific to a specific target platform (e.g., data caching strategy, vectorization, assignment of arrays and caches to different types of memory).
+* `Package`: A `Plan` is used to create a function in a function package. The package is then compiled and emitted.
 
 Once a package is emitted, the Accera functions contained in it can be called from external client code. This external code is typically not written using Accera.
 
@@ -188,33 +188,33 @@ Overall, to build and emit `nest` (defined above), we would write:
 # create a default schedule from the nest
 schedule = nest.create_schedule()
 
-# create a default action plan from the schedule
-plan = schedule.create_action_plan()
+# create a default plan from the schedule
+plan = schedule.create_plan()
 
-# create a HAT package. Create a function in the package based on the action plan
+# create a HAT package. Create a function in the package based on the plan
 package = acc.Package()
-package.add_function(plan, args=(A, B, C), base_name="simple_matmul")
+package.add(plan, args=(A, B, C), base_name="simple_matmul")
 
 # build the HAT package
-package.build(format=acc.Package.Format.HAT, name="linear_algebra")
+package.build(format=acc.Package.Format.HAT_DYNAMIC, name="linear_algebra")
 ```
 
 It may not be immediately clear why so many stages are needed just to compile a simple nest. The importance of each step will hopefully become clear once we describe the stages in detail.
 
-In the example above, The call to `package.add_function` takes three arguments: the first is the action plan that defines the function's implementation; the second is the order of the input and input/output arrays in the function signature; and the third is a base name for the function. The full name of the function is the base name followed by an automatically-generated unique identifier. For example, the function in the example could appear in the package as `simple_matmul_8f24bef5`. The automatically-generated suffix ensures that each function in the package has a unique name. More details on function packages can be found in [Section 10](<10%20Packages.md>).
+In the example above, The call to `package.add` takes three arguments: the first is the plan that defines the function's implementation; the second is the order of the input and input/output arrays in the function signature; and the third is a base name for the function. The full name of the function is the base name followed by an automatically-generated unique identifier. For example, the function in the example could appear in the package as `simple_matmul_8f24bef5`. The automatically-generated suffix ensures that each function in the package has a unique name. More details on function packages can be found in [Section 10](<10%20Packages.md>).
 
 ## Convenience syntax
 For convenience, Accera also provides shortcuts to avoid unneeded verbosity. Specifically, we can create a function in a package directly from a nest, as follows:
 ```python
-package.add_function(nest, args=(A, B, C), base_name="simple_matmul")
+package.add(nest, args=(A, B, C), base_name="simple_matmul")
 ```
-The abbreviated syntax makes it seem like a callable function is generated directly from `nest`, but what actually happens behind the scenes is that `nest` creates a default schedule, which creates a default action plan, which is added as a function in the package. Accera has a similar convenience syntax to create a function from a schedule:
+The abbreviated syntax makes it seem like a callable function is generated directly from `nest`, but what actually happens behind the scenes is that `nest` creates a default schedule, which creates a default plan, which is added as a function in the package. Accera has a similar convenience syntax to create a function from a schedule:
 ```python
-package.add_function(schedule, args=(A, B, C), base_name="simple_matmul")
+package.add(schedule, args=(A, B, C), base_name="simple_matmul")
 ```
-and to create an action plan directly from a nest:
+and to create a plan directly from a nest:
 ```python
-plan = nest.create_action_plan()
+plan = nest.create_plan()
 ```
 
 

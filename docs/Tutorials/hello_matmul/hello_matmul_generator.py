@@ -26,13 +26,13 @@ sched = nest.create_schedule()
 # Split the k loop into blocks of 4
 kk = sched.split(k, 4)
 
-plan = sched.create_action_plan()
+plan = sched.create_plan()
 # Then unroll kk
 plan.unroll(kk)
 
-# Create a package and add a function to the package based on the action plan
+# Create a package and add a function to the package based on the plan
 package = acc.Package()
-package.add_function(plan, args=(A, B, C), base_name="hello_matmul_py")
+package.add(plan, args=(A, B, C), base_name="hello_matmul_py")
 
 # Build the HAT package
 package.build("hello_matmul")

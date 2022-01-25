@@ -179,7 +179,7 @@ def MLAS_with_bias_and_alpha_scaling(
     jj = fused1.split(j_f1, column_block)
 
     fused1.reorder(*stack_f1, j_f1, i_f1, f1, jj, f0_f1, k_f1)
-    fused_plan = fused1.create_action_plan(target)
+    fused_plan = fused1.create_plan(target)
 
     if opts.PackBFuncName and opts.PackBBufferSizeFuncName:
         fused_plan.emit_runtime_init_pack(
@@ -338,7 +338,7 @@ def MLAS_with_bias(
 
     fused_schedule.reorder(*fused_stack_idxs, fused_j,
                            f, k, fused_i, jj, kk, kkk, ii, jjj, jjjj)
-    fused_plan = fused_schedule.create_action_plan(target)
+    fused_plan = fused_schedule.create_plan(target)
 
     if opts.PackBFuncName and opts.PackBBufferSizeFuncName:
         fused_plan.emit_runtime_init_pack(

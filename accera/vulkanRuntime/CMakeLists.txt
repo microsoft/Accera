@@ -37,7 +37,7 @@ else()
     INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/include
                 ${CMAKE_CURRENT_LIST_DIR}/include
   )
-  InstallAcceraCppRuntimeLibrary(${lib_name})
+  InstallAcceraCppLibrary(${lib_name})
   InstallAcceraPyRuntimeLibrary(${lib_name} accera-gpu "accera")
 
   set(shared_lib_dir ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})

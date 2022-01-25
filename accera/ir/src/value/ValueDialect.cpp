@@ -5,6 +5,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "value/ValueDialect.h"
+#include "value/ValueDialect.cpp.inc"
 #include "value/ValueFuncOp.h"
 
 #include "value/ValueAttributes.h"

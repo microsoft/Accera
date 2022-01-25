@@ -9,6 +9,7 @@ set(LLVM_TARGET_DEFINITIONS ArgoOps.td)
 mlir_tablegen(ArgoOps.h.inc -gen-op-decls)
 mlir_tablegen(ArgoOps.cpp.inc -gen-op-defs)
 mlir_tablegen(ArgoDialect.h.inc -gen-dialect-decls -dialect=argo)
+mlir_tablegen(ArgoDialect.cpp.inc -gen-dialect-defs -dialect=argo)
 add_public_tablegen_target(ArgoOpsIncGen)
 
 set(LLVM_TARGET_DEFINITIONS ArgoStructuredOps.td)

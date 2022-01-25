@@ -10,7 +10,7 @@ NativeArray = Array
 from .Array import Array
 from .Nest import Nest
 from .Schedule import Schedule, FusedSchedule, fuse
-from .Plan import ActionPlan
+from .Plan import Plan
 from .Cache import Cache
 from .Function import Function
 from .LogicFunction import logic_function, LogicFunction

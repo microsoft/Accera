@@ -92,7 +92,6 @@ include(CopySharedLibraries)
 include(InstallUtilities)
 include(AddPrecompiledHeader)
 include(DocSetup)
-include(OpenMPSetup)
 
 # Prerequisites: vcpkg install tomlplusplus or vcpkg install tomlplusplus:x64-windows
 find_package(tomlplusplus CONFIG REQUIRED)
@@ -105,6 +104,12 @@ if(MSVC_IDE OR XCODE)
 endif()
 set(LLVM_LIT_ARGS "${LIT_ARGS_DEFAULT}" CACHE STRING "Default options for lit")
 
+
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+# Disables generation of "version soname" (i.e. libFoo.so.<version>), which
+# causes pure duplication as part of Python wheels.
+set(CMAKE_PLATFORM_NO_VERSIONED_SONAME ON)
 if(MSVC)
   # Set Visual Studio-specific options
   add_definitions(-DUNICODE -D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
@@ -138,7 +143,6 @@ else()
   add_compile_options(-Wsign-compare)
   add_compile_options(-Wno-missing-braces)
   add_compile_options(-Wmissing-field-initializers)
-  add_compile_options(-fvisibility-inlines-hidden)
   add_compile_options(-Wno-unknown-pragmas)
   add_compile_options(-Wno-comment)
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -ggdb3 -O0")
@@ -152,7 +156,9 @@ else()
     # Set options for Control Flow Integrity
     add_compile_options(-fsanitize=cfi)
     # Enable Shadow Stack mitigation
-    add_compile_options(-fsanitize=shadow-call-stack)    
+    add_compile_options(-fsanitize=shadow-call-stack)  
+    # Exit after the first 2 errors are reported  
+    add_compile_options(-ferror-limit=2)    
   else() # GCC
     add_compile_options(-Wno-ignored-attributes)
     add_compile_options(-fdiagnostics-color=always)

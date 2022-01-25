@@ -101,10 +101,10 @@ kk = sched.split(k, 4)
 
 The split index is now `k` and `kk`.
 
-The next step is to create an action plan from the schedule. For instance, we can use this plan to unroll the innermost loop.
+The next step is to create a plan from the schedule. For instance, we can use this plan to unroll the innermost loop.
 
 ```python
-plan = sched.create_action_plan()
+plan = sched.create_plan()
 # Unroll kk, effectively doing this
 # (assuming K is divisible by 4):
 #
@@ -122,12 +122,12 @@ plan = sched.create_action_plan()
 plan.unroll(kk)
 ```
 
-Use the action plan to add a callable function named `hello_matmul_pi3_py` to a HAT package.
+Use the plan to add a callable function named `hello_matmul_pi3_py` to a HAT package.
 
 ```python
-# Create a package and add a function to the package based on the action plan
+# Create a package and add a function to the package based on the plan
 package = acc.Package()
-package.add_function(plan, args=(A, B, C), base_name="hello_matmul_py")
+package.add(plan, args=(A, B, C), base_name="hello_matmul_py")
 ```
 
 Finally, we build the HAT package:

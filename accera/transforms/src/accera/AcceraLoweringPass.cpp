@@ -16,6 +16,10 @@
 #include <value/include/MLIREmitterContext.h>
 #include <value/include/Matrix.h>
 
+#include <mlir/Conversion/LLVMCommon/ConversionTarget.h>
+#include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h>
+#include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/Linalg/IR/LinalgOps.h>
@@ -214,6 +218,7 @@ void AcceraToLLVMPass::runOnFunction()
     accera::transforms::value::populateLocalValueToLLVMPatterns(llvmTypeConverter, patterns);
 
     populateLinalgToLLVMConversionPatterns(llvmTypeConverter, patterns);
+    populateMemRefToLLVMConversionPatterns(llvmTypeConverter, patterns);
     populateStdToLLVMConversionPatterns(llvmTypeConverter, patterns);
 
     populateVectorToLLVMConversionPatterns(llvmTypeConverter, patterns, /*reassociateFPReductions*/ true);

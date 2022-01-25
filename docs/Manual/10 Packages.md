@@ -10,14 +10,14 @@ The Accera `Package` class represents a collection of Accera-generated functions
 Say that `nest` contains some loop-nest logic. To build a HAT package that contains a function with this logic for the Windows operating system, we do the following:
 ```python
 package = acc.Package()
-package.add_function(nest, base_name="func1")
-package.build(format=acc.Package.Format.HAT, name="myPackage", platform=acc.Package.Platform.WINDOWS)
+package.add(nest, base_name="func1")
+package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", platform=acc.Package.Platform.WINDOWS)
 ```
 
 The result is two files: `MyPackage.hat` and `MyPackage.lib`. The output directory defaults to the current working directory. To change the output directory:
 
 ```python
-package.build(format=acc.Package.Format.HAT, name="myPackage", platform=acc.Package.Platform.WINDOWS, output_dir="hat_packages")
+package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", platform=acc.Package.Platform.WINDOWS, output_dir="hat_packages")
 ```
 
 ## MLIR package format
@@ -40,9 +40,9 @@ void (*myFunc)(const float* A, float* B) = myFunc_8f24bef5;
 The above basically makes the abbreviated name `myFunc` a synonym of the full function name `myFunc_8f24bef5`. If multiple functions share the same base name, an arbitrary one of them gets the abbreviation.
 
 ## Debug mode
-A package can be built with the option `mode=acc.Package.Mode.DEBUG`. This creates a special version of each function that checks its own correctness each time the function is called. From the outside, a debugging package looks identical to a standard package. However, each of its functions actually contains two different implementations: the RoboCode implementation (with all of the fancy scheduling and action planning) and the trivial default implementation (without any of the scheduling or action planning). When called, the function runs both implementations and asserts that their outputs are within some predefined tolerance. If the outputs don't match, the function prints error messages to `stderr`.
+A package can be built with the option `mode=acc.Package.Mode.DEBUG`. This creates a special version of each function that checks its own correctness each time the function is called. From the outside, a debugging package looks identical to a standard package. However, each of its functions actually contains two different implementations: the RoboCode implementation (with all of the fancy scheduling and planning) and the trivial default implementation (without any of the scheduling or planning). When called, the function runs both implementations and asserts that their outputs are within some predefined tolerance. If the outputs don't match, the function prints error messages to `stderr`.
 ```python
-package.build(format=acc.Package.Format.HAT, name="myPackage", mode=acc.Package.Mode.DEBUG, tolerance=1.0e-6)
+package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", mode=acc.Package.Mode.DEBUG, tolerance=1.0e-6)
 ```
 
 ## Adding descriptions

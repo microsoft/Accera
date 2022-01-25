@@ -19,10 +19,12 @@ from accera.test import verifiers
 
 TEST_PACKAGE_DIR = "test_acccgen"
 
+
 class ModuleScope:
     """Ensures that the global Package module is restored when using
     private APIs to set and clear the active module
     """
+
     def __init__(self, module):
         self.module = module
 
@@ -172,7 +174,8 @@ class PackagingTypesTests(unittest.TestCase):
 
         M = 10
         N = 20
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
         nest = Nest(shape=(M * 2, N * 2))
         i, j = nest.get_indices()
 
@@ -187,11 +190,11 @@ class PackagingTypesTests(unittest.TestCase):
 
         nest.iteration_logic(logic_fn)
         schedule = nest.create_schedule()
-        plan = schedule.create_action_plan()
+        plan = schedule.create_plan()
         plan.cache(A, i)
 
         package = Package()
-        package.add_function(plan, args=(A, ))
+        package.add(plan, args=(A, ))
 
         # test introspection
         package_name = "test_conditional_function"
@@ -203,7 +206,8 @@ class PackagingTypesTests(unittest.TestCase):
 
         M = 10
         N = 20
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
         nest = Nest(shape=(M * 2, N * 2))
         i, j = nest.get_indices()
 
@@ -212,22 +216,23 @@ class PackagingTypesTests(unittest.TestCase):
             A[i, j] += 1.
 
         pi3 = Target(model=Target.Model.RASPBERRY_PI3)
-        plan1 = nest.create_action_plan(pi3)
-        plan2 = nest.create_action_plan()
+        plan1 = nest.create_plan(pi3)
+        plan2 = nest.create_plan()
 
         package = Package()
         for i in range(10):
-            package.add_function(plan1, args=(A, ))
+            package.add(plan1, args=(A, ))
 
         with self.assertRaises(RuntimeError):
-            package.add_function(plan2, args=(A, ))
+            package.add(plan2, args=(A, ))
 
     def test_default_module_specialization(self) -> None:
         from accera import ScalarType, Target, Nest, Array
 
         M = 10
         N = 20
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.float32, shape=(M, N))
         nest = Nest(shape=(M * 2, N * 2))
         i, j = nest.get_indices()
 
@@ -236,15 +241,17 @@ class PackagingTypesTests(unittest.TestCase):
             A[i, j] += 1.
 
         pi3 = Target(model=Target.Model.RASPBERRY_PI3)
-        plan1 = nest.create_action_plan(pi3)
-        plan2 = nest.create_action_plan()
+        plan1 = nest.create_plan(pi3)
+        plan2 = nest.create_plan()
 
-        for i, plan in enumerate([plan1, plan2]):
+        for i, (plan, platform) in enumerate(
+            zip([plan1, plan2], [Package.Platform.RASPBIAN, Package.Platform.HOST])
+        ):
             p = Package()
-            p.add_function(plan, args=(A, ))
+            p.add(plan, args=(A, ))
             name = f"specialization{i}"
             with verifiers.VerifyPackage(self, name, TEST_PACKAGE_DIR):
-                p.build(name, output_dir=TEST_PACKAGE_DIR)
+                p.build(name, output_dir=TEST_PACKAGE_DIR, platform=platform)
 
     def test_cross_module_references(self) -> None:
         from accera import CompilerOptions, Array
@@ -279,7 +286,6 @@ class PackagingTypesTests(unittest.TestCase):
 
     def test_emit_unpacked_buffer(self) -> None:
         from accera import Array
-        from accera.tuning import AutoBenchmark
         import numpy as np
         import pathlib
         import shutil
@@ -304,7 +310,7 @@ class PackagingTypesTests(unittest.TestCase):
                 output_matrix[i, j] += input_matrix[i, j]
 
             schedule = nest.create_schedule()
-            return schedule.create_action_plan()
+            return schedule.create_plan()
 
         domains = [
             {"domain": (32, 64)},
@@ -319,46 +325,46 @@ class PackagingTypesTests(unittest.TestCase):
             np_arr = np.array(data, dtype=np.float32)
             np_arr = np_arr.reshape(M, N)
             # input_matrix = Array(role=Array.Role.INPUT, shape=(M, N))
-            input_matrix = Array(role=Array.Role.CONST, shape=(M, N), data=np_arr)
+            input_matrix = Array(role=Array.Role.CONST,
+                                 shape=(M, N), data=np_arr)
             output_matrix = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
-            domain["function"] = package.add_function(embed_buffer(input_matrix, output_matrix),
-                args=(output_matrix,), base_name=f"ew_accumulate_{M}_{N}")
-                # args=(input_matrix,output_matrix,), base_name=f"ew_accumulate_{M}_{N}")
+            domain["function"] = package.add(embed_buffer(input_matrix, output_matrix),
+                                             args=(output_matrix,), base_name=f"ew_accumulate_{M}_{N}")
+            # args=(input_matrix,output_matrix,), base_name=f"ew_accumulate_{M}_{N}")
 
             output_ref = np.ones(output_matrix.shape, dtype=np.float32)
-            domain["correctness_check"] = {"pre": (output_ref,), "post": (output_ref + np_arr,)}
+            domain["correctness_check"] = {
+                "before": (output_ref,), "after": (output_ref + np_arr,)}
 
         package_name = "embedded_unpacked_buffer"
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(package_name, ignore_errors=True)
-        with verifiers.VerifyPackage(self, package_name, output_dir):
-            package.build(package_name, format=Package.Format.MLIR, output_dir=output_dir)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(package_name, format=Package.Format.MLIR_DYNAMIC,
+                          output_dir=output_dir)
 
-        # make sure we can compile the module and resolve the cross-module references
-        benchmark = AutoBenchmark(output_dir)
-
-        for domain in domains:
-            M, N = domain["domain"]
-            mean_time_secs, _ = benchmark.run(domain["function"].name,
-                                           min_timing_iterations=200,
-                                           warmup_iterations=10,
-                                           correctness_check_values=domain["correctness_check"])
-            print(mean_time_secs)
+            # make sure we can compile the module and resolve the cross-module references
+            for domain in domains:
+                v.check_correctness(domain["function"].name, **domain["correctness_check"])
 
     def test_add_callable_function(self) -> None:
         from accera import Array, ScalarType, Nest
 
         package = Package()
-        arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(256, 256))
-        arr2_placeholder = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(arr.shape[0]//8, arr.shape[1]//8))
+        arr = Array(role=Array.Role.INPUT_OUTPUT,
+                    element_type=ScalarType.float32, shape=(256, 256))
+        arr2_placeholder = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(
+            arr.shape[0]//8, arr.shape[1]//8))
 
         # create a nest
         zero_out_nest = Nest(arr2_placeholder.shape)
         i, j = zero_out_nest.get_indices()
+
         @zero_out_nest.iteration_logic
         def _():
             arr2_placeholder[i, j] = 0.
-        zero_out_fn = package.add_function(zero_out_nest, args=(arr2_placeholder,), base_name="zero_out")
+        zero_out_fn = package.add(zero_out_nest, args=(
+            arr2_placeholder,), base_name="zero_out")
 
         # create our main function that calls the nest function
         def main_test(arr):
@@ -371,9 +377,10 @@ class PackagingTypesTests(unittest.TestCase):
             arr2[0, 0] = 3.14
             arr2[-1, -1] = 3.14
 
-        package.add_function(main_test, args=(arr,), base_name="main")
+        package.add(main_test, args=(arr,), base_name="main")
         with verifiers.VerifyPackage(self, "test_add_function", TEST_PACKAGE_DIR):
             package.build("test_add_function", output_dir=TEST_PACKAGE_DIR)
+
 
 class ExecutionPlanTypesTests(unittest.TestCase):
     def test_gpu_config(self) -> None:
@@ -425,7 +432,8 @@ class LogicTypesTests(unittest.TestCase):
         from accera._lang_python._lang import _If
 
         M = 100
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, M))
+        A = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=ScalarType.int32, shape=(M, M))
         nest = Nest(shape=(M, M))
         i, j = nest.get_indices()
 
@@ -437,7 +445,7 @@ class LogicTypesTests(unittest.TestCase):
 
         nest.iteration_logic(test_fn)
         sched = nest.create_schedule()
-        plan = sched.create_action_plan()
+        plan = sched.create_plan()
         implementation = plan._create_function(args=(A, ))
         self.assertIsNotNone(implementation)
 

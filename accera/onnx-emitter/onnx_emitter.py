@@ -26,7 +26,8 @@ from onnxruntime.tools.symbolic_shape_infer import (
 # model = SymbolicShapeInference.infer_shapes(model, auto_merge=True)
 def _infer_shapes(model):
     # cf onnxruntime/tools/symbolic_shape_infer.py
-    ssi = SymbolicShapeInference(int_max=2**31 - 1, auto_merge=True, guess_output_rank=False, verbose=0)
+    ssi = SymbolicShapeInference(
+        int_max=2**31 - 1, auto_merge=True, guess_output_rank=False, verbose=0)
 
     def compute_matmul_shape(node, output_dtype=None, transA=False, transB=False):
         lhs_shape = ssi._get_shape(node, 0)
@@ -62,13 +63,16 @@ def _infer_shapes(model):
                 lhs_shape[-1 if transA else -2], rhs_shape[-2 if transB else -1]]
 
         # merge reduce dim
-        ssi._check_merged_dims([lhs_shape[lhs_reduce_dim], rhs_shape[rhs_reduce_dim]], allow_broadcast=False)
+        ssi._check_merged_dims(
+            [lhs_shape[lhs_reduce_dim], rhs_shape[rhs_reduce_dim]], allow_broadcast=False)
 
         if output_dtype is None:
             # infer output_dtype from input type when not specified
-            output_dtype = ssi.known_vi_[node.input[0]].type.tensor_type.elem_type
+            output_dtype = ssi.known_vi_[
+                node.input[0]].type.tensor_type.elem_type
         vi = ssi.known_vi_[node.output[0]]
-        vi.CopyFrom(helper.make_tensor_value_info(node.output[0], output_dtype, new_shape))
+        vi.CopyFrom(helper.make_tensor_value_info(
+            node.output[0], output_dtype, new_shape))
 
     def infer_FusedMatMul(node):
         transA = get_attribute(node, 'transA', 0) == 1
@@ -137,10 +141,13 @@ def load_model(model_file):
 
 
 def get_target(target_name):
-    if target_name == 'pi3':
+    if target_name == 'pi4':
+        return Target(model=Target.Model.RASPBERRY_PI4)
+    elif target_name == 'pi3':
         return Target(model=Target.Model.RASPBERRY_PI3)
     else:
         return Target.HOST
+
 
 def get_target_options(target):
     if target.model == Target.Model.RASPBERRY_PI3:
@@ -181,18 +188,25 @@ def handle_gemm_node(node, model, package, target=Target.HOST):
 
     # accera BUG: adding name to ctor throws
     # RuntimeError: EmitterContext is not set!
-    A = Array(role=Array.Role.INPUT, element_type=float, shape=A_shape)  # , name=A_input_name)
-    B = Array(role=Array.Role.INPUT, element_type=float, shape=B_shape)  # , name=B_input_name)
-    C = Array(role=Array.Role.INPUT, element_type=float, shape=C_shape)  # , name=node.input([2])
-    Y = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=Y_shape)  # , name=Y_output_name)
+    A = Array(role=Array.Role.INPUT, element_type=float,
+              shape=A_shape)  # , name=A_input_name)
+    B = Array(role=Array.Role.INPUT, element_type=float,
+              shape=B_shape)  # , name=B_input_name)
+    C = Array(role=Array.Role.INPUT, element_type=float,
+              shape=C_shape)  # , name=node.input([2])
+    Y = Array(role=Array.Role.INPUT_OUTPUT, element_type=float,
+              shape=Y_shape)  # , name=Y_output_name)
 
     emitted_info = {}
     opts = get_target_options(target)
     B_init_data = get_initializer(model, B_input_name)
     if B_init_data:
-        print(f"B Initializer detected for {node.name} for input {B_input_name}")
-        opts = opts._replace(PackBFuncName=f"{node.name}_reshape_B", PackBBufferSizeFuncName=f"{node.name}_reshape_B_size")
-        emitted_info['node_packing_functions'] = {B_input_name: [opts.PackBFuncName, opts.PackBBufferSizeFuncName]}
+        print(
+            f"B Initializer detected for {node.name} for input {B_input_name}")
+        opts = opts._replace(
+            PackBFuncName=f"{node.name}_reshape_B", PackBBufferSizeFuncName=f"{node.name}_reshape_B_size")
+        emitted_info['node_packing_functions'] = {B_input_name: [
+            opts.PackBFuncName, opts.PackBBufferSizeFuncName]}
 
     plan, args = MLAS(A, B, Y, alpha=alpha, transA=transA, transB=transB,
                       beta=beta, bias=C, zero_C=True, opts=opts, target=target)
@@ -209,8 +223,8 @@ def handle_gemm_node(node, model, package, target=Target.HOST):
             list(arg.shape) for arg in [A, B, C, Y]]
     })
 
-    return package.add_function(plan, args=[A, B, C, Y], base_name=node.name,
-                                auxiliary={ONNXHATPackage.AuxTableName: emitted_info})
+    return package.add(plan, args=[A, B, C, Y], base_name=node.name,
+                       auxiliary={ONNXHATPackage.AuxTableName: emitted_info})
 
 
 def handle_matmul_node(node, model, package, target=Target.HOST):
@@ -231,9 +245,12 @@ def handle_matmul_node(node, model, package, target=Target.HOST):
           f"\nC = [{', '.join(map(str, C_shape))}]"
           f"\nalpha = {alpha} transA = {transA} transB = {transB}")
 
-    A = Array(role=Array.Role.INPUT, element_type=float, shape=A_shape)  # , name=A_input_name)
-    B = Array(role=Array.Role.INPUT, element_type=float, shape=B_shape)  # , name=B_input_name)
-    C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=C_shape)  # , name=C_output_name)
+    A = Array(role=Array.Role.INPUT, element_type=float,
+              shape=A_shape)  # , name=A_input_name)
+    B = Array(role=Array.Role.INPUT, element_type=float,
+              shape=B_shape)  # , name=B_input_name)
+    C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float,
+              shape=C_shape)  # , name=C_output_name)
 
     emitted_info = {}
 
@@ -241,9 +258,12 @@ def handle_matmul_node(node, model, package, target=Target.HOST):
     opts = get_target_options(target)
 
     if B_init_data:
-        print(f"B Initializer detected for {node.name} for input {B_input_name}")
-        opts = opts._replace(PackBFuncName=f"{node.name}_reshape_B", PackBBufferSizeFuncName=f"{node.name}_reshape_B_size")
-        emitted_info['node_packing_functions'] = {B_input_name: [opts.PackBFuncName, opts.PackBBufferSizeFuncName]}
+        print(
+            f"B Initializer detected for {node.name} for input {B_input_name}")
+        opts = opts._replace(
+            PackBFuncName=f"{node.name}_reshape_B", PackBBufferSizeFuncName=f"{node.name}_reshape_B_size")
+        emitted_info['node_packing_functions'] = {B_input_name: [
+            opts.PackBFuncName, opts.PackBBufferSizeFuncName]}
 
     emitted_info.update({
         ONNXHATPackage.NodeNameKey: node.name,
@@ -255,9 +275,10 @@ def handle_matmul_node(node, model, package, target=Target.HOST):
         ONNXHATPackage.NodeArgShapesKey: list(arg.shape for arg in [A, B, C])
     })
 
-    plan, args = MLAS(A, B, C, alpha=alpha, transA=transA, transB=transB, zero_C=True, opts=opts, target=target)
-    return package.add_function(plan, args, base_name=node.name,
-                                auxiliary={ONNXHATPackage.AuxTableName: emitted_info})
+    plan, args = MLAS(A, B, C, alpha=alpha, transA=transA,
+                      transB=transB, zero_C=True, opts=opts, target=target)
+    return package.add(plan, args, base_name=node.name,
+                       auxiliary={ONNXHATPackage.AuxTableName: emitted_info})
 
 
 ONNX_NODE_HANDLERS = {
@@ -267,7 +288,7 @@ ONNX_NODE_HANDLERS = {
 }
 
 
-def emit_package_for_model(model, output_dir, large_model=False, target=Target.HOST, format=Package.Format.HAT, mode=Package.Mode.RELEASE):
+def emit_package_for_model(model, output_dir, large_model=False, target=Target.HOST, format=Package.Format.HAT_STATIC, mode=Package.Mode.RELEASE):
     model = _infer_shapes(model)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -290,10 +311,12 @@ def emit_package_for_model(model, output_dir, large_model=False, target=Target.H
 
 def main(args=[]):
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--input', help='The input model file', default=None)
+    parser.add_argument(
+        '-i', '--input', help='The input model file', default=None)
     parser.add_argument('-t', '--target', help='The target the emitter is emitting HAT package for',
                         default='host', choices=['pi3', 'host'])
-    parser.add_argument('-o', '--output', help='The output model file', default=None)
+    parser.add_argument(
+        '-o', '--output', help='The output model file', default=None)
     args = parser.parse_args(args)
 
     model = load_model(args.input)

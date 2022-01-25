@@ -56,7 +56,7 @@ class Function:
     public: bool = False
     external: bool = False
     decorated: bool = True    # do we want to expose this?
-    requested_args: tuple = () # args as provided into Package.add_function
+    requested_args: tuple = () # args as provided into Package.add
     args: tuple = () # unpacked versions of the args (as native arrays)
     param_overrides: dict = field(default_factory=dict) # overrides for constants
     definition: Callable = None

@@ -39,16 +39,16 @@ class Nest:
 
         return Schedule(self)
 
-    def create_action_plan(
+    def create_plan(
         self, target: "accera.Target" = Target.HOST
-    ) -> "accera.ActionPlan":
-        """Convenience syntax to create an action plan from this nest
+    ) -> "accera.Plan":
+        """Convenience syntax to create a plan from this nest
 
         Args:
             target: Optional target specification. Defaults to the HOST
         """
 
-        return self.create_schedule().create_action_plan(target)
+        return self.create_schedule().create_plan(target)
 
     def get_shape(self) -> List[int]:
         """Gets the iteration space extents

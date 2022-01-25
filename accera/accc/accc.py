@@ -40,6 +40,7 @@ default_target = target_options[0]
 class SystemTarget(Enum):
     HOST = "host"
     AVX512 = "avx512"
+    RPI4 = "pi4"
     RPI3 = "pi3"
     RPI0 = "pi0"
 
@@ -74,6 +75,7 @@ LLVM_TOOLING_OPTS = {
     SystemTarget.HOST.value: ["-O3",
                   "-fp-contract=fast",
                   "-mcpu=native"],
+    SystemTarget.RPI4.value: ["-O3", "-fp-contract=fast", "--march=arm", "-mcpu=cortex-a72", "--mtriple=armv7-linux-gnueabihf"],
     SystemTarget.RPI3.value: ["-O3", "-fp-contract=fast", "--march=arm", "-mcpu=cortex-a53", "--mtriple=armv7-linux-gnueabihf"],
     SystemTarget.RPI0.value: ["-O3", "-fp-contract=fast", "--march=arm", "-mcpu=arm1136jf-s", "--mtriple=armv6-linux-gnueabihf"],
     SystemTarget.AVX512.value: ["-O3", "-fp-contract=fast", "--march=x86-64", "-mcpu=skylake-avx512"]
@@ -157,139 +159,6 @@ class AcceraCMakeProject:
             return BuiltAcceraProgram(built_target_path)
         else:
             return BuiltAcceraEmittedLibrary(built_target_path)
-
-
-class AcceraSharedLibraryBuildProject:
-    """A build project that uses the native (target-specific) build tools. Use when dependencies like CMake are
-    not required. For example, when building a shared library that can be called from python.
-    """
-    def __init__(self, project_dir, target_name, exports=None, link_target_paths=None, additional_srcs=None):
-        prefix = BuildConfig.shared_library_prefix
-        suffix = BuildConfig.shared_library_extension
-
-        self.target_name = prefix + target_name + suffix
-        self.project_dir = os.path.abspath(project_dir)
-        self.exports = exports
-        self.link_target_paths = link_target_paths
-        self.compiler = pathlib.Path(BuildConfig.cxx_compiler).name
-        self.additional_srcs = additional_srcs
-
-        # runtime check for GPU support (check for the presence of the Vulkan loader library)
-        # this part is rather fragile. Things to note:
-        # - find_library(module_name) relies on LD_LIBRARY_PATH on Linux, DYLD_LIBRARY_PATH on macOS, and PATH on Windows
-        # - we try not to use the fully-qualified path as the module name, because this is derived from CMake (BuildConfig)
-        #   and therefore reflects the build machine's environment (rather than the user's)
-        # - if all fails, the user may need to re-install Vulkan SDK or set the above env variables to point to the right locations
-        self.include_gpu_support = False
-        vulkan_loader = pathlib.Path(BuildConfig.vulkan_loader_library)
-        if is_windows():
-            vulkan_loader = vulkan_loader.with_suffix("")
-
-        print(f"### Searching for: {vulkan_loader.name} ... ")
-        found = ctypes.util.find_library(vulkan_loader.name)
-
-        if not found and os.path.isfile(BuildConfig.vulkan_loader_library):
-            found = BuildConfig.vulkan_loader_library  # fallback to the build environment's path
-
-        if found:
-            print(f"### Found {found}")
-            self.vulkan_loader_path = pathlib.Path(found)
-            self.include_gpu_support = True
-
-        if self.include_gpu_support:
-            try:
-                with importlib.resources.path("accera",
-                                            f"{prefix}acc-vulkan-runtime-wrappers{suffix}") as path:
-                    self.vulkan_runtime_wrapper_path = path
-            except FileNotFoundError as e:
-                if os.path.isfile(BuildConfig.vulkan_runtime_wrapper_shared_library):
-                    self.vulkan_runtime_wrapper_path = pathlib.Path(BuildConfig.vulkan_runtime_wrapper_shared_library)
-                else:
-                    raise(e) # packaging issue
-
-            if is_windows():
-                self.link_target_paths += [self.vulkan_runtime_wrapper_path.with_suffix(BuildConfig.static_library_extension)]
-            else:
-                self.link_target_paths += [self.vulkan_runtime_wrapper_path]
-
-        # OpenMP runtime library
-        openmp_library = pathlib.Path(BuildConfig.openmp_library)
-        print(f"### Searching for: {openmp_library.name} ... ")
-        found = ctypes.util.find_library(openmp_library.name)
-
-        if not found:
-            # TODO: need to make this logic cleaner
-            if os.path.isfile(BuildConfig.openmp_library):
-                # build environment has libomp installed
-                found = BuildConfig.openmp_library
-            elif "NOTFOUND" in BuildConfig.openmp_library and ctypes.util.find_library("omp"):
-                # build environment does not have libomp installed (e.g. manylinux), but the
-                # target environment has it as a system lib
-                if sys.platform.startswith("linux"):
-                    found = "-lomp5"
-                elif sys.platform.startswith("darwin"):
-                    found = "-lomp"
-                # BUGBUG: windows + omp is not officially supported while the
-                # install location of libomp is non-standard
-                # One option is for the caller to pass in a parameter
-
-        if found:
-            print(f"### Found {found}")
-            self.link_target_paths += [pathlib.Path(found)]
-
-        # remove dependent object file and exports, and cast paths to strings
-        self.link_target_paths = [str(obj) for obj in self.link_target_paths if pathlib.Path(obj).stem != "AcceraGPUUtilities"]
-        self.exports = [fn for fn in exports if not fn.startswith("AcceraGPU")]
-
-    def build(self, build_dir_name="build", stdout=None, stderr=None, pretend=False):
-        # TODO: support build_config
-
-        build_dir = os.path.join(self.project_dir, build_dir_name)
-        print()
-        print("### Building Accera native project for {} in {}...".format(self.target_name, build_dir))
-        print()
-        makedir(build_dir, pretend=pretend)
-
-        if is_windows():
-            dllmain_obj = self._build_dllmain(build_dir, stdout, stderr, pretend)
-            self.link_target_paths += [str(dllmain_obj)]
-
-        built_target_path = self._build_shared_library(build_dir, stdout, stderr, pretend)
-        dependencies = [self.vulkan_runtime_wrapper_path, self.vulkan_loader_path] if self.include_gpu_support else []
-        return BuiltAcceraEmittedLibrary(built_target_path, dependencies=dependencies)
-
-    def _build_dllmain(self, build_dir, stdout, stderr, pretend):
-        assert(is_windows())
-        dllpath = pathlib.Path(build_dir) / self.target_name
-        dllmain_cc = dllpath.with_name(f"{dllpath.stem}_dllmain.cc")
-        dllmain_obj = dllmain_cc.with_suffix(".obj")
-
-        with dllmain_cc.open(mode="w") as f:
-            f.writelines(ACCCConfig.dllmain_cc_contents)
-        command = [self.compiler, "/Fo" + str(dllmain_obj), "/c", str(dllmain_cc)]
-        try:
-            run_command(command, build_dir, stdout=stdout, stderr=stderr, pretend=pretend)
-        except FileNotFoundError as e:
-            print("cl.exe not found. Please run this from a Visual Studio 'x64 Native Tools Command Prompt.'")
-            raise (e)
-        return dllmain_obj
-
-    def _build_shared_library(self, build_dir, stdout, stderr, pretend):
-        so_path = pathlib.Path(build_dir) / self.target_name
-
-        if is_windows():
-            command = [self.compiler, "-I", self.project_dir] + self.additional_srcs + \
-                     ["-link", "-nologo", "-dll", "-FORCE:MULTIPLE"] + [f"-EXPORT:{fn}" for fn in self.exports] + \
-                     [f"-out:{str(so_path)}"] + self.link_target_paths
-        else:
-            command = [self.compiler, "-shared", "-fPIC", "-I", self.project_dir] + \
-                self.additional_srcs + self.link_target_paths
-            if self.include_gpu_support:
-                command += [f"-Wl,-rpath,{self.vulkan_runtime_wrapper_path.parent}"]
-            command += ["-o"] + [so_path]
-
-        run_command(command, build_dir, stdout=stdout, stderr=stderr, pretend=pretend)
-        return so_path
 
 
 def create_simple_project_dir(project_root_dir, root_files=[], src_files=[], include_files=[],

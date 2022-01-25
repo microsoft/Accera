@@ -11,7 +11,7 @@ Builds a HAT package.
 argument | description | type/default
 --- | --- | ---
 `name` | The package name. | string
-`format` | The format of the package. | `accera.Package.Format`
+`format` | The format of the package. | `accera.Package.Format`, defaults to `Package.Format.HAT_STATIC`
 `mode` | The package mode, such as whether it is optimized or used for debugging. | `robopy.Package.Mode`, defaults to `Package.Mode.Release`
 `platform` | The platform where the package will run. | `accera.Package.Platform`
 `tolerance` | The tolerance for correctness checking when `mode = Package.Mode.Debug`. | float, defaults to 1e-5
@@ -19,47 +19,46 @@ argument | description | type/default
 
 ## Examples
 
-Build a HAT package called `myPackage` containing `func1` for the host platform in the current directory:
+Build a Dynamically-linked HAT package called `myPackage` containing `func1` for the host platform in the current directory:
 
 ```python
 package = acc.Package()
-package.add_function(plan, base_name="func1")
-package.build(format=acc.Package.Format.HAT, name="myPackage")
+package.add(plan, base_name="func1")
+package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage")
 ```
 
-Build a HAT package called `myPackage` containing `func1` for the host platform in the `hat_packages` subdirectory:
+Build a statically-linked HAT package called `myPackage` containing `func1` for the host platform in the `hat_packages` subdirectory:
 
 ```python
 package = acc.Package()
-package.add_function(plan, base_name="func1")
-package.build(format=acc.Package.Format.HAT, name="myPackage", output_dir="hat_packages")
+package.add(plan, base_name="func1")
+package.build(format=acc.Package.Format.HAT_STATIC, name="myPackage", output_dir="hat_packages")
 ```
 
-
-Builds `myPackage` with additional intermediate MLIR files for debugging purposes:
+Build a statically-linked `myPackage` with additional intermediate MLIR files for debugging purposes. To build a dynamically-linked package, use `acc.Package.Format.MLIR_DYNAMIC`:
 
 ```python
 package = acc.Package()
-package.add_function(plan, base_name="func1")
-package.build(format=acc.Package.Format.MLIR, name="myPackage")
+package.add(plan, base_name="func1")
+package.build(format=acc.Package.Format.MLIR_STATIC, name="myPackage")
 ```
 
 Build a package with error checking for `func1`, outputing error messages to `stderr` if the default implementation and the Accera implementation do not match within a tolerance of `1.0e-6`:
 
 ```python
 package = acc.Package()
-package.add_function(plan, base_name="func1")
-package.build(format=acc.Package.Format.HAT, name="myPackage", mode=acc.Package.Mode.DEBUG, tolerance=1.0e-6)
+package.add(plan, base_name="func1")
+package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", mode=acc.Package.Mode.DEBUG, tolerance=1.0e-6)
 ```
 
-Cross-compile a HAT package called `myPackage` containing `func1` for the Raspberry Pi 3:
+Cross-compile a statically-linked HAT package called `myPackage` containing `func1` for the Raspberry Pi 3. Note that dynamically-linked HAT packages are not supported for cross-compilation:
 
 ```python
 pi3 = Target(model=Target.Model.RASPBERRY_PI3)
-plan = schedule.create_action_plan(target=pi3)
+plan = schedule.create_plan(target=pi3)
 package = acc.Package()
-package.add_function(plan, base_name="func1")
-package.build(format=acc.Package.Format.HAT, name="myPackagePi3", platform=acc.Package.Platform.RASPBIAN)
+package.add(plan, base_name="func1")
+package.build(format=acc.Package.Format.HAT_STATIC, name="myPackagePi3", platform=acc.Package.Platform.RASPBIAN)
 ```
 
 <div style="page-break-after: always;"></div>

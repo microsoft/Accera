@@ -466,14 +466,30 @@ class Package:
             proj.module_file_sets[0].object_filepath
         )
 
-        # Collect the supporting modules as dependencies
-        # BUGBUG: carry forward the function metadata as well, for calling the GPU init/uninit functions in C++
-        supporting_objs = [hat.LibraryReference(
-            target_file = os.path.abspath(os.path.join(
-                output_dir, hat.HATFile.Deserialize(h).dependencies.link_target))
-        ) for h in supporting_hats]
+        supporting_hats = map(hat.HATFile.Deserialize, supporting_hats)
+        supporting_objs = []
+        supporting_decls = []
+        for support in supporting_hats:
+            path = os.path
+            dependency_path = path.abspath(path.join(
+                output_dir, support.dependencies.link_target))
 
+            # Collect the supporting modules as dependencies
+            supporting_objs.append(
+                hat.LibraryReference(target_file=dependency_path))
+
+            # Collecting the supporting code decls
+            supporting_decls.append(
+                support.declaration.code)
+
+            # Merge the function maps
+            hat_file._function_table.function_map.update(
+                support._function_table.function_map)
+
+        decl_code = hat_file.declaration.code
         hat_file.dependencies.dynamic = dynamic_dependencies + supporting_objs
+        hat_file.declaration.code = decl_code._new(
+            '\n'.join(map(str, ['', decl_code] + supporting_decls)))
 
         for fn_name in self._fns:
             if self._fns[fn_name].public:
@@ -518,7 +534,7 @@ class Package:
             hat.create_static_package(header_path, lib_hat_path)
             shutil.move(lib_hat_path, header_path)
         # TODO: plumb cross-compilation of static libs
- 
+
         return proj.module_file_sets
 
     def add_description(

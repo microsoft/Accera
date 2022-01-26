@@ -54,7 +54,7 @@ package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", mode=acc.
 Cross-compile a statically-linked HAT package called `myPackage` containing `func1` for the Raspberry Pi 3. Note that dynamically-linked HAT packages are not supported for cross-compilation:
 
 ```python
-pi3 = Target(model=Target.Model.RASPBERRY_PI3)
+pi3 = Target("Raspberry Pi 3B", category=Target.Category.CPU)
 plan = schedule.create_plan(target=pi3)
 package = acc.Package()
 package.add(plan, base_name="func1")

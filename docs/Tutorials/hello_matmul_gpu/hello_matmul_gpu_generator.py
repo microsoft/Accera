@@ -49,6 +49,6 @@ plan.bind((i, j, ii, jj), grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y
 package = acc.Package()
 package.add(plan, args=(A, B, C), base_name="hello_matmul_gpu")
 
-# Build a staically-linked HAT package to be consumed by the C++ runner
+# Build a statically-linked HAT package to be consumed by the C++ runner
 # Change format=acc.Package.Format.HAT_STATIC to format=acc.Package.Format.MLIR_STATIC to also generate MLIR to _tmp/hello_matmul_gpu
 package.build("hello_matmul_gpu", format=acc.Package.Format.HAT_STATIC)

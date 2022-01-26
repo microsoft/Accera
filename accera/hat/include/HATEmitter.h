@@ -22,7 +22,7 @@ template <typename StreamType>
 void EnableTOML(StreamType& os)
 {
     os << "\n";
-    os << "#ifdef __TOML__";
+    os << "#ifdef TOML";
     os << "\n";
 }
 
@@ -30,7 +30,7 @@ template <typename StreamType>
 void DisableTOML(StreamType& os)
 {
     os << "\n";
-    os << "#endif // __TOML__";
+    os << "#endif // TOML";
     os << "\n";
 }
 

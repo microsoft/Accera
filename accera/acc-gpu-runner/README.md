@@ -1,7 +1,7 @@
 # acc-gpu-runner
 
 The `acc-gpu-runner` tool is functionally a wrapper around `acc-opt` and `mlir-vulkan-runner`.
-It takes in a Accera-emitted MLIR file produced by a Accera generator and does the following:
+It takes in an Accera-emitted MLIR file produced by an Accera generator and does the following:
 - Runs the Accera lowering passes like `acc-opt` does
 - Runs the GPU and Vulkan passes that `mlir-vulkan-runner` does
 - Runs the lowered MLIR code in a GPU JIT engine

@@ -209,21 +209,21 @@ Now that we have written the code, we will compile and link it with the HAT pack
 We will need the 64-bit Visual C++ tools to link against the generated 64-bit .obj. From an __"x64 Native Tools Command Prompt"__:
 
 ```
-cl.exe hello_matmul_runner.cpp hello_matmul.obj
+cl.exe hello_matmul_runner.cpp *.lib
 hello_matmul_runner.exe
 ```
 
 ##### MacOS
 
 ```
-clang hello_matmul_runner.cpp hello_matmul.o -o hello_matmul_runner
+clang hello_matmul_runner.cpp *.a -o hello_matmul_runner
 ./hello_matmul_runner
 ```
 
 ##### Ubuntu
 
 ```
-gcc hello_matmul_runner.cpp hello_matmul.o -o hello_matmul_runner
+gcc hello_matmul_runner.cpp *.a -o hello_matmul_runner
 ./hello_matmul_runner
 ```
 

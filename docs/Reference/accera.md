@@ -118,6 +118,6 @@ A target platform for the cross-compiler.
 ### Enumerations
 * [`accera.Target.Architecture`](<classes/Target/Architecture.md>)
 * [`accera.Target.Category`](<classes/Target/Category.md>)
-* [`accera.Target.Model`](<classes/Target/Model.md>)
+* [`accera.Target.Models`](<classes/Target/Model.md>)
 
 <div style="page-break-after: always;"></div>

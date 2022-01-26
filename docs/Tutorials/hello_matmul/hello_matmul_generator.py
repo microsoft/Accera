@@ -22,11 +22,11 @@ i, j, k = nest.get_indices()
 def _():
     C[i, j] += A[i, k] * B[k, j]
 
-sched = nest.create_schedule()
+schedule = nest.create_schedule()
 # Split the k loop into blocks of 4
-kk = sched.split(k, 4)
+kk = schedule.split(k, 4)
 
-plan = sched.create_plan()
+plan = schedule.create_plan()
 # Then unroll kk
 plan.unroll(kk)
 

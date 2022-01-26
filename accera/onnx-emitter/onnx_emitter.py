@@ -142,15 +142,16 @@ def load_model(model_file):
 
 def get_target(target_name):
     if target_name == 'pi4':
-        return Target(model=Target.Model.RASPBERRY_PI4)
+        return Target(Target.Model.RASPBERRY_PI_4B, category=Target.Category.CPU)
     elif target_name == 'pi3':
-        return Target(model=Target.Model.RASPBERRY_PI3)
+        return Target("Raspberry Pi 3B", category=Target.Category.CPU)
     else:
         return Target.HOST
 
 
 def get_target_options(target):
-    if target.model == Target.Model.RASPBERRY_PI3:
+    if "Raspberry Pi" in target.name:
+        # TODO: Make use of the different attributes between the Pi devices
         return MLASOptions(KUnroll=2,
                            BCacheSizeThreshold=64**1,
                            NumRowsInKernel=2,

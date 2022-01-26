@@ -3,7 +3,7 @@
 
 # Safety Analysis
 
-One of the most important features of the Accera language is that it can provide safety guarantees, which make the programmer's job easier. We say that a Accera schedule is *safe* if its underlying logic is guaranteed not to change, regardless of how we transform it. Not all Accera schedules are safe, but those that are safe are much easier to work with.
+One of the most important features of the Accera language is that it can provide safety guarantees, which make the programmer's job easier. We say that an Accera schedule is *safe* if its underlying logic is guaranteed not to change, regardless of how we transform it. Not all Accera schedules are safe, but those that are safe are much easier to work with.
 
 First, note that order-invariant schedules are obviously safe. This is because Accera transformations only change the order of the loop-nest iterations, never remove any iterations, and possibly add empty iterations in the form of padding. Recall that a `Nest` represents a simple nest, which is assumed to be order-invariant, and therefore any schedule that was created by a call to `create_schedule()` is safe.
 

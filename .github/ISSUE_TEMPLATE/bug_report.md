@@ -1,7 +1,7 @@
 ---
 name: Bug report
 about: Create a report to help us improve
-title: 'BUG: <enter bug title>'
+title: '[BUG] <enter bug title>'
 labels: ''
 assignees: ''
 
@@ -11,7 +11,7 @@ assignees: ''
 <!-- Please read our Rules of Conduct: https://opensource.microsoft.com/codeofconduct/ -->
 <!-- Please search for existing issues to avoid creating duplicates. -->
 <!-- Incomplete reports will lead to closing the issue. -->
-<!-- Also, please test using the latest master make sure your issue has not already been fixed -->
+<!-- Also, please test using the latest main and make sure your issue has not already been fixed -->
 
 **Describe the bug**
 A clear and concise description of what the bug is.
@@ -24,7 +24,7 @@ A clear and concise description of what the bug is.
 
 **To Reproduce**
 <!--  Include a detailed step by step process for recreating your issue. -->
-<!-- If your issue includes code, create a [gist](https://gist.github.com/) and past the link here. -->
+<!-- If your issue includes code, create a [gist](https://gist.github.com/) and paste the link here. -->
 Steps to reproduce the behavior:
 1. 
 2. 
@@ -34,4 +34,4 @@ Include the full error message in text form so that we can help troubleshoot qui
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 
-**What's better than filing an issue? Filing a pull request :).**
+**What's better than filing an issue? Opening a pull request :).**

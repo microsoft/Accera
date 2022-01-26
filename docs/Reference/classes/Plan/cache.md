@@ -53,7 +53,7 @@ AAA = plan.cache(AA, level=2)
 
 __Not yet implemented:__ Create a cache of array `A` at index `i` in GPU shared memory:
 ```python
-v100 = Target(model=acc.Target.Models.NVIDIA_TESLA_V100)
+v100 = Target(Target.Model.NVIDIA_V100)
 AA = plan.cache(A, i, location=v100.MemoryType.SHARED)
 ```
 

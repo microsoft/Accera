@@ -1465,18 +1465,17 @@ class DSLTest_04Fusing(unittest.TestCase):
 
 class DSLTest_05Targets(unittest.TestCase):
     def test_known_targets(self) -> None:
-        intel_generation_7 = Target(
-            model=Target.Model.INTEL_CORE_GENERATION_7, num_threads=44)
-        self.assertEqual(intel_generation_7.model,
-                         Target.Model.INTEL_CORE_GENERATION_7)
-        self.assertEqual(intel_generation_7.num_threads, 44)  # override
-        self.assertEqual(intel_generation_7.vector_bytes, 32)  # default
-        self.assertEqual(intel_generation_7.vector_registers, 16)  # default
-        self.assertEqual(intel_generation_7.category,
-                         Target.Category.CPU)  # default
+        intel_name = "Intel 6400"
+        intel = Target(known_name=intel_name, num_threads=44)
+        self.assertEqual(intel.name, intel_name)
+        self.assertEqual(intel.num_threads, 44)  # override
+        self.assertEqual(intel.vector_bytes, 32)  # default
+        self.assertEqual(intel.vector_registers, 16)  # default
+        self.assertEqual(intel.category, Target.Category.CPU)  # default
 
-        pi3 = Target(model=Target.Model.RASPBERRY_PI3, frequency_GHz=1.2)
-        self.assertEqual(pi3.model, Target.Model.RASPBERRY_PI3)
+        pi3_name = "Raspberry Pi 3B"
+        pi3 = Target(Target.Model.RASPBERRY_PI_3B, category=Target.Category.CPU, frequency_GHz=1.2)
+        self.assertEqual(pi3.name, pi3_name)
         self.assertEqual(pi3.num_threads, 8)
         self.assertEqual(pi3.category, Target.Category.CPU)
 
@@ -1500,8 +1499,9 @@ class DSLTest_05Targets(unittest.TestCase):
         self.assertTrue("SSE3" in my_target.extensions)
 
     def test_gpu_targets(self) -> None:
-        v100 = Target(model=Target.Model.NVIDIA_TESLA_V100)
-        self.assertEqual(v100.model, Target.Model.NVIDIA_TESLA_V100)
+        v100_name = "NVidia V100"
+        v100 = Target(Target.Model.NVIDIA_V100, category=Target.Category.GPU)
+        self.assertEqual(v100.name, v100_name)
         self.assertEqual(v100.default_block_size, 16)
         self.assertEqual(v100.category, Target.Category.GPU)
 
@@ -1617,7 +1617,7 @@ class DSLTest_06PlansCaching(unittest.TestCase):
         def _():
             A[i] += 2
 
-        v100 = Target(model=Target.Model.NVIDIA_TESLA_V100, num_threads=16)
+        v100 = Target(Target.Model.NVIDIA_V100, category=Target.Category.GPU, num_threads=16)
         plan = nest.create_plan(v100)
 
         plan.cache(i, type=v100.MemoryType.SHARED)
@@ -1863,7 +1863,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
         def _():
             C[i, j] += A[i, k] * B[k, j]
 
-        target = Target(model=Target.Model.HOST, num_threads=16)
+        target = Target("HOST", num_threads=16)
         plan = nest.create_plan(target)
 
         plan.parallelize(indices=(i, j, k), pin=(
@@ -1885,7 +1885,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
         def _():
             C[i, j] += A[i, k] * B[k, j]
 
-        v100 = Target(model=Target.Model.NVIDIA_TESLA_V100, num_threads=16)
+        v100 = Target(Target.Model.NVIDIA_V100, category=Target.Category.GPU, num_threads=16)
         plan = nest.create_plan(v100)
 
         plan.bind(indices=(i, j, k), map=(v100.GridUnit.BLOCK_X,
@@ -1906,7 +1906,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
         def _():
             C[i, j] += A[i, k] * B[k, j]
 
-        target = Target(model=Target.Model.HOST, num_threads=16)
+        target = Target("HOST", num_threads=16)
 
         # disable correctness checking on windows because the
         # install location of libomp.dll is non-standard as of now
@@ -2325,7 +2325,8 @@ class DSLTest_09Parameters(unittest.TestCase):
         def _():
             C[i, j] += A[i, k] * B[k, j]
 
-        target = Target(model=Target.Model.HOST, num_threads=16)
+        target = Target("HOST", num_threads=16)
+        assert target.architecture == Target.Architecture.HOST
 
         # disable correctness checking on windows because the
         # install location of libomp.dll is non-standard as of now
@@ -2783,7 +2784,7 @@ class DSLTest_10Packages(unittest.TestCase):
     def test_HAT_packages(self) -> None:
         from accera import Target
 
-        pi3 = Target(model=Target.Model.RASPBERRY_PI3)
+        pi3 = Target(Target.Model.RASPBERRY_PI_3B, category=Target.Category.CPU)
         plan, A = self._create_plan(pi3)
 
         package = Package()

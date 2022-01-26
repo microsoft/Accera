@@ -106,7 +106,7 @@ The next step is to create a plan from the schedule. For instance, we can use th
 
 ```python
 # Create a plan, specify the target to be a Raspberry Pi 3
-pi3 = acc.Target(model=acc.Target.Model.RASPBERRY_PI3)
+pi3 = acc.Target(acc.Target.Model.RASPBERRY_PI_3B)
 plan = sched.create_plan(pi3)
 
 # Unroll kk, effectively doing this
@@ -134,10 +134,10 @@ package = acc.Package()
 package.add(plan, args=(A, B, C), base_name="hello_matmul_pi3_py")
 ```
 
-Finally, we build the HAT package:
+Finally, we build the statically-linked HAT package for the Raspbian platform:
 ```python
 # Build the HAT package
-package.build(name="hello_matmul_pi3", platform=acc.Package.Platform.RASPBIAN)
+package.build(name="hello_matmul_pi3", format=acc.Package.Format.HAT_STATIC, platform=acc.Package.Platform.RASPBIAN)
 ```
 By now, you should have all the code necessary to generate your Accera MatMul function that can be called on a Raspberry Pi 3 target. You can also find the complete Python script [here](cross_compilation_pi3/hello_matmul_pi3_generator.py).
 
@@ -233,4 +233,4 @@ Calling MatMul M=128, K=256, N=256
 Result (first few elements): 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922
 ```
 
-You can now experiment with the generated MatMul function with your own inputs. Simply modify hello_matmul_pi3_runner.cpp on the Raspberry Pi 3 and recompile with the existing HAT package.
+You can now experiment with the generated MatMul function with your own inputs. Simply modify `hello_matmul_pi3_runner.cpp` on the Raspberry Pi 3 and recompile with the existing HAT package.

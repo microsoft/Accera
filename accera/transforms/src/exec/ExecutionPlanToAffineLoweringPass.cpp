@@ -1671,7 +1671,7 @@ LogicalResult MultiCacheCopyOpRewrite::matchAndRewrite(MultiCacheCopyOp multiCac
     }
 
     // Construct the multiCache loops
-    // TODO : do we benefit from having this layer be a accera loopnest? there are no splits so there are no boundary conditions to account for
+    // TODO : do we benefit from having this layer be an Accera loopnest? there are no splits so there are no boundary conditions to account for
     auto multiCacheLBMapsArrayAttr = adaptor.multiCacheLoopLowerBoundMaps();
     auto multiCacheUBMapsArrayAttr = adaptor.multiCacheLoopUpperBoundMaps();
     auto multiCacheStepsArrayAttr = adaptor.multiCacheLoopStepSizes();

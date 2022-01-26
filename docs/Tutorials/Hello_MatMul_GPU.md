@@ -115,11 +115,11 @@ package.add(plan, args=(A, B, C), base_name="hello_matmul_gpu")
 
 Finally, we build the HAT package:
 ```python
-# Build a staically-linked HAT package to be consumed by the C++ runner
+# Build a statically-linked HAT package to be consumed by the C++ runner
 package.build(name="hello_matmul_gpu", format=acc.Package.Format.HAT_STATIC)
 ```
 
-By now, you have all the code necessary to generate a Accera MatMul function that runs on the GPU. You can also find the complete Python script [here](hello_matmul_gpu/hello_matmul_gpu_generator.py).
+By now, you have all the code necessary to generate an Accera MatMul function that runs on the GPU. You can also find the complete Python script [here](hello_matmul_gpu/hello_matmul_gpu_generator.py).
 
 #### Generate HAT package
 
@@ -241,7 +241,7 @@ set PATH=%PATH%;%ACCERA_PATH%
 Now build and run:
 
 ```shell
-cl.exe hello_matmul_gpu_runner.cpp *.obj %ACCERA_PATH%/*.lib
+cl.exe hello_matmul_gpu_runner.cpp *.lib %ACCERA_PATH%/*.lib
 hello_matmul_gpu_runner.exe
 ```
 
@@ -256,7 +256,7 @@ export ACCERA_PATH=<Location_path>/accera
 Now build and run:
 
 ```shell
-clang++ hello_matmul_gpu_runner.cpp *.o $ACCERA_PATH/*.dylib -o hello_matmul_gpu_runner
+clang++ hello_matmul_gpu_runner.cpp *.a $ACCERA_PATH/*.dylib -o hello_matmul_gpu_runner
 DYLD_LIBRARY_PATH=$ACCERA_PATH ./hello_matmul_gpu_runner
 ```
 
@@ -271,7 +271,7 @@ export ACCERA_PATH=<Location_path>/accera
 Now build and run:
 
 ```shell
-g++ hello_matmul_gpu_runner.cpp *.o $ACCERA_PATH/*.so -o hello_matmul_gpu_runner
+g++ hello_matmul_gpu_runner.cpp *.a $ACCERA_PATH/*.so -o hello_matmul_gpu_runner
 LD_LIBRARY_PATH=$ACCERA_PATH ./hello_matmul_gpu_runner
 ```
 

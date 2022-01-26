@@ -66,5 +66,5 @@ plan.kernelize(unroll_indices=[jjj, iii, kkk], vectorize_indices=jjjj)
 package = acc.Package()
 package.add(plan, args=(A, B, C), base_name="optimized_matmul_py")
 
-# Build a staically-linked HAT package to be consumed by the C++ runner
+# Build a statically-linked HAT package to be consumed by the C++ runner
 package.build(name="optimized_matmul", format=acc.Package.Format.HAT_STATIC)

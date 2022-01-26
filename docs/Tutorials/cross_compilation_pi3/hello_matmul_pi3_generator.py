@@ -22,14 +22,14 @@ i, j, k = nest.get_indices()
 def _():
     C[i, j] += A[i, k] * B[k, j]
 
-sched = nest.create_schedule()
+schedule = nest.create_schedule()
 
 # Split the k loop into blocks of 4
-kk = sched.split(k, 4)
+kk = schedule.split(k, 4)
 
 # Create a plan, specify the target to be a Raspberry Pi 3
-pi3 = acc.Target(model=acc.Target.Model.RASPBERRY_PI3)
-plan = sched.create_plan(pi3)
+pi3 = acc.Target(acc.Target.Model.RASPBERRY_PI_3B)
+plan = schedule.create_plan(pi3)
 
 # Then unroll kk
 plan.unroll(kk)
@@ -39,4 +39,4 @@ package = acc.Package()
 package.add(plan, args=(A, B, C), base_name="hello_matmul_pi3_py")
 
 # Build the HAT package
-package.build(name="hello_matmul_pi3", platform=acc.Package.Platform.RASPBIAN)
+package.build(name="hello_matmul_pi3", format=acc.Package.Format.HAT_STATIC, platform=acc.Package.Platform.RASPBIAN)

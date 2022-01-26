@@ -30,7 +30,7 @@ More precisely, the elements of an array `A` that are touched (read from or writ
 Just like we can specify a current key-slice using a dimension, we can also refer to the active block that corresponds to a dimension. For example, if the names of the iteration space dimensions are `(i, j, k)` and the current iteration is one of the iterations for which `i=3` then the active block in `A` that corresponds to dimension `j` is the block that includes all the elements touched by the key-slice `(3, *, *)`.
 
 ## Caches
-A Accera cache is a local copy of an active block. A cache is contiguous in memory and its memory layout may be different from the layout of the original array. The loop nest iterations operate on the elements of the cache instead of the original array elements.
+An Accera cache is a local copy of an active block. A cache is contiguous in memory and its memory layout may be different from the layout of the original array. The loop nest iterations operate on the elements of the cache instead of the original array elements.
 
 The contents of the active block are copied into the cache at the beginning of the corresponding key-slice. If the array is mutable (namely, if it is an input/output array or a temporary array), the contents of the cache are also copied back into the original array at the end of the key-slice.
 

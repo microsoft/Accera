@@ -147,7 +147,7 @@ package.add(plan, args=(A, B, C), base_name="optimized_matmul_py")
 
 Finally, we build the HAT package:
 ```python
-# Build a staically-linked HAT package to be consumed by the C++ runner
+# Build a statically-linked HAT package to be consumed by the C++ runner
 package.build(name="optimized_matmul", format=acc.Package.Format.HAT_STATIC)
 ```
 
@@ -252,21 +252,21 @@ Now that we have written the code, we will compile and link it with the HAT pack
 We will need the 64-bit Visual C++ tools to link against the generated 64-bit .obj. From an __"x64 Native Tools Command Prompt"__:
 
 ```
-cl.exe optimized_matmul_runner.cpp optimized_matmul.obj
+cl.exe optimized_matmul_runner.cpp *.lib
 optimized_matmul_runner.exe
 ```
 
 ##### MacOS
 
 ```
-clang++ optimized_matmul_runner.cpp optimized_matmul.o -o optimized_matmul_runner
+clang++ optimized_matmul_runner.cpp *.a -o optimized_matmul_runner
 ./optimized_matmul_runner
 ```
 
 ##### Ubuntu
 
 ```
-g++ optimized_matmul_runner.cpp optimized_matmul.o -o optimized_matmul_runner
+g++ optimized_matmul_runner.cpp *.a -o optimized_matmul_runner
 ./optimized_matmul_runner
 ```
 

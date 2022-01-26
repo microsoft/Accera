@@ -1,7 +1,7 @@
 ---
 name: Question
 about: Support Questions
-title: "[Question]: <enter question title>"
+title: "[Q] <enter question title>"
 labels: ''
 assignees: ''
 
@@ -21,6 +21,6 @@ assignees: ''
 
 #### Context details
 <!-- Add OS, Accera version, Python version, if applicable -->
-<!-- If it's too large, you can create a [gist](https://gist.github.com/) and past the link here.  -->
+<!-- If it's too large, you can create a [gist](https://gist.github.com/) and paste the link here.  -->
 
 ### Include details of what you already did to find answers

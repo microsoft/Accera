@@ -178,8 +178,8 @@ This would result in the following vectorized instructions on an Intel Haswell C
 The `parallelize` instruction performs one or more loops in parallel on multiple cores.
 
 ```python
-xeonE5 = acc.Target(model=acc.Target.Model.INTEL_XEON_E5, num_threads=16)
-plan = schedule.create_plan(xeonE5)
+xeonPlat = acc.Target("Intel 9221", num_threads=16)
+plan = schedule.create_plan(xeonPlat)
 plan.parallelize(indices=(i,j,k))
 ```
 Specifying multiple dimensions is equivalent to the `collapse` argument in OpenMP. Therefore, the dimensions must be contiguous in the iteration space dimension order.
@@ -200,7 +200,7 @@ Some target platforms, such as GPUs, are specifically designed to execute nested
 
 For example,
 ```python
-v100 = acc.Target(model=acc.Target.Model.NVIDIA_TESLA_V100)
+v100 = acc.Target("Tesla V100")
 plan.bind(indices=(i, j, k), grid=(v100.GridUnit.BLOCK_X, v100.GridUnit.THREAD_X, v100.GridUnit.THREAD_Y))
 ```
 

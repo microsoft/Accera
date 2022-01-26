@@ -140,7 +140,7 @@ private:
                 callOp.getNumOperands() >= kVulkanLaunchNumConfigOperands);
     }
 
-    /// Checks whether the given LLVM::LLVMFuncOp is marked as a Accera GPU
+    /// Checks whether the given LLVM::LLVMFuncOp is marked as an Accera GPU
     /// initialization func
     bool isRCGPUInitializeFunc(LLVM::LLVMFuncOp op)
     {
@@ -152,7 +152,7 @@ private:
         return funcTags.get(kInitializeFuncAttrName) != nullptr;
     }
 
-    /// Checks whether the given LLVM::LLVMFuncOp is marked as a Accera GPU
+    /// Checks whether the given LLVM::LLVMFuncOp is marked as an Accera GPU
     /// de-initialization func
     bool isRCGPUDeInitializeFunc(LLVM::LLVMFuncOp op)
     {

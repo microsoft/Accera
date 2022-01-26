@@ -11,8 +11,9 @@ Defines the capabilities of a target processor.
 
 argument | description | type/default
 --- | --- | ---
+`known_name` | A name of a device known to Accera | string \| accera.Target.Model / "HOST"
 `architecture` | The processor architecture | accera.Target.Architecture
-`cache_lines` | Cache lines | list of positive integers
+`cache_lines` | Cache lines (kilobytes) | list of positive integers
 `cache_sizes` | Cache sizes (bytes) | list of positive integers
 `category` | The processor category | accera.Target.Category
 `extensions` | Supported processor extensions | list of extension codes
@@ -26,57 +27,11 @@ argument | description | type/default
 `vector_bytes` | Bytes per vector register | positive number
 `vector_registers` | total number of SIMD registers | positive number
 
-## Pre-defined CPU Targets
+## Known device names
 
-Accera provides pre-defined targets for various CPU target architectures including Intel, AMD, and Raspberry Pi. 
+Accera provides a pre-defined list of known target names through the [`accera.Target.Models`](<Model.md>) enumeration.
 
-These pre-defined targets provide typical hardware settings and may not fit exactly to your specific hardware characteristics. If your target matches closely with (but not exactly to) one of these targets, you can always start with a pre-defined target and update the properties accordingly.
-
-### AMD
-
-| Family    | Vector Registers | Vector Bytes | Target Name               |
-| :---------| :--------------- | :----------- | :------------------------ |
-| EPYC      |                  |              | `Target.Model.AMD_EPYC`   |
-| Ryzen     |                  |              | `Target.Model.AMD_Ryzen`  |
-| Zen       |                  |              | `Target.Model.AMD_Zen`    |
-
-### Intel
-
-| Generation  | Intel Core Processor | Instruction Set Extensions             | Family       | Vector Registers | Vector Bytes | Target Name                             |
-| :---------  | :------------------- | :------------------------------------- | :--------------------------| :--| :----------- | :-------------------------------------- |
-| 7th Gen     | Intel Core i7        | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Skylake-X                  | 16 | 32           | `Target.Model.INTEL_CORE_GENERATION_7`  |
-| 8th Gen     | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Coffee Lake                | 16 | 32           | `Target.Model.INTEL_CORE_GENERATION_8`  |
-| 9th Gen     | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Coffee Lake                | 16 | 32           | `Target.Model.INTEL_CORE_GENERATION_9`  |
-| 10th Gen    | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Comet Lake                 | 16 | 32           | `Target.Model.INTEL_CORE_GENERATION_10` |
-| 11th Gen    | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2, Intel AVX-512 | Rocket Lake | 32 | 64           | `Target.Model.INTEL_CORE_GENERATION_11` |
-| 12th Gen    | Intel Core i9 and i7 | Intel SSE4.1, Intel SSE4.2, Intel AVX2 | Alder Lake                 | 16 | 32           | `Target.Model.INTEL_CORE_GENERATION_12` |
-
-- Intel Xeon Processors
-
-| Processor              | Instruction Set Extensions              | Additional Comments |
-| :-----------           | :---------                              | :------------------ |
-| Intel Xeon E Processor |  Intel SSE4.1, Intel SSE4.2, Intel AVX2 | All products launched in this family support this subset of instruction set extensions. However, the latest product launched in Intel Xeon E processor in 2021 also supports AVX-512 extension.|
-
-
-There are other kinds of Intel Xeon Processors, such as Intel Xeon W, Intel Xeon E5 V2, Intel Xeon E5 V3, and
-Intel Xeon E5 V4 which support different kinds of instruction set extensions.
-Processors of the Intel Xeon family support a wide variety of instruction set extensions that are specific to the processor model.
-For example, Server and Desktop models of Intel Xeon E5 V2 support AVX while Intel Xeon E5 V3 and Intel Xeon E5 V4 support AVX2.
-To create targets for a given Intel Xeon processor, you will need to consult its documentation
-[here](https://ark.intel.com/content/www/us/en/ark/products/96901/intel-xeon-processor-e52699r-v4-55m-cache-2-20-ghz.html)
-and define a target specifically for it.
-
-### Raspberry Pi
-
-| Model                  | Cores | Target Name                   |
-| :--------------------- | :---- | :---------------------------- |
-| Raspberry Pi Zero      | 1     | `Target.Model.RASPBERRY_PI0`  |
-| Raspberry Pi 3 Model B | 4     | `Target.Model.RASPBERRY_PI3`  |
-| Raspberry Pi 4 Model B | 4     | `Target.Model.RASPBERRY_PI4`  |
-
-## GPU Targets
-
-Pre-defined GPU targets are a work in progress.
+These known targets provide typical hardware settings and may not fit exactly to your specific hardware characteristics. If your target matches closely with (but not exactly to) one of these targets, you can always start with a known target and update the properties accordingly.
 
 ## Examples
 
@@ -87,19 +42,18 @@ Create a custom CPU target:
 cpu_target = acc.Target(name="Custom processor", category=acc.Target.Category.CPU, architecture=acc.Target.Architecture.X86_64, num_cores=10)
 ```
 
-Create a pre-defined CPU target representing a 10th Generation Intel Core Processor
+We further create a known CPU target and can selectively override fields
 
 ```python
 gen10 = acc.Target(
-		model=acc.Target.Model.INTEL_CORE_GENERATION_10,
+		known_name="Intel 7940X",
                 category=acc.Target.Category.CPU,
-                architecture=acc.Target.Architecture.X86_64,
-                family="Comet Lake",
-                vector_bytes=32,
-                vector_registers=16,
-                extensions=["SSE4.1", "SSE4.2", "AVX2"],
-                _device_name="gen10")
+                extensions=["SSE4.1", "SSE4.2", "AVX2"])
 ```
+
+In this example, we created a target device of a known CPU, but overrode the
+extensions to remove AVX512 support.
+
 You can use this example as a starting point to define any other Intel Core Processor and the specifications
 of them are listed in the table above.
 

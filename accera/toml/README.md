@@ -1,7 +1,7 @@
 # Accera TOML Data
 
 ## Parsing TOML data from headers
-The `toml_header_parser.py` python utility defines utilities for parsing the TOML data from a Accera library header file, extracting the well-known-named entries and collecting custom parameter values.
+The `toml_header_parser.py` python utility defines utilities for parsing the TOML data from an Accera library header file, extracting the well-known-named entries and collecting custom parameter values.
 
 This script requires that you have the `tomlkit` python package installed via
 ```sh
@@ -16,7 +16,7 @@ Accera-generated library headers have TOML metadata embedded in them. The header
 - Utility module declarations
 - TOML data per Accera funtion variant
 
-Each variant of a Accera function will produce a module with TOML data giving:
+Each variant of an Accera function will produce a module with TOML data giving:
 - The variant module name
 - The variant function name
 - The variant module initialize function name

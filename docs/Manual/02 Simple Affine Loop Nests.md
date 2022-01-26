@@ -168,7 +168,7 @@ __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
 ## Accera program stages
-We take a step back to describe the stages of a Accera program:
+We take a step back to describe the stages of an Accera program:
 
 * `Nest`: A nest captures the logic of a simple nest, without any optimizations or implementation details.
 * `Schedule`: A `Nest` is used to create a schedule. The schedule controls the order in which the nest iterations are visited. Multiple schedules can be fused into a single schedule, which may no longer represent a simple nest.

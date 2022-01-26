@@ -20,9 +20,9 @@ The major dimension is the only one whose size is not necessarily defined at com
 The memory map can be explicitly specified by the user, but Accera also offers some shortcuts. The user can set the layout to be `FIRST_MAJOR` (e.g., for two dimensional arrays, first-major is equivalent to row-major) or `LAST_MAJOR`. In both cases, the affine map is inferred from the array shape. Specifically, if the layout is `LAST_MAJOR` and the shape is denoted by the vector *s*, then the map *a* is set to *[1, s0, s0&times;s1, s0&times;s1&times;s2, ...]*. If the layout is `FIRST_MAJOR` and the dimension equals 4, then *a* is set to *[s0&times;s1&times;s2, s1&times;s2, s2, 1]*. Note that, in both cases, the size of the major dimension is not used in the definition of *a*, which hints as to why the major dimension size does not need to be defined at compile time. If no layout is specified, the default layout is `FIRST_MAJOR`.
 
 ## Array properties
-Accera arrays are either defined with internal scope or external scope. An internal array only exists inside a specific Accera function and is not available outside of that function. An external array is define outside of a Accera function and passed in as an argument. The memory layout of an external array is specified as part of the Accera function signature. External arrays are assumed to be disjoint, namely, they do not share any memory with each other.
+Accera arrays are either defined with internal scope or external scope. An internal array only exists inside a specific Accera function and is not available outside of that function. An external array is define outside of an Accera function and passed in as an argument. The memory layout of an external array is specified as part of the Accera function signature. External arrays are assumed to be disjoint, namely, they do not share any memory with each other.
 
-Accera arrays are either mutable or immutable. The elements of a mutable array can be set by a Accera function, while an immutable array is read-only.
+Accera arrays are either mutable or immutable. The elements of a mutable array can be set by an Accera function, while an immutable array is read-only.
 
 Array properties are not explicitly set by the programmer, but are implied by the *role* of the array (see below).
 

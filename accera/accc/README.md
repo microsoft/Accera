@@ -111,14 +111,14 @@ Generating for the sample in `samples/GEMM/MLAS_value/Accera_Sample.cpp`:
 
 The above invocation will:
 1. Create a directory `mlas_value_sample`
-1. Create a subdirectory `mlas_value_sample/generator` and make a Accera generator CMake project there with the given Accera DSL file.
+1. Create a subdirectory `mlas_value_sample/generator` and make an Accera generator CMake project there with the given Accera DSL file.
 1. Build the generator
 1. Run the generator with the given domain csv and custom argument values from the given config file.
 1. Run `acc-opt.exe`, `mlir-translate.exe`, `llc.exe`, and `opt.exe` lowering the emitted code to a header and object file.
 1. Create a subdirectory `mlas_value_sample/mlas_value_sample_lib_intermediate` and put intermediate IR files there that are the result of running the generator, `acc-opt.exe`, `mlir-translate.exe`, `llc.exe`, and `opt.exe`, which include the final header for the Accera sample.
 1. Create a subdirectory `mlas_value_sample/lib` containing the project for the static library for the Accera sample.
 1. Create a subdirectory `mlas_value_sample/logs` and put the `stdout` and `stderr` logs for each phase there.
-1. (Because the `--main` argument was provided) Create a subdirectory `mlas_value_sample/main` and make a Accera main CMake project there with the given Accera main file and build the project.
+1. (Because the `--main` argument was provided) Create a subdirectory `mlas_value_sample/main` and make an Accera main CMake project there with the given Accera main file and build the project.
 1. (Because the `--run` argument was provided) Run the build main project.
 
 Note: the intermediate files and the generator and runner projects will be named based on the `--library_name` parameter

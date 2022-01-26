@@ -6,11 +6,11 @@ Accera is a cross compiler, which means that it can generate code for different 
 ```python
 import accera as acc
 
-corei9 = acc.Target(model=acc.Target.Model.INTEL_CORE_GENERATION_7, num_threads=44)
+corei9 = acc.Target(Target.Model.INTEL_7960X, num_threads=44)
 ```
 or
 ```python
-v100 = acc.Target(model=acc.Target.Model.NVIDIA_TESLA_V100)
+v100 = acc.Target(Target.Model.NVIDIA_V100)
 ```
 
 We can also define custom targets:

@@ -215,7 +215,7 @@ class PackagingTypesTests(unittest.TestCase):
         def _():
             A[i, j] += 1.
 
-        pi3 = Target(model=Target.Model.RASPBERRY_PI3)
+        pi3 = Target(Target.Model.RASPBERRY_PI_3B, category=Target.Category.CPU)
         plan1 = nest.create_plan(pi3)
         plan2 = nest.create_plan()
 
@@ -240,7 +240,7 @@ class PackagingTypesTests(unittest.TestCase):
         def _():
             A[i, j] += 1.
 
-        pi3 = Target(model=Target.Model.RASPBERRY_PI3)
+        pi3 = Target(Target.Model.RASPBERRY_PI_3B, category=Target.Category.CPU)
         plan1 = nest.create_plan(pi3)
         plan2 = nest.create_plan()
 
@@ -460,7 +460,7 @@ class TargetsTest(unittest.TestCase):
         t2.num_threads = 64
         self.assertNotEqual(t1, t2)
 
-        t3 = Target(model=Target.Model.RASPBERRY_PI3)
+        t3 = Target(Target.Model.RASPBERRY_PI_3B, category=Target.Category.CPU)
         self.assertNotEqual(t1, t3)
 
 

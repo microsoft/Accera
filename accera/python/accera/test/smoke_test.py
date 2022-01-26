@@ -1282,7 +1282,7 @@ class SmokeTest(unittest.TestCase):
         kk = sched.split(k, 4)
 
         # Create a plan, specify the target to be PI3
-        pi3 = Target(model=Target.Model.RASPBERRY_PI3)
+        pi3 = Target(Target.Model.RASPBERRY_PI_3B, category=Target.Category.CPU)
         plan = sched.create_plan(pi3)
 
         # Then unroll kk

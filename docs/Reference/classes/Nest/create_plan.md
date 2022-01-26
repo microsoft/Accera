@@ -26,7 +26,7 @@ plan = nest.create_plan()
 Create a plan for an Intel Core 7th Generation, using the default schedule for a nest:
 
 ```python
-corei9 = acc.Target(model=acc.Target.Model.INTEL_CORE_GENERATION_7, num_threads=44)
+corei9 = acc.Target("Intel 7900X", num_threads=44)
 plan = nest.create_plan(corei9)
 ```
 

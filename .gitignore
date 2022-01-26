@@ -366,3 +366,9 @@ _version.py
 
 # llvm setup
 LLVMSetupConan.cmake
+
+# docs build
+docs/README.md
+
+# iPython
+.ipynb_checkpoints/

@@ -37,7 +37,8 @@ In this example, we will:
 
 #### Run in your browser
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/microsoft/Accera/main?labpath=docs%2Fdemos%2Fquickstart.ipynb)
+<!--TODO: switch to Accera repo once Binder issues are fixed -->
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/lisaong/accera-demo/main?labpath=quickstart.ipynb)
 
 No installation is required. This will launch a Jupyter notebook with the quickstart example running in the cloud.
 
@@ -89,7 +90,7 @@ No installation is required. This will launch a Jupyter notebook with the quicks
     * Windows: Install Microsoft Visual Studio and run `vcvars64.bat` to setup the command prompt
     * Linux/macOS: Install gcc
 
-    Don't have a compiler handy? We recommend trying Accera in your browser instead [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/microsoft/Accera/main?labpath=docs%2Fdemos%2Fquickstart.ipynb).
+    Don't have a compiler handy? We recommend trying Accera in your browser instead [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/lisaong/accera-demo/main?labpath=quickstart.ipynb)
 
 
 3. Install Accera:

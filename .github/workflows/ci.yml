@@ -41,7 +41,7 @@ jobs:
         conda init
         conda activate build
         export VCPKG_TOOLCHAIN=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-        sh ./build.sh
+        python setup.py build
     - name: Test
       run: |
         sh $HOME/miniconda/etc/profile.d/conda.sh

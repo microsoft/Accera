@@ -13,7 +13,9 @@ jobs:
       matrix:
         python-version: ["3.7", "3.8", "3.9"]
 
-    runs-on: lisaong/accera-llvm-ubuntu:main-llvmorg-13.0.0
+    runs-on: ubuntu-latest
+      container:
+        image: lisaong/accera-llvm-ubuntu:main-llvmorg-13.0.0
     steps:
     - uses: actions/checkout@v2
       with:
@@ -28,7 +30,9 @@ jobs:
         python -m pip install -U pip
         python -m pip install -r requirements.txt
     - name: Build
-      run: sh ./build.sh
+      run: |
+        export VCPKG_TOOLCHAIN=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+        sh ./build.sh
     - name: Test
       run: |
         cd lib.linux-x86_64-${{ matrix.python-version }}

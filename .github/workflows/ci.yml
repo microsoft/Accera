@@ -25,6 +25,7 @@ jobs:
       with:
         auto-update-conda: true
         python-version: ${{ matrix.python-version }}
+        auto-activate-base: false
         activate-environment: build
     - name: Install dependencies
       run: |

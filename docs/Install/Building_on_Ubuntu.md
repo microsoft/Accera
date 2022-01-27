@@ -1,8 +1,8 @@
 [//]: # (Project: Accera)
 
-## Installing on Ubuntu
+## Building on Ubuntu
 
-### Install Dependencies
+### Requirements
 
 Accera requires the following tools and libraries:
 
@@ -43,6 +43,8 @@ cd <path_to_accera>
 sh ./build.sh
 ```
 
+This typically takes a few hours to build and then install Accera's fork of LLVM. We recommend you reserve at least 20GB of disk space for the LLVM build.
+
 Update or install the resulting `.whl` files from the `dist` sudirectory. The `--find-links` option tells pip to look at the `dist` subdirectory for the dependent packages. 
 The name depends on your Python version, your OS and your CPU architecture e.g.
 ```shell
@@ -53,7 +55,7 @@ pip install -U ./dist/accera-0.0.1-cp37-cp37m-linux_x86_64.whl --find-links=dist
 
 Accera can also be built using CMake (intended for expert users).
 
-#### Install dependencies
+#### Build dependencies
 
 ```shell
 cd <path_to_accera>

@@ -51,3 +51,19 @@ theme:
 
 markdown_extensions:
   - pymdownx.superfences # workaround for bullet-point code blocks rendering
+
+nav:
+  # paths are relative to ./docs
+  - Home:
+    - README.md
+  - Manual:
+      - Setup:
+        - Install:
+          - macOS: Install/Installing_Accera_on_MacOS.md
+          - Ubuntu: Install/Installing_Accera_on_Ubuntu.md
+          - Windows: Install/Installing_Accera_on_Windows.md
+        - Build:
+          - macOS: Install/Building_on_MacOS.md
+          - Ubuntu: Install/Building_on_Ubuntu.md
+          - Windows: Install/Building_on_Windows.md
+

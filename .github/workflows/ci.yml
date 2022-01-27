@@ -37,5 +37,5 @@ jobs:
     - name: Test
       run: |
         $HOME/miniconda/bin/conda activate build
-        cd lib.linux-x86_64-${{ matrix.python-version }}
+        cd build/lib.linux-x86_64-${{ matrix.python-version }}
         python -m unittest discover accera/test *.py

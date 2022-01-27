@@ -66,4 +66,15 @@ nav:
           - macOS: Install/Building_on_MacOS.md
           - Ubuntu: Install/Building_on_Ubuntu.md
           - Windows: Install/Building_on_Windows.md
-
+      - Concepts:
+          - Introduction: Manual/00 Introduction.md
+          - Arrays: Manual/01 Arrays.md
+          - Simple Affine Loop Nests: Manual/02 Simple Affine Loop Nests.md
+          - Schedules: Manual/03 Schedules.md
+          - Fusing: Manual/04 Fusing.md
+          - Targets: Manual/05 Targets.md
+          - Plans - Caching: Manual/06 Plans - Caching.md
+          - Plans - Vectorization and Parallelization: Manual/07 Plans - Vectorization and Parallelization.md
+          - Deferred Layout of Constant Arrays: Manual/08 Deferred Layout of Constant Arrays.md
+          - Parameters: Manual/09 Parameters.md
+          - Packages: Manual/10 Packages.md

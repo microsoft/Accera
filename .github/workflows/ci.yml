@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.7", "3.8", "3.9"]
+        python-version: ["3.7", "3.8", "3.9", "3.10"]
 
     runs-on: ubuntu-latest
     container:
@@ -20,6 +20,7 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
+    # running within a container, install miniconda manually
     - name: Init python ${{ matrix.python_version }}
       run: |
         wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $HOME/miniconda.sh
@@ -31,6 +32,7 @@ jobs:
         conda activate build
         python -m pip install -U pip
         python -m pip install -r requirements.txt
+    # miniconda needs to be activated each time
     - name: Build
       run: |
         eval "$($HOME/miniconda/bin/conda shell.bash hook)"

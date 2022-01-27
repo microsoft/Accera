@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2.0)
+[//]: # (Version: 1.2)
 
-# Accera 1.2.0 Reference
+# Accera 1.2 Reference
 ## `accera.ScalarType`
 
 type | description

@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2.0)
+[//]: # (Version: 1.2)
 
-# Accera 1.2.0 Reference
+# Accera 1.2 Reference
 
 ## `accera.Plan.bind(indices, grid)`
 Only available for targets that can execute a grid of work (such as GPUs). The `bind` function binds dimensions of the iteration space to axes of the target-specific grid (such as `v100.GridUnit.BLOCK_X`, `v100.GridUnit.THREAD_X` on an Nvidia GPU).

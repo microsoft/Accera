@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2.0)
+[//]: # (Version: 1.2)
 
-# Accera 1.2.0 Reference
+# Accera 1.2 Reference
 
 ## `accera.Schedule.reorder(order, *args)`
 The `reorder` transformation sets the order of the indices in the schedule.

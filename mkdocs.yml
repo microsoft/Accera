@@ -87,7 +87,7 @@ nav:
       - Cross Compilation for Raspberry Pi 3: Tutorials/Pi3_Cross_Compilation.md
   - Reference:
       - Reference/accera.md
-      - classes:
+      - Classes:
         - Array:
           - Reference/classes/Array/Array.md
           - Array.Layout: Reference/classes/Array/Layout.md
@@ -126,11 +126,11 @@ nav:
           - Target.Architecture: Reference/classes/Target/Architecture.md
           - Target.Category: Reference/classes/Target/Category.md
           - Target.Model: Reference/classes/Target/Model.md
-        - Enumerations:
-          - ScalarType: Reference/enumerations/ScalarType.md
-        - Functions:
-          - create_parameters: Reference/functions/create_parameters.md
-          - fuse: Reference/functions/fuse.md
-          - get_parameters_from_grid: Reference/functions/get_parameters_from_grid.md
-        - Miscellaneous:
-          - Safety Analysis: Reference/safety_analysis.md
+      - Enumerations:
+        - Reference/enumerations/ScalarType.md
+      - Functions:
+        - create_parameters: Reference/functions/create_parameters.md
+        - fuse: Reference/functions/fuse.md
+        - get_parameters_from_grid: Reference/functions/get_parameters_from_grid.md
+      - Miscellaneous:
+        - Safety Analysis: Reference/safety_analysis.md

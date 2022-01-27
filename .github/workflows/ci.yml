@@ -21,12 +21,12 @@ jobs:
       with:
         submodules: 'recursive'
     # running within a container, install miniconda manually
-    - name: Init python ${{ matrix.python_version }}
+    - name: Init python ${{ matrix.python-version }}
       run: |
         wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $HOME/miniconda.sh
         bash $HOME/miniconda.sh -b -p $HOME/miniconda
         $HOME/miniconda/bin/conda init bash
-        $HOME/miniconda/bin/conda create -y -n build python=${{ matrix.python_version }}
+        $HOME/miniconda/bin/conda create -y -n build python=${{ matrix.python-version }}
         eval "$($HOME/miniconda/bin/conda shell.bash hook)"
         conda init
         conda activate build

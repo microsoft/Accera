@@ -20,11 +20,13 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
-    - name: Install dependencies
+    - name: Install miniconda
       run: |
         wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $HOME/miniconda.sh
         bash $HOME/miniconda.sh -b -p $HOME/miniconda
         $HOME/miniconda/bin/conda init bash
+    - name: Create environment for python ${{ matrix.python_version }}
+      run: |
         $HOME/miniconda/bin/conda create -n build python=${{ matrix.python_version }}
         $HOME/miniconda/bin/conda activate build
         python -m pip install -U pip

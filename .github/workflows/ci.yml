@@ -15,7 +15,7 @@ jobs:
 
     runs-on: ubuntu-latest
     container:
-        image: lisaong/accera-llvm-ubuntu:main-llvmorg-13.0.0
+        image: acceracontainers/accera-llvm-ubuntu:main-llvmorg-13.0.0
     steps:
     - uses: actions/checkout@v2
       with:

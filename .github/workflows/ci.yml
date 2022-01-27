@@ -30,11 +30,15 @@ jobs:
         conda init
     - name: Install requirements
       run: |
+        eval "$($HOME/miniconda/bin/conda shell.bash hook)"
+        conda init
         conda activate build
         python -m pip install -U pip
         python -m pip install -r requirements.txt
     - name: Build
       run: |
+        eval "$($HOME/miniconda/bin/conda shell.bash hook)"
+        conda init
         conda activate build
         export VCPKG_TOOLCHAIN=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
         sh ./build.sh

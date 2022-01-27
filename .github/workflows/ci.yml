@@ -47,3 +47,17 @@ jobs:
         conda activate build
         cd build/lib.linux-x86_64-${{ matrix.python-version }}
         python -m unittest discover accera/test *.py
+    - name: Build debug
+      run: |
+        eval "$($HOME/miniconda/bin/conda shell.bash hook)"
+        conda init
+        conda activate build
+        export VCPKG_TOOLCHAIN=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+        python setup.py build -b build_dbg -g 
+    - name: Test debug
+      run: |
+        eval "$($HOME/miniconda/bin/conda shell.bash hook)"
+        conda init
+        conda activate build
+        cd build_dbg/lib.linux-x86_64-${{ matrix.python-version }}
+        python -m unittest discover accera/test *.py

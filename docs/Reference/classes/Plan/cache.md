@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: <<VERSION>>)
+[//]: # (Version: v1.2.1)
 
-# Accera <<VERSION>> Reference
+# Accera v1.2.1 Reference
 
 ## `accera.Plan.cache(source[, index, trigger_index, layout, level, trigger_level, max_elements, thrifty, type])`
 Adds a caching strategy to a plan.

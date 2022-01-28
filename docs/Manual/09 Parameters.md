@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: <<VERSION>>)
+[//]: # (Version: v1.2.1)
 
 # Section 9: Parameters
 

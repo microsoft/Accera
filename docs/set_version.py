@@ -9,15 +9,14 @@ import os
 import sys
 import glob
 from git import Repo
+from typing import List
 
-VERSION_PATTERN = "<<VERSION>>"
 
-
-def get_latest_git_tag(repo_rootdir: str) -> str:
+def get_git_tags(repo_rootdir: str) -> List[str]:
     repo = Repo(os.path.abspath(repo_rootdir))
-    if not repo.tags:
-        sys.exit(f"Repository {repo} has no tags")
-    return str(repo.tags[-1])
+    if not repo.tags or len(repo.tags) < 2:
+        sys.exit(f"Repository {repo} has less than 2 tags")
+    return str(repo.tags[-2]), str(repo.tags[-1])
 
 
 def inplace_search_replace(filepath: str, search: str, replace: str):
@@ -31,15 +30,15 @@ def inplace_search_replace(filepath: str, search: str, replace: str):
         f.write(s)
 
 
-def update_versions(doc_rootdir: str, version: str):
+def update_versions(doc_rootdir: str, old_version: str, new_version: str):
     doc_files = glob.glob(f"{os.path.abspath(doc_rootdir)}/**/*.md", recursive=True)
     for doc_file in doc_files:
-        inplace_search_replace(doc_file, VERSION_PATTERN, version)
+        inplace_search_replace(doc_file, old_version, new_version)
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         sys.exit(f"Usage: {sys.argv[0]} repo_root doc_root")
 
-    version = get_latest_git_tag(sys.argv[1])
-    update_versions(sys.argv[2], version)
+    old_version, new_version = get_git_tags(sys.argv[1])
+    update_versions(sys.argv[2], old_version, new_version)

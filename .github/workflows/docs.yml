@@ -14,5 +14,4 @@ jobs:
       - run: |
           pip install mkdocs-material mkdocs-git-revision-date-plugin
           cp -f README.md docs/README.md
-          python docs/set_version.py . docs
           mkdocs gh-deploy --force

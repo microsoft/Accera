@@ -165,7 +165,7 @@ Accera is a research platform-in-progress. We would love your contributions, fee
 
 ## Credits
 
-Accera is built using several open source libraries, including: [LLVM](https://llvm.org/), [toml++](https://marzer.github.io/tomlplusplus/), [tomlkit](https://github.com/sdispater/tomlkit), [vcpkg](https://vcpkg.io/en/index.html), [pyyaml](https://pyyaml.org/), and [HAT](https://github.com/microsoft/hat). For testing, we also use [numpy](https://github.com/numpy/numpy) and [catch2](https://github.com/catchorg/Catch2).
+Accera is built using several open source libraries, including: [LLVM](https://llvm.org/), [pybind11](https://pybind11.readthedocs.io/en/stable/), [toml++](https://marzer.github.io/tomlplusplus/), [tomlkit](https://github.com/sdispater/tomlkit), [vcpkg](https://vcpkg.io/en/index.html), [pyyaml](https://pyyaml.org/), and [HAT](https://github.com/microsoft/hat). For testing, we also use [numpy](https://github.com/numpy/numpy) and [catch2](https://github.com/catchorg/Catch2).
 
 ## License
 

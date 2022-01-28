@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2.0)
+[//]: # (Version: <<VERSION>>)
 
-# Accera 1.2.0 Reference
+# Accera <<VERSION>> Reference
 
 ## `accera.create_parameters(number)`
 Creates placeholder parameters.

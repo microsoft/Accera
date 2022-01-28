@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2.0)
+[//]: # (Version: <<VERSION>>)
 
 # Section 7: Plans - Vectorization and Parallelization
 The plan includes operations and optimizations that control instruction pipelining, vectorized SIMD instructions, and parallelization.

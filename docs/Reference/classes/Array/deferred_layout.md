@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2.0)
+[//]: # (Version: <<VERSION>>)
 
-# Accera 1.2.0 Reference
+# Accera <<VERSION>> Reference
 
 ## `accera.Array.deferred_layout(layout)`
 Specifies the layout for a `Array.Role.CONST` array based on a `Cache`. For more details, see [Deferred layout of constant arrays](<../../../Manual/08%20Deferred%20Layout%20of%20Constant%20Arrays.md>)

@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: <<VERSION>>)
+[//]: # (Version: v1.2.1)
 
-# Accera <<VERSION>> Reference
+# Accera v1.2.1 Reference
 
 ## `accera.Array(role[, data, element_type, layout, offset, shape])`
 Constructs an array.

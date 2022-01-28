@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v<<VERSION>>)
+[//]: # (Version: v1.2.1)
 
 # Introduction
 Accera is a programming model, a domain-specific programming language embedded in Python (eDSL), and an optimizing cross-compiler for compute-intensive code. Accera currently supports CPU and GPU targets and focuses on optimization of nested for-loops.

@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2)
+[//]: # (Version: <<VERSION>>)
 
 # Safety Analysis
 

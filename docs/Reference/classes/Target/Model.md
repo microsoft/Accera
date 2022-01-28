@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2)
+[//]: # (Version: <<VERSION>>)
 
-# Accera 1.2 Reference
+# Accera <<VERSION>> Reference
 ## `accera.Target.Model`
 
 Defines constants for some well-known CPU models.

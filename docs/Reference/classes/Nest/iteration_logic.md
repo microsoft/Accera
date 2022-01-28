@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2)
+[//]: # (Version: <<VERSION>>)
 
-# Accera 1.2 Reference
+# Accera <<VERSION>> Reference
 
 ## `accera.Nest.iteration_logic(logic)`
 Adds an iteration logic function to a `Nest`.

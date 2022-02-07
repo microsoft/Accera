@@ -157,7 +157,7 @@ namespace value
 
     private:
         friend class Schedule;
-        Plan(Schedule& sched);
+        Plan(Schedule& sched, ExecutionRuntime execRuntime = ExecutionRuntime::Default);
 
         std::unique_ptr<PlanImpl> _impl;
     };
@@ -190,9 +190,14 @@ namespace value
         /// <param name="proc"> The GPU processor, indicating a block or thread </param>
         void MapIndexToProcessor(ScalarIndex index, Processor proc);
 
+        /// <summary> Tensorize two iteration space dimensions </summary>
+        /// <param name="indices"> The scalar indices to tensorize. Two indicies must be specified whose dimensions must be contiguous in the iteration space dimension order. </param>
+        /// <param name="numThreads"> The dimension of the tensor operation. </param>
+        void Tensorize(std::vector<ScalarIndex> indices, std::vector<int> dims);
+
     private:
         friend class Schedule;
-        GPUPlan(targets::GPU gpuOptions, Schedule& sched);
+        GPUPlan(targets::GPU gpuOptions, Schedule& sched, ExecutionRuntime execRuntime = ExecutionRuntime::Default);
 
         std::unique_ptr<PlanImpl> _impl;
     };

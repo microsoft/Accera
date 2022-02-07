@@ -13,15 +13,12 @@ from typing import List
 
 
 class CorrectnessChecker():
-
     def __init__(self, hat_path):
         self.package = hat.load(hat_path)
 
-    def run(self,
-            function_name: str,
-            before: List["numpy.ndarray"],
-            after: List["numpy.ndarray"],
-            tolerance: float = 1e-5):
+    def run(
+        self, function_name: str, before: List["numpy.ndarray"], after: List["numpy.ndarray"], tolerance: float = 1e-5
+    ):
 
         if function_name not in self.package.names:
             raise ValueError(f"{function_name} is not found")
@@ -35,7 +32,6 @@ class CorrectnessChecker():
 
 
 class VerifyPackage():
-
     def __init__(self, testcase: unittest.TestCase, package_name: str, output_dir: str = None):
         self.testcase = testcase
         self.hat_file = pathlib.Path(output_dir or pathlib.Path.cwd()) / f"{package_name}.hat"
@@ -49,11 +45,9 @@ class VerifyPackage():
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.testcase.assertTrue(self.hat_file.is_file())
 
-    def check_correctness(self,
-                          function_name: str,
-                          before: List["numpy.ndarray"],
-                          after: List["numpy.ndarray"],
-                          tolerance: float = 1e-5):
+    def check_correctness(
+        self, function_name: str, before: List["numpy.ndarray"], after: List["numpy.ndarray"], tolerance: float = 1e-5
+    ):
         """Performs correctness-checking on a function
         Args:
             function_name

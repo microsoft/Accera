@@ -74,8 +74,10 @@ namespace value
         /// <param name="column"> The column index of the first coordinate of the block </param>
         /// <param name="numRows"> The extent of the submatrix in the row dimension </param>
         /// <param name="numColumns"> The extent of the submatrix in the column dimension </param>
+        /// <param name="strideRow"> The stride of the submatrix in the row dimension </param>
+        /// <param name="strideCol"> The stride of the submatrix in the column dimension </param>
         /// <returns> The resulting submatrix block </returns>
-        Matrix SubMatrix(Scalar row, Scalar column, int numRows, int numColumns) const;
+        Matrix SubMatrix(Scalar row, Scalar column, int numRows, int numColumns, int strideRow = 1, int strideCol = 1) const;
 
         /// <summary> Creates a new Matrix instance that contains the same data as this instance </summary>
         /// <returns> A new Matrix instance that points to a new, distinct memory that contains the same data as this instance </returns>

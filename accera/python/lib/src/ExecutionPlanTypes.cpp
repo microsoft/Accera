@@ -52,6 +52,12 @@ namespace
         py::enum_<value::ParallelizationPolicy>(module, "_ParallelizationPolicy", "Used for configuring the thread scheduling policy")
             .value("STATIC", value::ParallelizationPolicy::Static)
             .value("DYNAMIC", value::ParallelizationPolicy::Dynamic);
+
+        py::enum_<value::ExecutionRuntime>(module, "_ExecutionRuntime", "Used for specifying the execution runtime of the module")
+            .value("DEFAULT", value::ExecutionRuntime::Default)
+            .value("VULKAN", value::ExecutionRuntime::Vulkan)
+            .value("ROCM", value::ExecutionRuntime::Rocm)
+            .value("CUDA", value::ExecutionRuntime::CUDA);
     }
 
     void DefineExecutionPlanStructs(py::module& module)
@@ -156,6 +162,7 @@ namespace
                 "add_cache", [](value::GPUPlan& plan, value::ViewAdapter target, const std::optional<value::ScalarIndex>& outermostIncludedSplitIndex, const std::optional<int64_t>& maxElements, value::MemorySpace memorySpace) {
                     return outermostIncludedSplitIndex.has_value() ? plan.AddCache(target, *outermostIncludedSplitIndex, memorySpace) : plan.AddCache(target, *maxElements, memorySpace);
                 })
+            .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a)
             .def("map_index_to_processor", &value::GPUPlan::MapIndexToProcessor, "index"_a, "proc"_a);
     }
 

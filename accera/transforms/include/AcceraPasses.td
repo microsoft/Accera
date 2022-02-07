@@ -57,6 +57,20 @@ def ConvertExecutionPlanParallelization : Pass<"convert-exec-plan-parallelize"> 
 }
 
 //===----------------------------------------------------------------------===//
+// ExecutionPlanTensorization
+//===----------------------------------------------------------------------===//
+
+def ConvertExecutionPlanTensorization : Pass<"convert-exec-plan-tensorize"> {
+  let summary = "Match and tensorize ExecPlan ops";
+  let constructor = "accera::transforms::executionPlan::createExecutionPlanTensorizationPass()";
+  let dependentDialects = [
+    "accera::ir::value::ValueDialect",
+    "mlir::StandardOpsDialect",
+    "mlir::AffineDialect"
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // ExecutionPlanMakeCache
 //===----------------------------------------------------------------------===//
 
@@ -334,13 +348,50 @@ def FunctionPointerResolution : rcModulePass<"resolve-function-pointers"> {
 }
 
 //===----------------------------------------------------------------------===//
+// SerializeToHSACO
+//===----------------------------------------------------------------------===//
+
+def SerializeToHSACO : Pass<"serialize-to-hsaco", "::mlir::gpu::GPUModuleOp"> {
+  let summary = "Serializes the GPU kernel to HSACO object (WIP)";
+  let constructor = "accera::transforms::createSerializeToHSACOPass()";
+  let dependentDialects = ["mlir::ROCDL::ROCDLDialect", "mlir::gpu::GPUDialect"];
+  let options = [
+    Option<"chip", "chip", "std::string",
+          //  TODO: Should this default to something else?
+           "\"gfx906\"",
+           "The GPU target architecture.">
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // AcceraToSPIRV
 //===----------------------------------------------------------------------===//
 
 def ConvertAcceraToSPIRV : Pass<"convert-accera-to-spirv", "::mlir::ModuleOp"> {
   let summary = "Convert Accera dialects to SPIR-V dialect";
   let constructor = "accera::transforms::createAcceraToSPIRVPass()";
-  let dependentDialects = ["mlir::spirv::SPIRVDialect"];
+  let dependentDialects = ["mlir::spirv::SPIRVDialect", "mlir::gpu::GPUDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// AcceraToRocm
+//===----------------------------------------------------------------------===//
+
+def ConvertAcceraToROCDL : Pass<"convert-accera-to-rocdl", "::mlir::ModuleOp"> {
+  let summary = "Convert Accera dialects to ROCDL dialect";
+  let constructor = "accera::transforms::createAcceraToROCDLPass()";
+  let dependentDialects = ["mlir::ROCDL::ROCDLDialect", "mlir::gpu::GPUDialect"];
+}
+
+
+//===----------------------------------------------------------------------===//
+// AcceraToNVVM
+//===----------------------------------------------------------------------===//
+
+def ConvertAcceraToNVVM : Pass<"convert-accera-to-nvvm", "::mlir::ModuleOp"> {
+  let summary = "Convert Accera dialects to NVVM dialect";
+  let constructor = "accera::transforms::createAcceraToNVVMPass()";
+  let dependentDialects = ["mlir::NVVM::NVVMDialect", "mlir::gpu::GPUDialect"];
 }
 
 #endif // ACCERA_CONVERSION_PASSES

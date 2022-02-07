@@ -7,17 +7,17 @@
 #include "MLIREmitterContext.h"
 #include "CompilerOptions.h"
 
-#include <ir/include/TranslateToHeader.h>
-
 #include <ir/include/DialectRegistry.h>
 #include <ir/include/IRUtil.h>
 #include <ir/include/InitializeAccera.h>
+#include <ir/include/TranslateToHeader.h>
 #include <ir/include/exec/ExecutionPlanAttributes.h>
 #include <ir/include/exec/VectorizationInfo.h>
 #include <ir/include/nest/LoopNestOps.h>
-#include <ir/include/value/ValueDialect.h>
+#include <ir/include/value/ValueAttributes.h>
 #include <ir/include/value/ValueFuncOp.h>
 
+#include <llvm/Support/ErrorHandling.h>
 #include <transforms/include/value/ValueToStandardLoweringPass.h>
 
 #include <utilities/include/Exception.h>
@@ -54,6 +54,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_os_ostream.h>
@@ -388,7 +390,11 @@ void SetOpNameAttr(mlir::Operation* op, std::string name)
     {
         assert(op);
 
-        if (auto symTableOp = mlir::SymbolTable::getNearestSymbolTable(op); mlir::SymbolTable::lookupSymbolIn(symTableOp, name))
+        if (auto symTableOp = mlir::SymbolTable::getNearestSymbolTable(op); !symTableOp)
+        {
+            llvm::errs() << "Could not find symbol table for operation " << *op << "\n";
+        }
+        else if (mlir::SymbolTable::lookupSymbolIn(symTableOp, name))
         {
             name += "_" + std::to_string(ir::util::GetUniqueId());
         }
@@ -939,6 +945,7 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
 
     auto isPublic = decl.IsPublic();
     auto funcTarget = decl.Target();
+    auto funcRuntime = decl.Runtime();
     auto isGpu = std::holds_alternative<targets::GPU>(funcTarget);
 
     const auto& argValues = decl.GetParameterTypes();
@@ -1008,6 +1015,20 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
 
             if constexpr (std::is_same_v<decltype(target), targets::GPU>)
             {
+                if (funcRuntime != ExecutionRuntime::Default)
+                {
+                    auto execRuntimeAttrName = ir::value::ValueModuleOp::getExecRuntimeAttrName();
+                    auto execRuntimeAttrValue = ir::value::ExecutionRuntimeAttr::get(b.getContext(), (ir::value::ExecutionRuntime)funcRuntime);
+                    if (auto mod = fnOp->getParentOfType<mlir::ModuleOp>())
+                    {
+                        mod->setAttr(execRuntimeAttrName, execRuntimeAttrValue);
+                    }
+                    if (auto mod = fnOp->getParentOfType<ir::value::ValueModuleOp>())
+                    {
+                        mod->setAttr(execRuntimeAttrName, execRuntimeAttrValue);
+                    }
+                }
+
                 fnOp->setAttr(
                     fnOp.getGPULaunchAttrName(),
                     b.getIndexArrayAttr({
@@ -1537,26 +1558,33 @@ void MLIRContext::CopyDataImpl(const Value& source, Value& destination)
     }
 }
 
-Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offsetsValue, const MemoryShape& shape)
+Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offsetsValue, const MemoryShape& shape, const std::vector<Scalar>& strides_)
 {
-
     const MemoryLayout& currentLayout = sourceValue.GetLayout();
     auto destLayout = GetSubArrayLayout(currentLayout, shape);
 
+    std::vector<Scalar> strides = strides_;
+    if (strides.empty())
+    {
+        strides = std::vector<Scalar>(offsetsValue.size(), Scalar(1));
+    }
+
     llvm::SmallVector<mlir::Value, 4> linalgRanges;
-    auto ranges = utilities::MakeZipRange(offsetsValue, shape);
+    auto ranges = utilities::MakeZipRange(offsetsValue, shape, strides);
     std::transform(
         begin(ranges),
         end(ranges),
         std::back_inserter(linalgRanges),
-        [this](std::tuple<Scalar, Scalar> s) -> mlir::Value {
+        [this](std::tuple<Scalar, Scalar, Scalar> s) -> mlir::Value {
             auto& builder = _impl->builder;
             auto loc = builder.getUnknownLoc();
             auto offset = Scalar(Cast(std::get<0>(s), ValueType::Index));
             auto size = Scalar(Cast(Scalar(std::get<1>(s)), ValueType::Index));
+            auto step = Scalar(Cast(Scalar(std::get<2>(s)), ValueType::Index));
             auto lowerBound = ResolveMLIRIndex(builder, offset);
             auto upperBound = ResolveMLIRIndex(builder, size);
-            return builder.create<mlir::linalg::RangeOp>(loc, lowerBound, upperBound, builder.create<mlir::ConstantIndexOp>(loc, 1));
+            auto stride = ResolveMLIRIndex(builder, step);
+            return builder.create<mlir::linalg::RangeOp>(loc, lowerBound, upperBound, stride);
         });
 
     auto& builder = _impl->builder;
@@ -1785,6 +1813,40 @@ Value MLIRContext::LogicalOperationImpl(ValueLogicalOperation op, Value source1,
     Emittable emittable{ &emittableInfo };
 
     return { emittable, ScalarLayout };
+}
+
+void MLIRContext::MFMAImpl(Matrix& dest, Matrix A, Matrix B, Matrix C)
+{
+    using namespace accera::ir::value;
+
+    auto& builder = _impl->builder;
+    auto loc = builder.getUnknownLoc();
+
+    auto destValue = ToMLIRValue(builder, dest);
+    auto aValue = ToMLIRValue(builder, A);
+    auto bValue = ToMLIRValue(builder, B);
+    auto cValue = ToMLIRValue(builder, C);
+
+    auto getMatrixTypeOfMemref = [=](mlir::Value val, llvm::StringRef kind) {
+        auto memrefType = val.getType().cast<mlir::MemRefType>();
+        return MFMAMatrixType::get(
+            memrefType.getShape(), memrefType.getElementType(), kind);
+    };
+
+    mlir::Value aMatrix = builder.create<ir::value::MFMALoadMatrixOp>(loc, getMatrixTypeOfMemref(aValue, "AOp"), aValue);
+    mlir::Value bMatrix = builder.create<ir::value::MFMALoadMatrixOp>(loc, getMatrixTypeOfMemref(aValue, "BOp"), bValue);
+    mlir::Value cMatrix = builder.create<ir::value::MFMALoadMatrixOp>(loc, getMatrixTypeOfMemref(aValue, "COp"), cValue);
+
+    auto result = builder.create<ir::value::MFMAComputeOp>(loc, cValue.getType(), aMatrix, bMatrix, cMatrix);
+
+    builder.create<ir::value::MFMAStoreMatrixOp>(loc, result, destValue);
+
+    throw LogicException(LogicExceptionErrors::notImplemented);
+
+    // EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { C.GetBaseType(), 1 } });
+    // Emittable emittable{ &emittableInfo };
+
+    // return Value( emittable, C.GetLayout() );
 }
 
 Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool srcSigned)
@@ -2722,12 +2784,28 @@ Value ResolveConstantDataReference(Value constantDataSource)
 {
     return GetMLIRContext().GetGPUIndex(GPUIndexType::ThreadId);
 }
-/*static*/ void GPU::Barrier()
+
+static std::string GPUBarrierScopeToValueIRBarrierScope(GPU::BarrierScope scope)
+{
+    switch (scope)
+    {
+    case GPU::BarrierScope::Block:
+        return "Block";
+    case GPU::BarrierScope::Warp:
+        return "Warp";
+    case GPU::BarrierScope::Threadfence:
+        return "Threadfence";
+    default:
+        llvm_unreachable("Unhandled case");
+    }
+}
+
+/*static*/ void GPU::Barrier(GPU::BarrierScope scope)
 {
     auto& b = GetMLIRContext().GetOpBuilder();
     auto loc = b.getUnknownLoc();
 
-    (void)ir::util::CreateGPUControlBarrier(b, loc);
+    (void)ir::util::CreateGPUControlBarrier(b, GPUBarrierScopeToValueIRBarrierScope(scope), loc);
 }
 
 // this is declaring externs to reference the fillResource fn's in

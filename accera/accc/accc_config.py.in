@@ -14,7 +14,7 @@ bin_dir = os.path.join(__script_path, "bin")    # Assume this script is deployed
 
 class ACCCConfig:
     rc_opt = os.path.join(bin_dir, r"acc-opt")
-    argo_translate = os.path.join(bin_dir, r"acc-translate")
+    acc_translate = os.path.join(bin_dir, r"acc-translate")
     mlir_translate = os.path.join(bin_dir, r"mlir-translate")
     llvm_opt = os.path.join(bin_dir, r"opt")
     llc = os.path.join(bin_dir, r"llc")

@@ -432,9 +432,9 @@ namespace value
         return { *this };
     }
 
-    GPUPlan Schedule::CreateGPUPlan(targets::GPU gpuOptions)
+    GPUPlan Schedule::CreateGPUPlan(targets::GPU gpuOptions, ExecutionRuntime execRuntime)
     {
-        return { gpuOptions, *this };
+        return { gpuOptions, *this, execRuntime };
     }
 
     ScheduleOp Schedule::GetOp() const

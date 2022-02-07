@@ -12,7 +12,7 @@
 
 #include <llvm/ADT/Hashing.h>
 
-#include "nest/LoopNestEnums.h.inc"
+#include "nest/LoopNestEnums.h.inc" // may need to be at end of incl list?
 #include "Index.h"
 #include "IndexRange.h"
 #include "IterationDomain.h"

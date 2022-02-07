@@ -97,8 +97,7 @@ class SmokeTest(unittest.TestCase):
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_full_fusion_reordered(self) -> None:
         A = Array(role=Array.Role.INPUT, shape=(16, 16))
@@ -132,13 +131,11 @@ class SmokeTest(unittest.TestCase):
         # Create a package and add our function definition to it
         package_name = "test_full_fusion_reordered"
         package = Package()
-        package.add(plan, args=(A, B, C),
-                    base_name="test_full_fusion_reordered")
+        package.add(plan, args=(A, B, C), base_name="test_full_fusion_reordered")
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_partial_fusion_trivial(self) -> None:
         A = Array(role=Array.Role.INPUT, shape=(16, 11))
@@ -172,13 +169,11 @@ class SmokeTest(unittest.TestCase):
         # Create a package and add our function definition to it
         package_name = "test_partial_fusion_trivial"
         package = Package()
-        package.add(plan, args=(A, B, C),
-                    base_name="test_partial_fusion_trivial")
+        package.add(plan, args=(A, B, C), base_name="test_partial_fusion_trivial")
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_partial_fusion_reordered(self) -> None:
         A = Array(role=Array.Role.INPUT, shape=(16, 11))
@@ -213,25 +208,18 @@ class SmokeTest(unittest.TestCase):
         # Create a package and add our function definition to it
         package_name = "test_partial_fusion_reordered"
         package = Package()
-        package.add(plan, args=(A, B, C),
-                    base_name="test_partial_fusion_reordered")
+        package.add(plan, args=(A, B, C), base_name="test_partial_fusion_reordered")
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_partial_fusion_matmul3_naive(self) -> None:
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(16, 11))
-        B = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(11, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(16, 10))
-        D = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(10, 7))
-        E = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(16, 7))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(16, 11))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(11, 10))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 10))
+        D = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, 7))
+        E = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 7))
 
         # Create nest0 and schedule0 for C = A @ B
         nest0 = Nest(shape=(16, 10, 11))
@@ -261,25 +249,18 @@ class SmokeTest(unittest.TestCase):
         # Create a package and add our function definition to it
         package_name = "test_partial_fusion_matmul3_naive"
         package = Package()
-        package.add(plan, args=(A, B, C, D, E),
-                    base_name="test_partial_fusion_matmul3_naive")
+        package.add(plan, args=(A, B, C, D, E), base_name="test_partial_fusion_matmul3_naive")
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_partial_fusion_matmul3_fancy(self) -> None:
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(16, 11))
-        B = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(11, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(16, 10))
-        D = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(10, 7))
-        E = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(16, 7))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(16, 11))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(11, 10))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 10))
+        D = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, 7))
+        E = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 7))
 
         # Create nest0 and schedule0 for C = A @ B
         nest0 = Nest(shape=(16, 10, 11))
@@ -314,21 +295,16 @@ class SmokeTest(unittest.TestCase):
         # Create a package and add our function definition to it
         package_name = "test_partial_fusion_matmul3_fancy"
         package = Package()
-        package.add(plan, args=(A, B, C, D, E),
-                    base_name="test_partial_fusion_matmul3_fancy")
+        package.add(plan, args=(A, B, C, D, E), base_name="test_partial_fusion_matmul3_fancy")
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_multischedule_fusion1(self) -> None:
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(4, 8))
-        B = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(4, ))
-        accum = Array(role=Array.Role.TEMP,
-                      element_type=ScalarType.float32, shape=(1, ))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(4, 8))
+        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(4, ))
+        accum = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, shape=(1, ))
 
         # for i in range(4):
         #     accum[0]  = 0.0
@@ -358,8 +334,7 @@ class SmokeTest(unittest.TestCase):
         def _():
             B[i2] += accum[0] * 1.2
 
-        fused = fuse((n.create_schedule()
-                     for n in [nest0, nest1, nest2]), partial=1)
+        fused = fuse((n.create_schedule() for n in [nest0, nest1, nest2]), partial=1)
         f, i, j = fused.get_indices()
         fused.reorder(i, f, j)
 
@@ -372,16 +347,12 @@ class SmokeTest(unittest.TestCase):
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_multischedule_fusion2(self) -> None:
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(4, 8, 12))
-        B = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(4, 8))
-        accum = Array(role=Array.Role.TEMP,
-                      element_type=ScalarType.float32, shape=(1, ))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(4, 8, 12))
+        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(4, 8))
+        accum = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, shape=(1, ))
 
         # Goal:
         # for i in range(4):
@@ -411,8 +382,7 @@ class SmokeTest(unittest.TestCase):
         def _():
             B[i2, j2] *= accum[0]
 
-        fused0 = fuse((nest1.create_schedule(),
-                      nest2.create_schedule()), partial=2)
+        fused0 = fuse((nest1.create_schedule(), nest2.create_schedule()), partial=2)
         ff0, if0, jf0, kf0 = fused0.get_indices()
 
         # equivalent:
@@ -480,8 +450,7 @@ class SmokeTest(unittest.TestCase):
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_naive_matmul(self) -> None:
         # Define our matrix sizes
@@ -489,12 +458,9 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -516,8 +482,7 @@ class SmokeTest(unittest.TestCase):
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_mlas_matmul(self) -> None:
         from itertools import combinations_with_replacement
@@ -531,36 +496,26 @@ class SmokeTest(unittest.TestCase):
 
         for domain in domains:
             M, N, K = domain
-            A = Array(role=Array.Role.INPUT,
-                      element_type=ScalarType.float32, shape=(M, K))
-            B = Array(role=Array.Role.INPUT,
-                      element_type=ScalarType.float32, shape=(K, N))
-            C = Array(role=Array.Role.INPUT_OUTPUT,
-                      element_type=ScalarType.float32, shape=(M, N))
-            package.add(*MLAS(A, B, C, alpha=0.2, zero_C=True, opts=opts),
-                        base_name=f"mlas_py_{M}_{N}_{K}")
+            A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+            B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+            C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+            package.add(*MLAS(A, B, C, alpha=0.2, zero_C=True, opts=opts), base_name=f"mlas_py_{M}_{N}_{K}")
 
         package_name = "test_mlas_matmul"
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_emittime_cache_mlas_matmul(self) -> None:
         from accera.samples.OfflineCacheMatrixMultiplication import EmitTimeCacheMLAS
 
         package = Package()
         M, N, K = [31, 63, 127]
-        B_data = np.array([float(x) for x in range(K * N)]
-                          ).reshape(K, N).astype(np.float32)
+        B_data = np.array([float(x) for x in range(K * N)]).reshape(K, N).astype(np.float32)
 
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.CONST,
-                  element_type=ScalarType.float32, data=B_data)
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(M, N))
-        function = package.add(*EmitTimeCacheMLAS(A, B, C),
-                               base_name=f"mlas_py_{M}_{N}_{K}")
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.CONST, element_type=ScalarType.float32, data=B_data)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        function = package.add(*EmitTimeCacheMLAS(A, B, C), base_name=f"mlas_py_{M}_{N}_{K}")
 
         A_test = np.ones(A.shape, dtype=np.float32) * 3.14
         B_test = np.ones(B.shape, dtype=np.float32) * 0.42
@@ -571,12 +526,10 @@ class SmokeTest(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, output_dir=output_dir,
-                mode=self.PACKAGE_MODE, format=self.PACKAGE_FORMAT)
+            package.build(package_name, output_dir=output_dir, mode=self.PACKAGE_MODE, format=self.PACKAGE_FORMAT)
 
             # check build and correctness
-            v.check_correctness(function.name, before=(A_test, B_test, C_test),
-                                after=(A_test, B_test, C_ref))
+            v.check_correctness(function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref))
 
     def test_runtime_init_cache_mlas_matmul(self) -> None:
         from accera.samples.OfflineCacheMatrixMultiplication import RuntimeInitCacheMLAS
@@ -584,24 +537,19 @@ class SmokeTest(unittest.TestCase):
         package = Package()
 
         M, N, K = [31, 63, 127]
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(M, N))
-        package.add(*RuntimeInitCacheMLAS(A,
-                                          B,
-                                          C,
-                                          pack_fn_name="pack",
-                                          packed_buffer_size_fn_name="packed_size"),
-                    base_name=f"mlas_py_{M}_{N}_{K}")
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        package.add(
+            *RuntimeInitCacheMLAS(A, B, C, pack_fn_name="pack", packed_buffer_size_fn_name="packed_size"),
+            base_name=f"mlas_py_{M}_{N}_{K}"
+        )
 
         package_name = "runtime_init_cache_mlas"
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
+    @expectedFailure(FailedReason.BUG, "GPU support is a WIP")
     def test_gpu_matmul(self) -> None:
         import math
         from accera import Target
@@ -634,12 +582,9 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(M_, M)
         self.assertEqual(N_, N)
 
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(M_, K))
-        B = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(K, N_))
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(M_, N_))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M_, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N_))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M_, N_))
 
         nest = Nest(shape=(M_, N_, K))
         i, j, k = nest.get_indices()
@@ -649,8 +594,7 @@ class SmokeTest(unittest.TestCase):
             def if_block():
                 C[i, j] += A[i, k] * B[k, j]
 
-            _If(i < as_index(M) and j < as_index(N),
-                if_block)    # TODO: wrap implicitly
+            _If(i < as_index(M) and j < as_index(N), if_block)    # TODO: wrap implicitly
 
         schedule = nest.create_schedule()
         ii = schedule.split(i, block_x)
@@ -660,8 +604,10 @@ class SmokeTest(unittest.TestCase):
 
         target = Target(category=Target.Category.GPU)
         plan = schedule.create_plan(target)
-        plan.bind((i, j, ii, jj), grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y,
-                                        target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y))
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+        )
 
         package = Package()
         package.add(plan, args=(A, B, C), base_name="hello_matmul_gpu")
@@ -672,8 +618,7 @@ class SmokeTest(unittest.TestCase):
         # package.add(plan, args=(A, B, C), base_name="hello_matmul_gpu")
         format = self.PACKAGE_FORMAT if "VULKAN_SDK" in os.environ else Package.Format.HAT_STATIC
         with verifiers.VerifyPackage(self, "hello_matmul_gpu", TEST_PACKAGE_DIR):
-            package.build(name="hello_matmul_gpu", format=format,
-                          mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
+            package.build(name="hello_matmul_gpu", format=format, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     @expectedFailure(FailedReason.NOT_IN_CORE, "function that contains multiple nests")
     def test_int8_matmul(self) -> None:
@@ -684,20 +629,13 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.int8, shape=(M, K))
-        B = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.int8, shape=(K, N))
-        zero_point_A = Array(role=Array.Role.INPUT,
-                             element_type=ScalarType.int32, shape=(1,))
-        zero_point_B = Array(role=Array.Role.INPUT,
-                             element_type=ScalarType.int32, shape=(1,))
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.int32, shape=(M, N))
-        col_sums = Array(role=Array.Role.TEMP,
-                         element_type=ScalarType.int32, shape=(N,))
-        row_sums = Array(role=Array.Role.TEMP,
-                         element_type=ScalarType.int32, shape=(M,))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int8, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int8, shape=(K, N))
+        zero_point_A = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(1, ))
+        zero_point_B = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(1, ))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
+        col_sums = Array(role=Array.Role.TEMP, element_type=ScalarType.int32, shape=(N, ))
+        row_sums = Array(role=Array.Role.TEMP, element_type=ScalarType.int32, shape=(M, ))
 
         def get_compute_col_sums_schedule():
             compute_col_sums_nest = Nest(shape=(K, N))
@@ -711,7 +649,7 @@ class SmokeTest(unittest.TestCase):
             return compute_col_sums_nest.create_schedule()
 
         def get_scale_col_sums_schedule():
-            scale_col_sums_nest = Nest(shape=(N,))
+            scale_col_sums_nest = Nest(shape=(N, ))
             j = scale_col_sums_nest.get_indices()
 
             @scale_col_sums_nest.iteration_logic
@@ -732,7 +670,7 @@ class SmokeTest(unittest.TestCase):
             return compute_row_sums_nest.create_schedule()
 
         def get_offset_row_sums_schedule():
-            offset_row_sums_nest = Nest(shape=(M,))
+            offset_row_sums_nest = Nest(shape=(M, ))
             i = offset_row_sums_nest.get_indices()
 
             @offset_row_sums_nest.iteration_logic
@@ -742,7 +680,7 @@ class SmokeTest(unittest.TestCase):
             return offset_row_sums_nest.create_schedule()
 
         def get_scale_row_sums_schedule():
-            scale_row_sums_nest = Nest(shape=(M,))
+            scale_row_sums_nest = Nest(shape=(M, ))
             i = scale_row_sums_nest.get_indices()
 
             @scale_row_sums_nest.iteration_logic
@@ -788,43 +726,47 @@ class SmokeTest(unittest.TestCase):
         # Do the matrix multiplication
         matmul_schedule = get_matmul_schedule()
 
-        subschedules = (compute_col_sums_schedule, scale_col_sums_schedule, compute_row_sums_schedule,
-                        offset_row_sums_schedule, scale_row_sums_schedule, init_c_array_schedule, matmul_schedule)
+        subschedules = (
+            compute_col_sums_schedule, scale_col_sums_schedule, compute_row_sums_schedule, offset_row_sums_schedule,
+            scale_row_sums_schedule, init_c_array_schedule, matmul_schedule
+        )
 
         # Create a package and add our function to it
         package_name = "int8_matmul"
         package = Package()
         #package.add(fused_schedule, args=(A, B, C, zero_point_A, zero_point_B), base_name=package_name)
-        subfunctions = [package.add(sched, args=(A, B, C, zero_point_A, zero_point_B),
-                                    base_name=package_name+"_sched_"+str(index)) for index, sched in enumerate(subschedules)]
+        subfunctions = [
+            package.add(
+                sched, args=(A, B, C, zero_point_A, zero_point_B), base_name=package_name + "_sched_" + str(index)
+            ) for index, sched in enumerate(subschedules)
+        ]
 
         # Now create a main function that invokes each of the subfunctions
         def main():
             for function in subfunctions:
                 function(A, B, C, zero_point_A, zero_point_B)
 
-        main_function = package.add(main, args=(
-            A, B, C, zero_point_A, zero_point_B), base_name=package_name)
+        main_function = package.add(main, args=(A, B, C, zero_point_A, zero_point_B), base_name=package_name)
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE,
-                          output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
-    def _verify_three_matrix_multiplication_function(self, function: "accera.Function", package: Package, package_name: str) -> None:
+    def _verify_three_matrix_multiplication_function(
+        self, function: "accera.Function", package: Package, package_name: str
+    ) -> None:
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT,
-                          mode=self.PACKAGE_MODE, output_dir=output_dir)
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
-            A_test, B_test, D_test, E_test = (np.random.random(
-                p.shape).astype(np.float32) for p in function.args)
+            A_test, B_test, D_test, E_test = (np.random.random(p.shape).astype(np.float32) for p in function.args)
             E_ref = E_test + A_test @ B_test @ D_test
 
-            v.check_correctness(function.name, before=(A_test, B_test, D_test, E_test),
-                                after=(A_test, B_test, D_test, E_ref))
+            v.check_correctness(
+                function.name, before=(A_test, B_test, D_test, E_test), after=(A_test, B_test, D_test, E_ref)
+            )
 
     def test_three_matrix_multiplication_case_study_part1(self) -> None:
         import accera as acc
@@ -878,10 +820,10 @@ class SmokeTest(unittest.TestCase):
         plan.vectorize(ii)
 
         package = Package()
-        function = package.add(plan, args=(A, B, D, E),
-                               base_name="fused_three_matrix_multiplication")
+        function = package.add(plan, args=(A, B, D, E), base_name="fused_three_matrix_multiplication")
         self._verify_three_matrix_multiplication_function(
-            function, package, "three_matrix_multiplication_case_study_part1")
+            function, package, "three_matrix_multiplication_case_study_part1"
+        )
 
     def test_three_matrix_multiplication_case_study_part2(self) -> None:
         import accera as acc
@@ -939,14 +881,14 @@ class SmokeTest(unittest.TestCase):
         plan.cache(D, index=f, layout=acc.Array.Layout.FIRST_MAJOR)
         plan.cache(E, index=f, layout=acc.Array.Layout.FIRST_MAJOR)
 
-        plan.vectorize(jj0)  # unfused index
-        plan.vectorize(jj1)  # child of an unfused index
+        plan.vectorize(jj0)    # unfused index
+        plan.vectorize(jj1)    # child of an unfused index
 
         package = Package()
-        function = package.add(plan, args=(
-            A, B, D, E), base_name="fused_three_matrix_multiplication_part2")
+        function = package.add(plan, args=(A, B, D, E), base_name="fused_three_matrix_multiplication_part2")
         self._verify_three_matrix_multiplication_function(
-            function, package, "three_matrix_multiplication_case_study_part2")
+            function, package, "three_matrix_multiplication_case_study_part2"
+        )
 
     def test_three_matrix_multiplication_case_study_part3(self) -> None:
         import accera as acc
@@ -1009,33 +951,29 @@ class SmokeTest(unittest.TestCase):
         # plan.vectorize(kk1)  # unfused index, BUGBUG: failing correctness check (E is being stomped on with the same value due to broadcast)
 
         package = Package()
-        function = package.add(plan, args=(
-            A, B, D, E), base_name="fused_three_matrix_multiplication_part3")
+        function = package.add(plan, args=(A, B, D, E), base_name="fused_three_matrix_multiplication_part3")
 
         self._verify_three_matrix_multiplication_function(
-            function, package, "three_matrix_multiplication_case_study_part3")
+            function, package, "three_matrix_multiplication_case_study_part3"
+        )
 
     def test_naive_conv2d_skew(self) -> None:
-        N = 224  # input
-        Fi = 3  # input filters
-        Fo = 5  # output filters
-        K = 2   # kernel size
-        M = N - K + 1  # output (no padding, stride 1)
+        N = 224    # input
+        Fi = 3    # input filters
+        Fo = 5    # output filters
+        K = 2    # kernel size
+        M = N - K + 1    # output (no padding, stride 1)
 
-        Input = Array(role=Array.Role.INPUT,
-                      element_type=ScalarType.float32, shape=(N, N, Fi))
-        Kernel = Array(role=Array.Role.INPUT,
-                       element_type=ScalarType.float32, shape=(K, K, Fi, Fo))
-        Output = Array(role=Array.Role.INPUT_OUTPUT,
-                       element_type=ScalarType.float32, shape=(M, M, Fo))
+        Input = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, N, Fi))
+        Kernel = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, K, Fi, Fo))
+        Output = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, M, Fo))
 
         nest = Nest(shape=(Fo, M, M, Fi, K, K))
         out_ch, out_r, out_c, in_ch, k_r, k_c = nest.get_indices()
 
         @nest.iteration_logic
         def _():
-            Output[out_r, out_c, out_ch] += Input[out_r + k_r,
-                                                  out_c + k_c, in_ch] * Kernel[k_r, k_c, in_ch, out_ch]
+            Output[out_r, out_c, out_ch] += Input[out_r + k_r, out_c + k_c, in_ch] * Kernel[k_r, k_c, in_ch, out_ch]
 
         schedule = nest.create_schedule()
 
@@ -1046,20 +984,20 @@ class SmokeTest(unittest.TestCase):
         schedule.reorder(out_ch, in_ch, out_r, out_c, k_r, k_c)
 
         package = Package()
-        function = package.add(schedule, args=(
-            Input, Kernel, Output), base_name="naive_conv2d_skew")
+        function = package.add(schedule, args=(Input, Kernel, Output), base_name="naive_conv2d_skew")
 
         package_name = "test_naive_conv2d_skew"
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT,
-                          mode=self.PACKAGE_MODE, output_dir=output_dir)
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
             # correctness check
             # cf. accera-community-samples/expr/Convolution/helper.py
-            def naive_convolution_ref(input, kernel, output, row_stride=1, column_stride=1, row_padding=0, column_padding=0):
+            def naive_convolution_ref(
+                input, kernel, output, row_stride=1, column_stride=1, row_padding=0, column_padding=0
+            ):
                 input_rows, input_columns, input_channels = input.shape
                 output_rows, output_columns, out_filters = output.shape
                 kernel_rows, kernel_columns, _, _ = kernel.shape
@@ -1073,21 +1011,23 @@ class SmokeTest(unittest.TestCase):
                                         in_r = out_r * row_stride + k_r - row_padding
                                         in_c = out_c * column_stride + k_c - column_padding
                                         if in_r >= 0 and in_r < input_rows and in_c >= 0 and in_c < input_columns:
-                                            output_ref[out_r, out_c, out_f] += input[in_r,
-                                                                                    in_c, in_ch] * kernel[k_r, k_c, in_ch, out_f]
+                                            output_ref[out_r, out_c,
+                                                       out_f] += input[in_r, in_c, in_ch] * kernel[k_r, k_c, in_ch,
+                                                                                                   out_f]
                 return output_ref
 
-            Input_test, Kernel_test, Output_test = (np.random.random(
-                p.shape).astype(np.float32) for p in function.args)
-            Output_ref = naive_convolution_ref(
-                Input_test, Kernel_test, Output_test)
+            Input_test, Kernel_test, Output_test = (np.random.random(p.shape).astype(np.float32) for p in function.args)
+            Output_ref = naive_convolution_ref(Input_test, Kernel_test, Output_test)
 
-            v.check_correctness(function.name, before=(Input_test, Kernel_test, Output_test),
-                                after=(Input_test, Kernel_test, Output_ref))
+            v.check_correctness(
+                function.name,
+                before=(Input_test, Kernel_test, Output_test),
+                after=(Input_test, Kernel_test, Output_ref)
+            )
 
     def test_padded_nchwc_conv2d_manual_cache(self) -> None:
         input_channels = 64
-        base_input_shape = (input_channels, 28, 28)  # CHW order
+        base_input_shape = (input_channels, 28, 28)    # CHW order
         buffer_padding = (0, 1, 1)
         conv_padding = (0, 1, 1)
         stride = (2, 2)
@@ -1095,37 +1035,36 @@ class SmokeTest(unittest.TestCase):
         output_filters = 64
 
         import math
-        unpadded_output_rows = math.floor(
-            ((base_input_shape[1] + (2 * conv_padding[1]) - (kernel_shape[0] - 1) - 1) / stride[0]) + 1)
-        unpadded_output_columns = math.floor(
-            ((base_input_shape[2] + (2 * conv_padding[2]) - (kernel_shape[1] - 1) - 1) / stride[1]) + 1)
-        base_output_shape = (
-            output_filters, unpadded_output_rows, unpadded_output_columns)
+        unpadded_output_rows = math.floor(((base_input_shape[1] + (2 * conv_padding[1]) -
+                                            (kernel_shape[0] - 1) - 1) / stride[0]) + 1)
+        unpadded_output_columns = math.floor(((base_input_shape[2] + (2 * conv_padding[2]) -
+                                               (kernel_shape[1] - 1) - 1) / stride[1]) + 1)
+        base_output_shape = (output_filters, unpadded_output_rows, unpadded_output_columns)
 
-        padded_input_shape = [base_input_shape[i] + 2*buffer_padding[i]
-                              for i in range(len(base_input_shape))]
-        padded_output_shape = [base_output_shape[i] + 2*buffer_padding[i]
-                               for i in range(len(base_output_shape))]
+        padded_input_shape = [base_input_shape[i] + 2 * buffer_padding[i] for i in range(len(base_input_shape))]
+        padded_output_shape = [base_output_shape[i] + 2 * buffer_padding[i] for i in range(len(base_output_shape))]
 
         channels_per_block = 8
         input_channel_blocks = padded_input_shape[0] // channels_per_block
         output_filter_blocks = padded_output_shape[0] // channels_per_block
         nchwc_padded_input_shape = (
-            input_channel_blocks, padded_input_shape[1], padded_input_shape[2], channels_per_block)
-        nchwc_weights_shape = (
-            kernel_shape[0], kernel_shape[1], input_channels, output_filters)
+            input_channel_blocks, padded_input_shape[1], padded_input_shape[2], channels_per_block
+        )
+        nchwc_weights_shape = (kernel_shape[0], kernel_shape[1], input_channels, output_filters)
         nchwc_padded_output_shape = (
-            output_filter_blocks, padded_output_shape[1], padded_output_shape[2], channels_per_block)
+            output_filter_blocks, padded_output_shape[1], padded_output_shape[2], channels_per_block
+        )
 
-        Input = Array(role=Array.Role.INPUT,
-                      element_type=ScalarType.float32, shape=nchwc_padded_input_shape)
-        Kernel = Array(role=Array.Role.INPUT,
-                       element_type=ScalarType.float32, shape=nchwc_weights_shape)
-        Output = Array(role=Array.Role.INPUT_OUTPUT,
-                       element_type=ScalarType.float32, shape=nchwc_padded_output_shape)
+        Input = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=nchwc_padded_input_shape)
+        Kernel = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=nchwc_weights_shape)
+        Output = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=nchwc_padded_output_shape)
 
-        nest = Nest(shape=(output_filter_blocks, input_channel_blocks, unpadded_output_rows,
-                           kernel_shape[0], kernel_shape[1], channels_per_block, unpadded_output_columns, channels_per_block))
+        nest = Nest(
+            shape=(
+                output_filter_blocks, input_channel_blocks, unpadded_output_rows, kernel_shape[0], kernel_shape[1],
+                channels_per_block, unpadded_output_columns, channels_per_block
+            )
+        )
 
         out_f, in_ch, out_r, k_r, k_c, in_ch_b, out_c, out_f_b = nest.get_indices()
 
@@ -1149,8 +1088,7 @@ class SmokeTest(unittest.TestCase):
         out_f2 = schedule.split(out_f, 4)
 
         # Apply re-ordering
-        schedule.reorder(out_f, in_ch, out_r, out_c, k_r, k_c,
-                         in_ch_b, out_f2, out_c2, out_f_b)
+        schedule.reorder(out_f, in_ch, out_r, out_c, k_r, k_c, in_ch_b, out_f2, out_c2, out_f_b)
 
         plan = schedule.create_plan()
 
@@ -1160,20 +1098,17 @@ class SmokeTest(unittest.TestCase):
         plan.cache(Kernel, index=in_ch_b, layout=Array.Layout.FIRST_MAJOR)
 
         # Kernelize the last 4 indices in the kernel loop
-        plan.kernelize(unroll_indices=(in_ch_b, out_f2, out_c2),
-                       vectorize_indices=out_f_b)
+        plan.kernelize(unroll_indices=(in_ch_b, out_f2, out_c2), vectorize_indices=out_f_b)
 
         package = Package()
-        function = package.add(plan, args=(
-            Input, Kernel, Output), base_name="nchwc_conv2d_manual_cache")
+        function = package.add(plan, args=(Input, Kernel, Output), base_name="nchwc_conv2d_manual_cache")
 
         package_name = "test_nchwc_conv2d_manual_cache"
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT,
-                          mode=self.PACKAGE_MODE, output_dir=output_dir)
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
             # correctness check
             def naive_nchwc_convolution_ref(input, kernel, output):
@@ -1198,25 +1133,23 @@ class SmokeTest(unittest.TestCase):
                 return output_ref
 
             # unpadded_Input_test, unpadded_Kernel_test, unpadded_Output_test = (np.random.random(p.shape).astype(np.float32) for p in function.args)
-            Input_test, Kernel_test, Output_test = (np.random.random(
-                p.shape).astype(np.float32) for p in function.args)
-            Output_ref = naive_nchwc_convolution_ref(
-                Input_test, Kernel_test, Output_test)
+            Input_test, Kernel_test, Output_test = (np.random.random(p.shape).astype(np.float32) for p in function.args)
+            Output_ref = naive_nchwc_convolution_ref(Input_test, Kernel_test, Output_test)
 
-            v.check_correctness(function.name, before=(Input_test, Kernel_test, Output_test),
-                                after=(Input_test, Kernel_test, Output_ref))
+            v.check_correctness(
+                function.name,
+                before=(Input_test, Kernel_test, Output_test),
+                after=(Input_test, Kernel_test, Output_ref)
+            )
 
     def test_large_cache_vectorized(self) -> None:
         M = 1024
         N = 1024
         S = 1024
 
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(M, S))
-        B = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, S))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(S, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, S))
 
@@ -1245,16 +1178,14 @@ class SmokeTest(unittest.TestCase):
         plan.vectorize(kk)
 
         package = Package()
-        function = package.add(plan, args=(
-            A, B, C), base_name="test_large_cache_vectorized")
+        function = package.add(plan, args=(A, B, C), base_name="test_large_cache_vectorized")
 
         package_name = "test_large_cache_vectorized"
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
         with verifiers.VerifyPackage(self, package_name, output_dir):
-            package.build(name=package_name, format=self.PACKAGE_FORMAT,
-                          mode=self.PACKAGE_MODE, output_dir=output_dir)
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
     def test_cross_compile(self) -> None:
         from accera import Target
@@ -1262,12 +1193,9 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -1294,19 +1222,19 @@ class SmokeTest(unittest.TestCase):
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, "hello_matmul_pi3", TEST_PACKAGE_DIR):
-            package.build(name="hello_matmul_pi3", format=Package.Format.HAT_STATIC,
-                          mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR,
-                          platform=Package.Platform.RASPBIAN)
-
+            package.build(
+                name="hello_matmul_pi3",
+                format=Package.Format.HAT_STATIC,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+                platform=Package.Platform.RASPBIAN
+            )
 
     def test_parameter_grid_no_regression(self) -> None:
 
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(16, 16))
-        B = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(16, 16))
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(16, 16))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(16, 16))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(16, 16))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 16))
 
         nest = Nest(shape=[16, 16, 16])
         i, j, k = nest.get_indices()
@@ -1324,12 +1252,10 @@ class SmokeTest(unittest.TestCase):
         # Create a package and add our grid of functions to it
         package = Package()
 
-        package.add(plan, args=(A, B, C),
-                    base_name="alternative_matmul_16_16_16")
+        package.add(plan, args=(A, B, C), base_name="alternative_matmul_16_16_16")
 
         # Build the HAT package
-        package.build("hello_matmul_parameter_grid1",
-                      output_dir=TEST_PACKAGE_DIR)
+        package.build("hello_matmul_parameter_grid1", output_dir=TEST_PACKAGE_DIR)
 
         # Check that the package dir exists
         self.assertTrue(os.path.isdir(TEST_PACKAGE_DIR))
@@ -1338,12 +1264,9 @@ class SmokeTest(unittest.TestCase):
 
         P0, P1, P2, P3, P4, P5 = create_parameters(6)
 
-        A = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT,
-                  element_type=ScalarType.float32, shape=(P2, P1))
-        C = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(P0, P1))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(P0, P1))
 
         nest = Nest(shape=[P0, P1, P2])
         i, j, k = nest.get_indices()
@@ -1363,30 +1286,39 @@ class SmokeTest(unittest.TestCase):
         # Create a package and add our grid of functions to it
         package = Package()
 
-        package.add(plan, args=(A, B, C), parameters={P0: 16, P1: 16, P2: 16, P3: 4, P4: 2, P5: (
-            j, k, i, ii)}, base_name="alternative_matmul_16_16_16")
+        package.add(
+            plan,
+            args=(A, B, C),
+            parameters={
+                P0: 16,
+                P1: 16,
+                P2: 16,
+                P3: 4,
+                P4: 2,
+                P5: (j, k, i, ii)
+            },
+            base_name="alternative_matmul_16_16_16"
+        )
 
         # Build the HAT package
-        package.build("hello_matmul_parameter_grid",
-                      output_dir=TEST_PACKAGE_DIR)
+        package.build("hello_matmul_parameter_grid", output_dir=TEST_PACKAGE_DIR)
 
         # Check that the package dir exists
         self.assertTrue(os.path.isdir(TEST_PACKAGE_DIR))
 
-    def _verify_matrix_multiplication_function(self, function: "accera.Function", package: Package, package_name: str) -> None:
+    def _verify_matrix_multiplication_function(
+        self, function: "accera.Function", package: Package, package_name: str
+    ) -> None:
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT,
-                          mode=self.PACKAGE_MODE, output_dir=output_dir)
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
-            A_test, B_test, C_test = (np.random.random(
-                p.shape).astype(np.float32) for p in function.args)
+            A_test, B_test, C_test = (np.random.random(p.shape).astype(np.float32) for p in function.args)
             C_ref = C_test + A_test @ B_test
 
-            v.check_correctness(function.name, before=(A_test, B_test, C_test),
-                                after=(A_test, B_test, C_ref))
+            v.check_correctness(function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref))
 
     def _multicache_matmul_common(self, M, N, K, name_suffix, jjj_split=16) -> None:
         import accera as acc
@@ -1426,11 +1358,9 @@ class SmokeTest(unittest.TestCase):
         plan.vectorize(jjjj)
 
         package = Package()
-        function = package.add(plan, args=(
-            A, B, C), base_name=f"multicache_matmul_{name_suffix}")
+        function = package.add(plan, args=(A, B, C), base_name=f"multicache_matmul_{name_suffix}")
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"multicache_matmul_{name_suffix}")
+        self._verify_matrix_multiplication_function(function, package, f"multicache_matmul_{name_suffix}")
 
     def test_multicache_matmul_no_boundary(self) -> None:
         self._multicache_matmul_common(1020, 1024, 1024, "no_boundary")
@@ -1445,10 +1375,19 @@ class SmokeTest(unittest.TestCase):
         # Because a jj split of 128 will evenly divide the N dim size of 1024
         # but an inner split of 24 won't evenly divide 128 though 8 will evenly divide 24
 
-        self._multicache_matmul_common(
-            1020, 1024, 1024, "internal_boundary", jjj_split=24)
+        self._multicache_matmul_common(1020, 1024, 1024, "internal_boundary", jjj_split=24)
 
-    def _hierarchical_cache_matmul_common(self, M, N, K, A_cache_infos=[], B_cache_infos=[], C_cache_infos=[], force_boundary_conditions=False, cache_by_level=True) -> None:
+    def _hierarchical_cache_matmul_common(
+        self,
+        M,
+        N,
+        K,
+        A_cache_infos=[],
+        B_cache_infos=[],
+        C_cache_infos=[],
+        force_boundary_conditions=False,
+        cache_by_level=True
+    ) -> None:
         import accera as acc
 
         A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K))
@@ -1492,13 +1431,11 @@ class SmokeTest(unittest.TestCase):
             prev_cache = current_A_caches[len(current_A_caches) - 1]
 
             if cache_by_level:
-                new_cache = plan.cache(
-                    prev_cache, level=cache_level, trigger_level=cache_trigger_level, layout=layout)
+                new_cache = plan.cache(prev_cache, level=cache_level, trigger_level=cache_trigger_level, layout=layout)
             else:
                 cache_index = order[-cache_level]
                 trigger_index = order[-cache_trigger_level]
-                new_cache = plan.cache(
-                    prev_cache, index=cache_index, trigger_index=trigger_index, layout=layout)
+                new_cache = plan.cache(prev_cache, index=cache_index, trigger_index=trigger_index, layout=layout)
 
             current_A_caches.append(new_cache)
 
@@ -1506,13 +1443,11 @@ class SmokeTest(unittest.TestCase):
             prev_cache = current_B_caches[len(current_B_caches) - 1]
 
             if cache_by_level:
-                new_cache = plan.cache(
-                    prev_cache, level=cache_level, trigger_level=cache_trigger_level, layout=layout)
+                new_cache = plan.cache(prev_cache, level=cache_level, trigger_level=cache_trigger_level, layout=layout)
             else:
                 cache_index = order[-cache_level]
                 trigger_index = order[-cache_trigger_level]
-                new_cache = plan.cache(
-                    prev_cache, index=cache_index, trigger_index=trigger_index, layout=layout)
+                new_cache = plan.cache(prev_cache, index=cache_index, trigger_index=trigger_index, layout=layout)
 
             current_B_caches.append(new_cache)
 
@@ -1520,12 +1455,10 @@ class SmokeTest(unittest.TestCase):
             prev_cache = current_C_caches[len(current_C_caches) - 1]
 
             if cache_by_level:
-                new_cache = plan.cache(
-                    prev_cache, level=cache_level, layout=layout)
+                new_cache = plan.cache(prev_cache, level=cache_level, layout=layout)
             else:
                 cache_index = order[-cache_level]
-                new_cache = plan.cache(
-                    prev_cache, index=cache_index, layout=layout)
+                new_cache = plan.cache(prev_cache, index=cache_index, layout=layout)
 
             current_C_caches.append(new_cache)
 
@@ -1538,24 +1471,28 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR),
-                    (3, 5, acc.Array.Layout.LAST_MAJOR)]
+        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR), (3, 5, acc.Array.Layout.LAST_MAJOR)]
 
-        b_caches = [(4, 6, acc.Array.Layout.FIRST_MAJOR),
-                    (2, 4, acc.Array.Layout.LAST_MAJOR)]
+        b_caches = [(4, 6, acc.Array.Layout.FIRST_MAJOR), (2, 4, acc.Array.Layout.LAST_MAJOR)]
 
-        c_caches = [(8, acc.Array.Layout.LAST_MAJOR),
-                    (6, acc.Array.Layout.FIRST_MAJOR)]
+        c_caches = [(8, acc.Array.Layout.LAST_MAJOR), (6, acc.Array.Layout.FIRST_MAJOR)]
 
         package = Package()
         plan, args = self._hierarchical_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=False, cache_by_level=False)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"hierarchical_cache_matmul_2_caches_simple_index")
+            M,
+            N,
+            K,
+            A_cache_infos=a_caches,
+            B_cache_infos=b_caches,
+            C_cache_infos=c_caches,
+            force_boundary_conditions=False,
+            cache_by_level=False
+        )
+        function = package.add(plan, args=args, base_name=f"hierarchical_cache_matmul_2_caches_simple_index")
 
         self._verify_matrix_multiplication_function(
-            function, package, f"hierarchical_cache_matmul_2_caches_simple_index")
+            function, package, f"hierarchical_cache_matmul_2_caches_simple_index"
+        )
 
     def test_hierarchical_cache_matmul_2_caches_simple_boundaries(self) -> None:
         import accera as acc
@@ -1564,24 +1501,25 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR),
-                    (3, 5, acc.Array.Layout.LAST_MAJOR)]
+        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR), (3, 5, acc.Array.Layout.LAST_MAJOR)]
 
-        b_caches = [(4, 6, acc.Array.Layout.FIRST_MAJOR),
-                    (2, 4, acc.Array.Layout.LAST_MAJOR)]
+        b_caches = [(4, 6, acc.Array.Layout.FIRST_MAJOR), (2, 4, acc.Array.Layout.LAST_MAJOR)]
 
-        c_caches = [(8, acc.Array.Layout.LAST_MAJOR),
-                    (6, acc.Array.Layout.FIRST_MAJOR)]
+        c_caches = [(8, acc.Array.Layout.LAST_MAJOR), (6, acc.Array.Layout.FIRST_MAJOR)]
 
         package = Package()
         plan, args = self._hierarchical_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=False)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"hierarchical_cache_matmul_2_caches_simple")
+            M,
+            N,
+            K,
+            A_cache_infos=a_caches,
+            B_cache_infos=b_caches,
+            C_cache_infos=c_caches,
+            force_boundary_conditions=False
+        )
+        function = package.add(plan, args=args, base_name=f"hierarchical_cache_matmul_2_caches_simple")
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"hierarchical_cache_matmul_2_caches_simple")
+        self._verify_matrix_multiplication_function(function, package, f"hierarchical_cache_matmul_2_caches_simple")
 
     def test_hierarchical_cache_matmul_2_caches_complicated_boundaries(self) -> None:
         import accera as acc
@@ -1590,24 +1528,27 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR),
-                    (3, 5, acc.Array.Layout.LAST_MAJOR)]
+        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR), (3, 5, acc.Array.Layout.LAST_MAJOR)]
 
-        b_caches = [(4, 6, acc.Array.Layout.FIRST_MAJOR),
-                    (2, 4, acc.Array.Layout.LAST_MAJOR)]
+        b_caches = [(4, 6, acc.Array.Layout.FIRST_MAJOR), (2, 4, acc.Array.Layout.LAST_MAJOR)]
 
-        c_caches = [(8, acc.Array.Layout.LAST_MAJOR),
-                    (6, acc.Array.Layout.FIRST_MAJOR)]
+        c_caches = [(8, acc.Array.Layout.LAST_MAJOR), (6, acc.Array.Layout.FIRST_MAJOR)]
 
         package = Package()
         plan, args = self._hierarchical_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=True)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"hierarchical_cache_matmul_2_caches_complicated")
+            M,
+            N,
+            K,
+            A_cache_infos=a_caches,
+            B_cache_infos=b_caches,
+            C_cache_infos=c_caches,
+            force_boundary_conditions=True
+        )
+        function = package.add(plan, args=args, base_name=f"hierarchical_cache_matmul_2_caches_complicated")
 
         self._verify_matrix_multiplication_function(
-            function, package, f"hierarchical_cache_matmul_2_caches_complicated")
+            function, package, f"hierarchical_cache_matmul_2_caches_complicated"
+        )
 
     def test_hierarchical_cache_matmul_3_caches_simple_boundaries(self) -> None:
         import accera as acc
@@ -1616,27 +1557,28 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR),
-                    (4, 5, acc.Array.Layout.LAST_MAJOR),
+        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR), (4, 5, acc.Array.Layout.LAST_MAJOR),
                     (3, 3, acc.Array.Layout.FIRST_MAJOR)]
 
-        b_caches = [(5, 6, acc.Array.Layout.FIRST_MAJOR),
-                    (3, 5, acc.Array.Layout.LAST_MAJOR),
+        b_caches = [(5, 6, acc.Array.Layout.FIRST_MAJOR), (3, 5, acc.Array.Layout.LAST_MAJOR),
                     (2, 3, acc.Array.Layout.FIRST_MAJOR)]
 
-        c_caches = [(8, acc.Array.Layout.LAST_MAJOR),
-                    (6, acc.Array.Layout.FIRST_MAJOR),
+        c_caches = [(8, acc.Array.Layout.LAST_MAJOR), (6, acc.Array.Layout.FIRST_MAJOR),
                     (3, acc.Array.Layout.LAST_MAJOR)]
 
         package = Package()
         plan, args = self._hierarchical_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=False)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"hierarchical_cache_matmul_3_caches_simple")
+            M,
+            N,
+            K,
+            A_cache_infos=a_caches,
+            B_cache_infos=b_caches,
+            C_cache_infos=c_caches,
+            force_boundary_conditions=False
+        )
+        function = package.add(plan, args=args, base_name=f"hierarchical_cache_matmul_3_caches_simple")
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"hierarchical_cache_matmul_3_caches_simple")
+        self._verify_matrix_multiplication_function(function, package, f"hierarchical_cache_matmul_3_caches_simple")
 
     def test_hierarchical_cache_matmul_3_caches_complicated_boundaries(self) -> None:
         import accera as acc
@@ -1645,27 +1587,30 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR),
-                    (4, 5, acc.Array.Layout.LAST_MAJOR),
+        a_caches = [(5, 7, acc.Array.Layout.FIRST_MAJOR), (4, 5, acc.Array.Layout.LAST_MAJOR),
                     (3, 3, acc.Array.Layout.FIRST_MAJOR)]
 
-        b_caches = [(5, 6, acc.Array.Layout.FIRST_MAJOR),
-                    (3, 5, acc.Array.Layout.LAST_MAJOR),
+        b_caches = [(5, 6, acc.Array.Layout.FIRST_MAJOR), (3, 5, acc.Array.Layout.LAST_MAJOR),
                     (2, 3, acc.Array.Layout.FIRST_MAJOR)]
 
-        c_caches = [(8, acc.Array.Layout.LAST_MAJOR),
-                    (6, acc.Array.Layout.FIRST_MAJOR),
+        c_caches = [(8, acc.Array.Layout.LAST_MAJOR), (6, acc.Array.Layout.FIRST_MAJOR),
                     (3, acc.Array.Layout.LAST_MAJOR)]
 
         package = Package()
         plan, args = self._hierarchical_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=True)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"hierarchical_cache_matmul_3_caches_complicated")
+            M,
+            N,
+            K,
+            A_cache_infos=a_caches,
+            B_cache_infos=b_caches,
+            C_cache_infos=c_caches,
+            force_boundary_conditions=True
+        )
+        function = package.add(plan, args=args, base_name=f"hierarchical_cache_matmul_3_caches_complicated")
 
         self._verify_matrix_multiplication_function(
-            function, package, f"hierarchical_cache_matmul_3_caches_complicated")
+            function, package, f"hierarchical_cache_matmul_3_caches_complicated"
+        )
 
     def test_hierarchical_cache_parameterized(self) -> None:
         import accera as acc
@@ -1674,10 +1619,8 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_level_1, a_level_2, a_trigger_1, a_trigger_2 = acc.create_parameters(
-            4)
-        b_level_1, b_level_2, b_trigger_1, b_trigger_2 = acc.create_parameters(
-            4)
+        a_level_1, a_level_2, a_trigger_1, a_trigger_2 = acc.create_parameters(4)
+        b_level_1, b_level_2, b_trigger_1, b_trigger_2 = acc.create_parameters(4)
         c_level_1, c_level_2 = acc.create_parameters(2)
 
         a_caches = [(a_level_1, a_trigger_1, acc.Array.Layout.FIRST_MAJOR),
@@ -1686,32 +1629,35 @@ class SmokeTest(unittest.TestCase):
         b_caches = [(b_level_1, b_trigger_1, acc.Array.Layout.FIRST_MAJOR),
                     (b_level_2, b_trigger_2, acc.Array.Layout.LAST_MAJOR)]
 
-        c_caches = [(c_level_1, acc.Array.Layout.FIRST_MAJOR),
-                    (c_level_2, acc.Array.Layout.LAST_MAJOR)]
+        c_caches = [(c_level_1, acc.Array.Layout.FIRST_MAJOR), (c_level_2, acc.Array.Layout.LAST_MAJOR)]
 
         package = Package()
         plan, args = self._hierarchical_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
-        function = package.add(plan,
-                               args=args,
-                               parameters={
-                                   a_level_1: 5,
-                                   a_trigger_1: 7,
-                                   a_level_2: 3,
-                                   a_trigger_2: 5,
-                                   b_level_1: 5,
-                                   b_trigger_1: 6,
-                                   b_level_2: 3,
-                                   b_trigger_2: 5,
-                                   c_level_1: 8,
-                                   c_level_2: 6,
-                               },
-                               base_name=f"parameterized_hierarchical_cache_matmul")
+            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches
+        )
+        function = package.add(
+            plan,
+            args=args,
+            parameters={
+                a_level_1: 5,
+                a_trigger_1: 7,
+                a_level_2: 3,
+                a_trigger_2: 5,
+                b_level_1: 5,
+                b_trigger_1: 6,
+                b_level_2: 3,
+                b_trigger_2: 5,
+                c_level_1: 8,
+                c_level_2: 6,
+            },
+            base_name=f"parameterized_hierarchical_cache_matmul"
+        )
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"parameterized_hierarchical_cache_matmul")
+        self._verify_matrix_multiplication_function(function, package, f"parameterized_hierarchical_cache_matmul")
 
-    def _max_element_cache_matmul_common(self, M, N, K, A_cache_infos=[], B_cache_infos=[], C_cache_infos=[], force_boundary_conditions=False) -> None:
+    def _max_element_cache_matmul_common(
+        self, M, N, K, A_cache_infos=[], B_cache_infos=[], C_cache_infos=[], force_boundary_conditions=False
+    ) -> None:
         import accera as acc
 
         A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K))
@@ -1753,20 +1699,17 @@ class SmokeTest(unittest.TestCase):
         current_C_caches = [C]
         for (cache_budget, layout) in A_cache_infos:
             prev_cache = current_A_caches[len(current_A_caches) - 1]
-            new_cache = plan.cache(
-                prev_cache, max_elements=cache_budget, layout=layout)
+            new_cache = plan.cache(prev_cache, max_elements=cache_budget, layout=layout)
             current_A_caches.append(new_cache)
 
         for (cache_budget, layout) in B_cache_infos:
             prev_cache = current_B_caches[len(current_B_caches) - 1]
-            new_cache = plan.cache(
-                prev_cache, max_elements=cache_budget, layout=layout)
+            new_cache = plan.cache(prev_cache, max_elements=cache_budget, layout=layout)
             current_B_caches.append(new_cache)
 
         for (cache_budget, layout) in C_cache_infos:
             prev_cache = current_C_caches[len(current_C_caches) - 1]
-            new_cache = plan.cache(
-                prev_cache, max_elements=cache_budget, layout=layout)
+            new_cache = plan.cache(prev_cache, max_elements=cache_budget, layout=layout)
             current_C_caches.append(new_cache)
 
         return plan, (A, B, C)
@@ -1785,13 +1728,11 @@ class SmokeTest(unittest.TestCase):
 
         package = Package()
         plan, args = self._max_element_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"test_simple_single_budget_cache")
+            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches
+        )
+        function = package.add(plan, args=args, base_name=f"test_simple_single_budget_cache")
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"test_simple_single_budget_cache")
+        self._verify_matrix_multiplication_function(function, package, f"test_simple_single_budget_cache")
 
     def test_multiple_single_budget_caches(self) -> None:
         import accera as acc
@@ -1803,19 +1744,17 @@ class SmokeTest(unittest.TestCase):
         # This should set the cache level to the kkk index (footprint should be 6 * 4 = 24 elements at that point, whereas the next level out is 6 * 256 = 1536 elements)
         a_caches = [(128, acc.Array.Layout.LAST_MAJOR)]
         # This should set the cache level to the k index
-        b_caches = [(K*N // 128, acc.Array.Layout.FIRST_MAJOR)]
+        b_caches = [(K * N // 128, acc.Array.Layout.FIRST_MAJOR)]
         # This should set the cache level to the ii index
         c_caches = [(6 * 16, acc.Array.Layout.FIRST_MAJOR)]
 
         package = Package()
         plan, args = self._max_element_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"test_multiple_single_budget_caches")
+            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches
+        )
+        function = package.add(plan, args=args, base_name=f"test_multiple_single_budget_caches")
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"test_multiple_single_budget_caches")
+        self._verify_matrix_multiplication_function(function, package, f"test_multiple_single_budget_caches")
 
     def test_hierarchical_budget_caches(self) -> None:
         import accera as acc
@@ -1824,22 +1763,17 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_caches = [(128, acc.Array.Layout.LAST_MAJOR),
-                    (6, acc.Array.Layout.FIRST_MAJOR)]
-        b_caches = [(K*N // 128, acc.Array.Layout.FIRST_MAJOR),
-                    (K*N // (128*256), acc.Array.Layout.LAST_MAJOR)]
-        c_caches = [(6 * 128, acc.Array.Layout.FIRST_MAJOR),
-                    (6 * 16, acc.Array.Layout.LAST_MAJOR)]
+        a_caches = [(128, acc.Array.Layout.LAST_MAJOR), (6, acc.Array.Layout.FIRST_MAJOR)]
+        b_caches = [(K * N // 128, acc.Array.Layout.FIRST_MAJOR), (K * N // (128 * 256), acc.Array.Layout.LAST_MAJOR)]
+        c_caches = [(6 * 128, acc.Array.Layout.FIRST_MAJOR), (6 * 16, acc.Array.Layout.LAST_MAJOR)]
 
         package = Package()
         plan, args = self._max_element_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"test_hierarchical_budget_caches")
+            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches
+        )
+        function = package.add(plan, args=args, base_name=f"test_hierarchical_budget_caches")
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"test_hierarchical_budget_caches")
+        self._verify_matrix_multiplication_function(function, package, f"test_hierarchical_budget_caches")
 
     def test_hierarchical_budget_caches_boundary_conditions(self) -> None:
         import accera as acc
@@ -1848,22 +1782,25 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_caches = [(128, acc.Array.Layout.LAST_MAJOR),
-                    (6, acc.Array.Layout.FIRST_MAJOR)]
-        b_caches = [(K*N // 128, acc.Array.Layout.FIRST_MAJOR),
-                    (K*N // (128*256), acc.Array.Layout.LAST_MAJOR)]
-        c_caches = [(6 * 128, acc.Array.Layout.FIRST_MAJOR),
-                    (6 * 16, acc.Array.Layout.LAST_MAJOR)]
+        a_caches = [(128, acc.Array.Layout.LAST_MAJOR), (6, acc.Array.Layout.FIRST_MAJOR)]
+        b_caches = [(K * N // 128, acc.Array.Layout.FIRST_MAJOR), (K * N // (128 * 256), acc.Array.Layout.LAST_MAJOR)]
+        c_caches = [(6 * 128, acc.Array.Layout.FIRST_MAJOR), (6 * 16, acc.Array.Layout.LAST_MAJOR)]
 
         package = Package()
         plan, args = self._max_element_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches, force_boundary_conditions=True)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"test_hierarchical_budget_caches_boundary_conditions")
+            M,
+            N,
+            K,
+            A_cache_infos=a_caches,
+            B_cache_infos=b_caches,
+            C_cache_infos=c_caches,
+            force_boundary_conditions=True
+        )
+        function = package.add(plan, args=args, base_name=f"test_hierarchical_budget_caches_boundary_conditions")
 
         self._verify_matrix_multiplication_function(
-            function, package, f"test_hierarchical_budget_caches_boundary_conditions")
+            function, package, f"test_hierarchical_budget_caches_boundary_conditions"
+        )
 
     def test_small_budget_cache(self) -> None:
         import accera as acc
@@ -1878,13 +1815,11 @@ class SmokeTest(unittest.TestCase):
 
         package = Package()
         plan, args = self._max_element_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"test_small_budget_cache")
+            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches
+        )
+        function = package.add(plan, args=args, base_name=f"test_small_budget_cache")
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"test_small_budget_cache")
+        self._verify_matrix_multiplication_function(function, package, f"test_small_budget_cache")
 
     def test_max_budget_cache(self) -> None:
         import accera as acc
@@ -1893,19 +1828,17 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_caches = [(M*K, acc.Array.Layout.LAST_MAJOR)]
-        b_caches = [(K*N, acc.Array.Layout.FIRST_MAJOR)]
-        c_caches = [(M*N, acc.Array.Layout.FIRST_MAJOR)]
+        a_caches = [(M * K, acc.Array.Layout.LAST_MAJOR)]
+        b_caches = [(K * N, acc.Array.Layout.FIRST_MAJOR)]
+        c_caches = [(M * N, acc.Array.Layout.FIRST_MAJOR)]
 
         package = Package()
         plan, args = self._max_element_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"test_max_budget_cache")
+            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches
+        )
+        function = package.add(plan, args=args, base_name=f"test_max_budget_cache")
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"test_max_budget_cache")
+        self._verify_matrix_multiplication_function(function, package, f"test_max_budget_cache")
 
     def test_overmax_budget_cache(self) -> None:
         import accera as acc
@@ -1914,19 +1847,17 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_caches = [(2*M*K, acc.Array.Layout.LAST_MAJOR)]
-        b_caches = [(2*K*N, acc.Array.Layout.FIRST_MAJOR)]
-        c_caches = [(2*M*N, acc.Array.Layout.FIRST_MAJOR)]
+        a_caches = [(2 * M * K, acc.Array.Layout.LAST_MAJOR)]
+        b_caches = [(2 * K * N, acc.Array.Layout.FIRST_MAJOR)]
+        c_caches = [(2 * M * N, acc.Array.Layout.FIRST_MAJOR)]
 
         package = Package()
         plan, args = self._max_element_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"test_overmax_budget_cache")
+            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches
+        )
+        function = package.add(plan, args=args, base_name=f"test_overmax_budget_cache")
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"test_overmax_budget_cache")
+        self._verify_matrix_multiplication_function(function, package, f"test_overmax_budget_cache")
 
     def test_boundary_differently_shaped_budget_cache(self) -> None:
         import accera as acc
@@ -1943,19 +1874,104 @@ class SmokeTest(unittest.TestCase):
         # we should wind up with two different cache buffers at two different levels in separate regions
 
         # 5 to be between 4 and 6, 256 because that is the K dimension tile size
-        a_caches = [(5*256, acc.Array.Layout.LAST_MAJOR)]
+        a_caches = [(5 * 256, acc.Array.Layout.LAST_MAJOR)]
         b_caches = []
         c_caches = []
 
         package = Package()
         plan, args = self._max_element_cache_matmul_common(
-            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches)
-        function = package.add(plan,
-                               args=args,
-                               base_name=f"test_boundary_differently_shaped_budget_cache")
+            M, N, K, A_cache_infos=a_caches, B_cache_infos=b_caches, C_cache_infos=c_caches
+        )
+        function = package.add(plan, args=args, base_name=f"test_boundary_differently_shaped_budget_cache")
 
-        self._verify_matrix_multiplication_function(
-            function, package, f"test_boundary_differently_shaped_budget_cache")
+        self._verify_matrix_multiplication_function(function, package, f"test_boundary_differently_shaped_budget_cache")
+
+    @expectedFailure(FailedReason.BUG, "GPU support is a WIP")
+    def test_gpu_vec_add(self):
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        # Define our vector sizes
+        N = 2**16
+        block_x = 256
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
+
+        nest = Nest(shape=(N, ))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i] = A[i] + B[i]
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, block_x)
+        schedule.reorder(i, ii)
+
+        target = Target(category=Target.Category.GPU)
+        plan = schedule.create_plan(target)
+        plan.bind((i, ii), grid=(target.GridUnit.BLOCK_X, target.GridUnit.THREAD_X))
+
+        test_name = "test_gpu_vec_add"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+
+    @expectedFailure(FailedReason.BUG, "GPU support is a WIP")
+    def test_cuda_module_output(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
+        from accera._lang_python._lang import _MemorySpace
+
+        # Define our vector sizes
+        N = 2048
+        block_x = 16
+        block_y = block_x
+
+        In = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
+        Out = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
+
+        nest = Nest(shape=(N, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            Out[i, j] = In[i, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj = schedule.tile((i, j), (block_x, block_y))
+
+        target = Target(Target.Model.NVIDIA_V100)
+        plan = schedule.create_plan(target=target)
+        plan.bind((i, j, ii, jj), grid=(BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y))
+        plan.cache(In, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.LAST_MAJOR)
+
+        test_name = "test_cuda_module_output"
+        package = Package()
+        function = package.add(plan, args=(In, Out), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA,
+                mode=Package.Mode.DEBUG,
+                output_dir=output_dir
+            )
 
 
 if __name__ == '__main__':

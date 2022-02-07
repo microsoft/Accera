@@ -29,8 +29,8 @@ PYBIND11_MODULE(_lang_python, m)
 
     lang::DefineContainerTypes(m, lang_mod);
     lang::DefineNestTypes(lang_mod);
-    lang::DefineSchedulingTypes(lang_mod);
     lang::DefineExecutionPlanTypes(lang_mod);
+    lang::DefineSchedulingTypes(lang_mod);
     lang::DefinePackagingTypes(m, lang_mod);
     lang::DefineOperations(lang_mod);
 

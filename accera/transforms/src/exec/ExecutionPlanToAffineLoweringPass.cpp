@@ -21,6 +21,7 @@
 #include <utilities/include/TypeTraits.h>
 
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/raw_os_ostream.h>
 
@@ -39,6 +40,7 @@
 #include <mlir/IR/Dominance.h>
 #include <mlir/IR/Identifier.h>
 #include <mlir/IR/IntegerSet.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -203,6 +205,13 @@ struct InPlaceUnrollAffineForOpConversion : public OpRewritePattern<AffineForOp>
     bool printVectorizationDetails = false;
 };
 
+struct TensorizeAffineForOpConversion : public OpRewritePattern<AffineForOp>
+{
+    using OpRewritePattern<AffineForOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(AffineForOp affineForOp, PatternRewriter& rewriter) const final;
+};
+
 struct ParallelizeAffineForOpConversion : public OpRewritePattern<AffineForOp>
 {
     using OpRewritePattern<AffineForOp>::OpRewritePattern;
@@ -300,6 +309,11 @@ struct ExecutionPlanVectorizationPass : public ConvertExecutionPlanVectorization
     void runOnOperation() final;
 };
 
+struct ExecutionPlanTensorizationPass : public ConvertExecutionPlanTensorizationBase<ExecutionPlanTensorizationPass>
+{
+    void runOnOperation() final;
+};
+
 struct ExecutionPlanParallelizationPass : public ConvertExecutionPlanParallelizationBase<ExecutionPlanParallelizationPass>
 {
     void runOnOperation() final;
@@ -346,7 +360,7 @@ VectorizationInfo GetVectorizationInfo(Operation* op)
     return vectorizationInfoAttr.getValue();
 }
 
-void SetVectorizationInfo(Operation* op, const VectorizationInfo& vecInfo)
+[[maybe_unused]] void SetVectorizationInfo(Operation* op, const VectorizationInfo& vecInfo)
 {
     op->setAttr(VectorizationInfoAttr::getKeyName(), VectorizationInfoAttr::get(vecInfo, op->getContext()));
 }
@@ -359,7 +373,7 @@ void SetVectorizationInfo(ScheduleOp op, Index index, const VectorizationInfo& v
     op.addLoopAttribute(index, vectorizationInfoIdentifier, VectorizationInfoAttr::get(vecInfo, builder.getContext()));
 }
 
-void SetVectorizationInfo(ScheduleOp op, SymbolicIndexOp index, const VectorizationInfo& vecInfo)
+[[maybe_unused]] void SetVectorizationInfo(ScheduleOp op, SymbolicIndexOp index, const VectorizationInfo& vecInfo)
 {
     SetVectorizationInfo(op, index.getValue(), vecInfo);
 }
@@ -388,12 +402,12 @@ InPlaceUnrollInfo GetInPlaceUnrollInfo(Operation* op)
     return inPlaceUnrollInfoAttr.getValue();
 }
 
-void SetInPlaceUnrollInfo(Operation* op, const InPlaceUnrollInfo& inPlaceUnrollInfo)
+[[maybe_unused]] void SetInPlaceUnrollInfo(Operation* op, const InPlaceUnrollInfo& inPlaceUnrollInfo)
 {
     op->setAttr(InPlaceUnrollInfoAttr::getKeyName(), InPlaceUnrollInfoAttr::get(inPlaceUnrollInfo, op->getContext()));
 }
 
-void SetInPlaceUnrollInfo(ScheduleOp op, Index index, const InPlaceUnrollInfo& inPlaceUnrollInfo)
+[[maybe_unused]] void SetInPlaceUnrollInfo(ScheduleOp op, Index index, const InPlaceUnrollInfo& inPlaceUnrollInfo)
 {
     OpBuilder builder(op);
     auto inPlaceUnrollInfoIdentifier = builder.getIdentifier(InPlaceUnrollInfoAttr::getKeyName());
@@ -410,6 +424,27 @@ void RemoveInPlaceUnrollInfo(Operation* op)
     OpBuilder builder(op);
     auto inPlaceUnrollInfoIdentifier = builder.getIdentifier(InPlaceUnrollInfoAttr::getKeyName());
     op->removeAttr(inPlaceUnrollInfoIdentifier);
+}
+
+// Tensorization-related functions
+
+bool HasTensorizationInfo(Operation* op)
+{
+    OpBuilder builder(op);
+    auto tensorizationInfoIdentifier = builder.getIdentifier(TensorizationInfoAttr::getKeyName());
+    auto tensorizationInfoAttr = op->getAttrOfType<TensorizationInfoAttr>(tensorizationInfoIdentifier);
+
+    return tensorizationInfoAttr != nullptr;
+}
+
+TensorizationInfo GetTensorizationInfo(Operation* op)
+{
+    OpBuilder builder(op);
+    auto tensorizationInfoIdentifier = builder.getIdentifier(TensorizationInfoAttr::getKeyName());
+    auto tensorizeInfoAttr = op->getAttrOfType<TensorizationInfoAttr>(tensorizationInfoIdentifier);
+    assert(tensorizeInfoAttr);
+
+    return tensorizeInfoAttr.getValue();
 }
 
 // Parallelization-related functions
@@ -489,7 +524,7 @@ bool HasOutOfBoundsAccess(LoadOrStoreOp op, mlir::Location loc)
     mlir::MemRefRegion accessRegion(loc);
     auto memRefType = op.getMemRefType();
     unsigned rank = memRefType.getRank();
-    accessRegion.compute(op, 0, nullptr /*sliceState*/, false /*addMemRefDimBounds */);
+    (void)accessRegion.compute(op, 0, nullptr /*sliceState*/, false /*addMemRefDimBounds */);
     bool outOfBounds = false;
     // For each dimension, check for out of bounds.
     for (unsigned dim = 0; dim < rank; ++dim)
@@ -1549,7 +1584,7 @@ LogicalResult ActiveElementCacheCopyOpRewrite::matchAndRewrite(ActiveElementCach
         //        at some level of the loopnest outside of the innermost kernel but at the outermost
         //        loop level handled by every thread in cases where threads need to loop over a series
         //        of block (e.g. blocks in the K dimension in the GEMM case)
-        (void)util::CreateGPUControlBarrier(rewriter, loc);
+        (void)util::CreateGPUControlBarrier(rewriter, "Block", loc);
     }
 
     auto [copyNestOp, copyScheduleOp, copyExecPlanOp] = CreateActiveElementCacheLoopnest(rewriter, cacheCopyOp, elementByteWidth, "copy", [&](OpBuilder& cacheCopyBuilder, const std::vector<mlir::Value>& orderedSymbolicIndexOpValues) {
@@ -1618,7 +1653,7 @@ LogicalResult ActiveElementCacheCopyOpRewrite::matchAndRewrite(ActiveElementCach
         auto procMap = rewriter.getDictionaryAttr({ mappings });
         copyExecPlanOp->setAttr(procMapAttrName, procMap);
 
-        (void)util::CreateGPUControlBarrier(rewriter, loc);
+        (void)util::CreateGPUControlBarrier(rewriter, "Block", loc);
     }
 
     rewriter.eraseOp(cacheCopyOp);
@@ -3943,10 +3978,165 @@ LogicalResult InPlaceUnrollAffineForOpConversion::matchAndRewrite(AffineForOp af
 
     if (!erasedBaseLoop)
     {
-        util::PromoteIfSingleIteration(rewriter, affineForOp);
+        (void)util::PromoteIfSingleIteration(rewriter, affineForOp);
     }
 
     rewriter.finalizeRootUpdate(affineForOp);
+
+    return success();
+}
+
+LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affineForOp, PatternRewriter& rewriter) const
+{
+    if (!HasTensorizationInfo(affineForOp))
+    {
+        // This isn't an AffineForOp marked for tensorization so just return without modifying it
+        return success();
+    }
+
+    auto tensorizationInfo = GetTensorizationInfo(affineForOp);
+
+    SmallVector<AffineForOp, 4> loops;
+    mlir::getPerfectlyNestedLoops(loops, affineForOp);
+    if (loops.size() != 3) // there should be 3 loops in the nest
+    {
+        return failure();
+    }
+    for (auto& en : llvm::enumerate(loops))
+    {
+        auto loop = en.value();
+        if (!loop.hasConstantBounds())
+        {
+            return failure();
+        }
+        if (loop.getConstantLowerBound() != 0)
+        {
+            return failure();
+        }
+        if (loop.getConstantUpperBound() != tensorizationInfo.dim[en.index()])
+        {
+            return failure();
+        }
+    }
+
+    auto innerLoop = loops[2]; // the inner most loop
+    auto innerLoopBodyIter = innerLoop.getBody()->begin();
+
+    // 1. load from A matrix
+    if (!isa<mlir::AffineLoadOp>(innerLoopBodyIter))
+    {
+        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the load from A Op\n";
+        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the load from A Op");
+    }
+    auto loadAOp = cast<mlir::AffineLoadOp>(innerLoopBodyIter);
+
+    (void)++innerLoopBodyIter;
+    // 1. load from B matrix
+    if (!isa<mlir::AffineLoadOp>(innerLoopBodyIter))
+    {
+        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the load from B Op\n";
+        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the load from B Op");
+    }
+    auto loadBOp = cast<mlir::AffineLoadOp>(innerLoopBodyIter);
+
+    (void)++innerLoopBodyIter;
+    // 1. muliply A * B
+    if (!isa<v::BinOp>(innerLoopBodyIter))
+    {
+        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the binary A*C multiplication op\n";
+        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the binary A*C multiplication op");
+    }
+    auto mulAB = cast<v::BinOp>(innerLoopBodyIter);
+    if (mulAB.predicate() != v::BinaryOpPredicate::MUL)
+    {
+        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the multiplication op\n";
+        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the multiplication op");
+    }
+
+    (void)++innerLoopBodyIter;
+    // 4. load C
+    if (!isa<mlir::AffineLoadOp>(innerLoopBodyIter))
+    {
+        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the load from C Op\n";
+        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the load from C Op");
+    }
+    auto loadCOp = cast<mlir::AffineLoadOp>(innerLoopBodyIter);
+
+    (void)++innerLoopBodyIter;
+    // 1. add A * B + C
+    if (!isa<v::BinOp>(innerLoopBodyIter))
+    {
+        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the binary C accumulation op\n";
+        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the binary C accumulation op");
+    }
+    auto accumC = cast<v::BinOp>(innerLoopBodyIter);
+    if (accumC.predicate() != v::BinaryOpPredicate::ADD)
+    {
+        llvm::dbgs() << "While processing " << accumC << ". Failed to match the accumulation op\n";
+        return rewriter.notifyMatchFailure(accumC, "Failed to match the accumulation op");
+    }
+
+    (void)++innerLoopBodyIter;
+    // 4. store C
+    if (!isa<mlir::AffineStoreOp>(innerLoopBodyIter))
+    {
+        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the store into C\n";
+        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the store into C");
+    }
+    [[maybe_unused]] auto storeCOp = cast<mlir::AffineStoreOp>(innerLoopBodyIter);
+
+    (void)++innerLoopBodyIter;
+    // Ignore the yeild op at the end
+    if (isa<mlir::AffineYieldOp>(innerLoopBodyIter))
+    {
+        (void)++innerLoopBodyIter;
+    }
+    if (innerLoopBodyIter != innerLoop.getBody()->end())
+    {
+        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". The store into C was not the last instruction\n";
+        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "The store into C was not the last instruction");
+    }
+
+    for (auto loop : loops)
+    {
+        loop.setConstantUpperBound(1);
+    }
+
+    mlir::OpBuilder::InsertionGuard guard(rewriter);
+
+    rewriter.setInsertionPoint(innerLoop.getBody()->getTerminator());
+
+    // initialize the accum C vector
+    auto loc = affineForOp.getLoc();
+    auto ctx = rewriter.getContext();
+    auto cTy = loadCOp.getMemRefType();
+    auto cElementTy = cTy.getElementType();
+    auto zero = rewriter.create<ConstantOp>(loc, rewriter.getZeroAttr(cElementTy));
+
+    // TODO: Update TensorizationInfo to provide values for all the "4" literals below
+    auto cVec = rewriter.create<vector::BroadcastOp>(loc, VectorType::get({ 4 }, cElementTy), zero);
+    v::MFMAComputeOp mfmaComputeOp;
+    for (int ii = 0; ii < 4; ii++)
+    {
+        auto loadAAccessMap = loadAOp.getAffineMap();
+        auto shiftALoad = mlir::AffineMap::get(
+            loadAAccessMap.getNumDims(),
+            loadAAccessMap.getNumSymbols(),
+            { loadAAccessMap.getResult(0), loadAAccessMap.getResult(1) + 4 * ii },
+            ctx);
+        auto loadAElem = rewriter.create<mlir::AffineLoadOp>(loc, loadAOp.getMemRef(), shiftALoad, loadAOp.indices());
+
+        auto loadBAccessMap = loadBOp.getAffineMap();
+        auto shiftBLoad = mlir::AffineMap::get(
+            loadBAccessMap.getNumDims(),
+            loadBAccessMap.getNumSymbols(),
+            { loadBAccessMap.getResult(0) + 4 * ii, loadBAccessMap.getResult(1) },
+            ctx);
+        auto loadBElem = rewriter.create<mlir::AffineLoadOp>(loc, loadBOp.getMemRef(), shiftBLoad, loadBOp.indices());
+        mfmaComputeOp = rewriter.create<v::MFMAComputeOp>(loc, cVec.getType(), loadAElem.result(), loadBElem.result(), ii != 0 ? mfmaComputeOp.res() : cVec.vector());
+    }
+
+    (void)mlir::promoteIfSingleIteration(affineForOp);
 
     return success();
 }
@@ -4678,6 +4868,28 @@ void ExecutionPlanParallelizationPass::runOnOperation()
     (void)applyPatternsAndFoldGreedily(operation, std::move(patterns));
 }
 
+void ExecutionPlanTensorizationPass::runOnOperation()
+{
+    auto operation = getOperation();
+    mlir::OpBuilder builder(operation);
+    ConversionTarget target(getContext());
+
+    target.addLegalDialect<ValueDialect,
+                           memref::MemRefDialect,
+                           mlir::AffineDialect,
+                           mlir::StandardOpsDialect,
+                           ExecutionPlanDialect>();
+    target.addDynamicallyLegalOp<AffineForOp>([&](AffineForOp op) {
+        // An AffineForOp is legal if it does not have the ExecutionPlan tensorize attributes
+        return !HasTensorizationInfo(op);
+    });
+
+    OwningRewritePatternList patterns(&getContext());
+    accera::transforms::executionPlan::populateExecutionPlanTensorizePatterns(patterns);
+
+    (void)applyPatternsAndFoldGreedily(operation, std::move(patterns));
+}
+
 void ExecutionPlanMakeCacheLoweringPass::runOnFunction()
 {
     ConversionTarget target(getContext());
@@ -4769,6 +4981,11 @@ std::unique_ptr<Pass> createExecutionPlanParallelizationPass()
     return std::make_unique<ExecutionPlanParallelizationPass>();
 }
 
+std::unique_ptr<mlir::Pass> createExecutionPlanTensorizationPass()
+{
+    return std::make_unique<ExecutionPlanTensorizationPass>();
+}
+
 std::unique_ptr<mlir::Pass> createExecutionPlanScaleHoistingPass()
 {
     return std::make_unique<ExecutionPlanScaleHoistingPass>();
@@ -4837,6 +5054,11 @@ void populateExecutionPlanVectorizePatterns(bool printVectorizationDetails, mlir
 {
     patterns.insert<VectorizeAffineForOpConversion,
                     InPlaceUnrollAffineForOpConversion>(patterns.getContext(), printVectorizationDetails);
+}
+
+void populateExecutionPlanTensorizePatterns(mlir::OwningRewritePatternList& patterns)
+{
+    patterns.insert<TensorizeAffineForOpConversion>(patterns.getContext());
 }
 
 void populateExecutionPlanParallelizePatterns(mlir::OwningRewritePatternList& patterns)

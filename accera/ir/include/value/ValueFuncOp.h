@@ -7,6 +7,7 @@
 #pragma once
 
 #include "ValueEnums.h"
+#include "ValueAttributes.h"
 
 #include <llvm/Support/PointerLikeTypeTraits.h>
 #include <mlir/IR/Block.h>
@@ -70,15 +71,14 @@ public:
         return attr.getValue();
     }
 
-    mlir::IntegerAttr exec_targetAttr()
+    ExecutionTargetAttr exec_targetAttr()
     {
-        return (*this)->getAttrOfType<::mlir::IntegerAttr>("exec_target");
+        return (*this)->getAttrOfType<ExecutionTargetAttr>(getExecTargetAttrName());
     }
 
     ExecutionTarget exec_target()
     {
-        auto attr = exec_targetAttr();
-        return static_cast<::accera::ir::value::ExecutionTarget>(attr.getInt());
+        return exec_targetAttr().getValue();
     }
 
     mlir::Region& body()

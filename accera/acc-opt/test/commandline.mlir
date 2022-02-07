@@ -10,6 +10,8 @@
 // CHECK-NEXT: llvm
 // CHECK-NEXT: math
 // CHECK-NEXT: memref
+// CHECK-NEXT: nvvm
+// CHECK-NEXT: rocdl
 // CHECK-NEXT: scf
 // CHECK-NEXT: spv
 // CHECK-NEXT: std

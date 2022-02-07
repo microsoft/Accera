@@ -7,6 +7,7 @@
 #pragma once
 
 #include "TargetDevice.h"
+#include "ExecutionOptions.h"
 
 #include <utilities/include/PropertyBag.h>
 #include <utilities/include/StringUtil.h>
@@ -47,6 +48,9 @@ namespace value
         /// <summary> Name of the target device. </summary>
         TargetDevice targetDevice = { "host" };
 
+        /// <summary> Name of the target runtime. </summary>
+        ExecutionRuntime executionRuntime = ExecutionRuntime::Default;
+
         // Options that can be changed during code generation (e.g., per function)
         /// <summary> Emit code that calls an external BLAS library. </summary>
         bool useBlas = true;
@@ -65,6 +69,9 @@ namespace value
 
         /// <summary> Emit debug code. </summary>
         bool debug = false;
+
+        /// <summary> Emit only the GPU kernel code and do not emit the host code. </summary>
+        bool gpu_only = false;
 
         /// <summary> The name of the file being compiled. </summary>
         std::string modelFile;

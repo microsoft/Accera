@@ -39,9 +39,7 @@ class Nest:
 
         return Schedule(self)
 
-    def create_plan(
-        self, target: "accera.Target" = Target.HOST
-    ) -> "accera.Plan":
+    def create_plan(self, target: "accera.Target" = Target.HOST) -> "accera.Plan":
         """Convenience syntax to create a plan from this nest
 
         Args:
@@ -57,11 +55,7 @@ class Nest:
             A list of extents (multi-dimensional iteration space)
             or a single extent (1-dimensional iteration space)
         """
-        return (
-            [idx for idx, _ in self._shape]
-            if len(self._shape) > 1
-            else self._shape[0][0]
-        )
+        return ([idx for idx, _ in self._shape] if len(self._shape) > 1 else self._shape[0][0])
 
     def get_indices(self) -> Union[List[LoopIndex], LoopIndex]:
         """Gets the iteration space indices
@@ -71,11 +65,7 @@ class Nest:
             or a single index (1-dimensional iteration space)
         """
 
-        return (
-            [idx for _, idx in self._shape]
-            if len(self._shape) > 1
-            else self._shape[0][1]
-        )
+        return ([idx for _, idx in self._shape] if len(self._shape) > 1 else self._shape[0][1])
 
     def iteration_logic(self, logic: Callable = None, predicate=None, placement=None):
         """Adds iteration logic to the nest
@@ -104,13 +94,9 @@ class Nest:
         wrapped_logic = logic_function(logic)
         self._logic_fns.append(wrapped_logic)
 
-        self._commands.append(
-            partial(self._add_iteration_logic, wrapped_logic, predicate, placement)
-        )
+        self._commands.append(partial(self._add_iteration_logic, wrapped_logic, predicate, placement))
 
-    def _add_iteration_logic(
-        self, logic_fn, pred, placement, context: NativeLoopNestContext
-    ):
+    def _add_iteration_logic(self, logic_fn, pred, placement, context: NativeLoopNestContext):
         from .._lang_python._lang import _Logic
 
         captures_to_replace = {}
@@ -124,17 +110,11 @@ class Nest:
                     from .._lang_python import _ResolveConstantDataReference
 
                     if v.role == Array.Role.TEMP:
-                        temp_array = NativeArray(
-                            Allocate(type=v.element_type, layout=v.layout)
-                        )
+                        temp_array = NativeArray(Allocate(type=v.element_type, layout=v.layout))
                         captures_to_replace[k] = context.mapping[value_id] = temp_array
                     elif v.role == Array.Role.CONST:
-                        const_ref_array = NativeArray(
-                            _ResolveConstantDataReference(v._value)
-                        )
-                        captures_to_replace[k] = context.mapping[
-                            value_id
-                        ] = const_ref_array
+                        const_ref_array = NativeArray(_ResolveConstantDataReference(v._value))
+                        captures_to_replace[k] = context.mapping[value_id] = const_ref_array
                     continue
                 elif isinstance(v, LoopIndex):
                     continue
@@ -158,7 +138,9 @@ class Nest:
             logic_fn(**captures_to_replace)
 
         logic = _Logic(logic_fn.__name__, logic_fn_wrapper)
-        logging.debug(f"Detected logic function {logic_fn.__name__} uses indices {','.join([i.name for i in logic._get_indices()])}")
+        logging.debug(
+            f"Detected logic function {logic_fn.__name__} uses indices {','.join([i.name for i in logic._get_indices()])}"
+        )
 
         context.schedule.add_kernel(logic, pred, placement)
 
@@ -173,18 +155,12 @@ class Nest:
         except TypeError:
             args_iter = iter(context.runtime_args)
 
-        logic_args = dict(
-            [
-                (id(x), NativeArray(y) if isinstance(x, Array) else y)
-                for x, y in zip(context.function_args, args_iter)
-            ]
-        )
+        logic_args = dict([(id(x), NativeArray(y) if isinstance(x, Array) else y)
+                           for x, y in zip(context.function_args, args_iter)])
         native_indices = context.nest.get_indices()
 
         # fake index => native index
-        index_handles_to_native_index = dict(
-            zip([id(x) for _, x in self._shape], native_indices)
-        )
+        index_handles_to_native_index = dict(zip([id(x) for _, x in self._shape], native_indices))
         logic_args.update(index_handles_to_native_index)
 
         context.mapping.update(logic_args)

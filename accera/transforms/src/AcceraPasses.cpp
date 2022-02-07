@@ -9,9 +9,9 @@
 #include <ir/include/InitializeAccera.h>
 #include <value/include/TargetDevice.h>
 
+#include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Pass/PassRegistry.h>
-#include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
 
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/FormatVariadic.h>
@@ -141,6 +141,8 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
 {
     ir::InitializeAccera();
 
+    accera::value::ExecutionRuntime execRuntime = options.runtime;
+
     PassManagerAdaptor pmAdaptor(pm, options.dumpPasses.getValue(), options.basename);
 
     auto valueFuncOpPM = pmAdaptor.nestPassManager([&]() -> OpPassManager& { return pm.nest<v::ValueModuleOp>().nest<v::ValueFuncOp>(); });
@@ -166,30 +168,66 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     pmAdaptor.addPass(createCanonicalizerPass());
 
     pmAdaptor.addPass(createGpuKernelOutliningPass());
-    pmAdaptor.addPass(createAcceraToSPIRVPass());
+    pmAdaptor.addPass(createAcceraToGPUPass(execRuntime));
+
+    if (execRuntime == accera::value::ExecutionRuntime::Vulkan)
+    {
+        OpPassManager& spirvModulePM = pm.nest<spirv::ModuleOp>();
+        spirvModulePM.addPass(spirv::createLowerABIAttributesPass());
+        spirvModulePM.addPass(spirv::createUpdateVersionCapabilityExtensionPass());
+
+        pmAdaptor.addPass(createConvertGpuLaunchFuncToVulkanLaunchFuncPass());
+        pmAdaptor.addPass(vulkan::createEmitVulkanWrapperPass());
+    }
+    else
+    {
+        PassManagerAdaptor gpuModulePM(pm.nest<gpu::GPUModuleOp>(), options.dumpPasses.getValue(), options.basename + "_gpu_module");
+        gpuModulePM.addPass(createStripDebugInfoPass());
+        if (options.gpuOnly) return;
+    }
     pmAdaptor.addPass(createCanonicalizerPass());
 
-    OpPassManager &spirvModulePM = pm.nest<spirv::ModuleOp>();
-    spirvModulePM.addPass(spirv::createLowerABIAttributesPass());
-    spirvModulePM.addPass(spirv::createUpdateVersionCapabilityExtensionPass());
-
-    pmAdaptor.addPass(createConvertGpuLaunchFuncToVulkanLaunchFuncPass());
-    pmAdaptor.addPass(vulkan::createEmitVulkanWrapperPass());
-
-    funcOpPM.addPass(createConvertVectorToSCFPass(VectorTransferToSCFOptions{}/*.setLowerPermutationMaps(true) .setLowerTensors(true).setUnroll(true) */));
+    funcOpPM.addPass(createConvertVectorToSCFPass(
+        VectorTransferToSCFOptions{} /*.setLowerPermutationMaps(true) .setLowerTensors(true).setUnroll(true) */));
     pmAdaptor.addPass(createLowerToCFGPass());
 
+
+    if (execRuntime != accera::value::ExecutionRuntime::Vulkan)
+    {
+        PassManagerAdaptor gpuModulePM(pm.nest<gpu::GPUModuleOp>(), options.dumpPasses.getValue(), options.basename + "_rocm_module");
+        gpuModulePM.addPass(createLowerGpuOpsToROCDLOpsPass(kDeriveIndexBitwidthFromDataLayout));
+        // gpuModulePM.addPass(createSerializeToHSACOPass());
+
+        PassManagerAdaptor funcPm(pm.nest<FuncOp>(), options.dumpPasses.getValue(), options.basename + "_fun_op");
+        if (options.enableAsync) funcPm.addPass(createGpuAsyncRegionPass());
+    }
+
+
     pmAdaptor.addPass(value::createValueToLLVMPass(
-                                 /* useBasePtrCallConv = */ false,
-                                 /* emitCWrappers = */ false,
-                                 /* indexBitwidth = */ kDeriveIndexBitwidthFromDataLayout,
-                                 /* useAlignedAlloc = */ true,
-                                 /* dataLayout = */ llvm::DataLayout(accera::value::GetTargetDevice(options.target).dataLayout),
-                                 { options.dumpIntraPassIR.getValue(), options.basename + "ValueToLLVM_Subpasses" }));
+        /* useBasePtrCallConv = */ false,
+        /* emitCWrappers = */ false,
+        /* indexBitwidth = */ kDeriveIndexBitwidthFromDataLayout,
+        /* useAlignedAlloc = */ true,
+        /* dataLayout = */ llvm::DataLayout(accera::value::GetTargetDevice(options.target).dataLayout),
+        { options.dumpIntraPassIR.getValue(), options.basename + "ValueToLLVM_Subpasses" }));
     pmAdaptor.addPass(createCanonicalizerPass());
     pmAdaptor.addPass(LLVM::createLegalizeForExportPass());
     pmAdaptor.addPass(value::createFunctionPointerResolutionPass());
-    pmAdaptor.addPass(vulkan::createConvertVulkanLaunchFuncToVulkanCallsWithTimingPass({ false }));
+
+    if (execRuntime == accera::value::ExecutionRuntime::Vulkan)
+    {
+        pmAdaptor.addPass(vulkan::createConvertVulkanLaunchFuncToVulkanCallsWithTimingPass({ false }));
+        pmAdaptor.addPass(createGpuToLLVMConversionPass());
+    }
+    else
+    {
+        pmAdaptor.addPass(createGpuToLLVMConversionPass());
+        if (options.enableAsync)
+        {
+            pmAdaptor.addPass(createAsyncToAsyncRuntimePass());
+            pmAdaptor.addPass(createConvertAsyncToLLVMPass());
+        }
+    }
 }
 
 void registerAcceraToLLVMPipeline()

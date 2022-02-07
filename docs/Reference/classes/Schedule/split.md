@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: 1.2.0)
 
-# Accera v1.2.1 Reference
+# Accera 1.2.0 Reference
 
 ## `accera.Schedule.split(index, size)`
 The `split` transformation takes a dimension `i` and a `size`, modifies `i`, and creates a new dimension `ii`.

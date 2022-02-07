@@ -256,7 +256,7 @@ namespace utilities
         None = 0,
         Global = 1,
         Shared = 3,
-        Local = 6,
+        Local = 5,
     };
 
     /// <summary> A class representing layout of a block of data in memory where the block can also

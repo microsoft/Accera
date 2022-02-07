@@ -145,6 +145,7 @@ namespace executionPlan
             >();
         addAttributes<VectorizationInfoAttr>();
         addAttributes<ParallelizationInfoAttr>();
+        addAttributes<TensorizationInfoAttr>();
         addAttributes<InPlaceUnrollInfoAttr>();
     }
 
@@ -836,10 +837,10 @@ namespace executionPlan
         case MemorySpace::None:
             [[fallthrough]];
         case MemorySpace::Shared:
-            memoryLocation = (int)value::MemorySpace::Shared;
+            memoryLocation = gpu::GPUDialect::getWorkgroupAddressSpace();
             break;
         case MemorySpace::Local:
-            memoryLocation = (int)value::MemorySpace::Local;
+            memoryLocation = gpu::GPUDialect::getPrivateAddressSpace();
             break;
         }
 
@@ -1524,6 +1525,10 @@ namespace executionPlan
             print(castAttr, printer);
         }
         else if (auto castAttr = attr.dyn_cast<ParallelizationInfoAttr>())
+        {
+            print(castAttr, printer);
+        }
+        else if (auto castAttr = attr.dyn_cast<TensorizationInfoAttr>())
         {
             print(castAttr, printer);
         }

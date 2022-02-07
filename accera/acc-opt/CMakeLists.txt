@@ -3,9 +3,6 @@
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
 
-set(ACCERA_TOOLS_DIR "${CMAKE_BINARY_DIR}/bin")
-message(STATUS "ACCERA_TOOLS_DIR: " ${ACCERA_TOOLS_DIR})
-
 set(util_name acc-opt)
 
 set(util_src src/ACCOptMain.cpp)
@@ -30,7 +27,7 @@ copy_shared_libraries(${util_name})
 
 set_property(TARGET ${util_name} PROPERTY FOLDER "accera")
 
-# ensure that lit tests can find this binary
+# binplace
 set_property(TARGET ${util_name} PROPERTY RUNTIME_OUTPUT_DIRECTORY "${ACCERA_TOOLS_DIR}")
 foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES}) # multi configuration
   string(TOUPPER "${CONFIG}" CONFIG_UPPER)

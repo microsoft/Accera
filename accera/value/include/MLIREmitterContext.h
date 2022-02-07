@@ -147,7 +147,7 @@ namespace value
 
         void CopyDataImpl(const Value& source, Value& destination) override;
 
-        Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& shape) override;
+        Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& shape, const std::vector<Scalar>& strides) override;
 
         Value SliceImpl(Value source, std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets) override;
 
@@ -164,6 +164,9 @@ namespace value
         Value BinaryOperationImpl(ValueBinaryOperation op, Value source1, Value source2) override;
 
         Value LogicalOperationImpl(ValueLogicalOperation op, Value source1, Value source2) override;
+
+        void MFMAImpl(Matrix & dest, Matrix A, Matrix B, Matrix C) override;
+        // Value MFMAComputeImpl(Value A, Value B, Value C) override;
 
         Scalar CastImpl(Scalar value, ValueType type, bool srcSigned);
         Scalar CastImpl(Scalar value, ValueType type) override;
@@ -245,11 +248,18 @@ namespace value
 
     struct GPU
     {
+        enum class BarrierScope
+        {
+            Block = 0,
+            Warp = 1,
+            Threadfence = 2,
+        };
+
         static GPUIndex BlockDim();
         static GPUIndex BlockId();
         static GPUIndex GridDim();
         static GPUIndex ThreadId();
-        static void Barrier();
+        static void Barrier(BarrierScope scope = BarrierScope::Block);
     };
 
     void FillResource(ViewAdapter, Scalar);

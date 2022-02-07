@@ -24,7 +24,6 @@ class ModuleScope:
     """Ensures that the global Package module is restored when using
     private APIs to set and clear the active module
     """
-
     def __init__(self, module):
         self.module = module
 
@@ -174,8 +173,7 @@ class PackagingTypesTests(unittest.TestCase):
 
         M = 10
         N = 20
-        A = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
         nest = Nest(shape=(M * 2, N * 2))
         i, j = nest.get_indices()
 
@@ -206,8 +204,7 @@ class PackagingTypesTests(unittest.TestCase):
 
         M = 10
         N = 20
-        A = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
         nest = Nest(shape=(M * 2, N * 2))
         i, j = nest.get_indices()
 
@@ -231,8 +228,7 @@ class PackagingTypesTests(unittest.TestCase):
 
         M = 10
         N = 20
-        A = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
         nest = Nest(shape=(M * 2, N * 2))
         i, j = nest.get_indices()
 
@@ -244,9 +240,7 @@ class PackagingTypesTests(unittest.TestCase):
         plan1 = nest.create_plan(pi3)
         plan2 = nest.create_plan()
 
-        for i, (plan, platform) in enumerate(
-            zip([plan1, plan2], [Package.Platform.RASPBIAN, Package.Platform.HOST])
-        ):
+        for i, (plan, platform) in enumerate(zip([plan1, plan2], [Package.Platform.RASPBIAN, Package.Platform.HOST])):
             p = Package()
             p.add(plan, args=(A, ))
             name = f"specialization{i}"
@@ -313,8 +307,10 @@ class PackagingTypesTests(unittest.TestCase):
             return schedule.create_plan()
 
         domains = [
-            {"domain": (32, 64)},
-            # {"domain": (128, 128)}
+            {
+                "domain": (32, 64)
+            },
+        # {"domain": (128, 128)}
         ]
 
         package = Package()
@@ -325,23 +321,24 @@ class PackagingTypesTests(unittest.TestCase):
             np_arr = np.array(data, dtype=np.float32)
             np_arr = np_arr.reshape(M, N)
             # input_matrix = Array(role=Array.Role.INPUT, shape=(M, N))
-            input_matrix = Array(role=Array.Role.CONST,
-                                 shape=(M, N), data=np_arr)
+            input_matrix = Array(role=Array.Role.CONST, shape=(M, N), data=np_arr)
             output_matrix = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
-            domain["function"] = package.add(embed_buffer(input_matrix, output_matrix),
-                                             args=(output_matrix,), base_name=f"ew_accumulate_{M}_{N}")
+            domain["function"] = package.add(
+                embed_buffer(input_matrix, output_matrix), args=(output_matrix, ), base_name=f"ew_accumulate_{M}_{N}"
+            )
             # args=(input_matrix,output_matrix,), base_name=f"ew_accumulate_{M}_{N}")
 
             output_ref = np.ones(output_matrix.shape, dtype=np.float32)
             domain["correctness_check"] = {
-                "before": (output_ref,), "after": (output_ref + np_arr,)}
+                "before": (output_ref, ),
+                "after": (output_ref + np_arr, )
+            }
 
         package_name = "embedded_unpacked_buffer"
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(package_name, ignore_errors=True)
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=Package.Format.MLIR_DYNAMIC,
-                          output_dir=output_dir)
+            package.build(package_name, format=Package.Format.MLIR_DYNAMIC, output_dir=output_dir)
 
             # make sure we can compile the module and resolve the cross-module references
             for domain in domains:
@@ -351,10 +348,10 @@ class PackagingTypesTests(unittest.TestCase):
         from accera import Array, ScalarType, Nest
 
         package = Package()
-        arr = Array(role=Array.Role.INPUT_OUTPUT,
-                    element_type=ScalarType.float32, shape=(256, 256))
-        arr2_placeholder = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(
-            arr.shape[0]//8, arr.shape[1]//8))
+        arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(256, 256))
+        arr2_placeholder = Array(
+            role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(arr.shape[0] // 8, arr.shape[1] // 8)
+        )
 
         # create a nest
         zero_out_nest = Nest(arr2_placeholder.shape)
@@ -363,21 +360,21 @@ class PackagingTypesTests(unittest.TestCase):
         @zero_out_nest.iteration_logic
         def _():
             arr2_placeholder[i, j] = 0.
-        zero_out_fn = package.add(zero_out_nest, args=(
-            arr2_placeholder,), base_name="zero_out")
+
+        zero_out_fn = package.add(zero_out_nest, args=(arr2_placeholder, ), base_name="zero_out")
 
         # create our main function that calls the nest function
         def main_test(arr):
             m, n = arr.shape
-            arr0 = arr.sub_array(offsets=(0, 0), shape=(m//2, n//2))
-            arr1 = arr0.sub_array(offsets=(0, 0), shape=(m//4, n//4))
-            arr2 = arr1.sub_array(offsets=(0, 0), shape=(m//8, n//8))
+            arr0 = arr.sub_array(offsets=(0, 0), shape=(m // 2, n // 2))
+            arr1 = arr0.sub_array(offsets=(0, 0), shape=(m // 4, n // 4))
+            arr2 = arr1.sub_array(offsets=(0, 0), shape=(m // 8, n // 8))
             zero_out_fn(arr2)
             # do something with arr2
             arr2[0, 0] = 3.14
             arr2[-1, -1] = 3.14
 
-        package.add(main_test, args=(arr,), base_name="main")
+        package.add(main_test, args=(arr, ), base_name="main")
         with verifiers.VerifyPackage(self, "test_add_function", TEST_PACKAGE_DIR):
             package.build("test_add_function", output_dir=TEST_PACKAGE_DIR)
 
@@ -432,8 +429,7 @@ class LogicTypesTests(unittest.TestCase):
         from accera._lang_python._lang import _If
 
         M = 100
-        A = Array(role=Array.Role.INPUT_OUTPUT,
-                  element_type=ScalarType.int32, shape=(M, M))
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, M))
         nest = Nest(shape=(M, M))
         i, j = nest.get_indices()
 

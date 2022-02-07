@@ -5,7 +5,8 @@
 
 set(util_name acc-translate)
 
-set(target_src 
+set(target_src
+    src/Target/Cpp/AcceraDialectCppPrinter.cpp
     src/Target/Cpp/AffineDialectCppPrinter.cpp
     src/Target/Cpp/CppPrinter.cpp
     src/Target/Cpp/CppPrinterUtils.cpp
@@ -19,7 +20,8 @@ set(target_src
     src/Target/Cpp/LLVMDialectCppPrinter.cpp
     )
 
-set(target_include 
+set(target_include
+    src/Target/Cpp/AcceraDialectCppPrinter.h
     src/Target/Cpp/AffineDialectCppPrinter.h
     src/Target/Cpp/CppPrinter.h
     src/Target/Cpp/CppPrinterUtils.h
@@ -55,6 +57,15 @@ target_link_libraries(
 copy_shared_libraries(${util_name})
 
 set_property(TARGET ${util_name} PROPERTY FOLDER "accera")
+
+# binplace
+set_property(TARGET ${util_name} PROPERTY RUNTIME_OUTPUT_DIRECTORY "${ACCERA_TOOLS_DIR}")
+foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES}) # multi configuration
+  string(TOUPPER "${CONFIG}" CONFIG_UPPER)
+  set_property(TARGET ${util_name}
+    PROPERTY
+    RUNTIME_OUTPUT_DIRECTORY_${CONFIG_UPPER} "${ACCERA_TOOLS_DIR}")
+endforeach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
 
 #
 # Install acc-translate binary

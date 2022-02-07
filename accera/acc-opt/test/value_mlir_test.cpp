@@ -140,7 +140,7 @@ TEST_CASE("function_decl1")
 TEST_CASE("gpu_module1")
 {
     auto gpu_f1 =
-        DeclareFunction("gpu_f1").Target(targets::GPU{}).Define([] {});
+        DeclareFunction("gpu_f1").Target(targets::GPU()).Define([] {});
 
     auto f1 = DeclareFunction("f1").Define([&] {
         gpu_f1();
@@ -152,7 +152,7 @@ TEST_CASE("gpu_module2")
 {
     auto gpu_f1 =
         DeclareFunction("gpu_f1")
-            .Target(targets::GPU{ 32, 32, 32, 1, 1, 1 })
+            .Target(targets::GPU( {32, 32, 32}, {1, 1, 1 }))
             .Parameters(Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } })
@@ -204,7 +204,7 @@ TEST_CASE("gpu_module3")
 {
     auto gpu_f1 =
         DeclareFunction("gpu_f1")
-            .Target(targets::GPU{ 128, 1, 1, 128, 1, 1 })
+            .Target(targets::GPU( {128, 1, 1}, {128, 1, 1 }))
             .Parameters(Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } })

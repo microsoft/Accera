@@ -249,8 +249,9 @@ namespace util
     mlir::Operation* CloneRecursively(mlir::OpBuilder& builder, mlir::Operation* op, mlir::BlockAndValueMapping& mapping);
 
     std::optional<ir::value::ExecutionTarget> ResolveExecutionTarget(mlir::Operation* op);
+    std::optional<ir::value::ExecutionRuntime> ResolveExecutionRuntime(mlir::Operation* op);
 
-    mlir::Operation* CreateGPUControlBarrier(mlir::OpBuilder& builder, std::optional<mlir::Location> loc = std::nullopt);
+    mlir::Operation* CreateGPUControlBarrier(mlir::OpBuilder& builder, const std::string scope, std::optional<mlir::Location> loc = std::nullopt);
 
     std::optional<int64_t> GetDimSizeAt(const loopnest::Index& dimensionIndex, mlir::Operation* where);
 

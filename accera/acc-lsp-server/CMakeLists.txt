@@ -3,13 +3,11 @@
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
 
-set(ACCERA_TOOLS_DIR "${CMAKE_BINARY_DIR}/bin")
-
 set(util_name acc-lsp-server)
 
 set(util_src src/acc-lsp-server.cpp)
 
-source_group("src" FILES ${util_src}) 
+source_group("src" FILES ${util_src})
 
 add_executable(${util_name} ${util_src})
 target_include_directories(${util_name} PRIVATE ${ACCERA_ROOT}/accera)

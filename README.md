@@ -18,7 +18,7 @@ Accera has three goals:
 
 ## Install
 
-To install for Linux, macOS, or Windows (requires Python 3.7-3.9):
+To install for Linux, macOS, or Windows (requires Python 3.7-3.10):
 
 ```shell
 pip install accera
@@ -74,19 +74,11 @@ No installation is required. This will launch a Jupyter notebook with the quicks
     package.add(schedule, args=(A, B, C), base_name="matmul_relu_fusion_naive")
 
     # transform the schedule, add to the package
-    # here we will focus only on the j index. For a more complete example, see:
-    # https://microsoft.github.io/Accera/Tutorials/Optimized_MatMul/
-    tile_size_j = 256
-    target = acc.Target(category=acc.Target.Category.CPU)
-
     f, i, j, k = schedule.get_indices()
-    jj = schedule.split(j, tile_size_j)
-    jjj = schedule.split(jj, (target.vector_bytes // 4) * 2) # there are 2 vfma execution units, each holding (target.vector_bytes // 4) 32-bit float elements
-    jjjj = schedule.split(jjj, target.vector_bytes // 4) # each SIMD register holds (target.vector_bytes // 4) 32-bit float elements
-
-    schedule.reorder(j, f, k, i, jj, jjj, jjjj) # reorder the loops
-    plan = schedule.create_plan(target)
-    plan.kernelize(unroll_indices=(jjj,), vectorize_indices=jjjj) # unroll and vectorize
+    ii, jj = schedule.tile((i, j), (16, 16)) # loop tiling
+    schedule.reorder(j, i, f, k, jj, ii) # loop reordering
+    plan = schedule.create_plan()
+    plan.unroll(ii) # loop unrolling
     package.add(plan, args=(A, B, C), base_name="matmul_relu_fusion_transformed")
 
     # build a dynamically-linked package (a .dll or .so) that exports both functions
@@ -173,7 +165,7 @@ Accera is a research platform-in-progress. We would love your contributions, fee
 
 ## Credits
 
-Accera is built using several open source libraries, including: [LLVM](https://llvm.org/), [pybind11](https://pybind11.readthedocs.io/en/stable/), [toml++](https://marzer.github.io/tomlplusplus/), [tomlkit](https://github.com/sdispater/tomlkit), [vcpkg](https://vcpkg.io/en/index.html), [pyyaml](https://pyyaml.org/), and [HAT](https://github.com/microsoft/hat). For testing, we also use [numpy](https://github.com/numpy/numpy) and [catch2](https://github.com/catchorg/Catch2).
+Accera is built using several open source libraries, including: [LLVM](https://llvm.org/), [toml++](https://marzer.github.io/tomlplusplus/), [tomlkit](https://github.com/sdispater/tomlkit), [vcpkg](https://vcpkg.io/en/index.html), [pyyaml](https://pyyaml.org/), and [HAT](https://github.com/microsoft/hat). For testing, we also use [numpy](https://github.com/numpy/numpy) and [catch2](https://github.com/catchorg/Catch2).
 
 ## License
 

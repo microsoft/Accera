@@ -36,7 +36,10 @@ def find_vulkan_wrapper(file_name):
 
     try:
         with importlib.resources.path("accera", file_name) as p:
-            return {"target_file": str(p), "version": __version__}
+            return {
+                "target_file": str(p),
+                "version": __version__
+            }
     except FileNotFoundError:
         # not currently installed
         return None

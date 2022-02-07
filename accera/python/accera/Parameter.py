@@ -20,11 +20,7 @@ class DelayedParameter:
 def create_parameters(count: int):
     if count < 1:
         raise ValueError("Invalid parameters count")
-    return (
-        tuple([DelayedParameter() for i in range(count)])
-        if count > 1
-        else DelayedParameter()
-    )
+    return (tuple([DelayedParameter() for i in range(count)]) if count > 1 else DelayedParameter())
 
 
 def get_parameters_from_grid(parameter_grid: dict) -> List[dict]:
@@ -52,4 +48,3 @@ def get_parameters_from_grid(parameter_grid: dict) -> List[dict]:
         combinations_list.append(dict(zip(keys, variant)))
 
     return combinations_list
-

@@ -39,7 +39,8 @@ class IndexEntry:
             # loop will be unswitched anyway
             return (self.stop - self.start) // self.step
         else:
-            return 1 # treat as a single block
+            return 1    # treat as a single block
+
 
 class Schedule:
     "Used for transforming an iteration space"
@@ -65,9 +66,8 @@ class Schedule:
         if any([isinstance(s, DelayedParameter) for s in shape]):
             self._delayed_calls[partial(self._init_delayed)] = nest
 
-        self._index_map = {
-            index: IndexEntry(stop=size) for index, size in zip(self._indices, shape)
-        }
+        self._index_map = {index: IndexEntry(stop=size)
+                           for index, size in zip(self._indices, shape)}
 
     def __hash__(self):
         return id(self)
@@ -78,9 +78,7 @@ class Schedule:
     def get_indices(self):
         return self._indices.copy()
 
-    def create_plan(
-        self, target: "accera.Target" = Target.HOST
-    ) -> "accera.Plan":
+    def create_plan(self, target: "accera.Target" = Target.HOST) -> "accera.Plan":
         """Creates a plan for running this schedule
 
         Args:
@@ -139,7 +137,12 @@ class Schedule:
 
         return inner_index
 
-    def skew(self, index: LoopIndex, reference_index: LoopIndex, unroll_loops_smaller_than: Union[int, DelayedParameter] = None) -> None:
+    def skew(
+        self,
+        index: LoopIndex,
+        reference_index: LoopIndex,
+        unroll_loops_smaller_than: Union[int, DelayedParameter] = None
+    ) -> None:
         """Transforms a dimension with respect to a reference dimension into a parellelogram by padding with empty elements.
 
         Args:
@@ -161,12 +164,18 @@ class Schedule:
 
         if isinstance(unroll_loops_smaller_than, DelayedParameter):
             self._delayed_calls[partial(self._skew_delayed, skewed_index, reference_index)] = unroll_loops_smaller_than
-            self._index_map[skewed_index] = IndexEntry(stop=(stop-start)+(ref_stop-ref_start), parent=index,
-                                                   transform=(IndexTransform.SKEW, (reference_index, 0)))
+            self._index_map[skewed_index] = IndexEntry(
+                stop=(stop - start) + (ref_stop - ref_start),
+                parent=index,
+                transform=(IndexTransform.SKEW, (reference_index, 0))
+            )
             return
 
-        self._index_map[skewed_index] = IndexEntry(stop=(stop-start)+(ref_stop-ref_start), parent=index,
-                                                   transform=(IndexTransform.SKEW, (reference_index, unroll_loops_smaller_than)))
+        self._index_map[skewed_index] = IndexEntry(
+            stop=(stop - start) + (ref_stop - ref_start),
+            parent=index,
+            transform=(IndexTransform.SKEW, (reference_index, unroll_loops_smaller_than))
+        )
 
     def pad(self, index: LoopIndex, size: Union[int, DelayedParameter]) -> None:
         """Pads the beginning of a specified dimension of the iteration-space with empty (no-op) elements.
@@ -187,10 +196,14 @@ class Schedule:
 
         if isinstance(size, DelayedParameter):
             self._delayed_calls[partial(self._pad_delayed, padded_index)] = size
-            self._index_map[padded_index] = IndexEntry(start=start, stop=stop, parent=index, transform=(IndexTransform.PAD, 0))
+            self._index_map[padded_index] = IndexEntry(
+                start=start, stop=stop, parent=index, transform=(IndexTransform.PAD, 0)
+            )
             return
 
-        self._index_map[padded_index] = IndexEntry(start=start, stop=stop+size, parent=index, transform=(IndexTransform.PAD, size))
+        self._index_map[padded_index] = IndexEntry(
+            start=start, stop=stop + size, parent=index, transform=(IndexTransform.PAD, size)
+        )
 
     def reorder(
         self,
@@ -216,22 +229,15 @@ class Schedule:
         indices = [order] + list(args) if isinstance(order, LoopIndex) else list(order)
 
         if len(indices) != len(self._indices):
-            raise ValueError(
-                f"Expected {len(self._indices)} indices, but got {len(indices)} indices instead"
-            )
+            raise ValueError(f"Expected {len(self._indices)} indices, but got {len(indices)} indices instead")
 
         indices = list(map(self._resolve_index, indices))
 
         visited = []
         for i in indices:
-            if (
-                self._index_map[i].parent
-                and self._index_map[i].parent not in visited
-                and self._index_map[i].transform and self._index_map[i].transform[0] is IndexTransform.SPLIT
-            ):
-                raise ValueError(
-                    "An inner dimension must not be ordered before its outer dimension"
-                )
+            if (self._index_map[i].parent and self._index_map[i].parent not in visited and self._index_map[i].transform
+                    and self._index_map[i].transform[0] is IndexTransform.SPLIT):
+                raise ValueError("An inner dimension must not be ordered before its outer dimension")
             visited.append(i)
 
         self._indices = indices
@@ -364,7 +370,8 @@ class Schedule:
             raise ValueError("Unknown index!")
 
         # Assume: 1:1 mapping between parent and child
-        parent_child_map = {index_info.parent: i for i, index_info in self._index_map.items() if index_info.parent}
+        parent_child_map = {index_info.parent: i
+                            for i, index_info in self._index_map.items() if index_info.parent}
 
         if index not in set(self._indices) and index in parent_child_map:
             # This is an in-place transformed index (skew, pad), where the caller would
@@ -375,7 +382,10 @@ class Schedule:
 
             # split does an in-place transform, but preserves the outer index's identity
             # while inserting a new index.
-            assert(self._index_map[actual_index].transform and self._index_map[actual_index].transform[0] is not IndexTransform.SPLIT)
+            assert (
+                self._index_map[actual_index].transform
+                and self._index_map[actual_index].transform[0] is not IndexTransform.SPLIT
+            )
             return actual_index
         return index
 
@@ -383,7 +393,7 @@ class Schedule:
         # Computes the number of split blocks for an index
         # returns 1 if the index is never split
         #
-        # Suppose i is split twice: 
+        # Suppose i is split twice:
         #   ii = schedule.split(i, 4)
         #   iii = schedule.split(ii, 8)
         #
@@ -392,7 +402,7 @@ class Schedule:
         # iii is never split, so it counts as 1 contiguous block
         if self._index_map[index].inners:
             # a parent, recursively include its descendents
-            assert(len(self._index_map[index].inners) == 1)
+            assert (len(self._index_map[index].inners) == 1)
             return self._index_map[index].num_blocks() * \
                 self._get_index_num_blocks(self._index_map[index].inners[0])
 
@@ -405,14 +415,13 @@ class Schedule:
         visited = []
         for i in list(map(self._resolve_index, indices)):
             visited.append(i)
-            if (self._index_map[i].parent and
-                self._index_map[i].transform and
-                self._index_map[i].transform[0] is IndexTransform.SPLIT and
-                self._index_map[i].parent in visited
-            ):
-                continue # avoid double-counting this index
+            if (self._index_map[i].parent and self._index_map[i].transform
+                    and self._index_map[i].transform[0] is IndexTransform.SPLIT
+                    and self._index_map[i].parent in visited):
+                continue    # avoid double-counting this index
             result += self._get_index_num_blocks(i)
         return result
+
 
 class FusedSchedule(Schedule):
     def __init__(self, schedules: List[Schedule], partial: int = None):
@@ -480,7 +489,9 @@ class FusedSchedule(Schedule):
                 if orig_xf:
                     xf = (orig_to_common_map[p] if isinstance(p, LoopIndex) else p for p in orig_xf)
                 index_map[new_idx] = IndexEntry(
-                    start=start, stop=stop, step=step,
+                    start=start,
+                    stop=stop,
+                    step=step,
                     parent=(orig_to_common_map[orig_parent]) if orig_parent else None,
                     transform=xf if orig_xf else None
                 )
@@ -504,9 +515,7 @@ class FusedSchedule(Schedule):
         self._unfused_idx_to_orig_sched_map = unfused_idx_to_orig_sched_map
         self._unfused_idx_to_orig_map = unfused_idx_to_orig_map
 
-        self._indices = (
-            [self._fusing_index] + self._common_indices + self._unfused_indices
-        )
+        self._indices = ([self._fusing_index] + self._common_indices + self._unfused_indices)
 
     def print(self, per_index_fn: Callable[[LoopIndex], List[str]] = None):
         # TODO
@@ -521,9 +530,7 @@ class FusedSchedule(Schedule):
     def get_unfused_indices(self):
         return self._unfused_indices
 
-    def reorder(
-        self, order: Union[Tuple[LoopIndex], LoopIndex] = None, *args: LoopIndex
-    ):
+    def reorder(self, order: Union[Tuple[LoopIndex], LoopIndex] = None, *args: LoopIndex):
         indices = [order] + list(args) if isinstance(order, LoopIndex) else list(order)
 
         # handle split unfused indices
@@ -531,13 +538,8 @@ class FusedSchedule(Schedule):
 
         visited = []
         for i in indices:
-            if (
-                i.base_index in unfused_base_indices
-                and self._fusing_index not in visited
-            ):
-                raise ValueError(
-                    "An unfused dimension must not be ordered before a fusing dimension"
-                )
+            if (i.base_index in unfused_base_indices and self._fusing_index not in visited):
+                raise ValueError("An unfused dimension must not be ordered before a fusing dimension")
             visited.append(i)
 
         super().reorder(order, *args)
@@ -574,9 +576,7 @@ class FusedSchedule(Schedule):
         mappings = [sched_contexts[s].mapping for s in scheds]
 
         # list of list of indices
-        orig_indices = [
-            self._common_to_orig_map[common_idx] for common_idx in self._common_indices
-        ]
+        orig_indices = [self._common_to_orig_map[common_idx] for common_idx in self._common_indices]
         zipped_native_indices: list[list] = []
         for zipped_list in orig_indices:
             assert len(zipped_list) == len(mappings)
@@ -587,14 +587,10 @@ class FusedSchedule(Schedule):
             zipped_native_indices.append(native_indices)
 
         native_prime_sched, native_other_scheds = native_scheds[0], native_scheds[1:]
-        fused_native_index = native_prime_sched.fuse(
-            native_other_scheds, zipped_native_indices
-        )
+        fused_native_index = native_prime_sched.fuse(native_other_scheds, zipped_native_indices)
         all_indices_post_fusion = native_prime_sched.get_indices()
 
-        if len(all_indices_post_fusion) != 1 + len(self._common_indices) + len(
-            self._unfused_indices
-        ):
+        if len(all_indices_post_fusion) != 1 + len(self._common_indices) + len(self._unfused_indices):
             return ValueError("Unexpected number of indices returned from fusion")
 
         context.mapping[id(self._fusing_index)] = fused_native_index

@@ -12,16 +12,19 @@ import yaml
 # TODO : need a better system for arbitrarily-nested lists
 list_delimiters = [",", ":"]
 
+
 # Parameters represent a single instance of a parameter key-value
 class BaseParameter:
     cmdline_arg_prefix = "--"
     cmdline_arg_keyval_combiner = "="
+
     def __init__(self, name, value):
         self.name = name
         self.value = value
 
     def to_cmd_arg(self):
-        return self.cmdline_arg_prefix + self.name_to_cmd_arg() + self.cmdline_arg_keyval_combiner + self.value_to_cmd_arg()
+        return self.cmdline_arg_prefix + self.name_to_cmd_arg(
+        ) + self.cmdline_arg_keyval_combiner + self.value_to_cmd_arg()
 
     def value_to_cmd_arg(self):
         return str(self.value)
@@ -70,18 +73,21 @@ class ParameterCollection:
 
 class DomainParameter(ListParameter):
     domain_key = "domain"
+
     def __init__(self, domain, delimiter=list_delimiters[0]):
         ListParameter.__init__(self, self.domain_key, domain, delimiter)
 
 
 class DomainParameterList(ListParameter):
     domain_key = "domains"
+
     def __init__(self, domain_list, delimiter=list_delimiters[1]):
         ListParameter.__init__(self, self.domain_key, domain_list, delimiter)
 
 
 class LibraryNameParameter(BaseParameter):
     library_name_key = "library-name"
+
     def __init__(self, library_name):
         BaseParameter.__init__(self, self.library_name_key, library_name)
 
@@ -97,7 +103,10 @@ def parse_parameter_type(name, value):
                 delimiter_idx = list_delimiters.index(param.serialization_delimiter)
                 if delimiter_idx > inner_list_last_delimiter_idx:
                     inner_list_last_delimiter_idx = delimiter_idx
-        return ListParameter(name, inner_params, serialization_delimiter=list_delimiters[inner_list_last_delimiter_idx + 1])
+        return ListParameter(
+            name, inner_params, serialization_delimiter=list_delimiters[inner_list_last_delimiter_idx + 1]
+        )
+
 
 def parse_parameters_from_yaml_file(yaml_filepath, parameter_key="Generator"):
     if not os.path.exists(yaml_filepath):
@@ -109,6 +118,7 @@ def parse_parameters_from_yaml_file(yaml_filepath, parameter_key="Generator"):
     for key in param_dict:
         param_list += [parse_parameter_type(key, param_dict[key])]
     return ParameterCollection(param_list)
+
 
 def parse_domain_list_from_csv(filepath, comment="#"):
     import pandas as pd

@@ -526,7 +526,7 @@ namespace ir
                             // Get the logical type information from the MLIR standard dialect version of the function signature
                             // as the LLVM converted version will lose shape information, but get the data type information from
                             // the LLVM converted version
-                            const auto llvmArgType = llvmTypeConverter.convertType(llvmType.getParamType(i));
+                            [[maybe_unused]] const auto llvmArgType = llvmTypeConverter.convertType(llvmType.getParamType(i));
                             std::unique_ptr<hat::Parameter> arg = ConvertToIncompleteHATParameter(fnType.getInput(i)); // TODO : plumb through size string
                             arg->Name(""); // TODO : plumb parameter name through
                             arg->Description(""); // TODO : plumb parameter description
@@ -603,7 +603,7 @@ namespace ir
                 package.CodePrologue(package.CodePrologue() + GetDebugPrologue()); // append to the prologue
                 package.DebugCode(GetDebugCode());
             }
-            
+
             os << package.Serialize();
 
             return mlir::success();

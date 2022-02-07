@@ -15,10 +15,8 @@ from accera import Package, Target, Array
 from accera.hat import ONNXHATPackage
 from accera.samples import MLAS, MLASOptions
 
-
 from onnx import helper
-from onnxruntime.tools.symbolic_shape_infer import (
-    SymbolicShapeInference, get_shape_from_type_proto)
+from onnxruntime.tools.symbolic_shape_infer import (SymbolicShapeInference, get_shape_from_type_proto)
 
 
 # TODO: When ORT has FusedMatMul shape inference upstream, remove this
@@ -26,8 +24,7 @@ from onnxruntime.tools.symbolic_shape_infer import (
 # model = SymbolicShapeInference.infer_shapes(model, auto_merge=True)
 def _infer_shapes(model):
     # cf onnxruntime/tools/symbolic_shape_infer.py
-    ssi = SymbolicShapeInference(
-        int_max=2**31 - 1, auto_merge=True, guess_output_rank=False, verbose=0)
+    ssi = SymbolicShapeInference(int_max=2**31 - 1, auto_merge=True, guess_output_rank=False, verbose=0)
 
     def compute_matmul_shape(node, output_dtype=None, transA=False, transB=False):
         lhs_shape = ssi._get_shape(node, 0)
@@ -59,20 +56,17 @@ def _infer_shapes(model):
         else:
             lhs_reduce_dim = -2 if transA else -1
             rhs_reduce_dim = -1 if transB else -2
-            new_shape = ssi._broadcast_shapes(lhs_shape[:-2], rhs_shape[:-2]) + [
-                lhs_shape[-1 if transA else -2], rhs_shape[-2 if transB else -1]]
+            new_shape = ssi._broadcast_shapes(
+                lhs_shape[:-2], rhs_shape[:-2]) + [lhs_shape[-1 if transA else -2], rhs_shape[-2 if transB else -1]]
 
         # merge reduce dim
-        ssi._check_merged_dims(
-            [lhs_shape[lhs_reduce_dim], rhs_shape[rhs_reduce_dim]], allow_broadcast=False)
+        ssi._check_merged_dims([lhs_shape[lhs_reduce_dim], rhs_shape[rhs_reduce_dim]], allow_broadcast=False)
 
         if output_dtype is None:
             # infer output_dtype from input type when not specified
-            output_dtype = ssi.known_vi_[
-                node.input[0]].type.tensor_type.elem_type
+            output_dtype = ssi.known_vi_[node.input[0]].type.tensor_type.elem_type
         vi = ssi.known_vi_[node.output[0]]
-        vi.CopyFrom(helper.make_tensor_value_info(
-            node.output[0], output_dtype, new_shape))
+        vi.CopyFrom(helper.make_tensor_value_info(node.output[0], output_dtype, new_shape))
 
     def infer_FusedMatMul(node):
         transA = get_attribute(node, 'transA', 0) == 1
@@ -114,8 +108,7 @@ def get_initializer(model, name):
 
 def get_value_info(shape_inferred_model, name):
     graph_ = shape_inferred_model.graph
-    found = [vi for vi in list(graph_.value_info) +
-             list(graph_.input) if vi.name == name]
+    found = [vi for vi in list(graph_.value_info) + list(graph_.input) if vi.name == name]
     if found:
         return found[0]
     return None
@@ -128,8 +121,7 @@ def get_shape(shape_inferred_model, name):
     if found:
         return found[0].dims
 
-    found = [vi for vi in list(graph_.value_info) +
-             list(graph_.input) if vi.name == name]
+    found = [vi for vi in list(graph_.value_info) + list(graph_.input) if vi.name == name]
     if found:
         return get_shape_from_type_proto(found[0].type)
 
@@ -189,29 +181,32 @@ def handle_gemm_node(node, model, package, target=Target.HOST):
 
     # accera BUG: adding name to ctor throws
     # RuntimeError: EmitterContext is not set!
-    A = Array(role=Array.Role.INPUT, element_type=float,
-              shape=A_shape)  # , name=A_input_name)
-    B = Array(role=Array.Role.INPUT, element_type=float,
-              shape=B_shape)  # , name=B_input_name)
-    C = Array(role=Array.Role.INPUT, element_type=float,
-              shape=C_shape)  # , name=node.input([2])
-    Y = Array(role=Array.Role.INPUT_OUTPUT, element_type=float,
-              shape=Y_shape)  # , name=Y_output_name)
+    A = Array(role=Array.Role.INPUT, element_type=float, shape=A_shape)    # , name=A_input_name)
+    B = Array(role=Array.Role.INPUT, element_type=float, shape=B_shape)    # , name=B_input_name)
+    C = Array(role=Array.Role.INPUT, element_type=float, shape=C_shape)    # , name=node.input([2])
+    Y = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=Y_shape)    # , name=Y_output_name)
 
     emitted_info = {}
     opts = get_target_options(target)
     B_init_data = get_initializer(model, B_input_name)
     if B_init_data:
-        print(
-            f"B Initializer detected for {node.name} for input {B_input_name}")
-        opts = opts._replace(
-            PackBFuncName=f"{node.name}_reshape_B", PackBBufferSizeFuncName=f"{node.name}_reshape_B_size")
-        emitted_info['node_packing_functions'] = {B_input_name: [
-            opts.PackBFuncName, opts.PackBBufferSizeFuncName]}
+        print(f"B Initializer detected for {node.name} for input {B_input_name}")
+        opts = opts._replace(PackBFuncName=f"{node.name}_reshape_B",
+                             PackBBufferSizeFuncName=f"{node.name}_reshape_B_size")
+        emitted_info['node_packing_functions'] = {B_input_name: [opts.PackBFuncName, opts.PackBBufferSizeFuncName]}
 
-    plan, args = MLAS(A, B, Y, alpha=alpha, transA=transA, transB=transB,
-                      beta=beta, bias=C, zero_C=True, opts=opts, target=target)
-    assert(args == (A, B, C, Y))
+    plan, args = MLAS(A,
+                      B,
+                      Y,
+                      alpha=alpha,
+                      transA=transA,
+                      transB=transB,
+                      beta=beta,
+                      bias=C,
+                      zero_C=True,
+                      opts=opts,
+                      target=target)
+    assert (args == (A, B, C, Y))
 
     emitted_info.update({
         ONNXHATPackage.NodeNameKey: node.name,
@@ -224,7 +219,9 @@ def handle_gemm_node(node, model, package, target=Target.HOST):
             list(arg.shape) for arg in [A, B, C, Y]]
     })
 
-    return package.add(plan, args=[A, B, C, Y], base_name=node.name,
+    return package.add(plan,
+                       args=[A, B, C, Y],
+                       base_name=node.name,
                        auxiliary={ONNXHATPackage.AuxTableName: emitted_info})
 
 
@@ -246,12 +243,9 @@ def handle_matmul_node(node, model, package, target=Target.HOST):
           f"\nC = [{', '.join(map(str, C_shape))}]"
           f"\nalpha = {alpha} transA = {transA} transB = {transB}")
 
-    A = Array(role=Array.Role.INPUT, element_type=float,
-              shape=A_shape)  # , name=A_input_name)
-    B = Array(role=Array.Role.INPUT, element_type=float,
-              shape=B_shape)  # , name=B_input_name)
-    C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float,
-              shape=C_shape)  # , name=C_output_name)
+    A = Array(role=Array.Role.INPUT, element_type=float, shape=A_shape)    # , name=A_input_name)
+    B = Array(role=Array.Role.INPUT, element_type=float, shape=B_shape)    # , name=B_input_name)
+    C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=C_shape)    # , name=C_output_name)
 
     emitted_info = {}
 
@@ -259,12 +253,10 @@ def handle_matmul_node(node, model, package, target=Target.HOST):
     opts = get_target_options(target)
 
     if B_init_data:
-        print(
-            f"B Initializer detected for {node.name} for input {B_input_name}")
-        opts = opts._replace(
-            PackBFuncName=f"{node.name}_reshape_B", PackBBufferSizeFuncName=f"{node.name}_reshape_B_size")
-        emitted_info['node_packing_functions'] = {B_input_name: [
-            opts.PackBFuncName, opts.PackBBufferSizeFuncName]}
+        print(f"B Initializer detected for {node.name} for input {B_input_name}")
+        opts = opts._replace(PackBFuncName=f"{node.name}_reshape_B",
+                             PackBBufferSizeFuncName=f"{node.name}_reshape_B_size")
+        emitted_info['node_packing_functions'] = {B_input_name: [opts.PackBFuncName, opts.PackBBufferSizeFuncName]}
 
     emitted_info.update({
         ONNXHATPackage.NodeNameKey: node.name,
@@ -276,10 +268,8 @@ def handle_matmul_node(node, model, package, target=Target.HOST):
         ONNXHATPackage.NodeArgShapesKey: list(arg.shape for arg in [A, B, C])
     })
 
-    plan, args = MLAS(A, B, C, alpha=alpha, transA=transA,
-                      transB=transB, zero_C=True, opts=opts, target=target)
-    return package.add(plan, args, base_name=node.name,
-                       auxiliary={ONNXHATPackage.AuxTableName: emitted_info})
+    plan, args = MLAS(A, B, C, alpha=alpha, transA=transA, transB=transB, zero_C=True, opts=opts, target=target)
+    return package.add(plan, args, base_name=node.name, auxiliary={ONNXHATPackage.AuxTableName: emitted_info})
 
 
 ONNX_NODE_HANDLERS = {
@@ -289,7 +279,12 @@ ONNX_NODE_HANDLERS = {
 }
 
 
-def emit_package_for_model(model, output_dir, large_model=False, target=Target.HOST, format=Package.Format.HAT_STATIC, mode=Package.Mode.RELEASE):
+def emit_package_for_model(model,
+                           output_dir,
+                           large_model=False,
+                           target=Target.HOST,
+                           format=Package.Format.STATIC_LIBRARY | Package.Format.HAT_PACKAGE,
+                           mode=Package.Mode.RELEASE):
     model = _infer_shapes(model)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)

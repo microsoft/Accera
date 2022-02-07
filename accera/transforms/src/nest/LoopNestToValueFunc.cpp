@@ -63,40 +63,40 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
             {
                 OwningRewritePatternList patterns(context);
                 lntr::populateLoopnestToValueFuncPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("LoopnestToValueFunc", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 tr::populateRangeResolutionPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("RangeResolution", vFuncOp);
             }
             {
                 OwningRewritePatternList patterns(context);
                 tr::populateScheduledOperationsPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ScheduledOperations", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 tr::populateScheduleScaffoldingPatterns(printLoops, patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ScheduleScaffolding", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 tr::populateScheduledOperationsPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ScheduledOperations", vFuncOp);
             }
             {
                 OwningRewritePatternList patterns(context);
                 tr::populateScheduleToValueRewritePatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ScheduleToValue", vFuncOp);
             }
 
@@ -104,7 +104,7 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
                 OwningRewritePatternList patterns(context);
                 vtr::populateValueSimplifyPatterns(patterns);
                 utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ValueSimplify", vFuncOp);
             }
 
@@ -113,7 +113,7 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
                 tr::populateScheduleScaffoldingPatterns(printLoops, patterns);
                 tr::populateScheduleToValueRewritePatterns(patterns);
                 tr::populateScheduledOperationsPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("Schedule_Scaffolding_Value_Operations", vFuncOp);
             }
 
@@ -121,112 +121,112 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
                 OwningRewritePatternList patterns(context);
                 // TODO : this shouldn't be in the exec plan dialect
                 xptr::populateConvergeLoadStoresPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ExecutionPlanConvergeLoadStores", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("Canonicalize", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanMaxElementCacheRegionPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ExecutionPlanMaxElementCachePositioning", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanCacheRegionHoistingPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
                 snapshotter.Snapshot("ExecutionPlanCacheRegionHoisting", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 tr::populateLoopMergingPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("LoopMerging", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanCacheRegionMergingPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ExecutionPlanCacheRegionMerging", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanAdjustHierarchicalCacheRegionPositionPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
                 snapshotter.Snapshot("ExecutionPlanAdjustHierarchicalCacheRegionPosition", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanCacheRegionPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
                 snapshotter.Snapshot("ExecutionPlanCacheRegion", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanAdjustCacheMappingPositionPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ExecutionPlanAdjustCacheMappingPosition", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanCacheMappingPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), topDownConfig);
                 snapshotter.Snapshot("ExecutionPlanCacheMapping", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 tr::populateScheduledOperationsPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ScheduledOperations", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanScaleHoistingPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ExecutionPlanScaleHoisting", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("Canonicalize", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanMultiCachePatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ExecutionPlanMultiCacheCopy", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanCopyReducePatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ExecutionPlanCopyReduce", vFuncOp);
             }
 
             {
                 OwningRewritePatternList patterns(context);
                 tr::populateLoopSimplificationPatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("LoopSimplification", vFuncOp);
             }
 
@@ -238,14 +238,14 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
         {
             OwningRewritePatternList patterns(context);
             xptr::populateOutOfBoundsAccessHandlingPatterns(patterns);
-            applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
             snapshotter.Snapshot("OutOfBoundsAccessHandling", vFuncOp);
         }
 
         {
             OwningRewritePatternList patterns(context);
             tr::populateGPUIndexMappingRewritePatterns(patterns);
-            applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
             snapshotter.Snapshot("GPUIndexMapping", vFuncOp);
         }
 
@@ -253,21 +253,21 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
             OwningRewritePatternList patterns(context);
             xptr::populateExecutionPlanVectorizePatterns(printVecOpDetails, patterns);
             utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
-            applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
             snapshotter.Snapshot("ExecutionPlanVectorize_Canonicalize", vFuncOp);
         }
 
         {
             OwningRewritePatternList patterns(context);
             tr::populateLoopOptimizationPatterns(patterns);
-            applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
             snapshotter.Snapshot("LoopOptimization", vFuncOp);
         }
 
         {
             OwningRewritePatternList patterns(context);
             xptr::populateExecutionPlanMakeCachePatterns(patterns);
-            applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
             snapshotter.Snapshot("ExecutionPlanMakeCache", vFuncOp);
         }
 
@@ -275,8 +275,16 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
             OwningRewritePatternList patterns(context);
             xptr::populateExecutionPlanParallelizePatterns(patterns);
             utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
-            applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
             snapshotter.Snapshot("ExecutionPlanParallelize", vFuncOp);
+        }
+
+        {
+            OwningRewritePatternList patterns(context);
+            xptr::populateExecutionPlanTensorizePatterns(patterns);
+            utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            snapshotter.Snapshot("ExecutionPlanTensorize", vFuncOp);
         }
     }
 

@@ -15,7 +15,7 @@ get_filename_component(IR_INCLUDE ../ir/include ABSOLUTE)
 add_subdirectory(include)
 add_subdirectory(src)
 
-set(src src/AcceraPasses.cpp src/AcceraToSPIRVPass.cpp)
+set(src src/AcceraPasses.cpp)
 
 set(rcvalue_src
     src/value/FunctionPointerResolutionPass.cpp
@@ -37,7 +37,7 @@ set(rcnest_src
   src/nest/LoopNestPasses.cpp
   src/nest/LoopNestToValue.cpp src/nest/LoopNestToValueFunc.cpp)
 
-set(include include/AcceraPasses.h include/AcceraToSPIRVPass.h)
+set(include include/AcceraPasses.h)
 
 set(rcnest_include
   include/nest/LoopNestPasses.h
@@ -47,12 +47,23 @@ set(rcexec_src src/exec/ExecutionPlanToAffineLoweringPass.cpp)
 
 set(rcexec_include include/exec/ExecutionPlanToAffineLoweringPass.h)
 
-set(rcvulkan_src
-  src/vulkan/ConvertLaunchFuncToVulkanCalls.cpp
-  src/vulkan/EmitVulkanWrappers.cpp
+set(rcgpu_src
+  src/gpu/AcceraToGPUPass.cpp
+  src/gpu/ConvertLaunchFuncToVulkanCalls.cpp
+  src/gpu/EmitVulkanWrappers.cpp
+  src/gpu/SerializeToHSACO.cpp
+
+  # Disabled
+  # src/gpu/AcceraToSPIRVPass.cpp
 )
 
-set(rcvulkan_include include/vulkan/AcceraVulkanPasses.h)
+set(rcgpu_include
+  include/gpu/AcceraToGPUPass.h
+  include/gpu/AcceraVulkanPasses.h
+
+  # Disabled
+  # include/gpu/AcceraToSPIRVPass.h
+)
 
 set(rcaccera_src src/accera/AcceraLoweringPass.cpp)
 
@@ -63,13 +74,20 @@ set(util_src
   src/util/SnapshotUtilities.cpp
   src/util/VectorizationUtil.cpp
   src/util/VectorizedOp.cpp
+
+  # Disabled
+  # src/util/DebugUtilities.cpp
 )
 
 set(util_include
   include/util/MathUtilities.h
   include/util/SnapshotUtilities.h
   include/util/VectorizationUtil.h
-  include/util/VectorizedOp.h)
+  include/util/VectorizedOp.h
+
+  # Disabled
+  # include/util/DebugUtilities.h
+)
 
 
 set(library_name transforms)
@@ -78,8 +96,8 @@ set(src
     ${rcvalue_src}
     ${rcnest_src}
     ${rcexec_src}
+    ${rcgpu_src}
     ${rcaccera_src}
-    ${rcvulkan_src}
     ${util_src}
 )
 
@@ -88,8 +106,8 @@ set(include
     ${rcvalue_include}
     ${rcnest_include}
     ${rcexec_include}
+    ${rcgpu_include}
     ${rcaccera_include}
-    ${rcvulkan_include}
     ${util_include}
 )
 
@@ -108,12 +126,17 @@ target_link_libraries(
   PUBLIC utilities
          ir
          value
+         lldELF
+         MLIRGPUOps
+         MLIRROCDLIR
+         MLIRROCDLToLLVMIRTranslation
          MLIRStandardToLLVM
          MLIRSCFToStandard
          MLIRAffineToStandard
          MLIRAffineTransforms
          MLIRLinalgToLLVM
          MLIRLinalgTransforms
+         MLIRTargetLLVMIRExport
          MLIRSupport
          MLIRIR
          MLIRAnalysis

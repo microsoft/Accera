@@ -227,7 +227,7 @@ struct IndexCombinationBinOpLowering : public OpRewritePattern<ValueBinOp>
         ValueBinOp op,
         PatternRewriter& rewriter) const override
     {
-        auto loc = op.getLoc();
+        [[maybe_unused]] auto loc = op.getLoc();
 
         auto lhs = op.lhs();
         auto rhs = op.rhs();

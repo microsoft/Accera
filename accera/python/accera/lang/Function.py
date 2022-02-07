@@ -11,9 +11,10 @@ from ..Targets import Target
 from ..lang.Array import Array
 from .._lang_python._lang import Array as NativeArray
 
+
 @singledispatch
 def _unpack_arg(arg: NativeArray):
-    return arg # already unpacked
+    return arg    # already unpacked
 
 
 # Sometimes arrays can be passed directly into Functions
@@ -35,9 +36,11 @@ def _(arg: Array):
             # statements are true:
             # - Temporary arrays are not function arguments, and not constant arrays.
             # - Both function arguments and constant arrays should have non-empty values.
-            raise ValueError("""A non-temporary array is being used like a temporary array.
-Did you specify role=Array.Role.TEMP?""")
-    return arg._get_native_array() # unpack
+            raise ValueError(
+                """A non-temporary array is being used like a temporary array.
+Did you specify role=Array.Role.TEMP?"""
+            )
+    return arg._get_native_array()    # unpack
 
 
 def role_to_usage(role):
@@ -56,9 +59,9 @@ class Function:
     public: bool = False
     external: bool = False
     decorated: bool = True    # do we want to expose this?
-    requested_args: tuple = () # args as provided into Package.add
-    args: tuple = () # unpacked versions of the args (as native arrays)
-    param_overrides: dict = field(default_factory=dict) # overrides for constants
+    requested_args: tuple = ()    # args as provided into Package.add
+    args: tuple = ()    # unpacked versions of the args (as native arrays)
+    param_overrides: dict = field(default_factory=dict)    # overrides for constants
     definition: Callable = None
     no_inline: bool = False
     auxiliary: dict = field(default_factory=dict)

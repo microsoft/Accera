@@ -46,7 +46,7 @@ namespace value
             return symbolicIndex.getValue();
         }
 
-        std::vector<Index> GetIndices(const std::vector<ScalarIndex>& dimensions)
+        [[maybe_unused]] std::vector<Index> GetIndices(const std::vector<ScalarIndex>& dimensions)
         {
             std::vector<Index> underlyingIndices;
             std::transform(dimensions.begin(), dimensions.end(), std::back_inserter(underlyingIndices), [](const ScalarIndex& scalarIndex) { return GetIndex(scalarIndex); });
@@ -155,9 +155,9 @@ namespace value
                            CacheIndexing mapping,
                            CacheAllocation allocation,
                            MemorySpace dslMemorySpace,
-                           ExecutionOptions execOptions) :
+                           ExecutionTarget execTarget) :
             CacheImpl(schedule, value, mapping),
-            _execOptions(execOptions)
+            _execTarget(execTarget)
         {
             auto memorySpace = *ir::value::symbolizeMemorySpace((uint64_t)dslMemorySpace);
 
@@ -183,12 +183,12 @@ namespace value
             _cacheAccessContext.cacheRegionBaseIndices = _cacheInfo.cacheRegionBaseIndices;
 
             BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc, _mlirValueInput, _cacheAccessContext, _mlirValueInput, *_cacheInfo.cacheIndex, *_cacheInfo.triggerIndex, _cacheId, _hierarchicalCacheLevel, false, false);
-            auto endOp = builder.create<EndCacheRegionOp>(loc, regionOp);
+            [[maybe_unused]] auto endOp = builder.create<EndCacheRegionOp>(loc, regionOp);
             _scheduleOp.injectMapping(regionOp);
         }
 
         CacheAccessContext _cacheAccessContext;
-        ExecutionOptions _execOptions;
+        ExecutionTarget _execTarget;
     };
 
     class ActiveBlockCacheImpl : public CacheImpl
@@ -203,9 +203,9 @@ namespace value
                              CacheIndexing mapping,
                              CacheAllocation allocation,
                              MemorySpace dslMemorySpace,
-                             ExecutionOptions execOptions) :
+                             ExecutionTarget execTarget) :
             CacheImpl(schedule, value, mapping),
-            _execOptions(execOptions)
+            _execTarget(execTarget)
         {
             auto builder = GetBuilder();
             auto loc = builder.getUnknownLoc();
@@ -254,12 +254,12 @@ namespace value
                 cacheRegionOp = regionOp;
             }
             auto regionHandle = cacheRegionOp->getResult(0);
-            auto endOp = builder.create<EndCacheRegionOp>(loc, regionHandle);
+            [[maybe_unused]] auto endOp = builder.create<EndCacheRegionOp>(loc, regionHandle);
             _scheduleOp.injectMapping(cacheRegionOp);
         }
 
         CacheAccessContext _cacheAccessContext;
-        ExecutionOptions _execOptions;
+        ExecutionTarget _execTarget;
     };
 
     class OfflineCacheImpl : public CacheImpl
@@ -324,7 +324,7 @@ namespace value
             // cache dimension index value
             // TODO : support more than simple addition of indices
             std::vector<std::vector<Index>> indicesUsedForCacheDims = _shardMapping.relevantScheduleIndices;
-            assert(indicesUsedForCacheDims.size() == _cacheInfo.cacheType.getRank());
+            assert(indicesUsedForCacheDims.size() == static_cast<size_t>(_cacheInfo.cacheType.getRank()));
 
             // Change slice ops to access the packed version of the buffer
             // TODO : handle more than slice ops - find or create a common interface for modifying buffer access patterns
@@ -661,7 +661,7 @@ namespace value
 
             // Construct the arguments to the main function without the input that is being packed
             auto scheduleFuncOp = GetScheduleFuncOp();
-            int targetArgIdx = 0;
+            auto targetArgIdx = 0u;
             for (const auto& arg : scheduleFuncOp.getArguments())
             {
                 if (arg == _mlirValueInput)
@@ -723,14 +723,14 @@ namespace value
                  CacheIndexing mapping,
                  CacheAllocation allocation,
                  MemorySpace memorySpace,
-                 ExecutionOptions execOptions)
+                 ExecutionTarget execTarget)
     {
         std::optional<Index> keySlice;
         if (keySliceIndex.has_value())
         {
             keySlice = GetIndex(*keySliceIndex);
         }
-        _impl = std::make_unique<AutomaticCacheImpl>(schedule, value, keySlice, maxElements, mapping, allocation, memorySpace, execOptions);
+        _impl = std::make_unique<AutomaticCacheImpl>(schedule, value, keySlice, maxElements, mapping, allocation, memorySpace, execTarget);
     }
 
     // Manual caching version
@@ -743,7 +743,7 @@ namespace value
                  CacheIndexing mapping,
                  CacheAllocation allocation,
                  MemorySpace memorySpace,
-                 ExecutionOptions execOptions)
+                 ExecutionTarget execTarget)
     {
         std::optional<Index> keySlice;
         if (keySliceIndex.has_value())
@@ -757,11 +757,11 @@ namespace value
         }
         if (std::holds_alternative<ViewAdapter>(value))
         {
-            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<ViewAdapter>(value), keySlice, resolvedTriggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, execOptions);
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<ViewAdapter>(value), keySlice, resolvedTriggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, execTarget);
         }
         else
         {
-            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<Cache*>(value)->_impl.get(), keySlice, resolvedTriggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, execOptions);
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<Cache*>(value)->_impl.get(), keySlice, resolvedTriggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, execTarget);
         }
     }
 
@@ -774,7 +774,7 @@ namespace value
                  CacheIndexing mapping,
                  CacheAllocation allocation,
                  MemorySpace memorySpace,
-                 ExecutionOptions execOptions)
+                 ExecutionTarget execTarget)
     {
         std::optional<Index> keySlice;
         if (keySliceIndex.has_value())
@@ -789,11 +789,11 @@ namespace value
 
         if (std::holds_alternative<ViewAdapter>(value))
         {
-            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<ViewAdapter>(value), keySlice, resolvedTriggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, execOptions);
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<ViewAdapter>(value), keySlice, resolvedTriggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, execTarget);
         }
         else
         {
-            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<Cache*>(value)->_impl.get(), keySlice, resolvedTriggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, execOptions);
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<Cache*>(value)->_impl.get(), keySlice, resolvedTriggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, execTarget);
         }
     }
 

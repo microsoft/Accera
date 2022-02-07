@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: 1.2.0)
 
-# Accera v1.2.1 Reference
+# Accera 1.2.0 Reference
 
 ## `accera.Plan.kernelize(unroll_indices[, vectorize_indices])`
 A convenience method for a sequence of `unroll` instructions followed by a possible sequence of `vectorize` instructions

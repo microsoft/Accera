@@ -35,6 +35,7 @@ namespace value
 {
     class FunctionDeclaration;
     class Array;
+    class Matrix;
     class Vector;
     enum class PrefetchType;
     enum class PrefetchLocality;
@@ -255,9 +256,10 @@ namespace value
         /// <param name="source"> The source location </param>
         /// <param name="offsets"> The origin of the view --- the indices of the first entry in the subarray </param>
         /// <param name="newShape"> The shape of the view </param>
+        /// <param name="strides"> The strides of the view </param>
         /// <returns> A Value instance that refers to the sub-part of the input </returns>
         /// <remarks> source must be constrained and the number of items in offset must match the degree of source </remarks>
-        Value View(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape);
+        Value View(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape, std::vector<Scalar> strides = {});
 
         /// <summary> Returns a slice of a portion of a memory buffer </summary>
         /// <param name="source"> The source location </param>
@@ -314,6 +316,22 @@ namespace value
         Value BinaryOperation(ValueBinaryOperation op, Value source1, Value source2);
 
         Value LogicalOperation(ValueLogicalOperation op, Value source1, Value source2);
+
+        /// <summary> Performs matrix multiply accumulate operation D = A.B + C.
+        /// There are restrictions on the input types and sizes. </summary>
+        /// <param name="dest"> The result destination matrix </param>
+        /// <param name="A"> The input A matrix </param>
+        /// <param name="B"> The input B matrix </param>
+        /// <param name="C"> The input C matrix </param>
+        void MFMA(Matrix& dest, Matrix A, Matrix B, Matrix C);
+
+        /// <summary> Performs matrix multiply accumulate compute operation D = A.B + C.
+        /// There are restrictions on the input types and sizes. </summary>
+        /// <param name="A"> The input A matrix </param>
+        /// <param name="B"> The input B matrix </param>
+        /// <param name="C"> The input C matrix </param>
+        /// <returns> An instance of Matrix pointing to the result </returns>
+        // Matrix MFMACompute(Matrix A, Matrix B, Matrix C);
 
         Scalar Max(Vector input);
 
@@ -425,7 +443,7 @@ namespace value
 
         virtual void CopyDataImpl(const Value& source, Value& destination) = 0;
 
-        virtual Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape) = 0;
+        virtual Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape, const std::vector<Scalar>& strides) = 0;
 
         virtual Value SliceImpl(Value source, std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets) = 0;
 
@@ -442,6 +460,8 @@ namespace value
         virtual Value BinaryOperationImpl(ValueBinaryOperation op, Value source1, Value source2) = 0;
 
         virtual Value LogicalOperationImpl(ValueLogicalOperation op, Value source1, Value source2) = 0;
+
+        virtual void MFMAImpl(Matrix& dest, Matrix A, Matrix B, Matrix C) = 0;
 
         virtual Scalar MaxImpl(Vector input) = 0;
 
@@ -747,6 +767,8 @@ namespace value
     void ForRange(Scalar start, Scalar end, Scalar step, std::function<void(Scalar)> fn);
 
     void ForRanges(std::vector<Scalar> range_ends, std::function<void(std::vector<Scalar>)> fn);
+
+    void MFMA(Matrix& dest, Matrix A, Matrix B, Matrix C);
 
     /// <summary> Runs the provided function, in parallel if possible </summary>
     /// <typeparam name="Tys..."> The types that represent the captured values. Must be `Value` or types that provide a member

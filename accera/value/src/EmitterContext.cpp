@@ -6,6 +6,7 @@
 
 #include "EmitterContext.h"
 #include "FunctionDeclaration.h"
+#include "Matrix.h"
 #include "Scalar.h"
 #include "TargetDevice.h"
 #include "Value.h"
@@ -168,9 +169,9 @@ namespace value
 
     void EmitterContext::CopyData(const Value& source, Value& destination) { return CopyDataImpl(source, destination); }
 
-    Value EmitterContext::View(Value source, const std::vector<Scalar>& offsets, const MemoryShape& newShape)
+    Value EmitterContext::View(Value source, const std::vector<Scalar>& offsets, const MemoryShape& newShape, const std::vector<Scalar> strides)
     {
-        return ViewImpl(source, offsets, newShape);
+        return ViewImpl(source, offsets, newShape, strides);
     }
 
     Value EmitterContext::Slice(Value source, std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets)
@@ -218,6 +219,17 @@ namespace value
         }
 
         return LogicalOperationImpl(op, source1, source2);
+    }
+
+    void EmitterContext::MFMA(Matrix& dest, Matrix A, Matrix B, Matrix C)
+    {
+
+        if (A.GetType() != B.GetType() || dest.GetType() != C.GetType())
+        {
+            throw InputException(InputExceptionErrors::invalidArgument);
+        }
+
+        return MFMAImpl(dest, A, B, C);
     }
 
     Scalar EmitterContext::Cast(Scalar value, ValueType type)
@@ -414,7 +426,7 @@ namespace value
 
     void ForRange(const std::string& name, Scalar end, std::function<void(Scalar)> fn)
     {
-        ForRange(name, Scalar{ int64_t{0} }, end, fn);
+        ForRange(name, Scalar{ int64_t{ 0 } }, end, fn);
     }
 
     void ForRange(Scalar start, Scalar end, std::function<void(Scalar)> fn)
@@ -424,7 +436,7 @@ namespace value
 
     void ForRange(const std::string& name, Scalar start, Scalar end, std::function<void(Scalar)> fn)
     {
-        ForRange(name, start, end, int64_t{1}, fn);
+        ForRange(name, start, end, int64_t{ 1 }, fn);
     }
 
     void ForRange(Scalar start, Scalar end, Scalar step, std::function<void(Scalar)> fn)
@@ -453,6 +465,10 @@ namespace value
         }
     }
 
+    void MFMA(Matrix& dest, Matrix A, Matrix B, Matrix C)
+    {
+        return GetContext().MFMA(dest, A, B, C);
+    }
 
     void DebugBreak()
     {

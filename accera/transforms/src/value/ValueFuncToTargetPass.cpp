@@ -164,9 +164,8 @@ struct ValueFuncToTargetPattern : OpRewritePattern<vir::ValueFuncOp>
         newFuncOp->setAttrs(funcOp->getAttrs());
         if (funcOp->getAttr(accera::ir::NoInlineAttrName))
         {
-            newFuncOp->setAttr("passthrough", rewriter.getArrayAttr({rewriter.getStringAttr("noinline")}));
+            newFuncOp->setAttr("passthrough", rewriter.getArrayAttr({ rewriter.getStringAttr("noinline") }));
         }
-
 
         rewriter.eraseOp(funcOp);
         return success();
@@ -230,7 +229,7 @@ struct ValueLambdaRewritePattern : mlir::OpRewritePattern<vir::ValueLambdaOp>
         auto funcArgs = ValueRange{ vFuncOp.getArguments() };
         {
             OpBuilder::InsertionGuard guard(rewriter);
-            rewriter.setInsertionPoint( &bodyBlock, bodyBlock.end() );
+            rewriter.setInsertionPoint(&bodyBlock, bodyBlock.end());
             BlockAndValueMapping valueMapper;
 
             for (auto [fromValue, toValue] : llvm::zip(op.args(), funcArgs.take_front(op.args().size())))
@@ -274,7 +273,7 @@ struct ValueLaunchFuncOpInlinerPattern : OpRewritePattern<vir::LaunchFuncOp>
     using OpRewritePattern::OpRewritePattern;
     LogicalResult matchAndRewrite(vir::LaunchFuncOp op, PatternRewriter& rewriter) const final
     {
-        auto target = op.exec_target();
+        auto target = op.exec_targetAttr();
         auto callee = op.callee().getLeafReference();
 
         auto parentFnOp = op->getParentWithTrait<mlir::OpTrait::FunctionLike>();
@@ -283,7 +282,9 @@ struct ValueLaunchFuncOpInlinerPattern : OpRewritePattern<vir::LaunchFuncOp>
             // Don't inline calls from RawPointerAPI functions
             return failure();
         }
-        if (auto attr = parentFnOp->getAttrOfType<mlir::IntegerAttr>(vir::LaunchFuncOp::getExecTargetAttrName()); attr && (int64_t)target == attr.getInt())
+
+        if (auto attr = parentFnOp->getAttrOfType<vir::ExecutionTargetAttr>(vir::ValueFuncOp::getExecTargetAttrName());
+            attr && target == attr)
         {
             auto callInterface = mlir::dyn_cast<mlir::CallOpInterface>(op.getOperation());
             auto callable = callInterface.resolveCallable();

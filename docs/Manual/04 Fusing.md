@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: 1.2.0)
 
 # Section 4: Fusing
 Multiple schedules can be combined into a single schedule using the `fuse` operation. The fused schedule represents the union of the work in the original schedules. The fused schedule can be transformed using any of the transformations presented in [Section 3](<03%20Schedules.md>).

@@ -71,7 +71,7 @@ namespace value
 
     Value Matrix::GetValue() const { return _value; }
 
-    Matrix Matrix::SubMatrix(Scalar row, Scalar column, int numRows, int numColumns) const
+    Matrix Matrix::SubMatrix(Scalar row, Scalar column, int numRows, int numColumns, int strideRow, int strideColumn) const
     {
         const MemoryLayout& currentLayout = _value.GetLayout();
 
@@ -83,7 +83,7 @@ namespace value
 
         // Need to cast so that row and numRows are the same type (and similarly with columns)
         // Value indexedValue = GetContext().View(_value, { { row, row + Cast(Scalar(numRows), row.GetType()) }, { column, column + Cast(Scalar(numColumns), column.GetType()) } });
-        Value indexedValue = GetContext().View(_value, { row, column }, { numRows, numColumns });
+        Value indexedValue = GetContext().View(_value, { row, column }, { numRows, numColumns }, {strideRow, strideColumn});
         return indexedValue;
     }
 

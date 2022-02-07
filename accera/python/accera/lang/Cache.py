@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from typing import Any, Tuple, Union
 from .Array import Array
 from .LoopIndex import LoopIndex
-from .._lang_python._lang import CacheIndexing, _CacheAllocation, _MemorySpace, _MemoryAffineCoefficients, _DimensionOrder
+from .._lang_python._lang import (
+    CacheIndexing, _CacheAllocation, _MemorySpace, _MemoryAffineCoefficients, _DimensionOrder
+)
 
 
 @dataclass
@@ -53,6 +55,7 @@ class Cache:
             }
             return _DimensionOrder(dim_orders[self.layout])
         return None
+
 
 @dataclass
 class DelayedCache(Cache):

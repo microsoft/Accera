@@ -521,9 +521,9 @@ std::optional<VectorizedOp> VectorizeAffineStoreOp(mlir::PatternRewriter& rewrit
         return std::nullopt;
     }
 
-    auto loc = op.getLoc();
+    [[maybe_unused]] auto loc = op.getLoc();
     auto memRefType = op.getMemRefType();
-    auto elementType = memRefType.getElementType();
+    [[maybe_unused]] auto elementType = memRefType.getElementType();
 
     // can't directly store a vector into a non-vector memref, so we'll have to extract each element and store them individually
     auto vectorizedValueToStore = vecOp->GetVectorResult();

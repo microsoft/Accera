@@ -11,12 +11,13 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/AffineExprVisitor.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/Support/LogicalResult.h> 
+#include <mlir/Support/LogicalResult.h>
 
 #include <ir/include/IRUtil.h>
 
 #include "CppPrinter.h"
 
+#include "AcceraDialectCppPrinter.h"
 #include "AffineDialectCppPrinter.h"
 #include "CppPrinterUtils.h"
 #include "GpuDialectCppPrinter.h"
@@ -592,7 +593,7 @@ namespace cpp_printer
         if (auto affineMaps = memRefType.getAffineMaps(); affineMaps.empty() || (affineMaps.size() == 1 &&
                                                                                  affineMaps.front().isIdentity()))
         {
-            auto memspace = memRefType.getMemorySpaceAsInt(); 
+            auto memspace = memRefType.getMemorySpaceAsInt();
             usingBrackets = (isPrivateOrWorkgroupMemSpace(memspace) && rank > 1) || rank == 1;
             if (usingBrackets)
             {
@@ -1069,6 +1070,7 @@ namespace cpp_printer
     void CppPrinter::registerAllDialectPrinters()
     {
         static bool init_once = [&]() {
+            registerDialectPrinter<AcceraDialectCppPrinter>();
             registerDialectPrinter<AffineDialectCppPrinter>();
             registerDialectPrinter<GpuDialectCppPrinter>();
             registerDialectPrinter<RocDLDialectCppPrinter>();

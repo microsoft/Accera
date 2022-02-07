@@ -6,6 +6,7 @@
 from typing import Sequence, NamedTuple
 from accera import Array, Target
 
+
 class Options(NamedTuple):
     ForceCacheBMatrix = False
     BCacheSizeThreshold = 128**2
@@ -14,7 +15,16 @@ class Options(NamedTuple):
     NumColumnsInKernelScaleFactor = 2
     BMatrixTileSize: Sequence[int] = [256, 128]
 
-def RuntimeInitCacheMLAS(A: Array, B: Array, C: Array, pack_fn_name: str, packed_buffer_size_fn_name: str, opts=Options(), target=Target.HOST):
+
+def RuntimeInitCacheMLAS(
+    A: Array,
+    B: Array,
+    C: Array,
+    pack_fn_name: str,
+    packed_buffer_size_fn_name: str,
+    opts=Options(),
+    target=Target.HOST
+):
     from accera import Nest
 
     if not all([len(array.shape) == 2 for array in [A, B, C]]):
@@ -38,7 +48,9 @@ def RuntimeInitCacheMLAS(A: Array, B: Array, C: Array, pack_fn_name: str, packed
     column_block = opts.BMatrixTileSize[1]
     inner_dim_block = opts.BMatrixTileSize[0]
     num_rows_in_kernel = opts.NumRowsInKernel
-    num_cols_in_kernel = opts.NumColumnsInKernelScaleFactor * (target.vector_bytes // 4) # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
+    num_cols_in_kernel = opts.NumColumnsInKernelScaleFactor * (
+        target.vector_bytes // 4
+    )    # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
 
     # Apply a simple stretching to the kernel size to fit the output shape
     if num_cols_in_kernel > output_cols:
@@ -83,7 +95,9 @@ def RuntimeInitCacheMLAS(A: Array, B: Array, C: Array, pack_fn_name: str, packed
     kk = schedule.split(k, inner_dim_block)
     kkk = schedule.split(kk, opts.KUnroll)
     jjj = schedule.split(jj, num_cols_in_kernel)
-    jjjj = schedule.split(jjj, target.vector_bytes // 4) # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
+    jjjj = schedule.split(
+        jjj, target.vector_bytes // 4
+    )    # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
     ii = schedule.split(i, num_rows_in_kernel)
 
     schedule.reorder(j, k, i, jj, kk, kkk, ii, jjj, jjjj)
@@ -124,7 +138,9 @@ def EmitTimeCacheMLAS(A: Array, B: Array, C: Array, opts=Options(), wrapper_fn_n
     column_block = opts.BMatrixTileSize[1]
     inner_dim_block = opts.BMatrixTileSize[0]
     num_rows_in_kernel = opts.NumRowsInKernel
-    num_cols_in_kernel = opts.NumColumnsInKernelScaleFactor * (target.vector_bytes // 4) # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
+    num_cols_in_kernel = opts.NumColumnsInKernelScaleFactor * (
+        target.vector_bytes // 4
+    )    # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
 
     # Apply a simple stretching to the kernel size to fit the output shape
     if num_cols_in_kernel > output_cols:
@@ -169,7 +185,9 @@ def EmitTimeCacheMLAS(A: Array, B: Array, C: Array, opts=Options(), wrapper_fn_n
     kk = schedule.split(k, inner_dim_block)
     kkk = schedule.split(kk, opts.KUnroll)
     jjj = schedule.split(jj, num_cols_in_kernel)
-    jjjj = schedule.split(jjj, target.vector_bytes // 4) # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
+    jjjj = schedule.split(
+        jjj, target.vector_bytes // 4
+    )    # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
     ii = schedule.split(i, num_rows_in_kernel)
 
     schedule.reorder(j, k, i, jj, kk, kkk, ii, jjj, jjjj)

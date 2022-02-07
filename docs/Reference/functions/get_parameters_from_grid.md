@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: 1.2.0)
 
-# Accera v1.2.1 Reference
+# Accera 1.2.0 Reference
 
 ## `accera.get_parameters_from_grid(parameter_grid)`
 Get parameters combinations from parameter gid.

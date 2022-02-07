@@ -22,6 +22,13 @@ class Architecture(Enum):
     # AARCH64 = auto()
 
 
+class Runtime(Enum):
+    DEFAULT = auto()
+    VULKAN = auto()
+    ROCM = auto()
+    CUDA = auto()
+
+
 # Branding is currently unused
 KNOWN_CPUS_HEADER = \
     ["Model", "Family", "Branding", "Base Freq", "Turbo Freq", "Cores", "Threads", "Cache Lines", "Cache Sizes", "Vector Bytes", "Vector Registers", "Extensions", "ISA"]
@@ -69,47 +76,47 @@ KNOWN_CPUS = [
 
     # High-end desktop processors (Skylake-X)
     # 7th generation Skylake-X high-end desktop CPUs
-    ["Intel 7980XE", "Skylake-X", "Core i9", 2.6, {2:4.2, 1:4.4}, 18, 36, [32, 1024, 1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 7960X",  "Skylake-X", "Core i9", 2.8, {2:4.2, 1:4.4}, 16, 32, [32, 1024, 1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 7940X",  "Skylake-X", "Core i9", 3.1, {2:4.3, 1:4.4}, 14, 28, [32, 1024, 1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 7920X",  "Skylake-X", "Core i9", 2.9, {2:4.3, 1:4.4}, 12, 24, [32, 1024, 1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 7900X",  "Skylake-X", "Core i9", 3.3, {2:4.3, 1:4.5}, 10, 20, [32, 1024, 1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 7980XE", "Skylake-X", "Core i9", 2.6, {2: 4.2, 1: 4.4}, 18, 36, [32, 1024, 1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 7960X",  "Skylake-X", "Core i9", 2.8, {2: 4.2, 1: 4.4}, 16, 32, [32, 1024, 1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 7940X",  "Skylake-X", "Core i9", 3.1, {2: 4.3, 1: 4.4}, 14, 28, [32, 1024, 1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 7920X",  "Skylake-X", "Core i9", 2.9, {2: 4.3, 1: 4.4}, 12, 24, [32, 1024, 1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 7900X",  "Skylake-X", "Core i9", 3.3, {2: 4.3, 1: 4.5}, 10, 20, [32, 1024, 1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
 
-    ["Intel 7820X",  "Skylake-X", "Core i7", 3.6, {2:4.3, 1:4.5},  8, 26, [32,  1024,  1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 7800X",  "Skylake-X", "Core i7", 3.5,        {1:4.0},  6, 12, [32,  1024,  1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 7820X",  "Skylake-X", "Core i7", 3.6, {2: 4.3, 1: 4.5},  8, 26, [32,  1024,  1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 7800X",  "Skylake-X", "Core i7", 3.5,        {1: 4.0},  6, 12, [32,  1024,  1408], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
 
     # 9th generation Skylake-X high-end desktop CPUs
-    ["Intel 9990XE", "Skylake-X", "Core i9", 4.0, {2:5.0, 1:5.0}, 14, 28, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 9980XE", "Skylake-X", "Core i9", 3.0, {2:4.4, 1:4.5}, 18, 36, [32, 1024, 24.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 9960X",  "Skylake-X", "Core i9", 3.1, {2:4.4, 1:4.5}, 16, 32, [32, 1024, 22.00 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 9940X",  "Skylake-X", "Core i9", 3.3, {2:4.4, 1:4.5}, 14, 32, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 9920X",  "Skylake-X", "Core i9", 3.5, {2:4.4, 1:4.5}, 12, 24, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 9900X",  "Skylake-X", "Core i9", 3.5, {2:4.4, 1:4.5}, 10, 20, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 9820X",  "Skylake-X", "Core i9", 3.3, {2:4.1, 1:4.2}, 10, 20, [32, 1024, 16.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 9990XE", "Skylake-X", "Core i9", 4.0, {2: 5.0, 1: 5.0}, 14, 28, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 9980XE", "Skylake-X", "Core i9", 3.0, {2: 4.4, 1: 4.5}, 18, 36, [32, 1024, 24.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 9960X",  "Skylake-X", "Core i9", 3.1, {2: 4.4, 1: 4.5}, 16, 32, [32, 1024, 22.00 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 9940X",  "Skylake-X", "Core i9", 3.3, {2: 4.4, 1: 4.5}, 14, 32, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 9920X",  "Skylake-X", "Core i9", 3.5, {2: 4.4, 1: 4.5}, 12, 24, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 9900X",  "Skylake-X", "Core i9", 3.5, {2: 4.4, 1: 4.5}, 10, 20, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 9820X",  "Skylake-X", "Core i9", 3.3, {2: 4.1, 1: 4.2}, 10, 20, [32, 1024, 16.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
 
-    ["Intel 9800X",  "Skylake-X", "Core i7", 3.8, {2:4.4, 1:4.5},  8, 16, [32, 1024, 16.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 9800X",  "Skylake-X", "Core i7", 3.8, {2: 4.4, 1: 4.5},  8, 16, [32, 1024, 16.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
 
     # Xeon High-end desktop processors (Skylake-X)
-    ["Intel W-3175X", "Skylake-X",   "Xeon", 3.1, {2:3.8, 1:4.3}, 28, 56, [32, 1024, 38.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel W-3175X", "Skylake-X",   "Xeon", 3.1, {2: 3.8, 1: 4.3}, 28, 56, [32, 1024, 38.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
 
     # TODO: Fill in Mobile, Workstation, Server, Skylake-SP Processors
 
     # Intel Kaby Lake
     # ref: https://en.wikipedia.org/wiki/Kaby_Lake
     # Desktop processors
-    ["Intel 7740X", "Kaby Lake", "Core i7", 4.3, {1:4.5, 2:4.5, 4:4.5}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 7700K", "Kaby Lake", "Core i7", 4.2, {1:4.5, 2:4.4, 4:4.5}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 7700",  "Kaby Lake", "Core i7", 3.6, {1:4.2, 2:4.1, 4:4.0}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 7700T", "Kaby Lake", "Core i7", 2.9, {1:3.8, 2:3.7, 4:3.6}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7740X", "Kaby Lake", "Core i7", 4.3, {1: 4.5, 2: 4.5, 4: 4.5}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7700K", "Kaby Lake", "Core i7", 4.2, {1: 4.5, 2: 4.4, 4: 4.5}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7700",  "Kaby Lake", "Core i7", 3.6, {1: 4.2, 2: 4.1, 4: 4.0}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7700T", "Kaby Lake", "Core i7", 2.9, {1: 3.8, 2: 3.7, 4: 3.6}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
 
-    ["Intel 7640X", "Kaby Lake", "Core i5", 4.0, {1:4.2, 2:4.2, 4:4.0}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 7600K", "Kaby Lake", "Core i5", 3.8, {1:4.2, 2:4.1, 4:4.0}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 7600",  "Kaby Lake", "Core i5", 3.5, {1:4.1, 2:4.0, 4:3.9}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 7600T", "Kaby Lake", "Core i5", 2.8, {1:3.7, 2:3.6, 4:3.5}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 7500",  "Kaby Lake", "Core i5", 3.4, {1:3.8, 2:3.7, 4:3.6}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 7500T", "Kaby Lake", "Core i5", 2.7, {1:3.3, 2:3.2, 4:3.1}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 7400",  "Kaby Lake", "Core i5", 3.0, {1:3.5, 2:3.4, 4:3.3}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 7400T", "Kaby Lake", "Core i5", 2.4, {1:3.0, 2:2.9, 4:2.7}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7640X", "Kaby Lake", "Core i5", 4.0, {1: 4.2, 2: 4.2, 4: 4.0}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7600K", "Kaby Lake", "Core i5", 3.8, {1: 4.2, 2: 4.1, 4: 4.0}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7600",  "Kaby Lake", "Core i5", 3.5, {1: 4.1, 2: 4.0, 4: 3.9}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7600T", "Kaby Lake", "Core i5", 2.8, {1: 3.7, 2: 3.6, 4: 3.5}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7500",  "Kaby Lake", "Core i5", 3.4, {1: 3.8, 2: 3.7, 4: 3.6}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7500T", "Kaby Lake", "Core i5", 2.7, {1: 3.3, 2: 3.2, 4: 3.1}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7400",  "Kaby Lake", "Core i5", 3.0, {1: 3.5, 2: 3.4, 4: 3.3}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 7400T", "Kaby Lake", "Core i5", 2.4, {1: 3.0, 2: 2.9, 4: 2.7}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
 
     ["Intel 7350K",  "Kaby Lake", "Core i3", 4.2,                   {}, 2, 4, [32, 256, 4 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
     ["Intel 7320",   "Kaby Lake", "Core i3", 4.1,                   {}, 2, 4, [32, 256, 4 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
@@ -125,34 +132,34 @@ KNOWN_CPUS = [
     # TODO: Fill in Mobile Processors
 
     # Server/workstation Xeon processors
-    ["Intel E3-1285 v6", "Kaby Lake", "Xeon", 4.1, {1:4.5}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel E3-1280 v6", "Kaby Lake", "Xeon", 3.9, {1:4.2}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel E3-1275 v6", "Kaby Lake", "Xeon", 3.8, {1:4.2}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel E3-1270 v6", "Kaby Lake", "Xeon", 3.8, {1:4.2}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel E3-1245 v6", "Kaby Lake", "Xeon", 3.7, {1:4.1}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel E3-1240 v6", "Kaby Lake", "Xeon", 3.7, {1:4.1}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel E3-1230 v6", "Kaby Lake", "Xeon", 3.5, {1:3.9}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel E3-1285 v6", "Kaby Lake", "Xeon", 4.1, {1: 4.5}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel E3-1280 v6", "Kaby Lake", "Xeon", 3.9, {1: 4.2}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel E3-1275 v6", "Kaby Lake", "Xeon", 3.8, {1: 4.2}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel E3-1270 v6", "Kaby Lake", "Xeon", 3.8, {1: 4.2}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel E3-1245 v6", "Kaby Lake", "Xeon", 3.7, {1: 4.1}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel E3-1240 v6", "Kaby Lake", "Xeon", 3.7, {1: 4.1}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel E3-1230 v6", "Kaby Lake", "Xeon", 3.5, {1: 3.9}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
 
-    ["Intel E3-1225 v6", "Kaby Lake", "Xeon", 3.3, {1:3.7}, 4, 4, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel E3-1220 v6", "Kaby Lake", "Xeon", 3.0, {1:3.5}, 4, 4, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel E3-1225 v6", "Kaby Lake", "Xeon", 3.3, {1: 3.7}, 4, 4, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel E3-1220 v6", "Kaby Lake", "Xeon", 3.0, {1: 3.5}, 4, 4, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
 
     # TODO: Fill in remaining Kaby Lake data
 
     # Intel Coffee Lake
     # ref: https://en.wikipedia.org/wiki/Coffee_Lake
     # Desktop processors (Coffee Lake S)
-    ["Intel 8086K", "Coffee Lake", "Core i7", 4.0, {1:5.0, 2:4.6, 3:4.5, 4:4.4, 5:4.4, 6:4.3}, 6, 12, [32, 256, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 8700K", "Coffee Lake", "Core i7", 3.7, {1:4.7, 2:4.6, 3:4.5, 4:4.4, 5:4.4, 6:4.3}, 6, 12, [32, 256, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 8700",  "Coffee Lake", "Core i7", 3.2, {1:4.6, 2:4.5, 3:4.4, 4:4.3, 5:4.3, 6:4.3}, 6, 12, [32, 256, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 8700T", "Coffee Lake", "Core i7", 2.4, {1:4.0, 2:4.0, 3:3.9, 4:3.9, 5:3.8, 6:3.8}, 6, 12, [32, 256, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8086K", "Coffee Lake", "Core i7", 4.0, {1: 5.0, 2: 4.6, 3: 4.5, 4: 4.4, 5: 4.4, 6: 4.3}, 6, 12, [32, 256, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8700K", "Coffee Lake", "Core i7", 3.7, {1: 4.7, 2: 4.6, 3: 4.5, 4: 4.4, 5: 4.4, 6: 4.3}, 6, 12, [32, 256, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8700",  "Coffee Lake", "Core i7", 3.2, {1: 4.6, 2: 4.5, 3: 4.4, 4: 4.3, 5: 4.3, 6: 4.3}, 6, 12, [32, 256, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8700T", "Coffee Lake", "Core i7", 2.4, {1: 4.0, 2: 4.0, 3: 3.9, 4: 3.9, 5: 3.8, 6: 3.8}, 6, 12, [32, 256, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
 
-    ["Intel 8600K", "Coffee Lake", "Core i5", 3.6, {1:4.3, 2:4.2, 3:4.2, 4:4.2, 5:4.1, 6:4.1}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 8600",  "Coffee Lake", "Core i5", 3.1, {1:4.3, 2:4.2, 3:4.2, 4:4.2, 5:4.1, 6:4.1}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 8600T", "Coffee Lake", "Core i5", 2.3, {1:3.7, 2:3.6, 3:3.6, 4:3.6, 5:3.5, 6:3.5}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 8500",  "Coffee Lake", "Core i5", 3.0, {1:4.1, 2:4.0, 3:4.0, 4:4.0, 5:3.9, 6:3.9}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 8500T", "Coffee Lake", "Core i5", 2.1, {1:3.5, 2:3.4, 3:3.3, 4:3.3, 5:3.2, 6:3.2}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 8400",  "Coffee Lake", "Core i5", 2.8, {1:4.0, 2:3.9, 3:3.9, 4:3.9, 5:3.8, 6:3.8}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
-    ["Intel 8400T", "Coffee Lake", "Core i5", 1.7, {1:3.3, 2:3.2, 3:3.1, 4:3.1, 5:3.0, 6:3.0}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8600K", "Coffee Lake", "Core i5", 3.6, {1: 4.3, 2: 4.2, 3: 4.2, 4: 4.2, 5: 4.1, 6: 4.1}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8600",  "Coffee Lake", "Core i5", 3.1, {1: 4.3, 2: 4.2, 3: 4.2, 4: 4.2, 5: 4.1, 6: 4.1}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8600T", "Coffee Lake", "Core i5", 2.3, {1: 3.7, 2: 3.6, 3: 3.6, 4: 3.6, 5: 3.5, 6: 3.5}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8500",  "Coffee Lake", "Core i5", 3.0, {1: 4.1, 2: 4.0, 3: 4.0, 4: 4.0, 5: 3.9, 6: 3.9}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8500T", "Coffee Lake", "Core i5", 2.1, {1: 3.5, 2: 3.4, 3: 3.3, 4: 3.3, 5: 3.2, 6: 3.2}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8400",  "Coffee Lake", "Core i5", 2.8, {1: 4.0, 2: 3.9, 3: 3.9, 4: 3.9, 5: 3.8, 6: 3.8}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
+    ["Intel 8400T", "Coffee Lake", "Core i5", 1.7, {1: 3.3, 2: 3.2, 3: 3.1, 4: 3.1, 5: 3.0, 6: 3.0}, 6, 6, [32, 256, 9 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
 
     ["Intel 8350K", "Coffee Lake", "Core i3", 4.0,                                         {}, 4, 4, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
     ["Intel 8300",  "Coffee Lake", "Core i3", 3.7,                                         {}, 4, 4, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64"],
@@ -228,25 +235,25 @@ KNOWN_CPUS = [
     # Intel Rocket Lake
     # https://en.wikipedia.org/wiki/Rocket_Lake
     # Desktop processors
-    ["Intel 11600T",  "Rocket Lake", "Core i5", 1.7, {**{i+1:3.5 for i in range(6)}, **{1:4.1},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11600KF", "Rocket Lake", "Core i5", 3.9, {**{i+1:4.6 for i in range(6)}, **{1:4.9},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11600K",  "Rocket Lake", "Core i5", 3.9, {**{i+1:4.6 for i in range(6)}, **{1:4.9},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11600",   "Rocket Lake", "Core i5", 2.8, {**{i+1:4.3 for i in range(6)}, **{1:4.8},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11500T",  "Rocket Lake", "Core i5", 1.5, {**{i+1:3.4 for i in range(6)}, **{1:3.9},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11500",   "Rocket Lake", "Core i5", 2.7, {**{i+1:4.2 for i in range(6)}, **{1:4.6},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11400T",  "Rocket Lake", "Core i5", 1.3, {**{i+1:3.3 for i in range(6)}, **{1:3.7},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11400F",  "Rocket Lake", "Core i5", 2.6, {**{i+1:4.2 for i in range(6)}, **{1:4.4},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11400",   "Rocket Lake", "Core i5", 2.6, {**{i+1:4.2 for i in range(6)}, **{1:4.4},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11700T",  "Rocket Lake", "Core i7", 1.4, {**{i+1:3.6 for i in range(8)}, **{1:4.5}, **{2:4.6}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11700KF", "Rocket Lake", "Core i7", 3.6, {**{i+1:4.6 for i in range(8)}, **{1:4.9}, **{2:5.0}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11700K",  "Rocket Lake", "Core i7", 3.6, {**{i+1:4.6 for i in range(8)}, **{1:4.9}, **{2:5.0}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11700F",  "Rocket Lake", "Core i7", 2.5, {**{i+1:4.4 for i in range(8)}, **{1:4.8}, **{2:4.9}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11700",   "Rocket Lake", "Core i7", 2.5, {**{i+1:4.4 for i in range(8)}, **{1:4.8}, **{2:4.9}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11900T",  "Rocket Lake", "Core i9", 1.5, {**{i+1:3.7 for i in range(8)}, **{1:4.8}, **{2:4.9}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11900KF", "Rocket Lake", "Core i9", 3.5, {**{i+1:4.8 for i in range(8)}, **{1:5.1}, **{2:5.2}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11900K",  "Rocket Lake", "Core i9", 3.5, {**{i+1:4.8 for i in range(8)}, **{1:5.1}, **{2:5.2}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11900F",  "Rocket Lake", "Core i9", 2.5, {**{i+1:4.7 for i in range(8)}, **{1:5.0}, **{2:5.1}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 11900",   "Rocket Lake", "Core i9", 2.5, {**{i+1:4.7 for i in range(8)}, **{1:5.0}, **{2:5.1}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11600T",  "Rocket Lake", "Core i5", 1.7, {**{i+1:3.5 for i in range(6)}, **{1: 4.1},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11600KF", "Rocket Lake", "Core i5", 3.9, {**{i+1:4.6 for i in range(6)}, **{1: 4.9},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11600K",  "Rocket Lake", "Core i5", 3.9, {**{i+1:4.6 for i in range(6)}, **{1: 4.9},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11600",   "Rocket Lake", "Core i5", 2.8, {**{i+1:4.3 for i in range(6)}, **{1: 4.8},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11500T",  "Rocket Lake", "Core i5", 1.5, {**{i+1:3.4 for i in range(6)}, **{1: 3.9},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11500",   "Rocket Lake", "Core i5", 2.7, {**{i+1:4.2 for i in range(6)}, **{1: 4.6},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11400T",  "Rocket Lake", "Core i5", 1.3, {**{i+1:3.3 for i in range(6)}, **{1: 3.7},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11400F",  "Rocket Lake", "Core i5", 2.6, {**{i+1:4.2 for i in range(6)}, **{1: 4.4},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11400",   "Rocket Lake", "Core i5", 2.6, {**{i+1:4.2 for i in range(6)}, **{1: 4.4},          }, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11700T",  "Rocket Lake", "Core i7", 1.4, {**{i+1:3.6 for i in range(8)}, **{1: 4.5}, **{2: 4.6}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11700KF", "Rocket Lake", "Core i7", 3.6, {**{i+1:4.6 for i in range(8)}, **{1: 4.9}, **{2: 5.0}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11700K",  "Rocket Lake", "Core i7", 3.6, {**{i+1:4.6 for i in range(8)}, **{1: 4.9}, **{2: 5.0}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11700F",  "Rocket Lake", "Core i7", 2.5, {**{i+1:4.4 for i in range(8)}, **{1: 4.8}, **{2: 4.9}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11700",   "Rocket Lake", "Core i7", 2.5, {**{i+1:4.4 for i in range(8)}, **{1: 4.8}, **{2: 4.9}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11900T",  "Rocket Lake", "Core i9", 1.5, {**{i+1:3.7 for i in range(8)}, **{1: 4.8}, **{2: 4.9}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11900KF", "Rocket Lake", "Core i9", 3.5, {**{i+1:4.8 for i in range(8)}, **{1: 5.1}, **{2: 5.2}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11900K",  "Rocket Lake", "Core i9", 3.5, {**{i+1:4.8 for i in range(8)}, **{1: 5.1}, **{2: 5.2}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11900F",  "Rocket Lake", "Core i9", 2.5, {**{i+1:4.7 for i in range(8)}, **{1: 5.0}, **{2: 5.1}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 11900",   "Rocket Lake", "Core i9", 2.5, {**{i+1:4.7 for i in range(8)}, **{1: 5.0}, **{2: 5.1}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
 
     # Workstation processors
     ["Intel 1350",  "Rocket Lake", "Xeon W", 3.3, {i+1:5.0 for i in range(6)}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
@@ -258,31 +265,31 @@ KNOWN_CPUS = [
     ["Intel 1390T", "Rocket Lake", "Xeon W", 1.5, {i+1:4.9 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
 
     # Server processors
-    ["Intel 2314",  "Rocket Lake", "Xeon E", 2.8, {1:4.5}, 4, 4, [48, 512, 8 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 2324G", "Rocket Lake", "Xeon E", 3.1, {1:4.6}, 4, 4, [48, 512, 8 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 2334",  "Rocket Lake", "Xeon E", 3.4, {1:4.8}, 4, 8, [48, 512, 8 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 2336",  "Rocket Lake", "Xeon E", 2.9, {1:4.8}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 2356G", "Rocket Lake", "Xeon E", 3.2, {1:5.0}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 2374G", "Rocket Lake", "Xeon E", 3.7, {1:5.0}, 4, 8, [48, 512, 8 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 2378",  "Rocket Lake", "Xeon E", 2.6, {1:4.8}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 2378G", "Rocket Lake", "Xeon E", 2.8, {1:5.1}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 2386G", "Rocket Lake", "Xeon E", 3.5, {1:5.1}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
-    ["Intel 2388G", "Rocket Lake", "Xeon E", 3.2, {1:5.1}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 2314",  "Rocket Lake", "Xeon E", 2.8, {1: 4.5}, 4, 4, [48, 512, 8 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 2324G", "Rocket Lake", "Xeon E", 3.1, {1: 4.6}, 4, 4, [48, 512, 8 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 2334",  "Rocket Lake", "Xeon E", 3.4, {1: 4.8}, 4, 8, [48, 512, 8 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 2336",  "Rocket Lake", "Xeon E", 2.9, {1: 4.8}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 2356G", "Rocket Lake", "Xeon E", 3.2, {1: 5.0}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 2374G", "Rocket Lake", "Xeon E", 3.7, {1: 5.0}, 4, 8, [48, 512, 8 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 2378",  "Rocket Lake", "Xeon E", 2.6, {1: 4.8}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 2378G", "Rocket Lake", "Xeon E", 2.8, {1: 5.1}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 2386G", "Rocket Lake", "Xeon E", 3.5, {1: 5.1}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
+    ["Intel 2388G", "Rocket Lake", "Xeon E", 3.2, {1: 5.1}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64"],
 
     # Intel Ice Lake
     # ref: https://en.wikipedia.org/wiki/Ice_Lake_(microprocessor)
     # ref: https://en.wikichip.org/wiki/intel/microarchitectures/ice_lake_(client)
-    ["Intel 1000G1", "Ice Lake", "Core i3", 1.1, {1:3.2, 2:3.2       }, 2, 4, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
-    ["Intel 1000G4", "Ice Lake", "Core i3", 1.1, {1:3.2, 2:3.2       }, 2, 4, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
-    ["Intel 1005G1", "Ice Lake", "Core i3", 1.2, {1:3.4, 2:3.4       }, 2, 4, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
-    ["Intel 1030G4", "Ice Lake", "Core i5", 0.7, {1:3.5,        4:3.2}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
-    ["Intel 1030G7", "Ice Lake", "Core i5", 0.8, {1:3.5,        4:3.2}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
-    ["Intel 1035G1", "Ice Lake", "Core i5", 1.0, {1:3.6,        4:3.3}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
-    ["Intel 1035G4", "Ice Lake", "Core i5", 1.1, {1:3.7,        4:3.3}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
-    ["Intel 1035G7", "Ice Lake", "Core i5", 1.2, {1:3.7,        4:3.3}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
-    ["Intel 1060G7", "Ice Lake", "Core i7", 1.0, {1:3.8,        4:3.4}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
-    ["Intel 1065G7", "Ice Lake", "Core i7", 1.3, {1:3.9, 2:3.8, 4:3.5}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
-    ["Intel 1068G7", "Ice Lake", "Core i7", 2.3, {1:4.1,        4:3.6}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1000G1", "Ice Lake", "Core i3", 1.1, {1: 3.2, 2: 3.2       }, 2, 4, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1000G4", "Ice Lake", "Core i3", 1.1, {1: 3.2, 2: 3.2       }, 2, 4, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1005G1", "Ice Lake", "Core i3", 1.2, {1: 3.4, 2: 3.4       }, 2, 4, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1030G4", "Ice Lake", "Core i5", 0.7, {1: 3.5,        4: 3.2}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1030G7", "Ice Lake", "Core i5", 0.8, {1: 3.5,        4: 3.2}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1035G1", "Ice Lake", "Core i5", 1.0, {1: 3.6,        4: 3.3}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1035G4", "Ice Lake", "Core i5", 1.1, {1: 3.7,        4: 3.3}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1035G7", "Ice Lake", "Core i5", 1.2, {1: 3.7,        4: 3.3}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1060G7", "Ice Lake", "Core i7", 1.0, {1: 3.8,        4: 3.4}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1065G7", "Ice Lake", "Core i7", 1.3, {1: 3.9, 2: 3.8, 4: 3.5}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
+    ["Intel 1068G7", "Ice Lake", "Core i7", 2.3, {1: 4.1,        4: 3.6}, 4, 8, [48, 512, 2 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
 
     ["Intel 8351N", "Ice Lake", "Xeon Platinum", 2.40, {36: 3.10}, 36, 72, [48, 512, 54 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
     ["Intel 8352S", "Ice Lake", "Xeon Platinum", 2.20, {32: 2.80}, 32, 64, [48, 512, 48 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64"],
@@ -658,11 +665,15 @@ KNOWN_CPUS = [
 # yapf: enable
 
 # Tensor Cores is current unused
-KNOWN_GPUS_HEADER = ["Model", "Family", "Cores", "Tensor Cores", "Block Size"]
-# yapf: disable
+KNOWN_GPUS_HEADER = ["Runtime", "Model", "Family", "Cores", "Block Size"]
 KNOWN_GPUS = [
-    # ref: https://images.nvidia.com/content/technologies/volta/pdf/volta-v100-datasheet-update-us-1165301-r5.pdf
-    ["NVidia V100", "Volta", 5120, 640, 16],
+    # NVIDIA
+    ["CUDA", "NVidia P100", "Pascal", 56, 16],
+    ["CUDA", "NVidia V100", "Volta", 80, 16],
+    ["CUDA", "NVidia A100", "Ampere", 108, 16],
+    # AMD
+    ["ROCM", "AMD MI50", "CDNA", 60, 16],
+    ["ROCM", "AMD MI100", "CDNA2", 120, 16]
 ]
 # yapf: enable
 
@@ -674,6 +685,7 @@ class _TargetContainer:
     cache_lines: List[int] = field(default_factory=list)
     cache_sizes: List[int] = field(default_factory=list)
     category: Category = None
+    runtime: Runtime = Runtime.DEFAULT
     default_block_size: int = 0
     extensions: List[str] = field(default_factory=list)
     family: str = ""
@@ -696,8 +708,8 @@ class _TargetContainer:
     _max_vector_registers: int = 0
 
     def __post_init__(self):
-        self._device_name = self.family.lower() if self.family else (
-            self.name.lower() if self.name else self._device_name)
+        self._device_name = \
+            self.family.lower() if self.family else (self.name.lower() if self.name else self._device_name)
 
         self._full_extensions = self.extensions
 
@@ -715,15 +727,18 @@ class _TargetContainer:
         return _VectorizationInfo(vector_bytes=self.vector_bytes, vector_units=self.vector_registers, unroll_only=False)
 
 
-KNOWN_DEVICES = {Category.CPU: {}, Category.GPU: {}}
+KNOWN_DEVICES = {
+    Category.CPU: {},
+    Category.GPU: {}
+}
 
-_MODEL_TRANSLATION_DICT = str.maketrans({c: '_' for c in " -."})
+_MODEL_TRANSLATION_DICT = str.maketrans({c: '_'
+                                         for c in " -."})
 
 
 class _Models_enum_str:
     def __str__(self):
         return self.value
-
 
 Model = None
 
@@ -731,7 +746,8 @@ Model = None
 def _recompute_known_devices():
     model_names = []
     for device in KNOWN_CPUS:
-        device = {v: device[i] for i, v in enumerate(KNOWN_CPUS_HEADER)}
+        device = {v: device[i]
+                  for i, v in enumerate(KNOWN_CPUS_HEADER)}
         target = _TargetContainer(
             architecture=Architecture[device["ISA"]],
             cache_lines=device["Cache Lines"],
@@ -748,18 +764,22 @@ def _recompute_known_devices():
             vector_registers=device["Vector Registers"],
         )
         KNOWN_DEVICES[target.category][target.name] = target
+        model_names.append((target.name, target.name))
         model_names.append((target.name.upper().translate(_MODEL_TRANSLATION_DICT), target.name))
 
     for device in KNOWN_GPUS:
-        device = {v: device[i] for i, v in enumerate(KNOWN_GPUS_HEADER)}
+        device = {v: device[i]
+                  for i, v in enumerate(KNOWN_GPUS_HEADER)}
         target = _TargetContainer(
             category=Category.GPU,
+            runtime=Runtime[device["Runtime"]],
             default_block_size=device["Block Size"],
             family=device["Family"],
             name=device["Model"],
             num_cores=device["Cores"],
         )
         KNOWN_DEVICES[target.category][target.name] = target
+        model_names.append((target.name, target.name))
         model_names.append((target.name.upper().translate(_MODEL_TRANSLATION_DICT), target.name))
 
     # This will raise an error if there's a duplicate enum name being added
@@ -789,22 +809,25 @@ class Target(_TargetContainer):
     Architecture = Architecture
     Model = Model
 
-    def __init__(self,
-                 known_name: Union[str, Model] = "HOST",
-                 category: Category = None,
-                 architecture: Architecture = None,
-                 name: str = None,
-                 family: str = None,
-                 extensions: List[str] = None,
-                 num_threads: int = None,
-                 num_cores: int = None,
-                 vector_bytes: int = 0,
-                 vector_registers: int = None,
-                 frequency_GHz: float = None,
-                 turbo_frequency_GHz: float = None,
-                 cache_sizes: List[int] = None,
-                 cache_lines: List[int] = None,
-                 default_block_size: int = None):
+    def __init__(
+        self,
+        known_name: Union[str, Model] = "HOST",
+        category: Category = None,
+        architecture: Architecture = None,
+        runtime: Runtime = None,
+        name: str = None,
+        family: str = None,
+        extensions: List[str] = None,
+        num_threads: int = None,
+        num_cores: int = None,
+        vector_bytes: int = 0,
+        vector_registers: int = None,
+        frequency_GHz: float = None,
+        turbo_frequency_GHz: float = None,
+        cache_sizes: List[int] = None,
+        cache_lines: List[int] = None,
+        default_block_size: int = None
+    ):
         "Factory-like constructor that uses the model parameter to fill-in known defaults"
 
         super().__init__()
@@ -825,7 +848,8 @@ class Target(_TargetContainer):
                     vector_registers=16,    # There are 16 YMM registers
                     extensions=[
                         "MMX", "SSE", "SSE2", "SSE3", "SSSE3", "SSE4", "SSE4.1", "SSE4.2", "AVX", "AVX2", "FMA3"
-                    ])
+                    ]
+                )
             else:
 
                 if not category:
@@ -858,6 +882,7 @@ class Target(_TargetContainer):
         self.cache_lines = cache_lines or self.cache_lines
         self.cache_sizes = cache_sizes or self.cache_sizes
         self.category = category or self.category
+        self.runtime = runtime or self.runtime
         self.default_block_size = default_block_size or self.default_block_size
         self.extensions = extensions or self.extensions
         self.family = family or self.family
@@ -877,6 +902,7 @@ class Target(_TargetContainer):
         return all([
             self.name == other.name,
             self.category == other.category,
+            self.runtime == other.runtime,
             self.architecture == other.architecture,
             all(e in other._full_extensions for e in self.extensions),
             other._max_frequency_GHz == 0 or self.frequency_GHz <= other._max_frequency_GHz,

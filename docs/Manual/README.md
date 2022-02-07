@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2.0)
+[//]: # (Version: v1.2.1)
 
-# Accera 1.2.0 Manual
+# Accera v1.2.1 Manual
 
 * [Introduction](<00%20Introduction.md>)
 * [Arrays](<01%20Arrays.md>)

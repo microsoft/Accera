@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: 1.2.0)
+[//]: # (Version: v1.2.1)
 
-# Accera 1.2.0 Reference
+# Accera v1.2.1 Reference
 
 ## `accera.Schedule.skew(index, reference_index [, unroll_loops_smaller_than])`
 Transform a dimension with respect to a reference dimension into a parallelogram by padding with empty elements.

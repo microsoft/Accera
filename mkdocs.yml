@@ -2,7 +2,7 @@
 site_name: Accera
 site_author: Microsoft
 site_description: >-
-  Open source compiler for generating fast, compute-intensive loops used in AI algorithms, from Microsoft AI & Research.
+  Open source compiler for generating fast, compute-intensive loops used in AI algorithms, from Microsoft Research.
 copyright: Copyright &copy; 2022+ Microsoft Research [MIT License]
 repo_name: microsoft/Accera
 repo_url: https://github.com/microsoft/Accera/

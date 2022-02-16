@@ -3,17 +3,20 @@
 
 <a href="https://pypi.org/project/accera/"><img src="https://badge.fury.io/py/accera.svg" alt="PyPI package version"/></a> <a href="https://pypi.org/project/accera/"><img src="https://img.shields.io/pypi/pyversions/accera" alt="Python versions"/></a> ![MIT License](https://img.shields.io/pypi/l/accera)
 
-# Welcome to Accera
+# Problem at Hand
+Controlling loop overheads and optimization is a recurring ritual that a software engineer requires to observe very frequently. It usually gets overwhelming because writing highly optimized compute-intensive code in a traditional programming language is strenuous and time-consuming. Not only does it require advanced engineering skills such as fluency in Assembly language, but a deep understanding of computer architecture is also indispensable. Manual optimization of even the simplest numerical algorithms demands a significant engineering effort. Needless to say, a highly optimized numerical code is often prone to bugs, lacks readability, and offers little to no usability. Code maintenance becomes a nightmare resulting in the reimplementation of the same logic every time an architecture level change is introduced.
 
-Accera is a compiler that enables you to experiment with loop optimizations without hand-writing Assembly code. Accera is available as a Python library and supports cross-compiling to a wide range of [processor targets](https://github.com/microsoft/Accera/blob/main/accera/python/accera/Targets.py).
 
-Writing highly optimized compute-intensive code in a traditional programming language is a difficult and time-consuming process. It requires special engineering skills, such as fluency in Assembly language and a deep understanding of computer architecture. Manually optimizing the simplest numerical algorithms already requires a significant engineering effort. Moreover, highly optimized numerical code is prone to bugs, is often hard to read and maintain, and needs to be reimplemented every time a new target architecture is introduced. Accera aims to solve these problems.
+# Accera: An Optimized Solution
 
-Accera has three goals:
+Accera is a compiler that enables you to experiment with loop optimizations without hand-writing Assembly code. With Accera, these problems and impediments can be addressed in an optimized way. It is available as a Python library and supports cross-compiling to a wide range of [processor targets](https://github.com/microsoft/Accera/blob/main/accera/python/accera/Targets.py).
 
-* Performance: generate the fastest implementation of any compute-intensive algorithm.
-* Readability: do so without sacrificing code readability and maintainability.
-* Writability: a user-friendly programming model, designed for agility.
+Accera has FOUR primary goals:
+
+* Performance: To guarantee the fastest implementation for any compute-intensive algorithm.
+* Readability: To ensure effective implementation of algorithms without sacrificing the readability of code.
+* Writability: To provide a user-friendly programming model, designed for agility.
+* Usability & Maintenance: To offer implementing compute-intensive algorithms that are highly usable and easy to maintain. 
 
 
 ## Install
@@ -179,5 +182,3 @@ Accera is built using several open source libraries, including: [LLVM](https://l
 
 This project is released under the [MIT License](https://github.com/microsoft/Accera/blob/main/LICENSE).
 
-
-Adding a line just to create a PR. will be pushing changes later on weekend. 

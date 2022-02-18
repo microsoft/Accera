@@ -320,6 +320,35 @@ class DSLTest_01Arrays(unittest.TestCase):
             nest, (A, ), "test_last_major_array_access", correctness_check_values=correctness_check_values
         )
 
+    def test_array_value_type_cast(self) -> None:
+        from accera import Nest
+        A = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR)
+        B = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR, element_type=ScalarType.int32)
+
+        nest = Nest(shape=(256, 32))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i, j] = 5 # implicit cast from int8 to float
+            B[i, j] = 10 # implicit cast from int8 to int32
+
+        A_test = np.random.random((256, 32)).astype(np.float32)
+        A_expected = np.ndarray((256, 32)).astype(np.float32)
+        A_expected.fill(5.0)
+
+        B_test = np.random.random((256, 32)).astype(np.int32)
+        B_expected = np.ndarray((256, 32)).astype(np.int32)
+        B_expected.fill(10)
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_expected, B_expected)
+        }
+        self._verify_nest(
+            nest, (A, B), "test_array_value_type_cast", correctness_check_values=correctness_check_values
+        )
+
     @expectedFailure(FailedReason.BUG, "Debug mode doesn't support sub-arrays", TEST_MODE == Package.Mode.DEBUG)
     def test_subarray(self) -> None:
         from accera import Nest

@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //  Copyright (c) Microsoft Corporation. All rights reserved.
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
-//  Authors: Abdul Dakkak
+//  Authors: Abdul Dakkak, Kern Handa
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifndef STD_DIALECT_CPP_PRINTER_H_
@@ -27,6 +27,10 @@ namespace cpp_printer
             DialectCppPrinter(printer_) {}
 
         std::string getName() override { return "Std"; }
+
+        LogicalResult printHeaderFiles() override;
+
+        LogicalResult printPrologue() override;
 
         /// print Operation from StandardOps Dialect
         LogicalResult printDialectOperation(Operation* op, bool* skipped, bool* consumed) override;

@@ -22,6 +22,7 @@ from .._lang_python._lang import CacheIndexing, _MemorySpace
 
 
 class Plan:
+
     def __init__(self, schedule: Schedule, target: Target = Target.HOST):
         self._sched = schedule
         self._target = target
@@ -144,7 +145,7 @@ class Plan:
         layout: Array.Layout = None,
         max_elements: int = None,
         thrifty: bool = None,
-        location: Any = None,
+        location: _MemorySpace = _MemorySpace.NONE,
         level: Union[int, DelayedParameter] = None,
         trigger_level: Union[int, DelayedParameter] = None,
         _delayed_cache: DelayedCache = None
@@ -307,7 +308,15 @@ class Plan:
         # TODO: support layout, location, thrifty
         if (isinstance(self._target, Target) and self._target.category == Target.Category.GPU):
             cache.native_cache = context.plan.add_cache(
-                target, last_in_index, trigger_index, cache.max_elements, _MemorySpace.NONE
+                target=target,
+                index=last_in_index,
+                trigger_index=trigger_index,
+                max_elements=cache.max_elements,
+                indexing=cache.indexing,
+                allocation=cache.allocation,
+                location=cache.location,
+                memory_map=cache.memory_map,
+                dim_order=cache.dimension_permutation
             )
         else:
             cache.native_cache = context.plan.add_cache(
@@ -317,7 +326,7 @@ class Plan:
                 max_elements=cache.max_elements,
                 indexing=cache.indexing,
                 allocation=cache.allocation,
-                memory_space=cache.memory_space,
+                location=cache.location,
                 memory_map=cache.memory_map,
                 dim_order=cache.dimension_permutation
             )

@@ -20,7 +20,7 @@ namespace mlir
 class Operation;
 
 /// Convert the given model operation into C++ code.
-LogicalResult translateModuleToCpp(Operation* m, raw_ostream& os, bool isCuda);
+LogicalResult translateModuleToCpp(Operation* m, raw_ostream& os);
 
 } // namespace mlir
 

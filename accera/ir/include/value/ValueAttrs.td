@@ -51,7 +51,7 @@ def MemoryAllocTypeAttr : I64EnumAttr<
 def MEMORY_SPACE_NONE : I64EnumAttrCase<"None", 0>;
 def MEMORY_SPACE_GLOBAL : I64EnumAttrCase<"Global", 1>;
 def MEMORY_SPACE_SHARED : I64EnumAttrCase<"Shared", 3>;
-def MEMORY_SPACE_LOCAL : I64EnumAttrCase<"Local", 6>;
+def MEMORY_SPACE_LOCAL : I64EnumAttrCase<"Local", 5>;
 
 def MemorySpaceAttr : I64EnumAttr<
         "MemorySpace",

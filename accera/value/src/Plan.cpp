@@ -359,9 +359,9 @@ namespace value
     {
     }
 
-    Cache GPUPlan::AddCache(ViewAdapter target, const ScalarIndex& outermostIncludedSplitIndex, MemorySpace memorySpace)
+    Cache GPUPlan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
     {
-        return _impl->AddAutomaticCache(target, outermostIncludedSplitIndex, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace);
+        return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, mapping, allocation, memorySpace, dimOrder);
     }
 
     Cache GPUPlan::AddCache(ViewAdapter target, int64_t maxElements, MemorySpace memorySpace)

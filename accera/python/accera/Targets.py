@@ -3,6 +3,7 @@
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
 
+import copy
 from typing import List, Union
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
@@ -24,9 +25,9 @@ class Architecture(Enum):
 
 class Runtime(Enum):
     DEFAULT = auto()
-    VULKAN = auto()
-    ROCM = auto()
     CUDA = auto()
+    ROCM = auto()
+    VULKAN = auto()
 
 
 # Branding is currently unused
@@ -661,6 +662,9 @@ KNOWN_CPUS = [
     ["Raspberry Pi 3B", "Pi3", "Broadcom BCM2837B0", 1.4, {}, 4, 8, [32, 512], [64, 64], 0, 0, [], "ARM"], # pi3 has a 128 KB L2, but it's usually reserved for GPU
     # ref: https://patchwork.kernel.org/project/linux-arm-kernel/patch/20211221224830.16746-1-rs@noreya.tech/
     ["Raspberry Pi 4B", "Pi4", "Broadcom BCM2711", 1.5, {}, 4, 8, [32, 1024], [64, 64], 0, 0, [], "ARM"],
+
+    ["ARM Cortex-M4", "Cortex-M4", "ARM Cortex-M4", .008, {}, 1, 1, [], [], 0, 0, [], "ARM"],
+    ["ARM Cortex-M4F", "Cortex-M4", "ARM Cortex-M4F", .008, {}, 1, 1, [], [], 0, 0, ["fpu"], "ARM"],
 ]
 # yapf: enable
 
@@ -740,6 +744,7 @@ class _Models_enum_str:
     def __str__(self):
         return self.value
 
+
 Model = None
 
 
@@ -807,6 +812,7 @@ class Target(_TargetContainer):
 
     Category = Category
     Architecture = Architecture
+    Runtime = Runtime
     Model = Model
 
     def __init__(
@@ -837,9 +843,6 @@ class Target(_TargetContainer):
             known_name = str(known_name)
 
             if known_name == "HOST":
-                # TODO: inspect target characteristics of HOST rather than assuming these defaults
-                if category == Target.Category.GPU:
-                    self.GridUnit = GridUnits
 
                 super().__init__(
                     category=category or Target.Category.CPU,
@@ -893,6 +896,9 @@ class Target(_TargetContainer):
         self.turbo_frequency_GHz = turbo_frequency_GHz or self.turbo_frequency_GHz
         self.vector_bytes = vector_bytes or self.vector_bytes
         self.vector_registers = vector_registers or self.vector_registers
+        # TODO: inspect target characteristics of HOST rather than assuming these defaults
+        if self.category == Target.Category.GPU:
+            self.GridUnit = copy.deepcopy(GridUnits)
 
         # If known_name was provided, we should override the internal fields too
         if known_name:

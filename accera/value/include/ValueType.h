@@ -27,6 +27,8 @@ namespace value
         Undefined = -1,
         /// <summary> void type </summary>
         Void = 0,
+        /// <summary> index type </summary>
+        Index,
         /// <summary> 1 byte boolean </summary>
         Boolean,
         /// <summary> 1 byte unsigned integer </summary>
@@ -39,8 +41,6 @@ namespace value
         Int32,
         /// <summary> 8 byte signed integer </summary>
         Int64,
-        /// <summary> index type </summary>
-        Index,
         /// <summary> 4 byte floating point </summary>
         Float,
         /// <summary> 8 byte floating point </summary>

@@ -213,7 +213,7 @@ namespace cpp_printer
             os << ";\n";
             os << "return " << idxName << ";\n";
 
-            os << "}\n";
+            os << "}\n\n";
         }
         return success();
     }

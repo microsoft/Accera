@@ -549,7 +549,72 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
-    @expectedFailure(FailedReason.BUG, "GPU support is a WIP")
+    def test_const_array_shared_across_functions(self) -> None:
+        # In this scenario we use a single CONST data matrix in two Accera functions,
+        # the first will perform matmul and the second will perform elementwise add
+
+        package = Package()
+
+        M = 256
+        N = 256
+        K = 256
+
+        const_matrix_shape = (K, N)
+        data = np.random.random(const_matrix_shape).astype(np.float32)
+        const_matrix = Array(role=Array.Role.CONST,
+                             element_type=ScalarType.float32,
+                             data=data)
+
+        # Matmul function
+
+        matmul_input_matrix = Array(role=Array.Role.INPUT,
+                                    element_type=ScalarType.float32,
+                                    shape=(M, K))
+
+        matmul_output_matrix = Array(role=Array.Role.INPUT_OUTPUT,
+                                     element_type=ScalarType.float32,
+                                     shape=(M, N))
+
+        matmul_nest = Nest(shape=(M, N, K))
+        i, j, k = matmul_nest.get_indices()
+
+        @matmul_nest.iteration_logic
+        def _():
+            matmul_output_matrix[i, j] += matmul_input_matrix[i, k] * const_matrix[k, j]
+
+        matmul_schedule = matmul_nest.create_schedule()
+        matmul_plan = matmul_schedule.create_plan()
+
+        package.add(matmul_plan, args=(matmul_input_matrix, matmul_output_matrix), base_name="matmul_fn")
+
+
+        # Elementwise add function
+
+        ew_add_input_matrix = Array(role=Array.Role.INPUT,
+                                    element_type=ScalarType.float32,
+                                    shape=(K, N))
+
+        ew_add_output_matrix = Array(role=Array.Role.INPUT_OUTPUT,
+                                     element_type=ScalarType.float32,
+                                     shape=(K, N))
+
+        ew_add_nest = Nest(shape=(K, N))
+        x, y = ew_add_nest.get_indices()
+
+        @ew_add_nest.iteration_logic
+        def _():
+            ew_add_output_matrix[x, y] = ew_add_input_matrix[x, y] + const_matrix[x, y]
+
+        ew_add_schedule = ew_add_nest.create_schedule()
+        ew_add_plan = ew_add_schedule.create_plan()
+
+        package.add(ew_add_plan, args=(ew_add_input_matrix, ew_add_output_matrix), base_name="ew_add_fn")
+
+        package_name = "const_matrix_shared_between_functions"
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
+
+
     def test_gpu_matmul(self) -> None:
         import math
         from accera import Target
@@ -602,7 +667,7 @@ class SmokeTest(unittest.TestCase):
 
         schedule.reorder(i, j, ii, jj, k)
 
-        target = Target(category=Target.Category.GPU)
+        target = Target(category=Target.Category.GPU, runtime=Target.Runtime.VULKAN)
         plan = schedule.create_plan(target)
         plan.bind(
             (i, j, ii, jj),
@@ -1886,7 +1951,47 @@ class SmokeTest(unittest.TestCase):
 
         self._verify_matrix_multiplication_function(function, package, f"test_boundary_differently_shaped_budget_cache")
 
-    @expectedFailure(FailedReason.BUG, "GPU support is a WIP")
+    def test_gpu_vec_add(self):
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        # Define our vector sizes
+        N = 2**16
+        block_x = 256
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
+
+        nest = Nest(shape=(N, ))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i] = A[i] + B[i]
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, block_x)
+        schedule.reorder(i, ii)
+
+        target = Target(category=Target.Category.GPU, runtime=Target.Runtime.VULKAN)
+        plan = schedule.create_plan(target)
+        plan.bind((i, ii), grid=(target.GridUnit.BLOCK_X, target.GridUnit.THREAD_X))
+
+        test_name = "test_gpu_vec_add"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+
     def test_gpu_vec_add(self):
         from accera import Array, Nest, Package, ScalarType, Target
 
@@ -1920,7 +2025,7 @@ class SmokeTest(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
-        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu"]) as v:
             package.build(
                 name=test_name,
                 format=Package.Format.MLIR | Package.Format.CUDA,
@@ -1928,10 +2033,8 @@ class SmokeTest(unittest.TestCase):
                 output_dir=output_dir
             )
 
-    @expectedFailure(FailedReason.BUG, "GPU support is a WIP")
     def test_cuda_module_output(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
-        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
         from accera._lang_python._lang import _MemorySpace
 
         # Define our vector sizes
@@ -1955,7 +2058,10 @@ class SmokeTest(unittest.TestCase):
 
         target = Target(Target.Model.NVIDIA_V100)
         plan = schedule.create_plan(target=target)
-        plan.bind((i, j, ii, jj), grid=(BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y))
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+        )
         plan.cache(In, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.LAST_MAJOR)
 
         test_name = "test_cuda_module_output"
@@ -1965,11 +2071,58 @@ class SmokeTest(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
-        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu"]) as v:
             package.build(
                 name=test_name,
                 format=Package.Format.MLIR | Package.Format.CUDA,
-                mode=Package.Mode.DEBUG,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir
+            )
+
+    def test_rocm_module_output(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
+        from accera._lang_python._lang import _MemorySpace
+
+        # Define our vector sizes
+        N = 32
+        block_x = 16
+        block_y = block_x
+
+        In = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
+        Out = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
+
+        nest = Nest(shape=(N, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            Out[i, j] = In[i, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj = schedule.tile((i, j), (block_x, block_y))
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+        )
+        plan.cache(In, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.LAST_MAJOR)
+
+        test_name = "test_rocm_module_output"
+        package = Package()
+        function = package.add(plan, args=(In, Out), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
                 output_dir=output_dir
             )
 

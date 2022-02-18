@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //  Copyright (c) Microsoft Corporation. All rights reserved.
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
-//  Authors: Abdul Dakkak
+//  Authors: Abdul Dakkak, Kern Handa
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifndef CPP_PRINTER_H_
@@ -14,6 +14,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 
+#include <llvm/ADT/BitmaskEnum.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/ScopedHashTable.h>
 #include <llvm/ADT/SmallPtrSet.h>
@@ -36,7 +37,7 @@ namespace cpp_printer
 
     struct SSANameState
     {
-        friend struct CppPrinter;
+        // friend struct CppPrinter;
 
         /// Differentiate names
         enum SSANameKind : unsigned
@@ -59,6 +60,11 @@ namespace cpp_printer
         llvm::StringRef getOrCreateName(mlir::Value val, SSANameKind kind, const std::string prefix = "");
 
         static llvm::StringRef NamePrefix(SSANameKind kind);
+
+        auto createUsedNamesScope()
+        {
+            return llvm::ScopedHashTable<StringRef, char>::ScopeTy(usedNames);
+        }
 
         // RAII-style save/restore to allow the printer to number values
         // with block hierarchies
@@ -111,10 +117,34 @@ namespace cpp_printer
         llvm::BumpPtrAllocator nameAllocator;
     };
 
+    enum class Runtime
+    {
+        None = 0,
+        CUDA = 1 << 0,
+
+        LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ CUDA)
+        // TODO: add OpenMP? ROCM?
+    };
+
     /// Holding the states for the printer such as SSA names, type alias, etc
     struct PrinterState
     {
         explicit PrinterState() {}
+
+        bool hasRuntime(Runtime runtime)
+        {
+            return (runtimesDetected & runtime) == runtime;
+        }
+
+        void setRuntime(Runtime runtime)
+        {
+            runtimesDetected |= runtime;
+        }
+
+        void removeRuntime(Runtime runtime)
+        {
+            runtimesDetected &= ~runtime;
+        }
 
         SSANameState nameState;
 
@@ -136,6 +166,7 @@ namespace cpp_printer
         llvm::SmallPtrSet<mlir::Operation*, 4> intrinsicDecls;
 
         // TODO: add more state kinds
+        Runtime runtimesDetected = Runtime::None;
     };
 
     /// Print the given MLIR into C++ code. Formatting is not a concern
@@ -146,8 +177,11 @@ namespace cpp_printer
     /// the operations from the corresponding dialect.
     struct CppPrinter
     {
-        explicit CppPrinter(llvm::raw_ostream& os_, bool cuda) :
-            os(os_), isCuda(cuda) {}
+        explicit CppPrinter(llvm::raw_ostream& os_ /* , bool cuda */) :
+            os(os_) /* , state.hasRuntime(Runtime::CUDA)(cuda)  */ {}
+
+        // Begin processing top-level operation
+        LogicalResult process(mlir::Operation*);
 
         void registerAllDialectPrinters();
 
@@ -267,7 +301,7 @@ namespace cpp_printer
 
         const char* deviceAttrIfCuda(bool trailingSpace = true)
         {
-            if (isCuda)
+            if (state.hasRuntime(Runtime::CUDA))
             {
                 return trailingSpace ? "__device__ " : "__device__";
             }
@@ -279,7 +313,7 @@ namespace cpp_printer
 
         const char* sharedAttrIfCuda(bool trailingSpace = true)
         {
-            if (isCuda)
+            if (state.hasRuntime(Runtime::CUDA))
             {
                 return trailingSpace ? "__shared__ " : "__shared__";
             }
@@ -291,7 +325,7 @@ namespace cpp_printer
 
         const char* globalAttrIfCuda(bool trailingSpace = true)
         {
-            if (isCuda)
+            if (state.hasRuntime(Runtime::CUDA))
             {
                 return trailingSpace ? "__global__ " : "__global__";
             }
@@ -303,7 +337,7 @@ namespace cpp_printer
 
         const std::string float16T()
         {
-            if (isCuda)
+            if (state.hasRuntime(Runtime::CUDA))
             {
                 return "half";
             }
@@ -315,7 +349,7 @@ namespace cpp_printer
 
         const std::string float32T()
         {
-            if (isCuda)
+            if (state.hasRuntime(Runtime::CUDA))
             {
                 return "float";
             }
@@ -328,7 +362,7 @@ namespace cpp_printer
         template <int BitWidth>
         const std::string floatVecT(int vectorWidth)
         {
-            if (!isCuda)
+            if (!state.hasRuntime(Runtime::CUDA))
             {
                 return "UNSUPPORTED_FLOAT_VEC_T";
             }
@@ -349,13 +383,13 @@ namespace cpp_printer
 
         PrinterState& getPrinterState() { return state; }
 
-        bool forCuda() { return isCuda; }
+        // bool forCuda() { return state.hasRuntime(Runtime::CUDA); }
 
     private:
         llvm::raw_ostream& os;
 
         // indicate if we are printing cuda code
-        bool isCuda;
+        // bool state.hasRuntime(Runtime::CUDA);
 
         PrinterState state;
 
@@ -365,14 +399,11 @@ namespace cpp_printer
     struct DialectCppPrinter
     {
         DialectCppPrinter(CppPrinter* printer_) :
-            os(printer_->getOStream()), isCuda(printer_->forCuda()), state(printer_->getPrinterState()), printer(printer_) {}
+            os(printer_->getOStream()), state(printer_->getPrinterState()), printer(printer_) {}
 
-        virtual ~DialectCppPrinter() {}
+        virtual ~DialectCppPrinter() = default;
 
-        virtual std::string getName()
-        {
-            return "DialectCppPrinter";
-        }
+        virtual std::string getName() = 0;
 
         virtual LogicalResult runPrePrintingPasses(Operation* op)
         {
@@ -405,12 +436,20 @@ namespace cpp_printer
             return failure();
         }
 
-        virtual void printDialectHeaderFiles() {}
+        virtual LogicalResult printHeaderFiles()
+        {
+            return success();
+        }
+
+        virtual LogicalResult printDeclarations()
+        {
+            return success();
+        }
 
     protected:
         llvm::raw_ostream& os;
 
-        bool isCuda;
+        // bool state.hasRuntime(Runtime::CUDA);
 
         PrinterState& state;
 

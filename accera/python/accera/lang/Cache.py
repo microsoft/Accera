@@ -23,10 +23,9 @@ class Cache:
     layout: Union[Array.Layout, Tuple[int]] = None
     max_elements: int = None
     thrifty: bool = False
-    location: Any = None    # TODO - MemoryLocation, reconcile with _MemorySpace
     offset: int = 0
     native_cache: Any = None
-    memory_space: _MemorySpace = _MemorySpace.NONE
+    location: _MemorySpace = _MemorySpace.NONE
     indexing: CacheIndexing = CacheIndexing.GLOBAL_TO_PHYSICAL
     allocation: _CacheAllocation = _CacheAllocation.AUTO
 
@@ -69,10 +68,9 @@ class DelayedCache(Cache):
         self.layout = cache.layout
         self.max_elements = cache.max_elements
         self.thrifty = cache.thrifty
-        self.location = cache.location
         self.offset = cache.offset
         self.native_cache = cache.native_cache
-        self.memory_space = cache.memory_space
+        self.location = cache.location
         self.indexing = cache.indexing
         self.allocation = cache.allocation
 

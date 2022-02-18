@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //  Copyright (c) Microsoft Corporation. All rights reserved.
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
-//  Authors: Abdul Dakkak
+//  Authors: Abdul Dakkak, Kern Handa
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <llvm/ADT/STLExtras.h>
@@ -62,7 +62,7 @@ namespace cpp_printer
         {
             SmallString<128> nameStr("");
             llvm::raw_svector_ostream strm(nameStr);
-            CppPrinter cppPrinter(strm, true);
+            CppPrinter cppPrinter(strm);
             (void)cppPrinter.printAttribute(constant->second);
             return StringRef(nameStr).copy(nameAllocator);
         }
@@ -144,6 +144,7 @@ namespace cpp_printer
     }
 
     // The function taken from AsmPrinter
+    // TODO: decouple this function from CppPrinter
     LogicalResult CppPrinter::printFloatValue(const APFloat& apValue)
     {
         // We would like to output the FP constant value in exponential notation,
@@ -197,6 +198,7 @@ namespace cpp_printer
         return success();
     }
 
+    // TODO: decouple this function from CppPrinter
     LogicalResult CppPrinter::printDeclarationForOpResult(Operation* op)
     {
         auto numResults = op->getNumResults();
@@ -216,6 +218,7 @@ namespace cpp_printer
                                   "is not supported yet>>";
     }
 
+    // TODO: decouple this function from CppPrinter
     LogicalResult CppPrinter::printDeclarationForValue(Value val)
     {
         RETURN_IF_FAILED(printType(val.getType()));
@@ -225,6 +228,7 @@ namespace cpp_printer
         return success();
     }
 
+    // TODO: decouple this function from CppPrinter
     LogicalResult CppPrinter::printAttribute(Attribute attr)
     {
         // TODO: handle attribute alias
@@ -370,8 +374,11 @@ namespace cpp_printer
     LogicalResult CppPrinter::printVectorTypeArrayDecl(VectorType vecType,
                                                        StringRef vecVar)
     {
-        if (isCuda)
+        if (state.hasRuntime(Runtime::CUDA))
         {
+            // TODO: Fix this so that we don't have to reach into a specific printer
+            // The correct behavior is more that a dialect printer shpuld be able to
+            // override the type printer (maybe with a fallback to this printer)
             static GpuDialectCppPrinter* gpuDialectPrinter = nullptr;
             if (!gpuDialectPrinter)
             {
@@ -710,8 +717,7 @@ namespace cpp_printer
     LogicalResult CppPrinter::printBlock(Block* block, bool printParens, bool printBlockTerminator)
     {
         SSANameState::Scope scope(state.nameState);
-        llvm::ScopedHashTable<StringRef, char>::ScopeTy usedNamesScope(
-            state.nameState.usedNames);
+        auto usedNamesScope = state.nameState.createUsedNamesScope();
 
         // TODO: support block arguments?
         if (printParens)
@@ -814,26 +820,6 @@ namespace cpp_printer
     LogicalResult CppPrinter::printFunctionDeclaration(FuncOp funcOp,
                                                        bool trailingSemiColon)
     {
-        // TODO: This matches what we do in ArgoToGPU pass, where we treat all
-        // functions to be CUDA global functions. Will add support to device
-        // functions later
-        os << globalAttrIfCuda();
-
-        if (isCuda && funcOp->hasAttrOfType<mlir::ArrayAttr>("blockSize"))
-        {
-            auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(funcOp->getAttrOfType<mlir::ArrayAttr>("blockSize"));
-            auto blockSizeX = arrayAttr[0].getInt();
-            auto blockSizeY = arrayAttr[1].getInt();
-            auto blockSizeZ = arrayAttr[2].getInt();
-            os << " __launch_bounds__(" << blockSizeX * blockSizeY * blockSizeZ << ") ";
-        }
-
-        auto resultType = funcOp.getType().getResults();
-        if (isCuda && !resultType.empty())
-        {
-            return funcOp.emitOpError() << "<<CUDA kernel must return void>>";
-        }
-
         if (failed(printTypes(funcOp.getType().getResults())))
         {
             return funcOp.emitOpError() << "<<Unable to print return type>>";
@@ -866,15 +852,15 @@ namespace cpp_printer
         os << ") ";
 
         if (trailingSemiColon)
-            os << ";";
+            os << ";\n\n";
         return success();
     }
 
+    // TODO: FuncOp should be handled by the StdDialectPrinter
     LogicalResult CppPrinter::printFuncOp(FuncOp funcOp)
     {
         SSANameState::Scope scope(state.nameState);
-        llvm::ScopedHashTable<StringRef, char>::ScopeTy usedNamesScope(
-            state.nameState.usedNames);
+        auto usedNamesScope = state.nameState.createUsedNamesScope();
 
         auto& blocks = funcOp.getBlocks();
         auto numBlocks = blocks.size();
@@ -888,16 +874,15 @@ namespace cpp_printer
             return funcOp.emitOpError() << "<<failed to print function declaration>>";
         }
 
-        // Just a declaration, so emit a newline and return
-        if (numBlocks == 0)
+        if (numBlocks != 0)
         {
-            os << "\n";
-            return success();
+            // print function body
+            if (failed(printBlock(&(blocks.front()))))
+                return funcOp.emitOpError() << "<<failed to print function body>>";
         }
+        // Otherwise, just a declaration, so emit a newline and return
 
-        // print function body
-        if (failed(printBlock(&(blocks.front()))))
-            return funcOp.emitOpError() << "<<failed to print function body>>";
+        os << "\n\n";
 
         return success();
     }
@@ -954,43 +939,20 @@ namespace cpp_printer
         // TODO: print forward declarations
         // TODO: extended possible included header files
 
+        // TODO: Dialect printers, particularly gpu, should be able to request
+        // for the creation of additional files. This allows for the printer
+        // to create supporting files
+        // (constant BLOBs, CUDA header files, CUDA source files, etc.)
+
         for (auto& dialectPrinter : dialectPrinters)
         {
-            dialectPrinter->printDialectHeaderFiles();
+            RETURN_IF_FAILED(dialectPrinter->printHeaderFiles());
         }
 
-        if (isCuda)
+        for (auto& dialectPrinter : dialectPrinters)
         {
-            os << "#if defined(__HIP_PLATFORM_AMD__)\n"
-                  "#include <hip/hip_runtime.h>\n"
-                  "using vfloatx2_t = float __attribute__((ext_vector_type(2)));\n"
-                  "using vfloatx4_t = float __attribute__((ext_vector_type(4)));\n"
-                  "using vfloatx16_t = float __attribute__((ext_vector_type(16)));\n"
-                  "#else\n"
-                  "#include \"cuda_fp16.h\"\n"
-                  "#endif // !defined(__HIP_PLATFORM_AMD__)\n";
+            RETURN_IF_FAILED(dialectPrinter->printDeclarations());
         }
-
-        os << "\n";
-        llvm::SmallVector<llvm::StringRef, 2> system_header_files = { "math.h",
-                                                                      "stdint.h" };
-        for (unsigned i = 0, e = system_header_files.size(); i != e; ++i)
-        {
-            os << "#include <" << system_header_files[i] << ">\n";
-        }
-
-        if (!isCuda)
-        {
-            os << "#ifndef __forceinline__\n";
-            os << "#if defined(_MSC_VER)\n";
-            os << "#define __forceinline__ __forceinline\n";
-            os << "#else\n";
-            os << "#define __forceinline__ __inline__ __attribute__((always_inline))\n";
-            os << "#endif // _MSC_VER\n";
-            os << "#endif // __forceinline__\n";
-        }
-
-        os << "\n\n";
 
         for (auto& dialectPrinter : dialectPrinters)
         {
@@ -1042,8 +1004,7 @@ namespace cpp_printer
             *skipped = true;
         }
 
-        if (!isa<ConstantOp>(op) && !isa<IndexCastOp>(op) && !isa<scf::IfOp>(op) && !isa<scf::ForOp>(op) && !isa<AffineForOp>(op) &&
-            !isa<AffineIfOp>(op))
+        if (!isa<ConstantOp>(op) && !isa<IndexCastOp>(op) && op->getNumRegions() == 0)
         {
             os << "/*" << *op << "*/\n";
         }
@@ -1069,8 +1030,7 @@ namespace cpp_printer
 
     void CppPrinter::registerAllDialectPrinters()
     {
-        static bool init_once = [&]() {
-            registerDialectPrinter<AcceraDialectCppPrinter>();
+        [[maybe_unused]] static bool init_once = [&]() {
             registerDialectPrinter<AffineDialectCppPrinter>();
             registerDialectPrinter<GpuDialectCppPrinter>();
             registerDialectPrinter<RocDLDialectCppPrinter>();
@@ -1080,7 +1040,22 @@ namespace cpp_printer
             registerDialectPrinter<LLVMDialectCppPrinter>();
             return true;
         }();
-        (void)init_once;
+    }
+
+    LogicalResult CppPrinter::process(mlir::Operation* op)
+    {
+        mlir::ModuleOp moduleOp = dyn_cast<mlir::ModuleOp>(op);
+
+        if (!moduleOp)
+        {
+            return op->emitError() << "Top-level operation must be a ModuleOp, found " << op->getName() << " instead";
+        }
+
+        registerAllDialectPrinters();
+
+        RETURN_IF_FAILED(runPrePrintingPasses(op));
+
+        return printModuleOp(moduleOp);
     }
 
     LogicalResult CppPrinter::runPrePrintingPasses(Operation* m)

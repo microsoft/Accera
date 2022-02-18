@@ -1329,6 +1329,23 @@ Value MLIRContext::ResolveConstantDataReferenceImpl(Value constantDataSource)
     auto sourceRefGlobalOp = mlir::Value::getFromOpaquePointer(constantDataSource.Get<Emittable>().GetDataAs<EmittableInfo*>()->data).getDefiningOp();
     auto& builder = _impl->builder;
 
+    auto valueModuleOp = _impl->module();
+    auto searchSymName = mlir::dyn_cast<ir::value::ReferenceGlobalOp>(sourceRefGlobalOp).getGlobal().sym_name();
+
+    // TODO: valueModuleOp.lookupSymbol() should be called here to look for an existing symbol, but so far, 
+    // it doesn't work as expected. So manually walk the top level ops inside the ValueModuleOp to look for the symbol.   
+    // Replace this workaround with a ValueModuleOp SymbolTable lookup once issues with comparing mlir::Identifiers is resolved.
+    bool foundMatch = false;
+    for (auto globalOp : valueModuleOp.getOps<ir::value::GlobalOp>()) 
+    {
+        if (globalOp.sym_name() == searchSymName) 
+        {
+            foundMatch = true;
+            break;
+        }
+    }
+
+    if (!foundMatch)
     {
         // Clone the GlobalOp at the top of this module and mark it as external
         mlir::OpBuilder::InsertionGuard guard(builder);
@@ -1355,10 +1372,10 @@ Value MLIRContext::ResolveConstantDataReferenceImpl(Value constantDataSource)
     auto refGlobalOp = mlir::dyn_cast<ir::value::ReferenceGlobalOp>(clonedRefGlobalOp);
 
     EmittableInfo& emittableInfo = StoreLocalEmittable({ const_cast<void*>(
-                                                             refGlobalOp
-                                                                 .getResult()
-                                                                 .getAsOpaquePointer()),
-                                                         { constantDataSource.GetBaseType(), 1 } });
+                                                            refGlobalOp
+                                                                .getResult()
+                                                                .getAsOpaquePointer()),
+                                                        { constantDataSource.GetBaseType(), 1 } });
     Emittable emittable{ &emittableInfo };
 
     return Value(emittable, constantDataSource.GetLayout());

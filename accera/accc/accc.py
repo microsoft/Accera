@@ -27,6 +27,15 @@ class SystemTarget(Enum):
     RPI4 = "pi4"
     RPI3 = "pi3"
     RPI0 = "pi0"
+    ARM_CORTEX_M4 = "cortex-m4"
+    ARM_CORTEX_M4F = "cortex-m4f"
+
+
+class Runtime(Enum):
+    DEFAULT = "default"
+    CUDA = "cuda"
+    ROCM = "rocm"
+    VULKAN = "vulkan"
 
 
 system_target_options = [t.value for t in SystemTarget]
@@ -61,7 +70,12 @@ OS_OPTS = {
 
 
 def DEFAULT_RC_MLIR_LOWERING_PASSES(
-    dump=False, dump_intrapass_ir=False, system_target=SystemTarget.HOST.value, profile=False, gpu_only=False
+    dump=False,
+    dump_intrapass_ir=False,
+    system_target=SystemTarget.HOST.value,
+    profile=False,
+    runtime=Runtime.DEFAULT.value,
+    gpu_only=False
 ):
     def bstr(val):
         return "true" if val else "false"
@@ -69,6 +83,7 @@ def DEFAULT_RC_MLIR_LOWERING_PASSES(
     acc_to_llvm_str = " ".join([
         f'dump-passes={bstr(dump)}',
         f'dump-intra-pass-ir={bstr(dump_intrapass_ir)}',
+        f'runtime={str(runtime).lower()}',
         f'target={system_target}',
         f'enable-profiling={bstr(profile)}',
         f'gpu-only={bstr(gpu_only)}',
@@ -94,7 +109,13 @@ LLVM_TOOLING_OPTS = {
     SystemTarget.RPI0.value: [
         "-O3", "-fp-contract=fast", "--march=arm", "-mcpu=arm1136jf-s", "--mtriple=armv6-linux-gnueabihf"
     ],
-    SystemTarget.AVX512.value: ["-O3", "-fp-contract=fast", "--march=x86-64", "-mcpu=skylake-avx512"]
+    SystemTarget.AVX512.value: ["-O3", "-fp-contract=fast", "--march=x86-64", "-mcpu=skylake-avx512"],
+    SystemTarget.ARM_CORTEX_M4.value: [
+        "-Oz", "-mcpu=cortex-m4", "--mtriple=thumbv7em-arm-none-eabi",
+    ],
+    SystemTarget.ARM_CORTEX_M4F.value: [
+        "-Oz", "-mcpu=cortex-m4", "--mtriple=thumbv7em-arm-none-eabi", "-mfpu=fpv4-sp-d16", "-mfloat-abi=hard"
+    ],
 }
 
 DEFAULT_OPT_ARGS = []
@@ -692,6 +713,7 @@ class AcceraProject:
         stderr=None,
         pretend=False,
         system_target=SystemTarget.HOST.value,
+        runtime=Runtime.DEFAULT.value,
         profile=False,
         quiet=None,
         gpu_only=False
@@ -703,6 +725,7 @@ class AcceraProject:
             dump=dump_all_passes,
             dump_intrapass_ir=dump_intrapass_ir,
             system_target=system_target,
+            runtime=runtime,
             profile=profile,
             gpu_only=gpu_only
         )
@@ -758,7 +781,7 @@ class AcceraProject:
         for module_file_set in self.module_file_sets:
 
             output_type_args = {
-                ModuleOutputType.CUDA: ["-print-cuda"],
+                ModuleOutputType.CUDA: ["-print-cpp"],
                 ModuleOutputType.CPP: ["-print-cpp"],
             }
 
@@ -941,6 +964,7 @@ class AcceraProject:
         dump_intrapass_ir=False,
         pretend=False,
         system_target=SystemTarget.HOST.value,
+        runtime=Runtime.DEFAULT.value,
         quiet=None,
         gpu_only=False
     ):
@@ -977,6 +1001,7 @@ class AcceraProject:
                 stderr=stderr_file,
                 pretend=pretend,
                 system_target=system_target,
+                runtime=runtime,
                 profile=profile,
                 quiet=quiet,
                 gpu_only=gpu_only
@@ -1054,7 +1079,8 @@ def accc(
     dump_intrapass_ir=False,
     print_subprocess_output=False,
     pretend=False,
-    system_target=SystemTarget.HOST.value
+    system_target=SystemTarget.HOST.value,
+    runtime=Runtime.DEFAULT.value
 ):
     if pretend:
         print()
@@ -1085,6 +1111,7 @@ def accc(
     project.generate_and_emit(
         generator_parameters,
         system_target=system_target,
+        runtime=runtime,
         build_config=build_config,
         dump_all_passes=dump_all_passes,
         dump_intrapass_ir=dump_intrapass_ir,

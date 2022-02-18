@@ -6,13 +6,47 @@
 
 #include "Scalar.h"
 #include "EmitterContext.h"
+#include "ValueType.h"
 
+#include <initializer_list>
 #include <utilities/include/Exception.h>
+
+#include <llvm/ADT/STLExtras.h>
 
 namespace accera
 {
 namespace value
 {
+    namespace
+    {
+        template <typename T, typename C>
+        constexpr bool ItemIsOneOf(T&& t, C&& c)
+        {
+            return llvm::any_of(c, [=](auto arg) { return t == arg; });
+        }
+
+        bool IsImplcitTypeCastable(ValueType source, ValueType target)
+        {
+#define MAP_TARGET_TO_POSSIBLE_SOURCES(TARGET, ...) \
+    case TARGET:                                    \
+        return ItemIsOneOf(source, std::initializer_list<ValueType>{ __VA_ARGS__ })
+
+            switch (target)
+            {
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int8, ValueType::Boolean);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int16, ValueType::Boolean, ValueType::Int8);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int32, ValueType::Boolean, ValueType::Int8, ValueType::Int16);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int64, ValueType::Boolean, ValueType::Int8, ValueType::Int16, ValueType::Int32);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Float, ValueType::Boolean, ValueType::Int8, ValueType::Int16, ValueType::Int32);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Double, ValueType::Boolean, ValueType::Int8, ValueType::Int16, ValueType::Int32, ValueType::Int64, ValueType::Float);
+
+            default:
+                return false;
+            }
+
+#undef MAP_TARGET_TO_POSSIBLE_SOURCES
+        }
+    } // namespace
     using namespace utilities;
 
     Scalar::Scalar() = default;
@@ -41,7 +75,15 @@ namespace value
     {
         if (this != &other)
         {
-            _value = other._value;
+            if (GetType() != other.GetType() && IsImplcitTypeCastable(other.GetType(), GetType()))
+            {
+                Scalar castedScalar = Cast(other, GetType());
+                _value = castedScalar._value;
+            }
+            else
+            {
+                _value = other._value;
+            }
         }
         return *this;
     }
@@ -50,7 +92,15 @@ namespace value
     {
         if (this != &other)
         {
-            _value = std::move(other._value);
+            if (GetType() != other.GetType() && IsImplcitTypeCastable(other.GetType(), GetType()))
+            {
+                Scalar castedScalar = Cast(other, GetType());
+                _value = std::move(castedScalar._value);
+            }
+            else
+            {
+                _value = std::move(other._value);
+            }
             other._value = Value();
         }
         return *this;

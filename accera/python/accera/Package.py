@@ -7,6 +7,7 @@ import logging
 from collections import OrderedDict
 from enum import Enum, Flag, auto
 from functools import wraps, singledispatch
+from tkinter import Pack
 from typing import *
 import os
 import shutil
@@ -78,7 +79,7 @@ def _emit_module(module_to_emit, target, mode, output_dir, name):
     proj.module_file_sets = [accc.ModuleFileSet(name=name, common_module_dir=working_dir)]
     module_to_emit.Save(proj.module_file_sets[0].generated_mlir_filepath)
 
-    proj.generate_and_emit(build_config=mode.value, system_target=target._device_name)
+    proj.generate_and_emit(build_config=mode.value, system_target=target._device_name, runtime=target.runtime.name)
 
     # Create initial HAT files containing shape and type metadata that the C++ layer has access to
     header_path = os.path.join(output_dir, name + ".hat")
@@ -118,11 +119,11 @@ class Package:
         MLIR_VERBOSE = auto()
         CPP = auto()
         CUDA = auto()
+        DEFAULT = auto()    # HAT_DYNAMIC on HOST targe, HAT_STATIC otherwise
         HAT_DYNAMIC = HAT_PACKAGE | DYNAMIC_LIBRARY
         HAT_STATIC = HAT_PACKAGE | STATIC_LIBRARY
         MLIR_DYNAMIC = HAT_DYNAMIC | MLIR
         MLIR_STATIC = HAT_STATIC | MLIR
-        DEFAULT = auto()    # HAT_DYNAMIC on HOST targe, HAT_STATIC otherwise
 
     class Mode(Enum):
         RELEASE = "Release"    #: Release (maximally optimized)
@@ -344,6 +345,8 @@ class Package:
             # All known targets that are ARM are supported completely
             target_device = _lang_python._GetTargetDeviceFromName(target._device_name)
             target_device.architecture = "arm"
+            if "fpu" in target.extensions:
+                target._device_name += 'F'
 
         elif target.architecture == Target.Architecture.X86_64:
             target_device.architecture = "x86_64"
@@ -453,6 +456,7 @@ class Package:
         proj.generate_and_emit(
             build_config=mode.value,
             system_target=target._device_name,
+            runtime=target.runtime.name,
             dump_all_passes=dump_ir,
             dump_intrapass_ir=dump_ir_verbose,
             gpu_only=compiler_options.gpu_only,
@@ -462,6 +466,12 @@ class Package:
         path_root = os.path.join(output_dir, name)
         extension = ".hat"
 
+        if format & (Package.Format.CUDA | Package.Format.CPP):
+            shutil.copy(proj.module_file_sets[0].translated_source_filepath, output_dir)
+
+        if format & (Package.Format.DYNAMIC_LIBRARY | Package.Format.STATIC_LIBRARY):
+            shutil.copy(proj.module_file_sets[0].object_filepath, output_dir)
+
         if format & Package.Format.HAT_PACKAGE:
             # Create initial HAT file containing shape and type metadata that the C++ layer has access to
             header_path = path_root + extension
@@ -469,7 +479,9 @@ class Package:
 
             # Complete the HAT file with information we have stored at this layer
             hat_file = hat.HATFile.Deserialize(header_path)
-            hat_file.dependencies.link_target = os.path.basename(proj.module_file_sets[0].object_filepath)
+
+            if format & (Package.Format.DYNAMIC_LIBRARY | Package.Format.STATIC_LIBRARY):
+                hat_file.dependencies.link_target = os.path.basename(proj.module_file_sets[0].object_filepath)
 
             supporting_hats = map(hat.HATFile.Deserialize, supporting_hats)
             supporting_objs = []
@@ -517,9 +529,6 @@ class Package:
                 hat_file.description.auxiliary = self._description["auxiliary"]
 
             hat_file.Serialize(header_path)
-
-            # copy HAT package files into output directory
-            shutil.copy(proj.module_file_sets[0].object_filepath, output_dir)
 
             if dynamic_link and (format & Package.Format.DYNAMIC_LIBRARY):
                 dyn_hat_path = f"{path_root}_dyn{extension}"

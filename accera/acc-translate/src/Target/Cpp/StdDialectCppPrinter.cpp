@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //  Copyright (c) Microsoft Corporation. All rights reserved.
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
-//  Authors: Abdul Dakkak
+//  Authors: Abdul Dakkak, Kern Handa
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "StdDialectCppPrinter.h"
@@ -19,13 +19,28 @@ namespace cpp_printer
 
     static bool isStandardBinaryOp(Operation* op)
     {
-        return isa<AddIOp>(op) || isa<AddFOp>(op) || isa<SubIOp>(op) ||
-               isa<SubFOp>(op) || isa<MulIOp>(op) || isa<MulFOp>(op) ||
-               isa<UnsignedDivIOp>(op) || isa<SignedDivIOp>(op) || isa<DivFOp>(op) ||
-               isa<UnsignedRemIOp>(op) || isa<SignedRemIOp>(op) || isa<RemFOp>(op) ||
-               isa<AndOp>(op) || isa<OrOp>(op) || isa<XOrOp>(op) ||
-               isa<ShiftLeftOp>(op) || isa<UnsignedShiftRightOp>(op) ||
-               isa<SignedShiftRightOp>(op) || isa<CmpIOp>(op) || isa<CmpFOp>(op);
+        return isa<
+            // KEEP THIS SORTED
+            AddFOp,
+            AddIOp,
+            AndOp,
+            CmpFOp,
+            CmpIOp,
+            DivFOp,
+            MulFOp,
+            MulIOp,
+            OrOp,
+            RemFOp,
+            ShiftLeftOp,
+            SignedDivIOp,
+            SignedRemIOp,
+            SignedShiftRightOp,
+            SubFOp,
+            SubIOp,
+            UnsignedDivIOp,
+            UnsignedRemIOp,
+            UnsignedShiftRightOp,
+            XOrOp>(op);
     }
 
     // Simple CastOps are those that we don't care about the signed-ness of the
@@ -33,8 +48,12 @@ namespace cpp_printer
     // result type of the op
     static bool isSimpleCastOp(Operation* op)
     {
-        return isa<FPExtOp>(op) || isa<FPTruncOp>(op) ||
-               isa<SIToFPOp>(op) || isa<TruncateIOp>(op);
+        return isa<
+            // KEEP THIS SORTED
+            FPExtOp,
+            FPTruncOp,
+            SIToFPOp,
+            TruncateIOp>(op);
     }
 
     static bool isSupportedCudaMemSpace(unsigned memspace)
@@ -60,7 +79,7 @@ namespace cpp_printer
         unsigned numElems = memrefType.getNumElements();
         unsigned memspace = memrefType.getMemorySpaceAsInt();
         // only support default memspace (a.k.a 0) for non-cuda cases
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             if (memspace != 0)
             {
@@ -122,7 +141,7 @@ namespace cpp_printer
             os << " = ";
 
         os << callOp.getCallee() << "(";
-        RETURN_IF_FAILED(printer->printOperationOperands(callOp.getOperation()));
+        RETURN_IF_FAILED(printer->printOperationOperands(callOp));
         os << ")";
         return success();
     }
@@ -143,7 +162,7 @@ namespace cpp_printer
 
         // make sure we have a var for both cuda and non-cuda cases
         auto varName = state.nameState.getName(deallocOp.getOperand());
-        if (isCuda)
+        if (state.hasRuntime(Runtime::CUDA))
         {
             // we have nothing to do except for checking if the memspace is either
             // shared or private
@@ -196,7 +215,7 @@ namespace cpp_printer
         }
         else if (ty.isF16())
         {
-            if (!isCuda)
+            if (!state.hasRuntime(Runtime::CUDA))
             {
                 return expOp.emitOpError("<<fp16 is supported only for CUDA>>");
             }
@@ -558,6 +577,41 @@ namespace cpp_printer
             return printCastToIntegerOp(op, /*isSigned*/ false);
 
         *consumed = false;
+        return success();
+    }
+
+    LogicalResult StdDialectCppPrinter::printHeaderFiles()
+    {
+        llvm::SmallVector<llvm::StringRef, 2> system_header_files = { "math.h",
+                                                                      "stdint.h" };
+
+        for (auto& headerFile : system_header_files)
+        {
+            os << "#include <" << headerFile << ">\n";
+        }
+
+        os << "\n";
+
+        return success();
+    }
+
+    LogicalResult StdDialectCppPrinter::printPrologue()
+    {
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            os << R"STD(
+
+#ifndef __forceinline__
+#if defined(_MSC_VER)
+#define __forceinline__ __forceinline
+#else
+#define __forceinline__ __inline__ __attribute__((always_inline))
+#endif // _MSC_VER
+#endif // __forceinline__
+
+)STD";
+        }
+
         return success();
     }
 

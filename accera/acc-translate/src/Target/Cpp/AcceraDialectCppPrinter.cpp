@@ -78,7 +78,7 @@ namespace cpp_printer
 
     LogicalResult AcceraDialectCppPrinter::printHostLaunchFunc()
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
             return success();
 
         auto numCudaKernels = CudaKernels.size();

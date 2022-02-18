@@ -145,7 +145,7 @@ namespace
                 "max_elements"_a,
                 "indexing"_a,
                 "allocation"_a,
-                "memory_space"_a,
+                "location"_a,
                 "memory_map"_a,
                 "dim_order"_a)
             .def("emit_runtime_init_packing", py::overload_cast<value::ViewAdapter, const std::string&, const std::string&, value::CacheIndexing>(&value::Plan::EmitRuntimeInitPacking), "target"_a, "packing_func_name"_a, "packed_buf_size_func_name"_a, "indexing"_a = value::CacheIndexing::GlobalToPhysical)
@@ -159,9 +159,29 @@ namespace
                  }),
                  py::return_value_policy::move)
             .def(
-                "add_cache", [](value::GPUPlan& plan, value::ViewAdapter target, const std::optional<value::ScalarIndex>& outermostIncludedSplitIndex, const std::optional<int64_t>& maxElements, value::MemorySpace memorySpace) {
-                    return outermostIncludedSplitIndex.has_value() ? plan.AddCache(target, *outermostIncludedSplitIndex, memorySpace) : plan.AddCache(target, *maxElements, memorySpace);
-                })
+                "add_cache", [](value::GPUPlan& plan,
+                   const std::variant<value::ViewAdapter, value::Cache*>& target,
+                   const std::optional<value::ScalarIndex>& outermostIncludedSplitIndex,
+                   const std::optional<value::ScalarIndex>& triggerIndex,
+                   const std::optional<int64_t>& maxElements,
+                   value::CacheIndexing indexing,
+                   value::CacheAllocation allocation,
+                   value::MemorySpace memorySpace,
+                   const std::optional<util::MemoryAffineCoefficients>& memoryMap,
+                   const std::optional<util::DimensionOrder>& dimOrder) {
+                        value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
+                        return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, indexing, allocation, memorySpace);
+                        //return outermostIncludedSplitIndex.has_value() ? plan.AddCache(target, *outermostIncludedSplitIndex, memorySpace) : plan.AddCache(target, *maxElements, memorySpace);
+                },
+                "target"_a,
+                "index"_a,
+                "trigger_index"_a,
+                "max_elements"_a,
+                "indexing"_a,
+                "allocation"_a,
+                "location"_a,
+                "memory_map"_a,
+                "dim_order"_a)
             .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a)
             .def("map_index_to_processor", &value::GPUPlan::MapIndexToProcessor, "index"_a, "proc"_a);
     }

@@ -1,12 +1,13 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //  Copyright (c) Microsoft Corporation. All rights reserved.
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
-//  Authors: Abdul Dakkak
+//  Authors: Abdul Dakkak, Kern Handa
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "GpuDialectCppPrinter.h"
 #include <llvm/ADT/None.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -19,9 +20,9 @@ namespace mlir
 namespace cpp_printer
 {
 
-    LogicalResult GpuDialectCppPrinter::printBarrierOp(BarrierOp barrierOp)
+    LogicalResult GpuDialectCppPrinter::printOp(BarrierOp barrierOp)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return barrierOp.emitError("non-cuda version is not supported yet");
         }
@@ -83,9 +84,9 @@ namespace cpp_printer
         return llvm::None;
     }
 
-    LogicalResult GpuDialectCppPrinter::printGridDimOp(GridDimOp gridDimOp)
+    LogicalResult GpuDialectCppPrinter::printOp(GridDimOp gridDimOp)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return gridDimOp.emitError("non-cuda version is not supported yet");
         }
@@ -105,9 +106,9 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult GpuDialectCppPrinter::printBlockDimOp(BlockDimOp blockDimOp)
+    LogicalResult GpuDialectCppPrinter::printOp(BlockDimOp blockDimOp)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return blockDimOp.emitError("non-cuda version is not supported yet");
         }
@@ -127,9 +128,9 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult GpuDialectCppPrinter::printBlockIdOp(BlockIdOp bidOp)
+    LogicalResult GpuDialectCppPrinter::printOp(BlockIdOp bidOp)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return bidOp.emitError("non-cuda version is not supported yet");
         }
@@ -150,9 +151,9 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult GpuDialectCppPrinter::printThreadIdOp(ThreadIdOp tidOp)
+    LogicalResult GpuDialectCppPrinter::printOp(ThreadIdOp tidOp)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return tidOp.emitError("non-cuda version is not supported yet");
         }
@@ -176,24 +177,26 @@ namespace cpp_printer
                                                               bool* /*skipped*/,
                                                               bool* consumed)
     {
-        *consumed = true;
 
-        if (auto barrierOp = dyn_cast<BarrierOp>(op))
-            return printBarrierOp(barrierOp);
+        auto handler = [&, this](auto op_) {
+            printOp(op_);
+            *consumed = true;
+        };
 
-        if (auto gridDimOp = dyn_cast<GridDimOp>(op))
-            return printGridDimOp(gridDimOp);
+        TypeSwitch<Operation*>(op)
+            // KEEP THIS SORTED
+            .Case<BarrierOp>(handler)
+            .Case<BlockDimOp>(handler)
+            .Case<BlockIdOp>(handler)
+            .Case<GPUFuncOp>(handler)
+            .Case<GPUModuleOp>(handler)
+            .Case<GridDimOp>(handler)
+            .Case<LaunchFuncOp>(handler)
+            .Case<ModuleEndOp>(handler)
+            .Case<ReturnOp>(handler)
+            .Case<ThreadIdOp>(handler)
+            .Default([&](Operation*) { *consumed = false; });
 
-        if (auto blockDimOp = dyn_cast<BlockDimOp>(op))
-            return printBlockDimOp(blockDimOp);
-
-        if (auto bidOp = dyn_cast<BlockIdOp>(op))
-            return printBlockIdOp(bidOp);
-
-        if (auto tidOp = dyn_cast<ThreadIdOp>(op))
-            return printThreadIdOp(tidOp);
-
-        *consumed = false;
         return success();
     }
 
@@ -233,7 +236,7 @@ namespace cpp_printer
     LogicalResult GpuDialectCppPrinter::printVectorTypeArrayDecl(VectorType vecType,
                                                                  StringRef vecVar)
     {
-        assert(isCuda && "not for cuda?");
+        assert(state.hasRuntime(Runtime::CUDA) && "not for cuda?");
 
         auto elemType = vecType.getElementType();
         // TODO: support more vector types
@@ -246,6 +249,221 @@ namespace cpp_printer
             os << "<<only support fp32 and fp16 vec type>>";
             return failure();
         }
+    }
+
+    LogicalResult GpuDialectCppPrinter::runPrePrintingPasses(Operation* op)
+    {
+        if (auto moduleOp = dyn_cast<mlir::ModuleOp>(op))
+        {
+            auto& moduleRegion = moduleOp.getRegion();
+
+            auto potentialGpuOps = moduleRegion.getOps<gpu::GPUModuleOp>();
+
+            if (!potentialGpuOps.empty())
+            {
+                if (llvm::hasSingleElement(potentialGpuOps))
+                {
+                    state.setRuntime(Runtime::CUDA);
+
+                    llvm::errs() << "GPU module detected, enabling CUDA runtime\n";
+                    _gpuModuleOp = *potentialGpuOps.begin();
+                }
+                else
+                {
+                    return op->emitError("Multiple GPU modules are not currently supported");
+                }
+            }
+        }
+
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printHeaderFiles()
+    {
+        if (state.hasRuntime(Runtime::CUDA))
+        {
+            os << R"CUDA(
+
+#if defined(__HIP_PLATFORM_AMD__)
+#include <hip/hip_runtime.h>
+using vfloatx2_t = float __attribute__((ext_vector_type(2)));
+using vfloatx4_t = float __attribute__((ext_vector_type(4)));
+using vfloatx16_t = float __attribute__((ext_vector_type(16)));
+#else
+#include "cuda_fp16.h"
+#endif // !defined(__HIP_PLATFORM_AMD__)
+
+)CUDA";
+        }
+
+        return success();
+    }
+
+    // TODO: Dedupe with CppPrinter's version
+    LogicalResult GpuDialectCppPrinter::printFunctionDeclaration(
+        gpu::GPUFuncOp funcOp,
+        bool trailingSemiColon)
+    {
+        // TODO: We treat all functions to be CUDA global functions.
+        // Need to add support for device functions
+        os << "__global__ ";
+
+        if (state.hasRuntime(Runtime::CUDA) && funcOp->hasAttrOfType<mlir::ArrayAttr>("blockSize"))
+        {
+            auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(funcOp->getAttrOfType<mlir::ArrayAttr>("blockSize"));
+            auto blockSizeX = arrayAttr[0].getInt();
+            auto blockSizeY = arrayAttr[1].getInt();
+            auto blockSizeZ = arrayAttr[2].getInt();
+            os << " __launch_bounds__(" << blockSizeX * blockSizeY * blockSizeZ << ") ";
+        }
+
+        auto resultType = funcOp.getType().getResults();
+        if (state.hasRuntime(Runtime::CUDA) && !resultType.empty())
+        {
+            return funcOp.emitOpError() << "<<CUDA kernel must return void>>";
+        }
+
+        if (failed(printer->printTypes(funcOp.getType().getResults())))
+        {
+            return funcOp.emitOpError() << "<<Unable to print return type>>";
+        }
+
+        os << " " << funcOp.getName();
+
+        os << "(";
+        // external function
+        if (funcOp.getBlocks().size() == 0)
+        {
+            (void)interleaveCommaWithError(
+                funcOp.getType().getInputs(), os, [&](Type tp) -> LogicalResult {
+                    if (auto memRefType = tp.dyn_cast<MemRefType>())
+                    {
+                        return printer->printDecayedArrayDeclaration(memRefType, /*arrayName*/ "");
+                    }
+                    else
+                    {
+                        return printer->printType(tp);
+                    }
+                });
+        }
+        else
+        {
+            SSANameState::Scope scope(state.nameState);
+            auto usedNamesScope = state.nameState.createUsedNamesScope();
+
+            (void)interleaveCommaWithError(funcOp.getArguments(), os, [&](BlockArgument arg) -> LogicalResult {
+                return printer->printBlockArgument(arg);
+            });
+        }
+        os << ") ";
+
+        if (trailingSemiColon)
+            os << ";\n\n";
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printOp(gpu::GPUModuleOp gpuModuleOp)
+    {
+        assert(gpuModuleOp == _gpuModuleOp);
+
+#if 0
+        for (auto funcOp : gpuModuleOp.getOps<GPUFuncOp>())
+        {
+            // TODO: We should probably not be printing the functions directly
+            // like this, but instead handing control back to the printer
+            RETURN_IF_FAILED(printOp(funcOp));
+        }
+#endif // 0
+
+        for (Operation& op : gpuModuleOp.getOps())
+        {
+            [[maybe_unused]] bool skipped{}; // not sure what to do with this
+
+            RETURN_IF_FAILED(printer->printOperation(&op, &skipped, /* trailingSemiColon */ false));
+        }
+
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printOp(ModuleEndOp)
+    {
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printOp(ReturnOp)
+    {
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printOp(LaunchFuncOp launchOp)
+    {
+        auto gridSizes = { launchOp.gridSizeX(), launchOp.gridSizeY(), launchOp.gridSizeZ() };
+        auto blockSizes = { launchOp.blockSizeX(), launchOp.blockSizeY(), launchOp.blockSizeZ() };
+        auto operands = launchOp->getOperands().drop_front(launchOp.kNumConfigOperands);
+        auto getName = [&](Value operand) { return state.nameState.getName(operand); };
+        auto pprint = [&](auto&& container) {
+            llvm::interleave(
+                llvm::map_range(
+                    container,
+                    getName),
+                os,
+                ", ");
+        };
+
+        os << launchOp.getKernelName() << "<<<dim3(";
+        pprint(gridSizes);
+        os << "), dim3(";
+        pprint(blockSizes);
+        os << ")>>>(";
+        pprint(operands);
+        os << ")";
+
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printOp(gpu::GPUFuncOp funcOp)
+    {
+        SSANameState::Scope scope(state.nameState);
+        auto usedNamesScope = state.nameState.createUsedNamesScope();
+
+        auto& blocks = funcOp.getBlocks();
+        auto numBlocks = blocks.size();
+        if (numBlocks > 1)
+            return funcOp.emitOpError() << "<<only single block functions supported>>";
+
+        // print function declaration
+        if (failed(printFunctionDeclaration(funcOp,
+                                            /*trailingSemicolon*/ numBlocks == 0)))
+        {
+            return funcOp.emitOpError() << "<<failed to print function declaration>>";
+        }
+
+        if (numBlocks != 0)
+        {
+            // print function body
+            if (failed(printer->printBlock(&(blocks.front()))))
+                return funcOp.emitOpError() << "<<failed to print function body>>";
+        }
+        // Otherwise, just a declaration, so emit a newline and return
+
+        os << "\n\n";
+
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printDeclarations()
+    {
+        if (state.hasRuntime(Runtime::CUDA))
+        {
+            assert(_gpuModuleOp);
+
+            for (auto funcOp : _gpuModuleOp.getOps<gpu::GPUFuncOp>())
+            {
+                RETURN_IF_FAILED(printFunctionDeclaration(funcOp, /* trailingSemiColon */ true));
+            }
+        }
+
+        return success();
     }
 
 } // namespace cpp_printer

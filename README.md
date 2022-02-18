@@ -4,7 +4,7 @@
 <a href="https://pypi.org/project/accera/"><img src="https://badge.fury.io/py/accera.svg" alt="PyPI package version"/></a> <a href="https://pypi.org/project/accera/"><img src="https://img.shields.io/pypi/pyversions/accera" alt="Python versions"/></a> ![MIT License](https://img.shields.io/pypi/l/accera)
 
 # Problem at Hand
-Controlling loop overheads and optimization is a recurring ritual that a software engineer requires to observe very frequently. It usually gets overwhelming because writing highly optimized compute-intensive code in a traditional programming language is strenuous and time-consuming. Not only does it require advanced engineering skills such as fluency in Assembly language, but a deep understanding of computer architecture is also indispensable. Manual optimization of even the simplest numerical algorithms demands a significant engineering effort. Needless to say, a highly optimized numerical code is often prone to bugs, lacks readability, and offers little to no usability. Code maintenance becomes a nightmare resulting in the reimplementation of the same logic every time an architecture level change is introduced.
+Writing highly optimized compute-intensive code in a traditional programming language is strenuous and time-consuming. Not only does it require advanced engineering skills such as fluency in Assembly language, but a deep understanding of computer architecture is also indispensable. Manual optimization of even the simplest numerical algorithms demands a significant engineering effort. Needless to say, a highly optimized numerical code is often prone to bugs, lacks readability, and offers little to no usability. Code maintenance becomes a nightmare resulting in the reimplementation of the same logic every time an architecture level change is introduced.
 
 
 # Accera: An Optimized Solution
@@ -16,7 +16,7 @@ Accera has FOUR primary goals:
 * Performance: To guarantee the fastest implementation for any compute-intensive algorithm.
 * Readability: To ensure effective implementation of algorithms without sacrificing the readability of code.
 * Writability: To provide a user-friendly programming model, designed for agility.
-* Usability & Maintenance: To offer implementing compute-intensive algorithms that are highly usable and easy to maintain. 
+* Usability and Maintainability: To offer implementing compute-intensive algorithms that are highly usable and easy to maintain. 
 
 
 ## Install

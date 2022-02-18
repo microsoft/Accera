@@ -7,7 +7,6 @@ import logging
 from collections import OrderedDict
 from enum import Enum, Flag, auto
 from functools import wraps, singledispatch
-from tkinter import Pack
 from typing import *
 import os
 import shutil

@@ -11,12 +11,11 @@ Writing highly optimized compute-intensive code in a traditional programming lan
 
 Accera is a compiler that enables you to experiment with loop optimizations without hand-writing Assembly code. With Accera, these problems and impediments can be addressed in an optimized way. It is available as a Python library and supports cross-compiling to a wide range of [processor targets](https://github.com/microsoft/Accera/blob/main/accera/python/accera/Targets.py).
 
-Accera has FOUR primary goals:
+Accera has THREE primary goals:
 
 * Performance: To guarantee the fastest implementation for any compute-intensive algorithm.
 * Readability: To ensure effective implementation of algorithms without sacrificing the readability of code.
-* Writability: To provide a user-friendly programming model, designed for agility.
-* Usability and Maintainability: To offer implementing compute-intensive algorithms that are highly usable and easy to maintain. 
+* Writability: To provide a user-friendly programming model, designed for agility and maintainability.
 
 
 ## Install
@@ -27,16 +26,17 @@ To install for Linux, macOS, or Windows (requires Python 3.7-3.9):
 pip install accera
 ```
 
-See the [Install Instructions](https://microsoft.github.io/Accera/Install/) for more details on installing pre-built Python 3 packages and how to build Accera from source.
+See the [Install Instructions](https://microsoft.github.io/Accera/Install/) for more details on installing pre-built Python 3 packages and how to build Accera from the source.
 
 
 ### Quickstart
 
 In this example, we will:
 
-* Implement matrix multiplication with a ReLU activation (matmul + ReLU), commonly used in in machine learning algorithms
-  * Generate two implementations: a naive algorithm and one with loop transformations
-* Compare the timings of both implementations
+* Implement matrix multiplication with a ReLU activation (matmul + ReLU), commonly used in machine learning algorithms.
+* Generate two implementations: a naive algorithm and loop-based transformations.
+* Compare the execution time of both implementations.
+
 
 #### Run in your browser
 
@@ -98,7 +98,7 @@ No installation is required. This will launch a Jupyter notebook with the quicks
 
 2. Ensure that you have a compiler in your PATH:
 
-    * Windows: Install Microsoft Visual Studio and run `vcvars64.bat` to setup the command prompt
+    * Windows: Install Microsoft Visual Studio and run `vcvars64.bat` to setup the command prompt.
     * Linux/macOS: Install gcc
 
     Don't have a compiler handy? We recommend trying Accera in your browser instead [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/microsoft/Accera/demos?labpath=docs%2Fdemos%2Fquickstart.ipynb)
@@ -141,7 +141,7 @@ No installation is required. This will launch a Jupyter notebook with the quicks
     hat.run_benchmark("hello_accera.hat", batch_size=5, min_time_in_sec=5)
     ```
 
-6. Run the benchmark to get the timing results:
+6. Run the benchmark to get the execution time results:
 
     ```shell
     python benchmark.py
@@ -149,34 +149,33 @@ No installation is required. This will launch a Jupyter notebook with the quicks
 
 #### Next Steps
 
-The [Manual](https://microsoft.github.io/Accera/Manual/00%20Introduction/) is a good place to start for an introduction to the Accera Python programming model.
+The [Manual](https://microsoft.github.io/Accera/Manual/00%20Introduction/) is the best introductory resource for the Accera Python programming model.
 
-In particular, the [schedule transformations](https://microsoft.github.io/Accera/Manual/03%20Schedules/#schedule-transformations) describe how you can experiment with different loop transformations with just a few lines of Python.
+In particular, the [schedule transformations](https://microsoft.github.io/Accera/Manual/03%20Schedules/#schedule-transformations) describe how you can experiment with different loop transformations with just a few lines of Python code.
 
-Finally, the `.hat` format is just a C header file containing metadata. Learn more about the [HAT format](https://github.com/microsoft/hat) and [benchmarking](https://github.com/microsoft/hat/tree/main/tools).
-
+Finally, the `.hat` format is just a C header file containing the metadata. Learn more about the [HAT format](https://github.com/microsoft/hat) and [benchmarking](https://github.com/microsoft/hat/tree/main/tools).
 
 ## How it works
 
-In a nutshell, Accera takes the Python code that defines the loop schedule and algorithm and converts it into [MLIR](https://mlir.llvm.org/) intermediate representation (IR). Accera's compiler then takes this IR through a series of MLIR pipelines to perform transformations. The result is a binary library with a C header file. The library implements the algorithms that are defined in Python, and is compatible with the target.
+In a nutshell, Accera takes the Python code that defines the loop schedule and algorithm while converting it into [MLIR](https://mlir.llvm.org/) intermediate representation (IR). Accera's compiler then takes this IR through a series of MLIR pipelines to perform transformations. The result is a binary library with a C header file. The library implements the algorithms that are defined in Python and it is compatible with the target.
 
 To peek into the stages of IR transformation that Accera does, try replacing `format=acc.Package.Format.HAT_DYNAMIC` with `format=acc.Package.Format.MLIR_DYNAMIC` in `quickstart.py`, re-run the script, and search the `_tmp` subfolder for the intermediate `*.mlir` files. We plan to document these IR constructs in the future.
 
 ## Documentation
 
-Get to know Accera's concepts and Python constructs in the [Documentation](https://microsoft.github.io/Accera/) page.
+Get familiar with Accera's concepts and Python constructs in the [Documentation](https://microsoft.github.io/Accera/) page.
 
 ## Tutorials
 
-More step-by-step examples are available on the [Tutorials](https://microsoft.github.io/Accera/Tutorials) page. We're working on more examples and tutorials soon.
+Step-by-step examples are available on the [Tutorials](https://microsoft.github.io/Accera/Tutorials) page. We're working on adding more complementary examples and tutorials.
 
 ## Contributions
 
-Accera is a research platform-in-progress. We would love your contributions, feedback, questions, and feature requests! Please file a [Github issue](https://github.com/microsoft/Accera/issues/new) or send us a pull request. Please review the [Microsoft Code of Conduct](https://opensource.microsoft.com/codeofconduct/) to learn more.
+AAccera is a research platform-in-progress that can certainly benefit from your contributions. We would love your feedback, recommendations, and feature requests. Not to mention that we are excited to answer your questions. Let’s collaborate! Please file a  [Github issue](https://github.com/microsoft/Accera/issues/new) or send us a pull request. Please review the [Microsoft Code of Conduct](https://opensource.microsoft.com/codeofconduct/) to learn more.
 
 ## Credits
 
-Accera is built using several open source libraries, including: [LLVM](https://llvm.org/), [pybind11](https://pybind11.readthedocs.io/en/stable/), [toml++](https://marzer.github.io/tomlplusplus/), [tomlkit](https://github.com/sdispater/tomlkit), [vcpkg](https://vcpkg.io/en/index.html), [pyyaml](https://pyyaml.org/), and [HAT](https://github.com/microsoft/hat). For testing, we also use [numpy](https://github.com/numpy/numpy) and [catch2](https://github.com/catchorg/Catch2).
+Accera is built using several open source libraries, including: [LLVM](https://llvm.org/), [pybind11](https://pybind11.readthedocs.io/en/stable/), [toml++](https://marzer.github.io/tomlplusplus/), [tomlkit](https://github.com/sdispater/tomlkit), [vcpkg](https://vcpkg.io/en/index.html), [pyyaml](https://pyyaml.org/), and [HAT](https://github.com/microsoft/hat). For testing, we used [numpy](https://github.com/numpy/numpy) and [catch2](https://github.com/catchorg/Catch2).
 
 ## License
 

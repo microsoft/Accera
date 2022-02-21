@@ -13,27 +13,28 @@
 #include <ir/include/DialectRegistry.h>
 #include <transforms/include/AcceraPasses.h>
 #include <transforms/include/accera/AcceraLoweringPass.h>
+#include <transforms/include/gpu/AcceraVulkanPasses.h>
 #include <transforms/include/value/ValueSimplifyPass.h>
 #include <transforms/include/value/ValueToStandardLoweringPass.h>
-#include <transforms/include/vulkan/AcceraVulkanPasses.h>
 
-#include <llvm/Support/CommandLine.h>
-#include <llvm/Support/InitLLVM.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/Support/raw_os_ostream.h>
 #include <mlir/Conversion/GPUToSPIRV/GPUToSPIRVPass.h>
 #include <mlir/Conversion/GPUToVulkan/ConvertGPUToVulkanPass.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
 #include <mlir/Conversion/StandardToSPIRV/StandardToSPIRVPass.h>
 #include <mlir/Dialect/GPU/Passes.h>
-#include <mlir/Dialect/SPIRV/Transforms/Passes.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
+#include <mlir/Dialect/SPIRV/Transforms/Passes.h>
 #include <mlir/ExecutionEngine/OptUtils.h>
 #include <mlir/InitAllDialects.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/LocationSnapshot.h>
 #include <mlir/Transforms/Passes.h>
+
+#include <llvm/Support/CommandLine.h>
+#include <llvm/Support/InitLLVM.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/raw_os_ostream.h>
 
 #ifdef _MSC_VER
 #pragma warning(enable : 4146)

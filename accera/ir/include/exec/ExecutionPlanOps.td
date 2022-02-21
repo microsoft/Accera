@@ -55,6 +55,16 @@ def rcxp_ParallelizationInfoAttr : DialectAttr<
   let constBuilderCall = "$0";
 }
 
+def rcxp_TensorizationInfoAttr : DialectAttr<
+    ExecutionPlan_Dialect,
+    CPred<"$_self.isa<TensorizationInfoAttr>()">,
+    "Parallelization info attribute"> {
+  let storageType = "TensorizationInfoAttr";
+  let returnType = "TensorizationInfoAttr";
+  let convertFromStorage = "$_self";
+  let constBuilderCall = "$0";
+}
+
 // Base class for executionPlan dialect operations. This operation inherits from the base
 // `Op` class in OpBase.td, and provides:
 //   * The parent dialect of the operation.
@@ -85,7 +95,7 @@ def rcxp_MakeCacheOp : rcxp_Op<"make_cache"> {
                    ArrayAttr:$multiCacheAccessIndices);
   let results = (outs AnyMemRef:$cache);
   let builders = [
-    OpBuilder<(ins 
+    OpBuilder<(ins
       "mlir::MemRefType":$cache,
       "MemorySpace":$memorySpace)>,
     OpBuilder<(ins

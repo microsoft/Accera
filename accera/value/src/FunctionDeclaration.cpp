@@ -85,11 +85,19 @@ namespace value
         return *this;
     }
 
-    FunctionDeclaration& FunctionDeclaration::Target(ExecutionOptions target)
+    FunctionDeclaration& FunctionDeclaration::Target(ExecutionTarget target)
     {
         CheckNonEmpty();
 
         _execTarget = target;
+        return *this;
+    }
+
+    FunctionDeclaration& FunctionDeclaration::Runtime(ExecutionRuntime runtime)
+    {
+        CheckNonEmpty();
+
+        _execRuntime = runtime;
         return *this;
     }
 

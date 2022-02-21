@@ -213,7 +213,7 @@ namespace cpp_printer
             os << ";\n";
             os << "return " << idxName << ";\n";
 
-            os << "}\n";
+            os << "}\n\n";
         }
         return success();
     }
@@ -436,7 +436,7 @@ namespace cpp_printer
             [&](auto idx) {
                 os << dstMemRefPtr << "[" << idx << "] = " << vecVar << "[" << idx << "]";
             },
-            ";\n"); 
+            ";\n");
 
         return success();
     }

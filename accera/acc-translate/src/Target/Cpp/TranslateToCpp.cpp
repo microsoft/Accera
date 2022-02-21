@@ -12,12 +12,11 @@ using namespace llvm;
 namespace mlir
 {
 
-LogicalResult translateModuleToCpp(Operation* m, raw_ostream& os, bool isCuda)
+LogicalResult translateModuleToCpp(Operation* m, raw_ostream& os)
 {
-    cpp_printer::CppPrinter printer(os, isCuda);
-    printer.registerAllDialectPrinters();
-    RETURN_IF_FAILED(printer.runPrePrintingPasses(m));
-    return printer.printModuleOp(cast<ModuleOp>(m));
+    cpp_printer::CppPrinter printer(os);
+
+    return printer.process(m);
 }
 
 } // namespace mlir

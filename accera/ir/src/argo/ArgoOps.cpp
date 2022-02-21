@@ -62,7 +62,7 @@ static LogicalResult foldMemRefCast(Operation* op)
 // Built-in Structured Ops
 //===----------------------------------------------------------------------===//
 
-static void printArgoStructuredOp(OpAsmPrinter& p, Operation* op)
+[[maybe_unused]] static void printArgoStructuredOp(OpAsmPrinter& p, Operation* op)
 {
     assert(op->getAbstractOperation() && "unregistered operation");
     p << op->getName().getStringRef() << "(" << op->getOperands() << ")";
@@ -70,7 +70,7 @@ static void printArgoStructuredOp(OpAsmPrinter& p, Operation* op)
     p << " : " << op->getOperandTypes();
 }
 
-static ParseResult parseArgoStructuredOp(OpAsmParser& parser,
+[[maybe_unused]] static ParseResult parseArgoStructuredOp(OpAsmParser& parser,
                                          OperationState& result)
 {
     SmallVector<OpAsmParser::OperandType, 3> ops;
@@ -372,7 +372,7 @@ static ParseResult parseEntryPointOp(OpAsmParser& parser,
         return failure();
     function_like_impl::addArgAndResultAttrs(builder, result, argAttrs, resultAttrs);
 
-    auto endLocation = parser.getCurrentLocation();
+    [[maybe_unused]] auto endLocation = parser.getCurrentLocation();
     // FunctionLike op requires one region
     auto* body = result.addRegion();
     OptionalParseResult parseResult = parser.parseOptionalRegion(*body);

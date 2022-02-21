@@ -16,13 +16,15 @@
 #include <mlir/Dialect/Linalg/IR/LinalgOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/LLVMIR/ROCDLDialect.h>
+#include <mlir/Dialect/LLVMIR/NVVMDialect.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVDialect.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Dialect/Vector/VectorOps.h>
 #include <mlir/IR/Dialect.h>
 
-#include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/Dialect/All.h>
 
 using namespace mlir;
 
@@ -46,6 +48,8 @@ mlir::DialectRegistry& GetDialectRegistry()
                         gpu::GPUDialect,
                         linalg::LinalgDialect,
                         LLVM::LLVMDialect,
+                        NVVM::NVVMDialect,
+                        ROCDL::ROCDLDialect,
                         spirv::SPIRVDialect,
                         scf::SCFDialect,
                         vector::VectorDialect>();

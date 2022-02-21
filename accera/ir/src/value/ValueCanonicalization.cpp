@@ -4,10 +4,12 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "IRUtil.h"
+#include "value/ValueEnums.h"
 #include "value/ValueDialect.h"
 
 #include <llvm/ADT/APFloat.h>
 
+#include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
@@ -16,6 +18,8 @@
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/PatternMatch.h>
+
+#include <llvm/ADT/TypeSwitch.h>
 
 namespace v = accera::ir::value;
 
@@ -313,13 +317,14 @@ struct BarrierCanonicalizationPattern : public mlir::OpRewritePattern<v::Barrier
         auto begin = block->begin();
         mlir::Block::iterator it{ barrierOp };
 
+        auto myScope = barrierOp.scope();
+
         if (begin != it)
         {
             if (auto prevBarrier = llvm::dyn_cast<v::BarrierOp>(--it))
             {
-                auto prevBarrierAttrs = prevBarrier->getAttrs();
-                auto myAttrs = op->getAttrs();
-                if (myAttrs == prevBarrierAttrs)
+                auto prevBarrierScope = prevBarrier.scope();
+                if (myScope == prevBarrierScope)
                 {
                     rewriter.eraseOp(barrierOp);
                     return mlir::success();

@@ -104,5 +104,6 @@ const mlir::StringRef BaseNameAttrName = "accv.base_name";
 /// toy operations.
 #define GET_OP_CLASSES
 #include "ValueFuncOp.h"
+#include "ValueMFMAOp.h"
 #include "value/ValueDialect.h.inc"
 #include "value/ValueOps.h.inc"

@@ -35,6 +35,20 @@ namespace value
 
         static const size_t c_defaultNumBits = 64;
 
+        // ref: https://interrupt.memfault.com/blog/arm-cortexm-with-llvm-clang
+        // Clang Target Triple Internals
+        // The makeup of a --target value is actually:
+
+        // <arch><sub>-<vendor>-<sys>-<abi>
+
+        // A rough breakdown of what is expected for ARM targets is:
+
+        // arch: One of the “registered targets” that was output from llc --version so for ARM it is arm.
+        // sub : When left blank the value is inferred from other flags specified as part of the compilation. For ARM Cortex-M, v6m, v7m, v7em, v8m, etc are all be legal values.
+        // vendor: For ARM this can be left blank or you can specify unknown explicitly.
+        // sys: For embedded targets this will be none. If you are compiling code targeting an OS, the name of the OS will be used. For example, linux or darwin.
+        // abi: For Embedded ARM this will always be eabi (“embedded-application binary interface”)
+
         // Triples
         std::string c_macTriple = "x86_64-apple-macosx10.12.0"; // alternate: "x86_64-apple-darwin16.0.0"
         std::string c_linuxTriple = "x86_64-pc-linux-gnu";
@@ -45,6 +59,7 @@ namespace value
         std::string c_iosTriple = "aarch64-apple-ios"; // alternates: "arm64-apple-ios7.0.0", "thumbv7-apple-ios7.0"
 
         // CPUs
+        std::string c_armCortexM4 = "cortex-m4";
         std::string c_pi0Cpu = "arm1136jf-s";
         std::string c_pi3Cpu = "cortex-a53";
         std::string c_orangePi0Cpu = "cortex-a7";
@@ -112,22 +127,17 @@ namespace value
             { "ios", [](TargetDevice& targetDevice) {
                  targetDevice.triple = c_iosTriple;
                  targetDevice.dataLayout = c_iosDataLayout;
-             } }
-        };
-
-        const std::map<std::string, std::function<void(TargetDevice&)>> KnownTargetDeviceCpuMap = {
+             } },
             { "cortex-m0", [](TargetDevice& targetDevice) {
                  targetDevice.triple = "armv6m-unknown-none-eabi";
                  targetDevice.features = "+armv6-m,+v6m";
                  targetDevice.architecture = "thumb";
              } },
             { "cortex-m4", [](TargetDevice& targetDevice) {
-                 targetDevice.triple = "arm-none-eabi";
-                 if (targetDevice.features.empty())
-                 {
-                     targetDevice.features = "+armv7e-m,+v7,soft-float";
-                 }
-                 targetDevice.architecture = "arm";
+                 targetDevice.triple = "thumbv7em-arm-none-eabi";
+                 targetDevice.architecture = "thumb";
+                 targetDevice.cpu = c_armCortexM4;
+                 targetDevice.dataLayout = "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64";
              } }
         };
 
@@ -142,7 +152,6 @@ namespace value
         bool HasKnownDeviceName(TargetDevice& targetDevice);
         void SetTargetPropertiesFromName(TargetDevice& targetDevice);
         void VerifyCustomTargetProperties(TargetDevice& targetDevice);
-        void SetTargetPropertiesFromCpu(TargetDevice& targetDevice);
         void SetTargetDataLayout(TargetDevice& targetDevice);
     } // namespace
 
@@ -192,7 +201,6 @@ namespace value
         }
         else if (deviceName == "custom")
         {
-            SetTargetPropertiesFromCpu(targetDevice);
             SetTargetDataLayout(targetDevice);
             VerifyCustomTargetProperties(targetDevice);
         }
@@ -282,16 +290,6 @@ namespace value
             if (targetDevice.cpu == "")
             {
                 throw EmitterException(EmitterError::badFunctionArguments, "Missing 'cpu' information");
-            }
-        }
-
-        void SetTargetPropertiesFromCpu(TargetDevice& targetDevice)
-        {
-            auto cpu = targetDevice.cpu;
-            auto it = KnownTargetDeviceCpuMap.find(cpu);
-            if (it != KnownTargetDeviceCpuMap.end())
-            {
-                (it->second)(targetDevice);
             }
         }
     } // namespace

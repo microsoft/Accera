@@ -33,6 +33,12 @@ namespace executionPlan
         return printer;
     }
 
+    mlir::DialectAsmPrinter& operator<<(mlir::DialectAsmPrinter& printer, TensorizationInfo tensorizationInfo)
+    {
+        printer << "{" << tensorizationInfo.dim[0]  << "," << tensorizationInfo.dim[1] << "," << tensorizationInfo.dim[2] << "}";
+        return printer;
+    }
+
     mlir::DialectAsmPrinter& operator<<(mlir::DialectAsmPrinter& printer, InPlaceUnrollInfo inPlaceUnrollInfo)
     {
         printer << "{" << (inPlaceUnrollInfo.loopUnrollFactor) << "}";
@@ -141,6 +147,46 @@ namespace executionPlan
     }
 
     //
+    // TensorizationInfoAttr
+    //
+    TensorizationInfoAttr TensorizationInfoAttr::get(const ValueType& value, mlir::MLIRContext* context)
+    {
+        return Base::get(context, value);
+    }
+
+    TensorizationInfo TensorizationInfoAttr::getValue() const
+    {
+        return getImpl()->getValue();
+    }
+
+    TensorizationInfoAttr parseTensorizeInfo(mlir::DialectAsmParser& parser)
+    {
+        int dim0, dim1, dim2;
+        if (failed(parser.parseLBrace()))
+            return {};
+        if (failed(parser.parseInteger(dim0)))
+            return {};
+        if (failed(parser.parseComma()))
+            return {};
+        if (failed(parser.parseInteger(dim1)))
+            return {};
+        if (failed(parser.parseComma()))
+            return {};
+        if (failed(parser.parseInteger(dim2)))
+            return {};
+        if (failed(parser.parseRBrace()))
+            return {};
+        return TensorizationInfoAttr::get(TensorizationInfo{std::vector<int>{dim0, dim1, dim2}}, parser.getBuilder().getContext());
+    }
+
+    void print(TensorizationInfoAttr attr, mlir::DialectAsmPrinter& printer)
+    {
+        printer << "tensorizeinfo";
+        auto tensorizelInfo = attr.cast<TensorizationInfoAttr>().getValue();
+        printer << tensorizelInfo;
+    }
+
+    //
     // InPlaceUnrollInfoAttr
     //
     InPlaceUnrollInfoAttr InPlaceUnrollInfoAttr::get(const ValueType& value, mlir::MLIRContext* context)
@@ -189,6 +235,11 @@ namespace executionPlan
     llvm::hash_code hash_value(const ParallelizationInfo& parallelizationInfo)
     {
         return llvm::hash_combine(parallelizationInfo.numThreads, parallelizationInfo.isDynamicPolicy);
+    }
+
+    llvm::hash_code hash_value(const TensorizationInfo& tensorizationInfo)
+    {
+        return llvm::hash_combine(tensorizationInfo.dim[0], tensorizationInfo.dim[1], tensorizationInfo.dim[2]);
     }
 
     llvm::hash_code hash_value(const InPlaceUnrollInfo& inPlaceUnrollInfo)

@@ -7,8 +7,11 @@
 #pragma once
 
 #include "EmitterContext.h"
+#include "ExecutionOptions.h"
 #include "Scalar.h"
 #include "Value.h"
+
+#include "ir/include/value/ValueAttributes.h"
 
 #include <utilities/include/StringUtil.h>
 #include <utilities/include/TupleUtils.h>
@@ -36,36 +39,6 @@ namespace value
         inputOutput, // the default value
         input
     };
-
-    namespace targets
-    {
-        //  <summary> A struct encapsulating x, y, z indices for a GPU processor </summary>
-        struct Dim3
-        {
-            /// <summary> The x index </summary>
-            int64_t x;
-            /// <summary> The y index </summary>
-            int64_t y;
-            /// <summary> The z index </summary>
-            int64_t z;
-        };
-
-        /// <summary> The CPU execution options </summary>
-        struct CPU
-        {};
-
-        /// <summary> The GPU execution options </summary>
-        struct GPU
-        {
-            /// <summary> Indicates the grid </summary>
-            Dim3 grid;
-
-            /// <summary> Indicates the block </summary>
-            Dim3 block;
-        };
-    } // namespace targets
-
-    using ExecutionOptions = std::variant<targets::CPU, targets::GPU>;
 
     /// <summary> Describes a function that can be acted upon by an EmitterContext instance </summary>
     class [[nodiscard]] FunctionDeclaration
@@ -99,8 +72,12 @@ namespace value
         FunctionDeclaration& Inlined(FunctionInlining shouldInline = FunctionInlining::always);
 
         /// <summary> Sets the execution target for this function  </summary>
-        /// <param name="target"> A ExecutionOptions value specifying where this function should execute </param>
-        FunctionDeclaration& Target(ExecutionOptions target);
+        /// <param name="target"> A ExecutionTarget value specifying where this function should execute </param>
+        FunctionDeclaration& Target(ExecutionTarget target);
+
+        /// <summary> Sets the execution runtime for this function  </summary>
+        /// <param name="target"> A ExecutionRuntime value specifying which runtime this function should execute on </param>
+        FunctionDeclaration& Runtime(ExecutionRuntime runtime);
 
         /// <summary> Sets whether to use MemRefDescriptors for arguments. </summary>
         /// <param name="useMemRefDescriptorArgs"> Whether to use MemRefDescriptors in place of MemRef arguments </param>
@@ -200,7 +177,9 @@ namespace value
         /// <summary> Returns true if the instance is inlined </summary>
         [[nodiscard]] FunctionInlining InlineState() const;
 
-        [[nodiscard]] ExecutionOptions Target() const { return _execTarget; }
+        [[nodiscard]] ExecutionTarget Target() const { return _execTarget; }
+
+        [[nodiscard]] ExecutionRuntime Runtime() const { return _execRuntime; }
 
         [[nodiscard]] bool UseMemRefDescriptorArgs() const { return _useMemRefDescriptorArgs; }
 
@@ -244,7 +223,8 @@ namespace value
         std::vector<FunctionParameterUsage> _paramUsages;
         std::optional<Scalar> _pointer;
 
-        ExecutionOptions _execTarget;
+        ExecutionTarget _execTarget;
+        ExecutionRuntime _execRuntime = ExecutionRuntime::Default;
         FunctionInlining _inlineState = FunctionInlining::defaultInline;
         bool _isDecorated = true;
         bool _isPublic = false;
@@ -296,7 +276,7 @@ namespace value
         };
 
         template <typename ReturnT, typename Class, bool IsNoExcept, typename... Args>
-        struct StdFunctionDeductionGuideHelper<ReturnT (Class::*)(Args...) & noexcept(IsNoExcept)>
+        struct StdFunctionDeductionGuideHelper<ReturnT (Class::*)(Args...)& noexcept(IsNoExcept)>
         {
             using Type = ReturnT(Args...);
         };
@@ -325,12 +305,12 @@ namespace value
 
         // Function pointer
         template <typename ReturnT, typename... Args>
-        Function(ReturnT (*)(Args...))->Function<ReturnT(Args...)>;
+        Function(ReturnT (*)(Args...)) -> Function<ReturnT(Args...)>;
 
         // Functor
         template <typename Functor,
                   typename Signature = typename StdFunctionDeductionGuideHelper<decltype(&Functor::operator())>::Type>
-        Function(Functor)->Function<Signature>;
+        Function(Functor) -> Function<Signature>;
 #endif // defined(__APPLE__) || defined(_LIBCPP_VERSION)
 
     } // namespace detail

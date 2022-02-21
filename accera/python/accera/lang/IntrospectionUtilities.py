@@ -65,7 +65,8 @@ class TrackAssignmentsVisitor(ast.NodeVisitor):
     i = i + 1       # i is now a derived variable, and so is anything else that referenced it
     '''
     def __init__(self, base_vars):
-        self.basic_assignments = {key: key for key in base_vars}
+        self.basic_assignments = {key: key
+                                  for key in base_vars}
         self.derived_vars = set()
 
     def visit_Assign(self, node):

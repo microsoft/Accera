@@ -7,7 +7,6 @@
 #include <value/include/Debugging.h>
 
 namespace py = pybind11;
-namespace value = accera::value;
 namespace util = accera::utilities;
 
 using namespace pybind11::literals;
@@ -17,14 +16,14 @@ namespace accera::python::lang
 void DefineOperations(py::module& module)
 {
     module.def(
-            "Allocate",
-            [](value::ValueType type, util::MemoryLayout layout, size_t alignment, value::AllocateFlags flags) {
-                return value::Allocate(type, layout, alignment, flags);
-            },
-            "type"_a,
-            "layout"_a,
-            "alignment"_a = 0,
-            "flags"_a = value::AllocateFlags::None)
+              "Allocate",
+              [](value::ValueType type, util::MemoryLayout layout, size_t alignment, value::AllocateFlags flags) {
+                  return value::Allocate(type, layout, alignment, flags);
+              },
+              "type"_a,
+              "layout"_a,
+              "alignment"_a = 0,
+              "flags"_a = value::AllocateFlags::None)
         .def(
             "StaticAllocate",
             [](std::string name, value::ValueType type, util::MemoryLayout layout, value::AllocateFlags flags) {
@@ -65,8 +64,8 @@ void DefineOperations(py::module& module)
         .def(
             "Reduce",
             [](value::Array a,
-                value::ViewAdapter init,
-                std::function<value::ViewAdapter(value::Scalar, value::ViewAdapter)> reduceFn) {
+               value::ViewAdapter init,
+               std::function<value::ViewAdapter(value::Scalar, value::ViewAdapter)> reduceFn) {
                 return value::Reduce(a, init, std::move(reduceFn));
             },
             "data"_a,
@@ -75,9 +74,9 @@ void DefineOperations(py::module& module)
         .def(
             "MapReduce",
             [](value::Array a,
-                value::ViewAdapter init,
-                std::function<value::ViewAdapter(value::Scalar)> mapFn,
-                std::function<value::ViewAdapter(value::Scalar, value::ViewAdapter)> reduceFn) {
+               value::ViewAdapter init,
+               std::function<value::ViewAdapter(value::Scalar)> mapFn,
+               std::function<value::ViewAdapter(value::Scalar, value::ViewAdapter)> reduceFn) {
                 return value::MapReduce(a, init, std::move(mapFn), std::move(reduceFn));
             },
             "data"_a,
@@ -87,5 +86,40 @@ void DefineOperations(py::module& module)
         .def("CheckAllClose", &value::CheckAllClose)
         .def("Return", py::overload_cast<value::ViewAdapter>(&value::Return), "view"_a = value::ViewAdapter{})
         .def("GetTime", &value::GetTime);
+
+    auto getFromGPUIndex = [](value::GPUIndex idx, std::string pos) -> value::Scalar {
+        if (pos == "x")
+        {
+            return idx.X();
+        }
+        else if (pos == "y")
+        {
+            return idx.Y();
+        }
+        else
+        {
+            return idx.Z();
+        }
+    };
+
+    auto gpu_mod = module.def_submodule("_gpu");
+    gpu_mod.def("BlockDim",
+                [=](std::string pos) {
+                    return getFromGPUIndex(value::GPU::BlockDim(), pos);
+                })
+        .def("BlockId",
+             [=](std::string pos) {
+                 return getFromGPUIndex(value::GPU::BlockId(), pos);
+             })
+        .def("GridDim",
+             [=](std::string pos) {
+                 return getFromGPUIndex(value::GPU::GridDim(), pos);
+             })
+        .def("ThreadId",
+             [=](std::string pos) {
+                 return getFromGPUIndex(value::GPU::ThreadId(), pos);
+             })
+        .def("Barrier", &value::GPU::Barrier)
+        .def("MFMA", &value::MFMA);
 }
-} // accera::python::lang
+} // namespace accera::python::lang

@@ -39,7 +39,7 @@ jj = schedule.split(j, block_y)
 schedule.reorder(i, j, ii, jj, k)
 
 # Create the GPU plan
-target = acc.Target(category=acc.Target.Category.GPU)
+target = acc.Target(category=acc.Target.Category.GPU, runtime=acc.Target.Runtime.VULKAN)
 plan = schedule.create_plan(target)
 
 # Bind dimensions to a grid of execution units

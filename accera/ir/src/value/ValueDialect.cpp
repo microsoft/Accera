@@ -5,13 +5,15 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "value/ValueDialect.h"
-#include "value/ValueDialect.cpp.inc"
-#include "value/ValueFuncOp.h"
 
 #include "value/ValueAttributes.h"
+#include "value/ValueDialect.cpp.inc"
+#include "value/ValueEnums.h"
+#include "value/ValueFuncOp.h"
 
 #include "IRUtil.h"
 
+#include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/IR/AffineMap.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/FunctionImplementation.h>
@@ -19,6 +21,7 @@
 
 #include <llvm/ADT/BitVector.h>
 #include <llvm/ADT/StringSwitch.h>
+#include <llvm/ADT/TypeSwitch.h>
 
 #include "value/ValueAttrs.cpp.inc"
 #include "value/ValueOpsEnums.cpp.inc"
@@ -32,6 +35,64 @@ void ValueDialect::initialize()
 #define GET_OP_LIST
 #include "value/ValueOps.cpp.inc"
         >();
+    addTypes<MFMAMatrixType>();
+}
+
+mlir::Type ValueDialect::parseType(mlir::DialectAsmParser& parser) const
+{
+    StringRef keyword;
+    if (parser.parseKeyword(&keyword))
+        return Type();
+    if (keyword != "mfma_matrix")
+    {
+
+        parser.emitError(parser.getNameLoc(), "unknown value type: " + keyword);
+        return Type();
+    }
+    llvm::SMLoc beginLoc = parser.getNameLoc();
+
+    if (parser.parseLess())
+        return nullptr;
+
+    // Parse the size and elementType.
+    llvm::SmallVector<int64_t> shape;
+    Type elementType;
+    if (parser.parseDimensionList(shape, /*allowDynamic=*/false) ||
+        parser.parseType(elementType))
+        return nullptr;
+
+    // Parse ','
+    if (parser.parseComma())
+        return nullptr;
+
+    // Parse operand.
+    StringRef operand;
+    if (failed(parser.parseOptionalString(&operand)))
+        return nullptr;
+
+    // Parse '>'.
+    if (parser.parseGreater())
+        return nullptr;
+
+    return MFMAMatrixType::getChecked(mlir::detail::getDefaultDiagnosticEmitFn(
+                                          parser.getEncodedSourceLoc(beginLoc)),
+                                      shape,
+                                      elementType,
+                                      operand);
+}
+
+void ValueDialect::printType(Type type, mlir::DialectAsmPrinter& os) const
+{
+    mlir::TypeSwitch<Type>(type)
+        .Case<MFMAMatrixType>([&](MFMAMatrixType fragTy) {
+            os << "mfma_matrix<";
+            auto shape = fragTy.getShape();
+            for (auto dim = shape.begin(), e = shape.end() - 1; dim != e; ++dim)
+                os << *dim << 'x';
+            os << shape.back() << 'x' << fragTy.getElementType();
+            os << ", \"" << fragTy.getOperand() << "\"" << '>';
+        })
+        .Default([](Type) { llvm_unreachable("unexpected 'value' type kind"); });
 }
 
 } // namespace accera::ir::value
@@ -86,7 +147,7 @@ void ValueFuncOp::build(OpBuilder& builder, OperationState& result, StringRef na
 {
     result.addAttribute(mlir::SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
     result.addAttribute(getTypeAttrName(), TypeAttr::get(type));
-    result.addAttribute(getExecTargetAttrName(), builder.getI64IntegerAttr((int64_t)target));
+    result.addAttribute(getExecTargetAttrName(), ExecutionTargetAttr::get(builder.getContext(), target));
     Region* body = result.addRegion();
 
     Block* entryBlock = new Block;
@@ -213,7 +274,7 @@ void ValueLambdaOp::build(OpBuilder& builder, OperationState& result, StringRef 
 {
     result.addAttribute(mlir::SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
     result.addAttribute(getTypeAttrName(), TypeAttr::get(type));
-    result.addAttribute(getExecTargetAttrName(), builder.getI64IntegerAttr((int64_t)target));
+    result.addAttribute(getExecTargetAttrName(), ExecutionTargetAttr::get(builder.getContext(), target));
 
     Region* body = result.addRegion();
     Block* entryBlock = new Block;
@@ -394,6 +455,160 @@ void MapReduceOp::build(OpBuilder& builder, OperationState& result, Value input,
         if (reduceBodyBuilder)
             reduceBodyBuilder(builder, result.location, reduceBodyBlock.getArgument(0), reduceBodyBlock.getArgument(1));
     }
+}
+
+// //===----------------------------------------------------------------------===//
+// // MFMAMatrixType
+// //===----------------------------------------------------------------------===//
+
+MFMAMatrixType MFMAMatrixType::get(ArrayRef<int64_t> shape, Type elementType, StringRef operand)
+{
+    return Base::get(elementType.getContext(), shape, elementType, operand);
+}
+
+MFMAMatrixType
+MFMAMatrixType::getChecked(llvm::function_ref<InFlightDiagnostic()> emitError,
+                           ArrayRef<int64_t> shape,
+                           Type elementType,
+                           StringRef operand)
+{
+    return Base::getChecked(emitError, elementType.getContext(), shape, elementType, operand);
+}
+
+unsigned MFMAMatrixType::getNumDims() const
+{
+    return getImpl()->numDims;
+}
+
+ArrayRef<int64_t> MFMAMatrixType::getShape() const
+{
+    return getImpl()->getShape();
+}
+
+Type MFMAMatrixType::getElementType() const
+{
+    return getImpl()->elementType;
+}
+
+StringRef MFMAMatrixType::getOperand() const
+{
+    return getImpl()->getOperand();
+}
+
+bool MFMAMatrixType::isValidElementType(Type elementType)
+{
+    return elementType.isF16() || elementType.isF32();
+}
+
+LogicalResult
+MFMAMatrixType::verify(llvm::function_ref<InFlightDiagnostic()> emitError,
+                       ArrayRef<int64_t> shape,
+                       Type elementType,
+                       StringRef operand)
+{
+    if (!operand.equals("AOp") && !operand.equals("BOp") &&
+        !operand.equals("COp"))
+        return emitError() << "operand expected to be one of AOp, BOp or COp";
+
+    if (shape.size() != 2)
+        return emitError() << "MFMAMatrixType must have exactly two dimensions";
+
+    if (!MFMAMatrixType::isValidElementType(elementType))
+        return emitError() << "MFMAMatrixType elements must be F16 or F32";
+
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
+// MFMA Ops
+//===----------------------------------------------------------------------===//
+
+static const auto kGenericMemorySpace = 0;
+static const auto kGlobalMemorySpace = 1;
+static const auto kSharedMemorySpace = mlir::gpu::GPUDialect::getWorkgroupAddressSpace();
+
+static LogicalResult verify(MFMAComputeOp op)
+{
+    enum OperandMap
+    {
+        A,
+        B,
+        C
+    };
+    SmallVector<MFMAMatrixType, 3> opTypes;
+
+    auto populateOpInfo = [&opTypes, &op]() {
+        opTypes.push_back(op.opA().getType().cast<MFMAMatrixType>());
+        opTypes.push_back(op.opB().getType().cast<MFMAMatrixType>());
+        opTypes.push_back(op.opC().getType().cast<MFMAMatrixType>());
+    };
+    populateOpInfo();
+
+    if (!opTypes[A].getOperand().equals("AOp") ||
+        !opTypes[B].getOperand().equals("BOp") ||
+        !opTypes[C].getOperand().equals("COp"))
+        return op.emitError("operands must be in the order AOp, BOp, COp");
+
+    ArrayRef<int64_t> aShape, bShape, cShape;
+    aShape = opTypes[A].getShape();
+    bShape = opTypes[B].getShape();
+    cShape = opTypes[C].getShape();
+
+    if (aShape[1] != bShape[0] || aShape[0] != cShape[0] ||
+        bShape[1] != cShape[1])
+        return op.emitError("operand shapes do not satisfy matmul constraints");
+
+    return success();
+}
+
+static LogicalResult verify(MFMALoadMatrixOp op)
+{
+    auto srcType = op.srcMemref().getType();
+    auto resType = op.res().getType();
+    auto resMatrixType = resType.cast<MFMAMatrixType>();
+    auto operand = resMatrixType.getOperand();
+    auto srcMemrefType = srcType.cast<MemRefType>();
+    auto srcMemSpace = srcMemrefType.getMemorySpaceAsInt();
+
+    if (!srcMemrefType.getAffineMaps().empty() &&
+        !srcMemrefType.getAffineMaps().front().isIdentity())
+        return op.emitError("expected identity layout map for source memref");
+
+    if (srcMemSpace != kGenericMemorySpace && srcMemSpace != kSharedMemorySpace &&
+        srcMemSpace != kGlobalMemorySpace)
+        return op.emitError(
+            "source memorySpace kGenericMemorySpace, kSharedMemorySpace or "
+            "kGlobalMemorySpace only allowed");
+
+    if (!operand.equals("AOp") && !operand.equals("BOp") &&
+        !operand.equals("COp"))
+        return op.emitError("only AOp, BOp and COp can be loaded");
+
+    return success();
+}
+
+static LogicalResult verify(MFMAStoreMatrixOp op)
+{
+    auto srcType = op.src().getType();
+    auto dstType = op.dstMemref().getType();
+    auto srcMatrixType = srcType.cast<MFMAMatrixType>();
+    auto dstMemrefType = dstType.cast<MemRefType>();
+    auto dstMemSpace = dstMemrefType.getMemorySpaceAsInt();
+    if (!dstMemrefType.getAffineMaps().empty() &&
+        !dstMemrefType.getAffineMaps().front().isIdentity())
+        return op.emitError("expected identity layout map for destination memref");
+
+    if (dstMemSpace != kGenericMemorySpace && dstMemSpace != kSharedMemorySpace &&
+        dstMemSpace != kGlobalMemorySpace)
+        return op.emitError(
+            "destination memorySpace of kGenericMemorySpace, "
+            "kGlobalMemorySpace or kSharedMemorySpace only allowed");
+
+    if (!srcMatrixType.getOperand().equals("COp"))
+        return op.emitError(
+            "expected the operand matrix being stored to have 'COp' operand type");
+
+    return success();
 }
 
 // TableGen'd op method definitions

@@ -18,6 +18,16 @@ namespace accera
 {
 namespace value
 {
+    static ExecutionRuntime GetExecutionRuntime(std::string runtimeName)
+    {
+        return ::llvm::StringSwitch<ExecutionRuntime>(runtimeName)
+            .Case("Default", ExecutionRuntime::Default)
+            .Case("Vulkan", ExecutionRuntime::Vulkan)
+            .Case("Rocm", ExecutionRuntime::Rocm)
+            .Case("CUDA", ExecutionRuntime::CUDA)
+            .Default(ExecutionRuntime::Default);
+    }
+
     /// <summary> Constructor from a property bag </summary>
     CompilerOptions::CompilerOptions(const utilities::PropertyBag& properties)
     {
@@ -48,11 +58,16 @@ namespace value
         includeDiagnosticInfo = properties.GetOrParseEntry<bool>("includeDiagnosticInfo", includeDiagnosticInfo);
         useFastMath = properties.GetOrParseEntry<bool>("useFastMath", useFastMath);
         debug = properties.GetOrParseEntry<bool>("debug", debug);
+        gpu_only = properties.GetOrParseEntry<bool>("gpu_only", gpu_only);
         globalValueAlignment = properties.GetOrParseEntry<int>("globalValueAlignment", globalValueAlignment);
 
         if (properties.HasEntry("deviceName"))
         {
             targetDevice = GetTargetDevice(properties.GetEntry<std::string>("deviceName"));
+        }
+        if (properties.HasEntry("runtime"))
+        {
+            executionRuntime = GetExecutionRuntime(properties.GetEntry<std::string>("runtime"));
         }
     }
 

@@ -157,7 +157,7 @@ namespace value
 
     private:
         friend class Schedule;
-        Plan(Schedule& sched);
+        Plan(Schedule& sched, ExecutionRuntime execRuntime = ExecutionRuntime::Default);
 
         std::unique_ptr<PlanImpl> _impl;
     };
@@ -169,14 +169,18 @@ namespace value
         GPUPlan(GPUPlan&&) noexcept;
         GPUPlan& operator=(const GPUPlan&) = delete;
         GPUPlan& operator=(GPUPlan&&) noexcept;
-        ~GPUPlan();
+        ~GPUPlan(); 
 
         /// <summary> Adds a cache for a view target </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="outermostIncludedSplitIndex"> The outermost index in one of the cached dimensions to include in the cache </param>
+        /// <param name="triggerIndex"> The index to fill the cache at, must be the same as outermostIncludedSplitIndex or precede it in the schedule order </param>
+        /// <param name="dimOrder"> The dimension order permutation to use to map from active block position to cache position in the cache buffer </param>
+        /// <param name="mapping"> The cache mapping </param>
+        /// <param name="allocation"> The cache allocation </param>
         /// <param name="memorySpace"> The memory space</param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(ViewAdapter target, const ScalarIndex& outermostIncludedSplitIndex, MemorySpace memorySpace = MemorySpace::Shared);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace);
 
         /// <summary> Adds a cache for a view target </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
@@ -190,9 +194,14 @@ namespace value
         /// <param name="proc"> The GPU processor, indicating a block or thread </param>
         void MapIndexToProcessor(ScalarIndex index, Processor proc);
 
+        /// <summary> Tensorize two iteration space dimensions </summary>
+        /// <param name="indices"> The scalar indices to tensorize. Two indicies must be specified whose dimensions must be contiguous in the iteration space dimension order. </param>
+        /// <param name="numThreads"> The dimension of the tensor operation. </param>
+        void Tensorize(std::vector<ScalarIndex> indices, std::vector<int> dims);
+
     private:
         friend class Schedule;
-        GPUPlan(targets::GPU gpuOptions, Schedule& sched);
+        GPUPlan(targets::GPU gpuOptions, Schedule& sched, ExecutionRuntime execRuntime = ExecutionRuntime::Default);
 
         std::unique_ptr<PlanImpl> _impl;
     };

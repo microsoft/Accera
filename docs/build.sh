@@ -6,8 +6,6 @@
 set -e
 
 # Run this from the repo root
-ACCERA_ROOT=`pwd`
 pip install mkdocs-material mkdocs-git-revision-date-plugin
 cp README.md docs/README.md
-python docs/set_version.py $ACCERA_ROOT $ACCERA_ROOT/docs
 mkdocs serve

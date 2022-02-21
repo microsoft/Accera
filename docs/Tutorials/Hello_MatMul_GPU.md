@@ -96,7 +96,7 @@ schedule.reorder(i, j, ii, jj, k)
 
 Create a plan from the schedule. The plan allows us to control specific execution behavior on the hardware target, such grid launch dimensions and thread blocks sizes, which are essential for high performance:
 ```python
-target = acc.Target(category=acc.Target.Category.GPU)
+target = acc.Target(category=acc.Target.Category.GPU, runtime=acc.Target.Runtime.VULKAN)
 plan = schedule.create_plan(target)
 ```
 

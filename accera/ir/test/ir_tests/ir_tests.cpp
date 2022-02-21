@@ -263,7 +263,7 @@ TEST_CASE_METHOD(Fixture, "vector_add", "[gpu][lang]")
 
     auto gpu_f1 =
         DeclareFunction("gpu_f1")
-            .Target(targets::GPU{ 128, 1, 1, 128, 1, 1 })
+            .Target(targets::GPU( {128, 1, 1}, {128, 1, 1}))
             .Parameters(Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } })
@@ -304,6 +304,39 @@ TEST_CASE_METHOD(Fixture, "vector_add", "[gpu][lang]")
                          << debugString(module));
 }
 
+
+TEST_CASE_METHOD(Fixture, "vector_add_rocm", "[gpu][lang]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value, accera::value::Matrix;
+
+    auto gpu_f1 =
+        DeclareFunction("gpu_f1")
+            .Target(targets::GPU( {128, 1, 1}, {128, 1, 1}))
+            .Runtime(ExecutionRuntime::Rocm)
+            .Parameters(Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
+                        Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
+                        Value{ ValueType::Float, MemoryLayout{ { 16384 } } })
+            .Define([](Vector A, Vector B, Vector C) {
+                Scalar blockIdX = GPU::BlockId().X();
+                Scalar threadIdX = GPU::ThreadId().X();
+                Scalar N = GPU::BlockDim().X();
+                auto offset = blockIdX * N + threadIdX;
+                auto loadA = A[offset];
+                auto loadB = B[offset];
+                auto summed = loadA + loadB;
+                C[offset] = summed;
+            });
+    accera::transforms::AcceraPassPipelineOptions opts{};
+    opts.runtime = accera::value::ExecutionRuntime::Rocm;
+    RunConversionPasses(target, "vector_sum_rocm_" + stringify(target), opts);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
 TEST_CASE_METHOD(Fixture, "reduction_for_1", "[cpu][lang]")
 {
     auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
@@ -337,7 +370,7 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test", "[cpu][gpu][nest]")
     using namespace accera::utilities;
     using accera::value::Value, accera::value::Matrix;
 
-    auto executionTarget = GENERATE(ExecutionOptions{ targets::CPU{} }, ExecutionOptions{ targets::GPU{} });
+    auto executionTarget = GENERATE(ExecutionTarget{ targets::CPU{} }, ExecutionTarget{ targets::GPU() });
     std::string testName = "mlir_nest_test_" + std::string{ std::visit(VariantVisitor{ [](targets::GPU) { return "gpu"; }, [](targets::CPU) { return "cpu"; } }, executionTarget) };
     auto matmul =
         DeclareFunction("NestMatMul")
@@ -415,7 +448,7 @@ TEST_CASE_METHOD(Fixture, "barrier_test", "[gpu][lang]")
     auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
 
     auto f = DeclareFunction("barrier_test")
-                 .Target(targets::GPU{})
+                 .Target(targets::GPU())
                  .Define([=] {
                      SECTION("One barrier")
                      {
@@ -454,7 +487,7 @@ TEST_CASE_METHOD(Fixture, "constant_fill_early_return", "[gpu]")
     auto block = targets::Dim3{ blockDim, blockDim, 1 };
     auto grid = targets::Dim3{ N / blockDim, N / blockDim, 1 };
 
-    auto executionTarget = GENERATE_COPY(ExecutionOptions{ targets::CPU{} }, ExecutionOptions{ targets::GPU{ grid, block } });
+    auto executionTarget = GENERATE_COPY(ExecutionTarget{ targets::CPU{} }, ExecutionTarget{ targets::GPU{ grid, block } });
     std::string testName = "constant_fill_early_return_";
     testName += std::visit(VariantVisitor{ [](targets::GPU) { return "gpu"; }, [](targets::CPU) { return "cpu"; } }, executionTarget);
     auto constant_fill_index =
@@ -524,7 +557,7 @@ TEST_CASE_METHOD(Fixture, "constant_fill_index_gpu", "[gpu]")
     using accera::utilities::MemorySpace;
     using accera::value::Value, accera::value::Matrix;
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     const int blockDim = 8;
     gpuConfig.block = targets::Dim3{ blockDim, blockDim, 1 };
     gpuConfig.grid = targets::Dim3{ N / blockDim, N / blockDim, 1 };
@@ -591,7 +624,7 @@ TEST_CASE_METHOD(Fixture, "constant_fill_index_pattern_gpu", "[gpu]")
     using accera::utilities::MemorySpace;
     using accera::value::Value, accera::value::Matrix;
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     gpuConfig.block = targets::Dim3{ blockDim, blockDim, 1 };
     gpuConfig.grid = targets::Dim3{ N / blockDim, N / blockDim, 1 };
     auto constant_fill_index =
@@ -670,7 +703,7 @@ TEST_CASE_METHOD(Fixture, "horizontal_fill_index_gpu", "[gpu]")
     using accera::utilities::MemorySpace;
     using accera::value::Value, accera::value::Matrix;
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     gpuConfig.block = targets::Dim3{ blockDim, blockDim, 1 };
     gpuConfig.grid = targets::Dim3{ N / blockDim, N / blockDim, 1 };
     auto horizontal_fill_index =
@@ -727,7 +760,7 @@ TEST_CASE_METHOD(Fixture, "vertical_fill_index_gpu", "[gpu]")
     using accera::utilities::MemorySpace;
     using accera::value::Value, accera::value::Matrix;
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     gpuConfig.block = targets::Dim3{ blockDim, blockDim, 1 };
     gpuConfig.grid = targets::Dim3{ N / blockDim, N / blockDim, 1 };
     auto vertical_fill_index =
@@ -779,7 +812,7 @@ TEST_CASE_METHOD(Fixture, "matmul_value_gpu", "[gpu]")
     using accera::utilities::MemorySpace;
     using accera::value::Value, accera::value::Matrix;
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     gpuConfig.grid = targets::Dim3{ 1, 1, 1 };
     gpuConfig.block = targets::Dim3{ 1, 1, 1 };
     auto matmul =
@@ -858,7 +891,7 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test_gpu", "[gpu][nest]")
     using accera::utilities::MemorySpace;
     using accera::value::Value, accera::value::Matrix;
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     gpuConfig.grid = targets::Dim3{ gridDimX, gridDimY, 1 };
     gpuConfig.block = targets::Dim3{ blockDimX, blockDimY, 1 };
 
@@ -943,7 +976,7 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled", "[gpu][nest][main]")
     using accera::utilities::MemorySpace;
     using accera::value::Value, accera::value::Matrix;
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     gpuConfig.grid = targets::Dim3{ gridDimX, gridDimY, 1 };
     gpuConfig.block = targets::Dim3{ blockDim, blockDim, 1 };
 
@@ -1037,7 +1070,7 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_2", "[gpu][nest][main]")
     using accera::utilities::MemorySpace;
     using accera::value::Value, accera::value::Matrix;
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     gpuConfig.grid = targets::Dim3{ gridDimX, gridDimY, 1 };
     gpuConfig.block = targets::Dim3{ blockDim, blockDim, 1 };
 
@@ -1129,7 +1162,7 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_non_multiple", "[gpu][nest]
 
     auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     gpuConfig.grid = targets::Dim3{ gridDimX, gridDimY, 1 };
     gpuConfig.block = targets::Dim3{ blockDim, blockDim, 1 };
 
@@ -1244,7 +1277,7 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_double_buffer", "[gpu][nest
     using accera::utilities::MemorySpace;
     using accera::value::Value, accera::value::Matrix;
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     gpuConfig.grid = targets::Dim3{ gridDimX, gridDimY, 1 };
     gpuConfig.block = targets::Dim3{ blockDim, blockDim, 1 };
 
@@ -1434,7 +1467,7 @@ TEST_CASE_METHOD(Fixture, "matmul_value_gpu_local_mem", "[gpu][lang]")
     using accera::utilities::MemorySpace;
     using accera::value::Value, accera::value::Matrix;
 
-    auto gpuConfig = targets::GPU{};
+    auto gpuConfig = targets::GPU();
     gpuConfig.grid = targets::Dim3{ gridDimX, gridDimY, 1 };
     gpuConfig.block = targets::Dim3{ blockDimX, blockDimY, 1 };
 

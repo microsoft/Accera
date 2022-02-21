@@ -29,38 +29,18 @@ namespace
 // automatically.
 inline void registerArgoTranslations()
 {
-    static bool initOnce = []() {
-        TranslateFromMLIRRegistration printCudaRegistration(
-            "print-cuda",
-            [](ModuleOp module, raw_ostream& output) {
-                (void)translateModuleToCpp(module, output, /*isCuda*/ true);
-
-                return success();
-            },
-            [](DialectRegistry& registry) {
-                registerAllDialects(registry);
-                accera::ir::GetDialectRegistry().appendTo(registry);
-                registry.insert<argo::ArgoDialect>();
-            });
-
-
+    [[maybe_unused]] static bool initOnce = []() {
         TranslateFromMLIRRegistration printCppRegistration(
             "print-cpp",
-            [](ModuleOp module, raw_ostream& output) {
-                (void)translateModuleToCpp(module, output, /*isCuda*/ false);
-
-                return success();
-            },
+            translateModuleToCpp,
             [](DialectRegistry& registry) {
                 registerAllDialects(registry);
                 accera::ir::GetDialectRegistry().appendTo(registry);
                 registry.insert<argo::ArgoDialect>();
             });
-
 
         return true;
     }();
-    (void)initOnce;
 }
 } // namespace
 

@@ -15,9 +15,9 @@ import platform
 import io
 
 try:
-    from .build_config import BuildConfig  # Package mode
+    from .build_config import BuildConfig    # Package mode
 except:
-    from build_config import BuildConfig  # CLI mode
+    from build_config import BuildConfig    # CLI mode
 
 config = BuildConfig()
 
@@ -42,22 +42,25 @@ class OpenFile:
             self.file = None
 
 
-def rmdir(path, pretend=False):
-    print("rm -rf {}".format(path))
+def rmdir(path, pretend=False, quiet=True):
+    if not quiet:
+        print("rm -rf {}".format(path))
+
     if not pretend:
         shutil.rmtree(path)
 
 
-def makedir(path, pretend=False):
-    print("mkdir {}".format(path))
+def makedir(path, pretend=False, quiet=True):
+    if not quiet:
+        print("mkdir {}".format(path))
+
     if not pretend:
         os.makedirs(path, exist_ok=True)
 
 
 def preprocess_command(command_to_run, shell, cmake_command=True):
     if cmake_command:
-        command_to_run = 'cmake -E env LLVM_SYMBOLIZER_PATH="{}" {}'.format(
-            config.llvm_symbolizer, command_to_run)
+        command_to_run = f'cmake -E env LLVM_SYMBOLIZER_PATH="{config.llvm_symbolizer}" {command_to_run}'
     if platform.system() == "Windows":
         return command_to_run
     elif type(command_to_run) == str and not shell:
@@ -75,16 +78,27 @@ def dump_file_contents(iostream):
             print(f.read())
 
 
-def run_command(command_to_run, working_directory=None, cmake_command=False, stdout=None, stderr=None, shell=False, pretend=False):
+def run_command(
+    command_to_run,
+    working_directory=None,
+    cmake_command=False,
+    stdout=None,
+    stderr=None,
+    shell=False,
+    pretend=False,
+    quiet=True
+):
     if not working_directory:
         working_directory = os.getcwd()
-    print()
-    print("cd {}".format(working_directory))
-    print(command_to_run)
+
+    if not quiet:
+        print(f"\ncd {working_directory}")
+        print(f"{command_to_run}\n")
+
     command_to_run = preprocess_command(command_to_run, shell, cmake_command=cmake_command)
-    print()
     if not pretend:
-        with subprocess.Popen(command_to_run, close_fds=(platform.system() != "Windows"), shell=shell, stdout=stdout, stderr=stderr, cwd=working_directory) as proc:
+        with subprocess.Popen(command_to_run, close_fds=(platform.system() != "Windows"), shell=shell, stdout=stdout,
+                              stderr=stderr, cwd=working_directory) as proc:
             proc.wait()
             if proc.returncode:
                 dump_file_contents(stderr)
@@ -126,18 +140,22 @@ def get_built_target_path(build_dir, build_config, built_target_name):
 
 def get_cmake_initialization_cmd(build_config="Release"):
     return 'cmake .. -DCMAKE_C_COMPILER="{0}" -DCMAKE_CXX_COMPILER="{1}" -DCMAKE_BUILD_TYPE={2} -DLLVM_CUSTOM_PATH={4} -DUSE_LIBCXX={5} {3}'.format(
-        config.c_compiler, config.cxx_compiler, build_config, config.additional_cmake_init_args, config.llvm_custom_path, config.use_libcxx)
+        config.c_compiler, config.cxx_compiler, build_config, config.additional_cmake_init_args,
+        config.llvm_custom_path, config.use_libcxx
+    )
 
 
 def get_cmake_build_cmd(build_config="Release"):
     return 'cmake --build . --config {}'.format(build_config)
 
 
-def set_high_performance_gpu(target_executable, pretend=False):
+def set_high_performance_gpu(target_executable, pretend=False, quiet=True):
     if platform.system() == "Windows":
         command = "@PowerShell -Command Set-ItemProperty HKCU:\\SOFTWARE\\Microsoft\\DirectX\\UserGpuPreferences -Name (Resolve-Path {}) -Value \"GpuPreference='2;'\"".format(
-            target_executable)
-        run_command(command, cmake_command=False, shell=True, pretend=pretend)
+            target_executable
+        )
+        run_command(command, cmake_command=False, shell=True, pretend=pretend, quiet=quiet)
+
 
 def is_windows():
     return sys.platform.startswith("win")

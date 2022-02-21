@@ -14,6 +14,7 @@ from ..Parameter import DelayedParameter
 from ..Constants import inf
 from .NativeLoopNestContext import NativeLoopNestContext
 
+
 class Array:
     "A multi-dimensional array"
 
@@ -21,12 +22,10 @@ class Array:
 
     class Role(Enum):
         "Defines the Array role"
-        INPUT = (
-            auto()
-        )  #: An input array (immutable external-scope) whose contents are known at compile-time
-        INPUT_OUTPUT = auto()  #: An input/output array (mutable external-scope)
-        CONST = auto()  #: A constant array (immutable internal-scope)
-        TEMP = auto()  #: A temporary array (mutable internal-scope)
+        INPUT = (auto())    #: An input array (immutable external-scope) whose contents are known at compile-time
+        INPUT_OUTPUT = auto()    #: An input/output array (mutable external-scope)
+        CONST = auto()    #: A constant array (immutable internal-scope)
+        TEMP = auto()    #: A temporary array (mutable internal-scope)
 
     def __init__(
         self,
@@ -68,7 +67,7 @@ class Array:
         self._data = data
         self._element_type = element_type
         self._layout = layout
-        self._requested_layout = layout # TODO : is there a better name for this? This is the layout as specified via the DSL, not the MemoryLayout object that gets produced in the C++ code
+        self._requested_layout = layout    # TODO : is there a better name for this? This is the layout as specified via the DSL, not the MemoryLayout object that gets produced in the C++ code
         self._offset = offset
         self._shape = shape
         self._native_array = None
@@ -77,7 +76,7 @@ class Array:
         if self._role == Array.Role.CONST:
             if self._data is None:
                 raise ValueError("data is required for Array.Role.CONST")
-            shape = self._data.shape  # infer shape from data
+            shape = self._data.shape    # infer shape from data
             self._shape = shape
 
             type_map = {
@@ -87,32 +86,25 @@ class Array:
                 ScalarType.int64: "int64",
                 ScalarType.float32: "float32",
                 ScalarType.float64: "float64",
-                # TODO: more types
+            # TODO: more types
             }
-            dtype_map = {y: x for x, y in type_map.items()}
-            if self._element_type:  # override the data.dtype
+            dtype_map = {y: x
+                         for x, y in type_map.items()}
+            if self._element_type:    # override the data.dtype
                 dtype = type_map.get(self._element_type, None)
                 if dtype:
                     if str(self._data.dtype) != dtype:
-                        logging.debug(
-                            f"[API] Converted from {self._data.dtype} to {dtype}"
-                        )
+                        logging.debug(f"[API] Converted from {self._data.dtype} to {dtype}")
                         self._data = self._data.astype(dtype)
                     # else no conversion needed
                 else:
-                    raise NotImplementedError(
-                        f"Unsupported element type {self._element_type} for Array.Role.CONST"
-                    )
-            else:  # infer element_type from data
+                    raise NotImplementedError(f"Unsupported element type {self._element_type} for Array.Role.CONST")
+            else:    # infer element_type from data
                 self._element_type = dtype_map.get(str(self._data.dtype), None)
                 if self._element_type:
-                    logging.debug(
-                        f"[API] Inferred {self._data.dtype} as {self._element_type}"
-                    )
+                    logging.debug(f"[API] Inferred {self._data.dtype} as {self._element_type}")
                 else:
-                    raise NotImplementedError(
-                        f"Unsupported dtype {self._data.dtype} for Array.Role.CONST"
-                    )
+                    raise NotImplementedError(f"Unsupported dtype {self._data.dtype} for Array.Role.CONST")
 
         if not self._element_type:
             self._element_type = ScalarType.float32
@@ -131,7 +123,7 @@ class Array:
             elif shape[-1] == inf:
                 if (len(shape) > 1 and any([s == inf for s in shape[:-1]])):
                     raise ValueError("Only the last dimension can be inf")
-                return  # shape will be resolved in Package.add based on access index
+                return    # shape will be resolved in Package.add based on access index
 
         self._create_native_array()
 
@@ -208,9 +200,7 @@ class Array:
             if self._layout != Array.Layout.DEFERRED:
                 if self._element_type == ScalarType.float32:
                     # pass directly as a python buffer because float32's are not native to python
-                    self._native_array = NativeArray(
-                        buffer=self._data, memory_layout=memory_layout
-                    )
+                    self._native_array = NativeArray(buffer=self._data, memory_layout=memory_layout)
                 else:
                     data = list(self._data.flatten())
                     self._native_array = NativeArray(data=data, memory_layout=memory_layout)
@@ -244,11 +234,11 @@ class Array:
         from .._lang_python._lang import Allocate
 
         if not self._value.is_empty:
-            return # already contains data
+            return    # already contains data
 
         # Note: we are blowing away the original Value and replacing with a new allocated Value
         self._native_array = NativeArray(Allocate(type=self._element_type, layout=self._layout))
-        assert(not self._value.is_empty)
+        assert (not self._value.is_empty)
 
 
 class SubArray(Array):

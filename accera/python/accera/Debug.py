@@ -14,8 +14,9 @@ def get_args_to_debug(func: Function) -> List[Array]:
     """Gets the arguments of interest to debugging
     For example, INPUT_OUTPUT Arrays
     """
-    args_to_check = [arg for arg in func.requested_args
-                     if isinstance(arg, Array) and arg.role == Array.Role.INPUT_OUTPUT]
+    args_to_check = [
+        arg for arg in func.requested_args if isinstance(arg, Array) and arg.role == Array.Role.INPUT_OUTPUT
+    ]
     return args_to_check
 
 
@@ -36,12 +37,10 @@ def add_check_allclose(package: Package, array: Array, atol: float = 1e-5, targe
     shape_str = '_'.join(map(str, shape))
 
     # placeholders
-    actual = Array(role=Array.Role.INPUT,
-                   element_type=element_type, shape=shape, layout=layout)
-    desired = Array(role=Array.Role.INPUT,
-                    element_type=element_type, shape=shape, layout=layout)
+    actual = Array(role=Array.Role.INPUT, element_type=element_type, shape=shape, layout=layout)
+    desired = Array(role=Array.Role.INPUT, element_type=element_type, shape=shape, layout=layout)
 
-    nest = Nest((1,))  # so that we can unwrap the native arrays
+    nest = Nest((1, ))    # so that we can unwrap the native arrays
 
     @nest.iteration_logic
     def _():
@@ -49,12 +48,12 @@ def add_check_allclose(package: Package, array: Array, atol: float = 1e-5, targe
 
     plan = nest.create_plan(target)
 
-    return package.add(plan, args=(actual, desired),
-                       base_name=f"_debug_check_allclose_{shape_str}")
+    return package.add(plan, args=(actual, desired), base_name=f"_debug_check_allclose_{shape_str}")
 
 
 def add_debugging_functions(
-        package: Package, functions_to_args: Dict[str, Tuple[List, Function]], atol: float = 1e-5) -> Dict:
+    package: Package, functions_to_args: Dict[str, Tuple[List, Function]], atol: float = 1e-5
+) -> Dict:
     """Adds debugging functions to check whether INPUT_OUTPUT arrays are
     equal up to the specified tolerance.
 
@@ -67,7 +66,7 @@ def add_debugging_functions(
         A dictionary that maps function name to debugging function names
         for arguments to be debugged
     """
-    available_fns = dict()  # reuse functions if the argument signatures match
+    available_fns = dict()    # reuse functions if the argument signatures match
     result = dict()
 
     def get_signature(arg: Array):
@@ -79,8 +78,7 @@ def add_debugging_functions(
         for arg in args:
             sig = get_signature(arg)
             if sig not in available_fns:
-                available_fns[sig] = add_check_allclose(
-                    package, arg, atol, function.target)
+                available_fns[sig] = add_check_allclose(package, arg, atol, function.target)
             result[name].append(available_fns[sig].name)
 
     return result

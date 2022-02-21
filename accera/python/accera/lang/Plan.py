@@ -18,9 +18,11 @@ from .NativeLoopNestContext import NativeLoopNestContext
 from ..Targets import Target
 from ..Platforms import LibraryDependency
 
-from .._lang_python._lang import CacheIndexing
+from .._lang_python._lang import CacheIndexing, _MemorySpace
+
 
 class Plan:
+
     def __init__(self, schedule: Schedule, target: Target = Target.HOST):
         self._sched = schedule
         self._target = target
@@ -73,15 +75,17 @@ class Plan:
 
         self._add_index_attr(index, "vectorized")
 
-        self._commands.append(
-            partial(self._vectorize, index, self._target.vectorization_info)
-        )
+        self._commands.append(partial(self._vectorize, index, self._target.vectorization_info))
 
     def _vectorize(self, index, vectorization_info, context: NativeLoopNestContext):
         context.plan.vectorize(context.mapping[id(index)], vectorization_info)
 
-    def parallelize(self, indices: Union[LoopIndex, Tuple[LoopIndex], DelayedParameter],
-        pin: Union[Tuple[Any], DelayedParameter]=None, policy: Union[str, DelayedParameter]="static"):
+    def parallelize(
+        self,
+        indices: Union[LoopIndex, Tuple[LoopIndex], DelayedParameter],
+        pin: Union[Tuple[Any], DelayedParameter] = None,
+        policy: Union[str, DelayedParameter] = "static"
+    ):
         """Performs one or more loops in parallel on multiple cores or processors.
         Only available for targets with multiple cores or processors.
 
@@ -100,7 +104,11 @@ class Plan:
             self._dynamic_dependencies.add(LibraryDependency.OPENMP)
 
         if any([isinstance(arg, DelayedParameter) for arg in [indices, pin, policy]]):
-            self._delayed_calls[partial(self.parallelize)] = {"indices" : indices, "pin" : pin, "policy" : policy}
+            self._delayed_calls[partial(self.parallelize)] = {
+                "indices": indices,
+                "pin": pin,
+                "policy": policy
+            }
             return None
 
         indices = [indices] if isinstance(indices, LoopIndex) else list(indices)
@@ -125,20 +133,23 @@ class Plan:
 
         idxs = [context.mapping[id(index)] for index in indices]
 
-        context.plan.parallelize(idxs, num_threads,
-            _ParallelizationPolicy.DYNAMIC if policy == "dynamic" else _ParallelizationPolicy.STATIC)
+        context.plan.parallelize(
+            idxs, num_threads, _ParallelizationPolicy.DYNAMIC if policy == "dynamic" else _ParallelizationPolicy.STATIC
+        )
 
-    def cache(self,
-              source: Union[Array, Cache],
-              index: Union[LoopIndex, DelayedParameter] = None,
-              trigger_index: Union[LoopIndex, DelayedParameter] = None,
-              layout: Array.Layout = None,
-              max_elements: int = None,
-              thrifty: bool = None,
-              location: Any = None,
-              level: Union[int, DelayedParameter] = None,
-              trigger_level: Union[int, DelayedParameter] = None,
-              _delayed_cache: DelayedCache = None):
+    def cache(
+        self,
+        source: Union[Array, Cache],
+        index: Union[LoopIndex, DelayedParameter] = None,
+        trigger_index: Union[LoopIndex, DelayedParameter] = None,
+        layout: Array.Layout = None,
+        max_elements: int = None,
+        thrifty: bool = None,
+        location: _MemorySpace = _MemorySpace.NONE,
+        level: Union[int, DelayedParameter] = None,
+        trigger_level: Union[int, DelayedParameter] = None,
+        _delayed_cache: DelayedCache = None
+    ):
         """Adds a cache for a view target
 
         Args:
@@ -160,31 +171,27 @@ class Plan:
             # Create an incomplete Cache object so hierarchical caches that depend on this cache handle can
             # have an object to hold onto
             delayed_cache = DelayedCache(plan=self, target=source)
-            self._delayed_calls[
-                partial(
-                    self.cache,
-                    source=source,
-                    layout=layout,
-                    max_elements=max_elements,
-                    thrifty=thrifty,
-                    location=location,
-                    _delayed_cache = delayed_cache
-                )
-            ] = {
-                    "index" : index,
-                    "trigger_index" : trigger_index,
-                    "level" : level,
-                    "trigger_level" : trigger_level
-                }
+            self._delayed_calls[partial(
+                self.cache,
+                source=source,
+                layout=layout,
+                max_elements=max_elements,
+                thrifty=thrifty,
+                location=location,
+                _delayed_cache=delayed_cache
+            )] = {
+                "index": index,
+                "trigger_index": trigger_index,
+                "level": level,
+                "trigger_level": trigger_level
+            }
             return delayed_cache
 
         if thrifty:
-            raise NotImplementedError("Thrifty caching is not yet implemented")  # TODO
+            raise NotImplementedError("Thrifty caching is not yet implemented")    # TODO
 
         if sum(i is not None for i in [index, level, max_elements]) != 1:
-            raise ValueError(
-                "Specify one and only one of index, level, or max_elements"
-            )
+            raise ValueError("Specify one and only one of index, level, or max_elements")
 
         if max_elements is not None and max_elements <= 0:
             raise ValueError("Max element count specified as a cache budget must be greater than 0")
@@ -253,23 +260,31 @@ class Plan:
                 raise ValueError("Can only create a max element hierarchical caches of other max element caches")
             if source.max_elements is not None:
                 if source.max_elements <= max_elements:
-                    raise ValueError("Outer max element cache for a hierarchical cache must have a larger budget than the inner cache")
+                    raise ValueError(
+                        "Outer max element cache for a hierarchical cache must have a larger budget than the inner cache"
+                    )
             else:
                 if source.level <= level:
-                    raise ValueError("Outer cache for a hierarchical cache must have a higher cache level than inner cache")
+                    raise ValueError(
+                        "Outer cache for a hierarchical cache must have a higher cache level than inner cache"
+                    )
                 if source.level < trigger_level:
-                    raise ValueError("Outer cache for a hierarchical cache must have a greater or equal cache level than the inner cache's trigger_level")
+                    raise ValueError(
+                        "Outer cache for a hierarchical cache must have a greater or equal cache level than the inner cache's trigger_level"
+                    )
 
-        cache = Cache(plan=self,
-                      target=source,
-                      index=index,
-                      trigger_index=trigger_index,
-                      level=level,
-                      trigger_level=trigger_level,
-                      layout=layout,
-                      max_elements=max_elements,
-                      thrifty=thrifty,
-                      location=location)
+        cache = Cache(
+            plan=self,
+            target=source,
+            index=index,
+            trigger_index=trigger_index,
+            level=level,
+            trigger_level=trigger_level,
+            layout=layout,
+            max_elements=max_elements,
+            thrifty=thrifty,
+            location=location
+        )
 
         if _delayed_cache:
             _delayed_cache.complete(cache)
@@ -292,23 +307,33 @@ class Plan:
 
         # TODO: support layout, location, thrifty
         if (isinstance(self._target, Target) and self._target.category == Target.Category.GPU):
-            cache.native_cache = context.plan.add_cache(target, last_in_index, trigger_index, cache.max_elements, MemorySpace.NONE)
+            cache.native_cache = context.plan.add_cache(
+                target=target,
+                index=last_in_index,
+                trigger_index=trigger_index,
+                max_elements=cache.max_elements,
+                indexing=cache.indexing,
+                allocation=cache.allocation,
+                location=cache.location,
+                memory_map=cache.memory_map,
+                dim_order=cache.dimension_permutation
+            )
         else:
-            cache.native_cache = context.plan.add_cache(target=target,
-                                                        index=last_in_index,
-                                                        trigger_index=trigger_index,
-                                                        max_elements=cache.max_elements,
-                                                        indexing=cache.indexing,
-                                                        allocation=cache.allocation,
-                                                        memory_space=cache.memory_space,
-                                                        memory_map=cache.memory_map,
-                                                        dim_order=cache.dimension_permutation)
+            cache.native_cache = context.plan.add_cache(
+                target=target,
+                index=last_in_index,
+                trigger_index=trigger_index,
+                max_elements=cache.max_elements,
+                indexing=cache.indexing,
+                allocation=cache.allocation,
+                location=cache.location,
+                memory_map=cache.memory_map,
+                dim_order=cache.dimension_permutation
+            )
 
-    def pack_and_embed_buffer(self,
-                              target,
-                              wrapper_fn_name,
-                              packed_buffer_name="",
-                              indexing=CacheIndexing.GLOBAL_TO_PHYSICAL):
+    def pack_and_embed_buffer(
+        self, target, wrapper_fn_name, packed_buffer_name="", indexing=CacheIndexing.GLOBAL_TO_PHYSICAL
+    ):
         """Emits a packing function for the given target and rewrites the loopnest to assume the given input is packed
 
         Args:
@@ -324,13 +349,12 @@ class Plan:
             raise ValueError("Can only pack and embed constant data buffers")
 
         self._commands.append(
-            partial(self._pack_and_embed_buffer, target, wrapper_fn_name, packed_buffer_name, indexing))
+            partial(self._pack_and_embed_buffer, target, wrapper_fn_name, packed_buffer_name, indexing)
+        )
 
-    def emit_runtime_init_pack(self,
-                               target,
-                               packing_func_name,
-                               packed_buf_size_func_name,
-                               indexing=CacheIndexing.GLOBAL_TO_PHYSICAL):
+    def emit_runtime_init_pack(
+        self, target, packing_func_name, packed_buf_size_func_name, indexing=CacheIndexing.GLOBAL_TO_PHYSICAL
+    ):
         """Emits a packing function for the given target and rewrites the loopnest to assume the given input is packed
 
         Args:
@@ -377,9 +401,7 @@ class Plan:
         context: NativeLoopNestContext,
     ):
         target = context.mapping[id(target)]
-        context.plan.emit_runtime_init_packing(
-            target, packing_func_name, packed_buf_size_func_name, indexing
-        )
+        context.plan.emit_runtime_init_packing(target, packing_func_name, packed_buf_size_func_name, indexing)
 
     def bind(self, indices: Tuple[LoopIndex], grid: Tuple):
         """Binds iteration space dimensions to GPU execution units
@@ -402,7 +424,9 @@ class Plan:
             context.plan.map_index_to_processor(index, proc)
 
     def kernelize(
-        self, unroll_indices: Union[Tuple[LoopIndex], DelayedParameter], vectorize_indices: Union[Tuple[LoopIndex], LoopIndex, DelayedParameter] = None
+        self,
+        unroll_indices: Union[Tuple[LoopIndex], DelayedParameter],
+        vectorize_indices: Union[Tuple[LoopIndex], LoopIndex, DelayedParameter] = None
     ):
         """Performs automatic kernelization.
 
@@ -423,7 +447,10 @@ class Plan:
             vectorize_indices: Optional indices to vectorize
         """
         if isinstance(unroll_indices, DelayedParameter) or isinstance(vectorize_indices, DelayedParameter):
-            self._delayed_calls[partial(self.kernelize)] = {"unroll_indices" : unroll_indices, "vectorize_indices" : vectorize_indices}
+            self._delayed_calls[partial(self.kernelize)] = {
+                "unroll_indices": unroll_indices,
+                "vectorize_indices": vectorize_indices
+            }
             return None
 
         vindices = [vectorize_indices] if isinstance(vectorize_indices, LoopIndex) else list(vectorize_indices)
@@ -456,10 +483,11 @@ class Plan:
             # lookup the split factors for each loop index
             assert isinstance(self._sched, Schedule)
 
-            index_to_splitfactor_map = {i: self._sched.get_index_transform(i)[1]
-                            for i in self._sched.get_indices()
-                                if self._sched.get_index_transform(i) and
-                                    self._sched.get_index_transform(i)[0] is IndexTransform.SPLIT}
+            index_to_splitfactor_map = {
+                i: self._sched.get_index_transform(i)[1]
+                for i in self._sched.get_indices()
+                if self._sched.get_index_transform(i) and self._sched.get_index_transform(i)[0] is IndexTransform.SPLIT
+            }
 
             n = min(len(block_dims), len(nest._shape))
 
@@ -473,15 +501,9 @@ class Plan:
                 grid_dims[i], remainder = divmod(shape, block_dims[i])
                 if remainder != 0:
                     # TODO: remove this restriction
-                    raise (
-                        RuntimeError(
-                            f"Shape {shape} must be a multiple of split factor {block_dims[i]}"
-                        )
-                    )
+                    raise (RuntimeError(f"Shape {shape} must be a multiple of split factor {block_dims[i]}"))
 
-            context.options = _GPU(
-                grid=_Dim3(*grid_dims, 1), block=_Dim3(*block_dims, 1)
-            )
+            context.options = _GPU(grid=_Dim3(*grid_dims, 1), block=_Dim3(*block_dims, 1))
             context.plan = context.schedule.create_gpu_plan(context.options)
         else:
             context.plan = context.schedule.create_plan()
@@ -494,10 +516,15 @@ class Plan:
         for delayed_call in self._delayed_calls:
             params = self._delayed_calls[delayed_call]
             if isinstance(params, dict):
-                resolved_params = {key : params[key].get_value() if isinstance(params[key], DelayedParameter) else params[key] for key in params}
+                resolved_params = {
+                    key: params[key].get_value() if isinstance(params[key], DelayedParameter) else params[key]
+                    for key in params
+                }
                 delayed_call(**resolved_params)
             else:
-                resolved_params = [param.get_value() if isinstance(param, DelayedParameter) else param for param in params]
+                resolved_params = [
+                    param.get_value() if isinstance(param, DelayedParameter) else param for param in params
+                ]
                 delayed_call(*resolved_params)
 
 
@@ -526,9 +553,7 @@ def _build_native_nest(plan: "Plan", nest_args: List[Array]):
         sched._replay_delayed_calls()
         plan._replay_delayed_calls()
 
-        loopnest_context = NativeLoopNestContext(
-            function_args=nest_args, runtime_args=args
-        )
+        loopnest_context = NativeLoopNestContext(function_args=nest_args, runtime_args=args)
         build_array_native_context(loopnest_context)
         build_loopnest_native_context(loopnest_context)
 
@@ -539,9 +564,7 @@ def _build_native_nest(plan: "Plan", nest_args: List[Array]):
     return nest_wrapper_fn
 
 
-def _create_function(
-    plan: "Plan", args: List[Array], public: bool = True, no_inline: bool = False
-) -> Function:
+def _create_function(plan: "Plan", args: List[Array], public: bool = True, no_inline: bool = False) -> Function:
     from secrets import token_hex
 
     name = f"nest_impl_{token_hex(16)}"

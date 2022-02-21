@@ -3,6 +3,7 @@
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
 
+
 class LoopIndex:
     def __init__(self, nest=None):
         self._nest = nest

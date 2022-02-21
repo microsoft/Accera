@@ -2,7 +2,7 @@
 site_name: Accera
 site_author: Microsoft
 site_description: >-
-  Open source compiler for generating fast, compute-intensive loops used in AI algorithms, from Microsoft AI & Research.
+  Open source compiler for generating fast, compute-intensive loops used in AI algorithms, from Microsoft Research.
 copyright: Copyright &copy; 2022+ Microsoft Research [MIT License]
 repo_name: microsoft/Accera
 repo_url: https://github.com/microsoft/Accera/
@@ -51,86 +51,3 @@ theme:
 
 markdown_extensions:
   - pymdownx.superfences # workaround for bullet-point code blocks rendering
-
-nav:
-  # paths are relative to ./docs
-  - Home:
-    - README.md
-  - Setup:
-    - Install/README.md
-    - Install from PyPI:
-      - macOS: Install/Installing_Accera_on_MacOS.md
-      - Ubuntu: Install/Installing_Accera_on_Ubuntu.md
-      - Windows: Install/Installing_Accera_on_Windows.md
-    - Build and Install:
-      - macOS: Install/Building_on_MacOS.md
-      - Ubuntu: Install/Building_on_Ubuntu.md
-      - Windows: Install/Building_on_Windows.md
-  - Manual:
-      - Manual/README.md 
-      - Introduction: Manual/00 Introduction.md
-      - Arrays: Manual/01 Arrays.md
-      - Simple Affine Loop Nests: Manual/02 Simple Affine Loop Nests.md
-      - Schedules: Manual/03 Schedules.md
-      - Fusing: Manual/04 Fusing.md
-      - Targets: Manual/05 Targets.md
-      - Plans - Caching: Manual/06 Plans - Caching.md
-      - Plans - Vectorization and Parallelization: Manual/07 Plans - Vectorization and Parallelization.md
-      - Deferred Layout of Constant Arrays: Manual/08 Deferred Layout of Constant Arrays.md
-      - Parameters: Manual/09 Parameters.md
-      - Packages: Manual/10 Packages.md
-  - Tutorials:
-      - Tutorials/README.md
-      - Hello Matrix Multiplication: Tutorials/Hello_MatMul.md
-      - Optimized Matrix Multiplication: Tutorials/Optimized_MatMul.md
-      - Hello Matrix Multiplication on GPU: Tutorials/Hello_MatMul_GPU.md
-      - Cross Compilation for Raspberry Pi 3: Tutorials/Pi3_Cross_Compilation.md
-  - Reference:
-      - Reference/accera.md
-      - Classes:
-        - Array:
-          - Reference/classes/Array/Array.md
-          - Array.Layout: Reference/classes/Array/Layout.md
-          - Array.Role: Reference/classes/Array/Role.md
-          - Array.deferred_layout: Reference/classes/Array/deferred_layout.md
-        - Nest:
-          - Reference/classes/Nest/Nest.md
-          - Nest.create_plan: Reference/classes/Nest/create_plan.md
-          - Nest.create_schedule: Reference/classes/Nest/create_schedule.md
-          - Nest.get_indices: Reference/classes/Nest/get_indices.md
-          - Nest.iteration_logic: Reference/classes/Nest/iteration_logic.md
-        - Package:
-          - Reference/classes/Package/Package.md
-          - Package.Format: Reference/classes/Package/Format.md
-          - Package.Mode: Reference/classes/Package/Mode.md
-          - Package.Platform: Reference/classes/Package/Platform.md
-          - Package.add: Reference/classes/Package/add.md
-          - Package.add_description: Reference/classes/Package/add_description.md
-          - Package.build: Reference/classes/Package/build.md
-        - Plan:
-          - Plan.bind: Reference/classes/Plan/bind.md
-          - Plan.cache: Reference/classes/Plan/cache.md
-          - Plan.kernelize: Reference/classes/Plan/kernelize.md
-          - Plan.parallelize: Reference/classes/Plan/parallelize.md
-          - Plan.unroll: Reference/classes/Plan/unroll.md
-          - Plan.vectorize: Reference/classes/Plan/vectorize.md
-        - Schedule:
-          - Schedule.create_plan: Reference/classes/Schedule/create_plan.md
-          - Schedule.pad: Reference/classes/Schedule/pad.md
-          - Schedule.reorder: Reference/classes/Schedule/reorder.md
-          - Schedule.skew: Reference/classes/Schedule/skew.md
-          - Schedule.split: Reference/classes/Schedule/split.md
-          - Schedule.tile: Reference/classes/Schedule/tile.md
-        - Target:
-          - Reference/classes/Target/Target.md
-          - Target.Architecture: Reference/classes/Target/Architecture.md
-          - Target.Category: Reference/classes/Target/Category.md
-          - Target.Model: Reference/classes/Target/Model.md
-      - Enumerations:
-        - Reference/enumerations/ScalarType.md
-      - Functions:
-        - create_parameters: Reference/functions/create_parameters.md
-        - fuse: Reference/functions/fuse.md
-        - get_parameters_from_grid: Reference/functions/get_parameters_from_grid.md
-      - Miscellaneous:
-        - Safety Analysis: Reference/safety_analysis.md

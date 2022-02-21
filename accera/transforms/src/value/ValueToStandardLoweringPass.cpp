@@ -5,6 +5,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "AcceraPasses.h"
+#include "ir/include/value/ValueEnums.h"
 #include "util/VectorizationUtil.h"
 
 #include <ir/include/IRUtil.h>
@@ -15,6 +16,8 @@
 #include <utilities/include/MathUtil.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/GPU/GPUDialect.h>
+#include <mlir/Dialect/GPU/Passes.h>
 #include <mlir/Dialect/Linalg/IR/LinalgOps.h>
 #include <mlir/Dialect/Math/Transforms/Passes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -24,6 +27,7 @@
 #include <mlir/Dialect/SPIRV/IR/TargetAndABI.h>
 #include <mlir/Dialect/StandardOps/Transforms/Passes.h>
 #include <mlir/Dialect/Vector/VectorOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Types.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
@@ -33,6 +37,7 @@
 
 #include <llvm/Support/FormatVariadic.h>
 
+#include <algorithm>
 #include <unordered_set>
 
 #ifndef RC_FILE_LOC
@@ -511,7 +516,28 @@ struct ValueModuleOpRewritePattern : OpRewritePattern<vir::ValueModuleOp>
     {
         module->setAttr(mlir::gpu::GPUDialect::getContainerModuleAttrName(),
                         rewriter.getUnitAttr());
+    }
+    void AddRocmAnnotations(vir::ValueModuleOp module, PatternRewriter& rewriter) const
+    {
+        auto gpuModOps = module.getOps<gpu::GPUModuleOp>();
+        for (auto gpuModOp : gpuModOps)
+        {
+            gpuModOp->setAttr(mlir::gpu::getDefaultGpuBinaryAnnotation(),
+                              rewriter.getStringAttr("HSACO"));
+        }
+    }
+    void AddNVVMAnnotations(vir::ValueModuleOp module, PatternRewriter& rewriter) const
+    {
+        auto gpuModOps = module.getOps<gpu::GPUModuleOp>();
+        for (auto gpuModOp : gpuModOps)
+        {
+            gpuModOp->setAttr(mlir::gpu::getDefaultGpuBinaryAnnotation(),
+                              rewriter.getStringAttr("CUBIN"));
+        }
+    }
 
+    void AddVulkanAnnotations(ModuleOp module, PatternRewriter& rewriter) const
+    {
         auto context = module.getContext();
         namespace spirv = mlir::spirv;
         auto triple = spirv::VerCapExtAttr::get(
@@ -541,7 +567,22 @@ struct ValueModuleOpRewritePattern : OpRewritePattern<vir::ValueModuleOp>
         if (!vModuleOp.getOps<gpu::GPUModuleOp>().empty())
         {
             AddGPUAnnotations(module, rewriter);
+
+            const auto runtime = utilir::ResolveExecutionRuntime(vModuleOp);
+            if (runtime == vir::ExecutionRuntime::Vulkan)
+            {
+                AddVulkanAnnotations(module, rewriter);
+            }
+            else if (runtime == vir::ExecutionRuntime::CUDA)
+            {
+                AddNVVMAnnotations(vModuleOp, rewriter);
+            }
+            else if (runtime == vir::ExecutionRuntime::Rocm)
+            {
+                AddRocmAnnotations(vModuleOp, rewriter);
+            }
         }
+
         Operation* modEnd = &(module.getBody()->back());
         rewriter.mergeBlockBefore(vModuleOp.getBody(), modEnd);
 
@@ -551,11 +592,38 @@ struct ValueModuleOpRewritePattern : OpRewritePattern<vir::ValueModuleOp>
 
         return success();
     }
-};
+}; // namespace
 
 constexpr int kLaunchConfigDefaultDimValue = 1;
 constexpr int kLocalSizeDimSize = 3;
 constexpr size_t kLaunchConfigNumDims = 6;
+
+auto GetGPUModuleBinaryAnnotationAttrName()
+{
+    return mlir::gpu::getDefaultGpuBinaryAnnotation();
+}
+
+auto GetGPUModuleBinaryAnnotationAttrValue(vir::ExecutionRuntime runtime)
+{
+    switch (runtime)
+    {
+    // ref: mlir/test/Conversion/GPUToROCm/lower-rocdl-kernel-to-hsaco.mlir
+    case vir::ExecutionRuntime::Rocm:
+        return "HSACO";
+
+    // ref: mlir/test/Conversion/GPUToCUDA/lower-nvvm-kernel-to-cubin.mlir
+    case vir::ExecutionRuntime::CUDA:
+        return "CUBIN";
+
+    case vir::ExecutionRuntime::Vulkan:
+        [[fallthrough]];
+    case vir::ExecutionRuntime::Default:
+        [[fallthrough]];
+    default:
+        return "";
+    }
+}
+
 struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
 {
     using OpRewritePattern::OpRewritePattern;
@@ -567,19 +635,30 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
 
     void rewrite(FuncOp funcOp, PatternRewriter& rewriter) const final
     {
+        // TODO: Make this an attribute on the gpu.module
+        const auto gpuRuntime = vir::ExecutionRuntime::Rocm;
+
         auto loc = rewriter.getFusedLoc({ funcOp.getLoc(), RC_FILE_LOC(rewriter) });
         OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPoint(funcOp);
 
+        auto module = funcOp->getParentOfType<vir::ValueModuleOp>();
         auto newFuncName = funcOp.getName().str();
 
         auto gpuModule = rewriter.create<gpu::GPUModuleOp>(loc, newFuncName + "_module");
+        gpuModule->setAttr(GetGPUModuleBinaryAnnotationAttrName(), rewriter.getStringAttr(GetGPUModuleBinaryAnnotationAttrValue(gpuRuntime)));
         gpuModule.setVisibility(mlir::SymbolTable::Visibility::Public);
+
         auto insertPt = utilir::GetTerminalInsertPoint<gpu::GPUModuleOp, gpu::ModuleEndOp>(gpuModule);
         OpBuilder::InsertionGuard gpuScopeGuard(rewriter);
         rewriter.restoreInsertionPoint(insertPt);
 
-        SmallVector<mlir::NamedAttribute, 2> fnAttrs;
+        for (auto op : module.getOps<vir::GlobalOp>())
+        {
+            rewriter.clone(*op);
+        }
+
+        SmallVector<mlir::NamedAttribute, 4> fnAttrs;
         SmallVector<int32_t, kLaunchConfigNumDims> launchConfigVec(kLaunchConfigNumDims, kLaunchConfigDefaultDimValue);
         if (auto arrayAttr = funcOp->getAttrOfType<mlir::ArrayAttr>(vir::ValueFuncOp::getGPULaunchAttrName()))
         {
@@ -593,11 +672,30 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
 
         fnAttrs.emplace_back(rewriter.getIdentifier(mlir::gpu::GPUDialect::getKernelFuncAttrName()),
                              rewriter.getUnitAttr());
-        auto entryPointLocalSize = blockDimsLaunchConfig;
-        assert(entryPointLocalSize.size() == kLocalSizeDimSize);
-        fnAttrs.emplace_back(
-            rewriter.getIdentifier(mlir::spirv::getEntryPointABIAttrName()),
-            mlir::spirv::getEntryPointABIAttr(entryPointLocalSize, rewriter.getContext()));
+        if (gpuRuntime == vir::ExecutionRuntime::Vulkan)
+        {
+            auto entryPointLocalSize = blockDimsLaunchConfig;
+            assert(entryPointLocalSize.size() == kLocalSizeDimSize);
+            fnAttrs.emplace_back(
+                rewriter.getIdentifier(mlir::spirv::getEntryPointABIAttrName()),
+                mlir::spirv::getEntryPointABIAttr(entryPointLocalSize, rewriter.getContext()));
+        }
+        else
+        {
+            SmallVector<mlir::Attribute, 4> gridDimsLaunchConfigAttrs, blockDimsLaunchConfigAttrs;
+            for (auto dim : gridDimsLaunchConfig)
+            {
+                gridDimsLaunchConfigAttrs.emplace_back(rewriter.getI32IntegerAttr(dim));
+            }
+            for (auto dim : blockDimsLaunchConfig)
+            {
+                blockDimsLaunchConfigAttrs.emplace_back(rewriter.getI32IntegerAttr(dim));
+            }
+            fnAttrs.emplace_back(
+                rewriter.getIdentifier("gridSize"), rewriter.getArrayAttr(gridDimsLaunchConfigAttrs));
+            fnAttrs.emplace_back(
+                rewriter.getIdentifier("blockSize"), rewriter.getArrayAttr(blockDimsLaunchConfigAttrs));
+        }
 
         auto newFuncOp = rewriter.create<gpu::GPUFuncOp>(
             loc,
@@ -1143,7 +1241,6 @@ LogicalResult ViewOpLowering::matchAndRewrite(
     auto source = op.source();
     auto sourceType = op.getSourceMemRefType();
     auto shape = sourceType.getShape();
-    llvm::SmallVector<mlir::Value, 4> strides(shape.size(), rewriter.create<ConstantIndexOp>(loc, 1));
 
     auto isStaticCanonicalOrder = [](MemRefType t) {
         llvm::SmallVector<int64_t, 4> memRefStrides;
@@ -1164,12 +1261,14 @@ LogicalResult ViewOpLowering::matchAndRewrite(
         return true;
     };
 
-    llvm::SmallVector<mlir::Value, 4> offsets;
+    llvm::SmallVector<mlir::Value, 4> offsets, strides;
     for (auto offset : op.offsets())
     {
         if (auto r = mlir::dyn_cast<linalg::RangeOp>(offset.getDefiningOp()))
         {
             auto min = r.min();
+            auto step = r.step();
+            strides.push_back(step.getDefiningOp()->getResult(0));
             offsets.push_back(min.getDefiningOp()->getResult(0));
         }
         else
@@ -1186,15 +1285,33 @@ LogicalResult ViewOpLowering::matchAndRewrite(
             sizes.push_back(rewriter.create<ConstantIndexOp>(loc, extent));
         }
 
-        rewriter.replaceOp(
-            op,
-            { rewriter.create<memref::SubViewOp>(
-                loc,
-                op.getType(),
-                source,
-                offsets,
-                sizes,
-                strides) });
+        bool isStaticShape = true;
+        llvm::SmallVector<int64_t, 4> staticOffsets, staticSizes, staticStrides;
+        for (auto [size, offset, stride] : llvm::zip(sizes, offsets, strides))
+        {
+            auto sizeOp = size.getDefiningOp<ConstantIndexOp>();
+            auto offsetOp = offset.getDefiningOp<ConstantIndexOp>();
+            auto strideOp = stride.getDefiningOp<ConstantIndexOp>();
+            if (sizeOp && offsetOp && strideOp)
+            {
+                staticSizes.push_back(sizeOp.getValue());
+                staticOffsets.push_back(offsetOp.getValue());
+                staticStrides.push_back(strideOp.getValue());
+            }
+            else
+            {
+                isStaticShape = false;
+                break;
+            }
+        }
+
+        auto subviewType = isStaticShape
+                               ? memref::SubViewOp::inferResultType(
+                                     sourceType, staticOffsets, staticSizes, staticStrides)
+                                     .cast<mlir::MemRefType>()
+                               : op.getType();
+        rewriter.replaceOpWithNewOp<memref::SubViewOp>(
+            op, subviewType, source, offsets, sizes, strides);
     }
     else
     {

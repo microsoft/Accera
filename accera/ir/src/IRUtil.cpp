@@ -4,6 +4,8 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "IRUtil.h"
+#include "value/ValueAttributes.h"
+#include "value/ValueEnums.h"
 
 #include <ir/include/nest/LoopNestOps.h>
 #include <ir/include/value/ValueDialect.h>
@@ -21,6 +23,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
+#include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
 
 #include <atomic>
@@ -290,43 +293,90 @@ namespace util
 
     std::optional<vir::ExecutionTarget> ResolveExecutionTarget(mlir::Operation* op)
     {
-        auto getExecTarget = [](Operation* op) { return op->getAttrOfType<IntegerAttr>(vir::ValueFuncOp::getExecTargetAttrName()); };
+        // modules can define the execution runtime
+        // search if the current module specifies the execution runtime
+        auto getExecTarget = [](Operation* op) { return op->getAttrOfType<vir::ExecutionTargetAttr>(vir::ValueFuncOp::getExecTargetAttrName()); };
 
         Operation* execAwareOp = op;
-        IntegerAttr execTargetAttr = getExecTarget(execAwareOp);
+        auto execTargetAttr = getExecTarget(execAwareOp);
         while (execAwareOp && !execAwareOp->hasTrait<mlir::OpTrait::FunctionLike>() && !execTargetAttr)
         {
-            if ((execAwareOp = execAwareOp->getParentOp()))
+            if ((execAwareOp = execAwareOp->getParentWithTrait<mlir::OpTrait::FunctionLike>()))
+            {
                 execTargetAttr = getExecTarget(execAwareOp);
+            }
         }
 
         if (execTargetAttr)
         {
-            return vir::ExecutionTarget{ (uint64_t)execTargetAttr.getInt() };
+            return execTargetAttr.getValue();
         }
 
-        assert(execAwareOp && "Expected AllocOp to be inside a function-like op");
-
+        assert(execAwareOp && "Unable to find a function-like op which surrounds the curent op");
         return mlir::TypeSwitch<Operation*, std::optional<vir::ExecutionTarget>>(execAwareOp)
-            .Case([](mlir::gpu::GPUFuncOp) { return vir::ExecutionTarget::GPU; })
-            .Case([](mlir::spirv::FuncOp) { return vir::ExecutionTarget::GPU; })
-            .Case([](mlir::FuncOp) { return vir::ExecutionTarget::CPU; })
+            .Case([=](mlir::gpu::GPUFuncOp op) {
+                return vir::ExecutionTarget::GPU;
+            })
+            .Case([](mlir::spirv::FuncOp op) {
+                return vir::ExecutionTarget::GPU;
+            })
+            .Case([](mlir::FuncOp op) {
+                return vir::ExecutionTarget::CPU;
+            })
             .Default([](Operation* op) {
-                op->emitWarning("Couldn't determine execution target");
+                op->emitWarning("Couldn't determine execution environment");
                 return std::nullopt;
             });
     }
 
-    mlir::Operation* CreateGPUControlBarrier(mlir::OpBuilder& builder, std::optional<mlir::Location> loc /*= std::nullopt*/)
+    std::optional<vir::ExecutionRuntime> ResolveExecutionRuntime(mlir::Operation* op)
     {
+        // search the rcv.Module for the runtime
+        std::function getExecRuntime = [](Operation* op) {
+            return op->getAttrOfType<vir::ExecutionRuntimeAttr>(vir::ValueModuleOp::getExecRuntimeAttrName());
+        };
+        Operation* moduleLikeOp = op;
+        auto execRuntimeAttr = getExecRuntime(moduleLikeOp);
+        while (moduleLikeOp && !execRuntimeAttr)
+        {
+            if ((moduleLikeOp = moduleLikeOp->getParentOfType<vir::ValueModuleOp>()))
+            {
+                execRuntimeAttr = getExecRuntime(moduleLikeOp);
+            }
+        }
+
+        // if the runtime attribute is not found in the rcv.module, then
+        // search the mlir.module for the runtime (using a fully qualified attribute name)
+        if (!execRuntimeAttr)
+        {
+            auto execRuntimeAttrName = ir::value::ValueModuleOp::getExecRuntimeAttrName();
+            getExecRuntime = [=](Operation* op) { return op->getAttrOfType<vir::ExecutionRuntimeAttr>(execRuntimeAttrName.str()); };
+
+            moduleLikeOp = op;
+            execRuntimeAttr = getExecRuntime(moduleLikeOp);
+            while (moduleLikeOp && !execRuntimeAttr)
+            {
+                if ((moduleLikeOp = moduleLikeOp->getParentOfType<mlir::ModuleOp>()))
+                    execRuntimeAttr = getExecRuntime(moduleLikeOp);
+            }
+        }
+
+        // the runtime attribute was not set by the user, so set it as default
+        if (!execRuntimeAttr)
+        {
+            return vir::ExecutionRuntime::Default;
+        }
+
+        return execRuntimeAttr.getValue();
+    }
+
+    mlir::Operation* CreateGPUControlBarrier(mlir::OpBuilder& builder, const std::string scope, std::optional<mlir::Location> loc /*= std::nullopt*/)
+    {
+        auto barrierScope = vir::symbolizeEnum<value::BarrierScope>(scope);
+        assert(barrierScope && "Invalid barrier scope");
         return builder.create<vir::BarrierOp>(
             loc.value_or(builder.getUnknownLoc()),
-            mlir::TypeRange{},
-            mlir::ValueRange{},
-            llvm::makeArrayRef(
-                { builder.getNamedAttr("execution_scope", builder.getI32IntegerAttr((int32_t)mlir::spirv::Scope::Workgroup)),
-                  builder.getNamedAttr("memory_scope", builder.getI32IntegerAttr((int32_t)mlir::spirv::Scope::Workgroup)),
-                  builder.getNamedAttr("memory_semantics", builder.getI32IntegerAttr((int32_t)mlir::spirv::MemorySemantics::AcquireRelease)) }));
+            vir::BarrierScopeAttr::get(builder.getContext(), *barrierScope));
     }
 
     std::optional<int64_t> GetDimSizeAt(const loopnest::Index& dimensionIndex, mlir::Operation* where)

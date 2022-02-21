@@ -14,6 +14,7 @@ import os
 # Requires tomlkit: pip install tomlkit
 import tomlkit
 
+
 class AcceraModuleData:
     def __init__(self, toml_table):
         self.module_toml = toml_table
@@ -31,7 +32,10 @@ class AcceraModuleData:
             self.initialize_function_name = self.metadata["_initialize_function"]
             self.deinitialize_function_name = self.metadata["_deinitialize_function"]
             self.domain = self.metadata["domain"]
-            self.custom_metadata = {key : self.metadata[key] for key in self.metadata if key not in variant_metadata_keys}
+            self.custom_metadata = {
+                key: self.metadata[key]
+                for key in self.metadata if key not in variant_metadata_keys
+            }
 
 
 class AcceraLibraryData:

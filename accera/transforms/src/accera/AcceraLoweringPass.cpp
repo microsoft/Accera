@@ -177,6 +177,7 @@ void AcceraToLLVMPass::runOnFunction()
 
     fPM.addPass(accera::transforms::executionPlan::createExecutionPlanCacheRegionLoweringPass());
     fPM.addPass(accera::transforms::executionPlan::createExecutionPlanVectorizationPass());
+    fPM.addPass(accera::transforms::executionPlan::createExecutionPlanTensorizationPass());
     fPM.addPass(accera::transforms::executionPlan::createExecutionPlanCopyReducePass());
 
     fPM.addPass(accera::transforms::loopnest::createScheduledOperationsPass());

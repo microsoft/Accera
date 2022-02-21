@@ -49,6 +49,12 @@ if(NOT ACCERA_EXTERNAL_DIR)
   )
 endif(NOT ACCERA_EXTERNAL_DIR)
 
+if(NOT ACCERA_TOOLS_DIR)
+  set(ACCERA_TOOLS_DIR "${CMAKE_BINARY_DIR}/bin"
+      CACHE STRING "Directory to place executables")
+endif(NOT ACCERA_TOOLS_DIR)
+message(STATUS "ACCERA_TOOLS_DIR: " ${ACCERA_TOOLS_DIR})
+
 # Turn on ability to create folders to organize projects
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -156,9 +162,9 @@ else()
     # Set options for Control Flow Integrity
     add_compile_options(-fsanitize=cfi)
     # Enable Shadow Stack mitigation
-    add_compile_options(-fsanitize=shadow-call-stack)  
-    # Exit after the first 2 errors are reported  
-    add_compile_options(-ferror-limit=2)    
+    add_compile_options(-fsanitize=shadow-call-stack)
+    # Exit after the first 2 errors are reported
+    add_compile_options(-ferror-limit=2)
   else() # GCC
     add_compile_options(-Wno-ignored-attributes)
     add_compile_options(-fdiagnostics-color=always)

@@ -28,6 +28,7 @@ void populateExecutionPlanAdjustHierarchicalCacheRegionPositionPatterns(mlir::Ow
 void populateExecutionPlanAdjustCacheMappingPositionPatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanMaxElementCacheRegionPatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanVectorizePatterns(bool printVectorizationDetails, mlir::OwningRewritePatternList& patterns);
+void populateExecutionPlanTensorizePatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanParallelizePatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanScaleHoistingPatterns(mlir::OwningRewritePatternList& patterns);
 void populateOutOfBoundsAccessHandlingPatterns(mlir::OwningRewritePatternList& patterns);
@@ -38,6 +39,7 @@ std::unique_ptr<mlir::Pass> createExecutionPlanCopyReducePass();
 std::unique_ptr<mlir::Pass> createExecutionPlanCacheRegionLoweringPass();
 std::unique_ptr<mlir::Pass> createExecutionPlanVectorizationPass();
 std::unique_ptr<mlir::Pass> createExecutionPlanParallelizationPass();
+std::unique_ptr<mlir::Pass> createExecutionPlanTensorizationPass();
 std::unique_ptr<mlir::Pass> createExecutionPlanScaleHoistingPass();
 std::unique_ptr<mlir::Pass> createOutOfBoundsAccessHandlingPass();
 } // namespace accera::transforms::executionPlan

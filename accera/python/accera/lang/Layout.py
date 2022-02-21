@@ -10,13 +10,15 @@ from typing import Tuple, Union
 
 class Layout(Enum):
     "Defines a standard Array layout"
-    FIRST_MAJOR = auto(
-    )    #: Specifies a memory layout where the first major axis is in contiguous memory. For example, in a matrix, this corresponds to "row-major"
-    LAST_MAJOR = auto(
-    )    #: Specifies a memory layout where the last major axis is in contiguous memory. For example, in a matrix, this corresponds to "column-major"
-    DEFERRED = auto(
+
+    #: Specifies a memory layout where the first major axis is in contiguous memory. For example, in a matrix, this corresponds to "row-major"
+    FIRST_MAJOR = auto()
+
+    #: Specifies a memory layout where the last major axis is in contiguous memory. For example, in a matrix, this corresponds to "column-major"
+    LAST_MAJOR = auto()
+
     #: Defer specifying the memory layout for a `Array.Role.CONST` array until a cache is created.
-    )
+    DEFERRED = auto()
 
 
 def get_coefficients_for_layout(layout: Layout, shape: Tuple[int]):
@@ -38,7 +40,7 @@ def get_coefficients_for_layout(layout: Layout, shape: Tuple[int]):
     #    Last-major: (1, s0, s0xs1, s0xs1xs2)
     # In both cases, the last dimension (s3) is not used in computing the affine memory map.
     ndim = len(shape)
-    coeffs = [1] + [reduce(mul, shape[:i]) for i in range(1, ndim)]  # last major
+    coeffs = [1] + [reduce(mul, shape[:i]) for i in range(1, ndim)]    # last major
     return coeffs[::-1] if layout == Layout.FIRST_MAJOR else coeffs
 
 

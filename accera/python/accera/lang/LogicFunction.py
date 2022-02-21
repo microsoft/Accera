@@ -24,7 +24,7 @@ class LogicFunction:
         args_dict = {}
         for d in [self.func_globals, self.func_nonlocals]:
             for k, v in d.items():
-                if isinstance(v, ((_type,) if _type else ()) + LogicFunction._SPECIAL_TYPES):
+                if isinstance(v, ((_type, ) if _type else ()) + LogicFunction._SPECIAL_TYPES):
                     args_dict[k] = v
                     continue
 

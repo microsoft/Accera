@@ -8,6 +8,7 @@
 #include "ExecutionPlanOps.h"
 #include "InPlaceUnrollInfo.h"
 #include "ParallelizationInfo.h"
+#include "TensorizationInfo.h"
 #include "VectorizationInfo.h"
 
 #include <mlir/IR/Attributes.h>
@@ -97,6 +98,18 @@ namespace executionPlan
             }
         };
 
+        struct TensorizeInfoAttributeStorage final
+            : public mlir::AttributeStorage
+            , public TrivialStorage<TensorizeInfoAttributeStorage, TensorizationInfo>
+        {
+            using KeyTy = TensorizationInfo;
+
+            TensorizeInfoAttributeStorage(const TensorizationInfo& tensorizeInfo) :
+                TrivialStorage<TensorizeInfoAttributeStorage, TensorizationInfo>(tensorizeInfo)
+            {
+            }
+        };
+
         struct InPlaceUnrollInfoAttributeStorage final
             : public mlir::AttributeStorage
             , public TrivialStorage<InPlaceUnrollInfoAttributeStorage, InPlaceUnrollInfo>
@@ -138,6 +151,20 @@ namespace executionPlan
         static llvm::StringRef getKeyName() { return "rcxp_parallelizationInfo"; }
     };
 
+    class TensorizationInfoAttr
+        : public mlir::Attribute::AttrBase<TensorizationInfoAttr, mlir::Attribute, detail::TensorizeInfoAttributeStorage>
+    {
+    public:
+        using Base::Base;
+        using ValueType = TensorizationInfo;
+
+        static TensorizationInfoAttr get(const ValueType& tensorizationInfo, mlir::MLIRContext* context);
+
+        ValueType getValue() const;
+
+        static llvm::StringRef getKeyName() { return "rcxp_tensorizationInfo"; }
+    };
+
     class InPlaceUnrollInfoAttr
         : public mlir::Attribute::AttrBase<InPlaceUnrollInfoAttr, mlir::Attribute, detail::InPlaceUnrollInfoAttributeStorage>
     {
@@ -157,10 +184,12 @@ namespace executionPlan
     //
     VectorizationInfoAttr parseVectorizationInfo(mlir::DialectAsmParser& os);
     ParallelizationInfoAttr parseParallelizationInfo(mlir::DialectAsmParser& os);
+    TensorizationInfoAttr parseTensorizationInfo(mlir::DialectAsmParser& os);
     InPlaceUnrollInfoAttr parseInPlaceUnrollInfo(mlir::DialectAsmParser& os);
 
     void print(VectorizationInfoAttr attr, mlir::DialectAsmPrinter& os);
     void print(ParallelizationInfoAttr attr, mlir::DialectAsmPrinter& os);
+    void print(TensorizationInfoAttr attr, mlir::DialectAsmPrinter& os);
     void print(InPlaceUnrollInfoAttr attr, mlir::DialectAsmPrinter& os);
 
 } // namespace executionPlan

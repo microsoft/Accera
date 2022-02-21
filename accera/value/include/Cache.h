@@ -52,7 +52,7 @@ namespace value
               CacheIndexing mapping = CacheIndexing::GlobalToPhysical,
               CacheAllocation allocation = CacheAllocation::Automatic,
               MemorySpace memorySpace = MemorySpace::None,
-              ExecutionOptions execOptions = targets::CPU{});
+              ExecutionTarget execTarget = targets::CPU{});
 
         // Manual caching versions
         Cache(accera::ir::loopnest::ScheduleOp schedule,
@@ -64,7 +64,7 @@ namespace value
               CacheIndexing mapping = CacheIndexing::GlobalToPhysical,
               CacheAllocation allocation = CacheAllocation::Automatic,
               MemorySpace memorySpace = MemorySpace::None,
-              ExecutionOptions execOptions = targets::CPU{});
+              ExecutionTarget execTarget = targets::CPU{});
 
         Cache(accera::ir::loopnest::ScheduleOp schedule,
               std::variant<ViewAdapter, Cache*> value,
@@ -75,7 +75,7 @@ namespace value
               CacheIndexing mapping = CacheIndexing::GlobalToPhysical,
               CacheAllocation allocation = CacheAllocation::Automatic,
               MemorySpace memorySpace = MemorySpace::None,
-              ExecutionOptions execOptions = targets::CPU{});
+              ExecutionTarget execTarget = targets::CPU{});
 
         // Runtime-Init caching version
         Cache(accera::ir::loopnest::ScheduleOp schedule,

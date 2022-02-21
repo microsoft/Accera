@@ -16,6 +16,16 @@ def ExecutionTargetAttr : I64EnumAttr<"ExecutionTarget", "target for function", 
     let cppNamespace = "::accera::ir::value";
 }
 
+def ExecutionRuntimeDefault : StrEnumAttrCase<"Default">;
+def ExecutionRuntimeVulkan : StrEnumAttrCase<"Vulkan">;
+def ExecutionRuntimeRocm : StrEnumAttrCase<"Rocm">;
+def ExecutionRuntimeCUDA : StrEnumAttrCase<"CUDA">;
+
+def ExecutionRuntimeAttr : StrEnumAttr<"ExecutionRuntime", "execution runtime for function", [ExecutionRuntimeDefault, ExecutionRuntimeVulkan, ExecutionRuntimeRocm, ExecutionRuntimeCUDA]> {
+    let cppNamespace = "::accera::ir::value";
+    let genSpecializedAttr = 1;
+}
+
 def BlockX : I64EnumAttrCase<"BlockX", 0>;
 def BlockY : I64EnumAttrCase<"BlockY", 1>;
 def BlockZ : I64EnumAttrCase<"BlockZ", 2>;
@@ -41,7 +51,7 @@ def MemoryAllocTypeAttr : I64EnumAttr<
 def MEMORY_SPACE_NONE : I64EnumAttrCase<"None", 0>;
 def MEMORY_SPACE_GLOBAL : I64EnumAttrCase<"Global", 1>;
 def MEMORY_SPACE_SHARED : I64EnumAttrCase<"Shared", 3>;
-def MEMORY_SPACE_LOCAL : I64EnumAttrCase<"Local", 6>;
+def MEMORY_SPACE_LOCAL : I64EnumAttrCase<"Local", 5>;
 
 def MemorySpaceAttr : I64EnumAttr<
         "MemorySpace",
@@ -50,4 +60,15 @@ def MemorySpaceAttr : I64EnumAttr<
     let cppNamespace = "::accera::ir::value";
 }
 
+def BARRIER_SCOPE_BLOCK : StrEnumAttrCase<"Block", 0>;
+def BARRIER_SCOPE_WARP : StrEnumAttrCase<"Warp", 1>; 
+def BARRIER_SCOPE_THREADFENCE : StrEnumAttrCase<"Threadfence", 2>; 
+
+def BarrierScopeAttr : StrEnumAttr<
+        "BarrierScope",
+        "Describes the scope of the barrier operator.",
+        [ BARRIER_SCOPE_BLOCK, BARRIER_SCOPE_WARP, BARRIER_SCOPE_THREADFENCE ]> {
+    let cppNamespace = "::accera::ir::value";
+    let genSpecializedAttr = 1;
+}
 #endif // ACCERA_rcv_ATTRS

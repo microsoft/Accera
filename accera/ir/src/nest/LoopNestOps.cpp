@@ -165,7 +165,7 @@ namespace loopnest
             LogicalResult matchAndRewrite(KernelOp op, PatternRewriter& rewriter) const final
             {
                 std::string opName = op.getOperation()->getName().getStringRef().str();
-                auto loc = util::GetLocation(rewriter, "RemoveUnused_" + opName, op.getLoc());
+                [[maybe_unused]] auto loc = util::GetLocation(rewriter, "RemoveUnused_" + opName, op.getLoc());
 
                 // Walk the region looking for schedules or nests that use this kernel
                 auto region = op.getOperation()->getParentRegion();
@@ -231,7 +231,7 @@ namespace loopnest
             LogicalResult matchAndRewrite(ScheduledKernelOp op, PatternRewriter& rewriter) const final
             {
                 std::string opName = op.getOperation()->getName().getStringRef().str();
-                auto loc = util::GetLocation(rewriter, "RemoveUnused_" + opName, op.getLoc());
+                [[maybe_unused]] auto loc = util::GetLocation(rewriter, "RemoveUnused_" + opName, op.getLoc());
 
                 // Walk the region looking for schedules or nests that use this kernel
                 auto region = op.getOperation()->getParentRegion();

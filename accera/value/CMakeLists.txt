@@ -47,6 +47,7 @@ set(include
     include/EmitterContext.h
     include/EmitterException.h
     include/EmitterTypes.h
+    include/ExecutionOptions.h
     include/FastMath.h
     include/FunctionDeclaration.h
     include/Index.h

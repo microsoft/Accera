@@ -96,7 +96,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printBarrierOp(ROCDL::BarrierOp barrierOp)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return barrierOp.emitError("non-cuda version is not supported yet");
         }
@@ -107,7 +107,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printBlockDimXOp(ROCDL::BlockDimXOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -120,7 +120,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printBlockDimYOp(ROCDL::BlockDimYOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -133,7 +133,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printBlockDimZOp(ROCDL::BlockDimZOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -146,7 +146,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printBlockIdXOp(ROCDL::BlockIdXOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -159,7 +159,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printBlockIdYOp(ROCDL::BlockIdYOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -172,7 +172,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printBlockIdZOp(ROCDL::BlockIdZOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -185,7 +185,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printGridDimXOp(ROCDL::GridDimXOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -198,7 +198,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printGridDimYOp(ROCDL::GridDimYOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -211,7 +211,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printGridDimZOp(ROCDL::GridDimZOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -224,7 +224,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printThreadIdXOp(ROCDL::ThreadIdXOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -237,7 +237,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printThreadIdYOp(ROCDL::ThreadIdYOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }
@@ -250,7 +250,7 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printThreadIdZOp(ROCDL::ThreadIdZOp op)
     {
-        if (!isCuda)
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             return op.emitError("non-cuda version is not supported yet");
         }

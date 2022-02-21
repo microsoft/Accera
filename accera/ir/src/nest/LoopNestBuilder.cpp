@@ -20,6 +20,8 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include <llvm/ADT/StringSwitch.h>
+
 using namespace mlir;
 
 namespace accera::ir
@@ -437,7 +439,7 @@ namespace loopnest
 
     void LoopNestBuilder::ApplyInjectableMappings()
     {
-        auto loc = GetLocation();
+        [[maybe_unused]] auto loc = GetLocation();
         auto registeredInjectableMappings = GetScheduleOp().getInjectableMappings();
         for (auto& mapping : registeredInjectableMappings)
         {
@@ -449,10 +451,10 @@ namespace loopnest
 
                 BlockAndValueMapping operandMap;
                 _builder.setInsertionPoint(scheduledLoopOp);
-                auto clonedBeginOp = _builder.clone(*(mapping.getOperation()), operandMap);
+                [[maybe_unused]] auto clonedBeginOp = _builder.clone(*(mapping.getOperation()), operandMap);
 
                 _builder.setInsertionPointAfter(scheduledLoopOp);
-                auto clonedEndOp = _builder.clone(*(mapping.getInjectionEndOp()), operandMap);
+                [[maybe_unused]] auto clonedEndOp = _builder.clone(*(mapping.getInjectionEndOp()), operandMap);
             }
 
             if (mapping.use_empty())

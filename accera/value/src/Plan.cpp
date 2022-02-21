@@ -12,9 +12,12 @@
 #include <ir/include/exec/ExecutionPlanAttributes.h>
 #include <ir/include/exec/ExecutionPlanOps.h>
 #include <ir/include/exec/ParallelizationInfo.h>
+#include <ir/include/exec/TensorizationInfo.h>
 #include <ir/include/exec/VectorizationInfo.h>
 #include <ir/include/nest/LoopNestOps.h>
+#include <ir/include/value/ValueAttributes.h>
 #include <ir/include/value/ValueDialect.h>
+#include <ir/include/value/ValueEnums.h>
 
 #include <utilities/include/Exception.h>
 
@@ -41,9 +44,13 @@ namespace value
     class PlanImpl
     {
     public:
-        PlanImpl(value::ExecutionOptions execOptions, ScheduleOp scheduleOp) :
-            _scheduleOp(scheduleOp),
-            _execOptions(execOptions)
+        PlanImpl(
+            value::ExecutionTarget execTarget,
+            ScheduleOp scheduleOp,
+            value::ExecutionRuntime execRuntime) :
+            _execRuntime(execRuntime),
+            _execTarget(execTarget),
+            _scheduleOp(scheduleOp)
         {
             std::visit(
                 [this](auto options) {
@@ -64,6 +71,21 @@ namespace value
                         nestOp.exec_targetAttr(execTargetAttr);
                         _execPlanOp.exec_targetAttr(execTargetAttr);
 
+                        if (_execRuntime != ExecutionRuntime::Default)
+                        {
+                            auto execRuntimeAttrName = ValueModuleOp::getExecRuntimeAttrName();
+                            auto execRuntimeAttrValue = ir::value::ExecutionRuntimeAttr::get(
+                                b.getContext(), (ir::value::ExecutionRuntime)_execRuntime);
+                            if (auto mod = nestOp->getParentOfType<mlir::ModuleOp>())
+                            {
+                                mod->setAttr(execRuntimeAttrName, execRuntimeAttrValue);
+                            }
+                            if (auto mod = nestOp->getParentOfType<ValueModuleOp>())
+                            {
+                                mod->setAttr(execRuntimeAttrName, execRuntimeAttrValue);
+                            }
+                        }
+
                         _execPlanOp->setAttr(
                             _execPlanOp.getGPULaunchAttrName(),
                             b.getIndexArrayAttr({
@@ -78,22 +100,22 @@ namespace value
                     else
                         llvm_unreachable("Unexpected");
                 },
-                execOptions);
+                execTarget);
         }
 
         Cache AddAutomaticCache(ViewAdapter target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
         {
-            return { _scheduleOp, target, keySliceIndex, maxElements, mapping, allocation, memorySpace, _execOptions };
+            return { _scheduleOp, target, keySliceIndex, maxElements, mapping, allocation, memorySpace, _execTarget };
         }
 
         Cache AddManualCache(std::variant<ViewAdapter, Cache*> target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<ScalarIndex>& triggerIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, const MemoryAffineCoefficients& memoryMap)
         {
-            return { _scheduleOp, target, keySliceIndex, triggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, _execOptions };
+            return { _scheduleOp, target, keySliceIndex, triggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, _execTarget };
         }
 
         Cache AddManualCache(std::variant<ViewAdapter, Cache*> target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<ScalarIndex>& triggerIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, const DimensionOrder& dimOrder)
         {
-            return { _scheduleOp, target, keySliceIndex, triggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, _execOptions };
+            return { _scheduleOp, target, keySliceIndex, triggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, _execTarget };
         }
 
         Cache AddRuntimeInitCache(ViewAdapter target, const std::string& packingFnName, const std::string& packedBufferSizeFnName, CacheIndexing indexing)
@@ -140,6 +162,24 @@ namespace value
             }
         }
 
+        void Tensorize(std::vector<ScalarIndex> indices, std::vector<int> dims)
+        {
+            auto& builder = GetBuilder();
+
+            TensorizationInfo tensorizationInfo{ dims };
+            auto tensorizationInfoIdentifier = builder.getIdentifier(TensorizationInfoAttr::getKeyName());
+            auto tensorizationInfoAttr = TensorizationInfoAttr::get(tensorizationInfo, builder.getContext());
+
+            // mark each index as tensorized
+            // during lowering, indices are continguous in the schedule ordering will be collapsed
+            for (auto& i : indices)
+            {
+                auto symbolicIndexOp = GetIndexOp(i);
+                auto index = symbolicIndexOp.getValue();
+                _scheduleOp.addLoopAttribute(index, tensorizationInfoIdentifier, tensorizationInfoAttr);
+            }
+        }
+
         void MapIndexToProcessor(ScalarIndex i, Processor proc)
         {
             auto& builder = GetBuilder();
@@ -183,9 +223,10 @@ namespace value
             return indexOp;
         }
 
+        value::ExecutionRuntime _execRuntime;
+        value::ExecutionTarget _execTarget;
         ScheduleOp _scheduleOp;
         ExecPlanOp _execPlanOp;
-        value::ExecutionOptions _execOptions;
     };
 
     //
@@ -206,8 +247,13 @@ namespace value
         return *this;
     }
 
-    Plan::Plan(Schedule& schedule) :
-        _impl(std::make_unique<PlanImpl>(value::targets::CPU{}, schedule.GetOp()))
+    Plan::Plan(
+        Schedule& schedule,
+        value::ExecutionRuntime runtime /* = value::ExecutionRuntime::Default */) :
+        _impl(std::make_unique<PlanImpl>(
+            value::targets::CPU{},
+            schedule.GetOp(),
+            value::ExecutionRuntime::Default))
     {}
 
     Plan::~Plan() = default;
@@ -308,19 +354,24 @@ namespace value
 
     GPUPlan::~GPUPlan() = default;
 
-    GPUPlan::GPUPlan(value::targets::GPU gpuOptions, Schedule& sched) :
-        _impl(std::make_unique<PlanImpl>(gpuOptions, sched.GetOp()))
+    GPUPlan::GPUPlan(value::targets::GPU gpuOptions, Schedule& sched, ExecutionRuntime runtime) :
+        _impl(std::make_unique<PlanImpl>(gpuOptions, sched.GetOp(), runtime))
     {
     }
 
-    Cache GPUPlan::AddCache(ViewAdapter target, const ScalarIndex& outermostIncludedSplitIndex, MemorySpace memorySpace)
+    Cache GPUPlan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
     {
-        return _impl->AddAutomaticCache(target, outermostIncludedSplitIndex, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace);
+        return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, mapping, allocation, memorySpace, dimOrder);
     }
 
     Cache GPUPlan::AddCache(ViewAdapter target, int64_t maxElements, MemorySpace memorySpace)
     {
         return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace);
+    }
+
+    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, std::vector<int> dims)
+    {
+        _impl->Tensorize(indices, dims);
     }
 
     void GPUPlan::MapIndexToProcessor(ScalarIndex index, Processor proc)

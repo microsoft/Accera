@@ -26,7 +26,8 @@ def rcv_ValueLambdaOp : rcv_Op<"lambda", [
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<(ins "StringRef":$name, "FunctionType":$type, "ExecutionTarget":$target)>
+    OpBuilder<(ins "StringRef":$name, "FunctionType":$type, "accera::ir::value::ExecutionTarget":$exec_target)>,
+    OpBuilder<(ins "StringRef":$name, "FunctionType":$type, "accera::ir::value::ExecutionTargetAttr":$exec_target)>
   ];
 
   let extraClassDeclaration = [{
@@ -72,6 +73,10 @@ def rcv_ValueModuleOp : rcv_Op<"module", [
   let hasCanonicalizer = 1;
 
   let assemblyFormat = "$sym_name $body attr-dict";
+
+  let extraClassDeclaration = [{
+    static StringRef getExecRuntimeAttrName() { return "accv.exec_runtime"; }
+  }];
 }
 
 def rcv_ModuleTerminatorOp : rcv_Op<"module_terminator", [Terminator, HasParent<"ValueModuleOp">]> {
@@ -551,7 +556,6 @@ def rcv_LaunchFuncOp : rcv_Op<"launch_func", [CallOpInterface]> {
 
   let extraClassDeclaration = [{
     static StringRef getGPULaunchAttrName() { return "gpu_launch"; }
-    static StringRef getExecTargetAttrName() { return "exec_target"; }
 
     ::accera::ir::value::ExecutionTarget exec_target_value()
     {
@@ -571,6 +575,8 @@ def rcv_LaunchFuncOp : rcv_Op<"launch_func", [CallOpInterface]> {
     CallInterfaceCallable getCallableForCallee() {
       return (*this)->getAttrOfType<SymbolRefAttr>("callee");
     }
+
+    static StringRef getExecTargetAttrName() { return "exec_target"; }
   }];
 
   let assemblyFormat = [{
@@ -1097,8 +1103,9 @@ def rcv_ReduceSumOp : rcv_Op<"reduce_sum"> {
 }
 
 def rcv_BarrierOp : rcv_Op<"barrier"> {
-  let summary = "Synchronization primitive. Behavior is dependent on attributes";
+  let summary = "Block synchronization primitive.";
   let hasCanonicalizer = 1;
+  let arguments = (ins BarrierScopeAttr:$scope);
 }
 
 def rcv_GetTimeOp : rcv_Op<"gettime"> {
@@ -1122,6 +1129,86 @@ def rcv_ExitProfileRegionOp : rcv_Op<"exit_profile"> {
 
 def rcv_PrintProfileResultsOp : rcv_Op<"print_profile"> {
   let summary = "Print out a summary of the profile counters";
+}
+
+
+// matrix-fuse-multiply-add
+
+// Predicate to check if type is rcv::MMAMatrixType.
+def IsMMFAMatrixTypePred : CPred<"$_self.isa<accera::ir::value::MFMAMatrixType>()">;
+
+def rcv_MFMAMatrix : DialectType<Value_Dialect,
+                                        IsMMFAMatrixTypePred,
+                                        "MFMAMatrix type">;
+class MFMAMatrixOf<list<Type> allowedTypes> :
+  ContainerType<AnyTypeOf<allowedTypes>, IsMMFAMatrixTypePred,
+  "$_self.cast<::accera::ir::value::MFMAMatrixType>().getElementType()",
+  "rcv.mfma_matrix", "::accera::ir::value::MFMAMatrixType">;
+
+def rcv_MFMAComputeOp: rcv_Op<"mfma_compute", [NoSideEffect, AllTypesMatch<["opC", "res"]>]> {
+  let summary = "MFMA Compute";
+  let description = [{
+    The `rcv.mfma_compute` op is an abstraction of TensorCore ops (currently GPU centric).
+  }];
+
+  let arguments = (ins Arg<MFMAMatrixOf<[F16, F32]>>:$opA,
+                  Arg<MFMAMatrixOf<[F16, F32]>>:$opB,
+                  Arg<MFMAMatrixOf<[F16, F32]>>:$opC);
+
+  let results = (outs rcv_MFMAMatrix:$res);
+
+  let assemblyFormat = [{
+    $opA`,` $opB`,` $opC attr-dict `:` type($opA)`,` type($opB) `->` type($res)
+  }];
+
+  let verifier = [{ return ::verify(*this); }];
+}
+
+// load and store submatrix
+
+def rcv_MFMALoadMatrixOp : rcv_Op<"mfma_load_matrix", [MemoryEffects<[MemRead]>]>{
+
+  let summary = "matrix load";
+
+  let description = [{
+    The `rcv.mfma_load_matrix` operation loads a sub-matrix to be used by the rcv.mfma_compute operation.
+
+    This operation takes a memref as its first operand: it is the source matrix
+    from which data is to be loaded. The op returns a `!rcv.mfma_matrix`.
+  }];
+
+  let arguments = (ins Arg<MemRefOf<[F16, F32]>, "", [MemRead]>:$srcMemref);
+
+  let results = (outs rcv_MFMAMatrix:$res);
+
+  let assemblyFormat = [{
+    $srcMemref attr-dict `:` type($srcMemref) `->` type($res)
+  }];
+
+  let verifier = [{ return ::verify(*this); }];
+}
+
+def rcv_MFMAStoreMatrixOp : rcv_Op<"subgroup_mma_store_matrix",
+    [MemoryEffects<[MemWrite]>]>{
+
+  let summary = "matrix store";
+
+  let description = [{
+    The `rcv.mfma_load_matrix` operation loads a sub-matrix.
+
+    This operation takes a `rcv.mfma_matrix` and a memref as operands.
+    `!rcv.mma_matrix` is the source value containing the data to be stored into the
+    destination memref which can be in global or shared memory.
+  }];
+
+  let arguments = (ins Arg<MFMAMatrixOf<[F16, F32]>>:$src,
+                  Arg<MemRefOf<[F16, F32]>, "",[MemWrite]>:$dstMemref);
+
+  let assemblyFormat = [{
+    $src`,` $dstMemref attr-dict `:` type($src)`,` type($dstMemref)
+  }];
+
+  let verifier = [{ return ::verify(*this); }];
 }
 
 #endif // ACCERA_rcv_OPS

@@ -17,14 +17,13 @@
 #include <mlir/Dialect/SPIRV/IR/SPIRVEnums.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
 #include <mlir/Dialect/SPIRV/Transforms/SPIRVConversion.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
 
 #include <string>
 
 using namespace mlir;
 using accera::transforms::populateAcceraToSPIRVPatterns;
-
 
 namespace utilir = accera::ir::util;
 namespace vir = accera::ir::value;
@@ -73,7 +72,7 @@ struct PrivateAllocToSPIRVConversion : public OpConversionPattern<memref::AllocO
 };
 
 /// Removes a deallocation if it is a supported allocation
-struct PrivateDeallocToSPIRVConversion final :  public OpConversionPattern<memref::DeallocOp>
+struct PrivateDeallocToSPIRVConversion final : public OpConversionPattern<memref::DeallocOp>
 {
     PrivateDeallocToSPIRVConversion(SPIRVTypeConverter& typeConverter, MLIRContext* context) :
         OpConversionPattern(typeConverter, context, kAcceraSPIRVPatternBenefit)
@@ -125,11 +124,19 @@ struct ValueBarrierToSPIRVBarrierConversion final : public OpConversionPattern<v
 
     LogicalResult matchAndRewrite(vir::BarrierOp op, ArrayRef<Value>, ConversionPatternRewriter& rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<spirv::ControlBarrierOp>(
-            op,
-            op->getAttrOfType<IntegerAttr>("execution_scope").cast<spirv::ScopeAttr>(),
-            op->getAttrOfType<IntegerAttr>("memory_scope").cast<spirv::ScopeAttr>(),
-            op->getAttrOfType<IntegerAttr>("memory_semantics").cast<spirv::MemorySemanticsAttr>());
+        switch (op.scope())
+        {
+        case vir::BarrierScope::Block:
+            rewriter.replaceOpWithNewOp<spirv::ControlBarrierOp>(
+                op,
+                op->getAttrOfType<IntegerAttr>("execution_scope").cast<spirv::ScopeAttr>(),
+                op->getAttrOfType<IntegerAttr>("memory_scope").cast<spirv::ScopeAttr>(),
+                op->getAttrOfType<IntegerAttr>("memory_semantics").cast<spirv::MemorySemanticsAttr>());
+            break;
+        default:
+            assert(true);
+            break;
+        }
         return success();
     }
 };

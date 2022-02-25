@@ -209,7 +209,7 @@ For convenience, Accera also provides shortcuts to avoid unnecessary verbosity. 
 ```python
 package.add(nest, args=(A, B, C), base_name="simple_matmul")
 ```
-The abbreviated syntax makes it seem like; a callable function is generated directly from `nest`. However, what actually happens behind the scenes is that `nest` creates a default schedule, which creates a default plan, which is added as a function in the package. Accera has a similar convenience syntax to create a function from a schedule:
+The abbreviated syntax makes it seem like a callable function is generated directly from `nest`. However, what actually happens behind the scenes is that `nest` creates a default schedule, which creates a default plan, which is added as a function in the package. Accera has a similar convenience syntax to create a function from a schedule:
 ```python
 package.add(schedule, args=(A, B, C), base_name="simple_matmul")
 ```

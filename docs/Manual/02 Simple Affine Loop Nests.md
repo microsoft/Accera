@@ -2,10 +2,10 @@
 [//]: # (Version: v1.2.1)
 
 # Section 2: Simple affine loop nests
-In this section we introduce loop nests and define the types of loops nests that appear in the Accera programming model.
+This section introduces *loop nests* and their different types that are provided in Accera programming model.
 
 ## Affine loop nests
-Many important compute-intensive workloads can be expressed using nested for-loops. An algorithm that can be defined using nested for-loops is called a *loop nest*. Accera is restricted to the class of *affine loop nests*. A loop nest is *affine* if the indices of the elements accessed on each iteration are an affine function of the loop iterator variables. For example, the following loop nest is affine:
+Many important compute-intensive workloads can be expressed using nested for-loops. An algorithm that can be defined using nested for-loops is called a *loop nest*. Accera only supports the class of *affine loop nests*. A loop nest is *affine* if the indices of the elements accessed on each iteration are an affine function of the loop iterator variables. For example, the following loop nest is affine:
 ```python
 for i in range(M):
     for j in range(N):
@@ -22,11 +22,12 @@ for i in range(M):
 because `i*i` and `i*j` are quadratic (non-affine) functions of `i` and `j`.
 
 ## Simple affine loops nests, a.k.a. simple nests
-An important subclass of affine loop nests is the class of  *simple affine loop nests*, or just *simple nests* for short. An affine loop nest is *simple* if it satisfies the following properties:
+*Simple Affine Loop Nests*, hereinafter referred to as *simple nests*, is an important subclass of affine loop nests that satisfies the following properties:
 1. The loops are *perfectly nested*: all the computation is entirely contained within the deepest loop.
 2. All the loops are *normalized*: each loop starts at 0, increments by 1, and ends at a compile-time constant size.
 3. The loop iterations are *order invariant*: the logic doesn't change if the loop iterations are executed in a different sequential order.
-4. *No conditional exit*: the loop doesn't contain *break* or *continue* commands
+4. *No conditional exit*: the loop doesn't contain *break* or *continue* commands.
+
 
 The matrix-matrix multiplication example given in the introduction is an example of a simple nest. Another example is *2-dimensional convolution*, which is the fundamental operation in convolutional neural networks, and can be written in Python as:
 ```python
@@ -38,7 +39,7 @@ for i in range(M):
                 C[i, j] += A[i + k, j + l] * B[k, l]
 ```
 
-While Accera supports arbitrary affine loop nests, the programmer defines the logic of their algorithm using simple nests. More complex nests are obtained by applying schedule transformations (see [Section 3](<03%20Schedules.md>)) or by fusing multiple schedules (see [Section 4](<04%20Fusing.md>)).
+While Accera supports arbitrary affine loop nests, the programmer defines the logic of their algorithms using simple nests. More complex nests are obtained by applying schedule transformations (see [Section 3](<03%20Schedules.md>)) or by fusing multiple schedules (see [Section 4](<04%20Fusing.md>)).
 
 ## Defining the loop nest logic
 The programmer's goal is to create a highly optimized target-specific implementation of an affine loop nest. The first step towards this goal is to define the logic of one or more simple nests. The logic is a target-independent pseudo-code of a simple nest, written without considering performance. For example, the following code defines the logic of the matrix-matrix multiplication loop nest:
@@ -168,11 +169,11 @@ __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
 ## Accera program stages
-We take a step back to describe the stages of an Accera program:
+Let’s take a step back to describe the stages of Accera program:
 
 * `Nest`: A nest captures the logic of a simple nest, without any optimizations or implementation details.
 * `Schedule`: A `Nest` is used to create a schedule. The schedule controls the order in which the nest iterations are visited. Multiple schedules can be fused into a single schedule, which may no longer represent a simple nest.
-* `Plan`: A `Schedule` is used to create a plan. A plan controls the implementation details that are specific to a specific target platform (e.g., data caching strategy, vectorization, assignment of arrays and caches to different types of memory).
+* `Plan`: A `Schedule` is used to create a plan. A plan controls the implementation details that are specific for a target platform (e.g., data caching strategy, vectorization, assignment of arrays and caches to different types of memory).
 * `Package`: A `Plan` is used to create a function in a function package. The package is then compiled and emitted.
 
 Once a package is emitted, the Accera functions contained in it can be called from external client code. This external code is typically not written using Accera.
@@ -199,16 +200,16 @@ package.add(plan, args=(A, B, C), base_name="simple_matmul")
 package.build(format=acc.Package.Format.HAT_DYNAMIC, name="linear_algebra")
 ```
 
-It may not be immediately clear why so many stages are needed just to compile a simple nest. The importance of each step will hopefully become clear once we describe the stages in detail.
+It may not be immediately clear why so many stages are needed just to compile a simple nest. Therefore, let’s discuss each stage in detail to understand their importance. 
 
-In the example above, The call to `package.add` takes three arguments: the first is the plan that defines the function's implementation; the second is the order of the input and input/output arrays in the function signature; and the third is a base name for the function. The full name of the function is the base name followed by an automatically-generated unique identifier. For example, the function in the example could appear in the package as `simple_matmul_8f24bef5`. The automatically-generated suffix ensures that each function in the package has a unique name. More details on function packages can be found in [Section 10](<10%20Packages.md>).
+In the example above, the call to `package.add` takes three arguments: the first is the plan that defines the function's implementation; the second is the order of the input and input/output arrays in the function signature; and the third is a base name for the function. The full name of the function is the base name followed by an automatically-generated unique identifier. For example, the function in the example could appear in the package as `simple_matmul_8f24bef5`. The automatically-generated suffix ensures that each function in the package has a unique name. More details on function packages can be found in [Section 10](<10%20Packages.md>).
 
 ## Convenience syntax
-For convenience, Accera also provides shortcuts to avoid unneeded verbosity. Specifically, we can create a function in a package directly from a nest, as follows:
+For convenience, Accera also provides shortcuts to avoid unnecessary verbosity. Specifically, we can create a function in a package directly from a nest, as follows:
 ```python
 package.add(nest, args=(A, B, C), base_name="simple_matmul")
 ```
-The abbreviated syntax makes it seem like a callable function is generated directly from `nest`, but what actually happens behind the scenes is that `nest` creates a default schedule, which creates a default plan, which is added as a function in the package. Accera has a similar convenience syntax to create a function from a schedule:
+The abbreviated syntax makes it seem like a callable function is generated directly from `nest`. However, what actually happens behind the scenes is that `nest` creates a default schedule, which creates a default plan, which is added as a function in the package. Accera has a similar convenience syntax to create a function from a schedule:
 ```python
 package.add(schedule, args=(A, B, C), base_name="simple_matmul")
 ```

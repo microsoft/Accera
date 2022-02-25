@@ -163,7 +163,7 @@ Step-by-step examples are available on the [Tutorials](https://microsoft.github.
 
 ## Contributions
 
-AAccera is a research platform-in-progress that can certainly benefit from your contributions. We would love your feedback, recommendations, and feature requests. Not to mention that we are excited to answer your questions. Let’s collaborate! Please file a  [Github issue](https://github.com/microsoft/Accera/issues/new) or send us a pull request. Please review the [Microsoft Code of Conduct](https://opensource.microsoft.com/codeofconduct/) to learn more.
+Accera is a research platform-in-progress that can certainly benefit from your contributions. We would love your feedback, recommendations, and feature requests. Not to mention that we are excited to answer your questions. Let’s collaborate! Please file a  [Github issue](https://github.com/microsoft/Accera/issues/new) or send us a pull request. Please review the [Microsoft Code of Conduct](https://opensource.microsoft.com/codeofconduct/) to learn more.
 
 ## Credits
 

@@ -2,20 +2,20 @@
 [//]: # (Version: v1.2.1)
 
 # Introduction
-Accera is a programming model, a domain-specific programming language embedded in Python (eDSL), and an optimizing cross-compiler for compute-intensive code. Accera currently supports CPU and GPU targets and focuses on optimization of nested for-loops.
+Accera is a Python-based embedded domain-specific programming language (eDSL) that guarantees cross-compiler optimization for compute-intensive codes. Currently, optimization of nested for-loops is the primary focus of Accera while supporting CPU and GPU targets.
 
-Writing highly optimized compute-intensive code in a traditional programming language is a difficult and time-consuming process. It requires special engineering skills, such as fluency in Assembly language and a deep understanding of computer architecture. Manually optimizing the simplest numerical algorithms already requires a significant engineering effort. Moreover, highly optimized numerical code is prone to bugs, is often hard to read and maintain, and needs to be reimplemented every time a new target architecture is introduced. Accera aims to solve these problems.
+Optimization of compute-intensive codes in a traditional programming language is not only exhausting and time-consuming, but manual optimization of simplest numerical algorithms is also a nightmare even for an engineer who has an advanced understanding of computer architecture and fluency in Assembly Language. Even with all these efforts, implemented code is prone to critical bugs and requires extensive engineering effort for maintenance. Accera aims at resolving all these issues by providing optimized solutions for compute-intensive algorithms that are highly efficient, readable, and maintainable. 
 
-Accera has three goals:
+Accera has THREE primary goals:
 
-* **Performance**: generate the fastest implementation of any compute-intensive algorithm.
-* **Readability**: do so without sacrificing code readability and maintainability.
-* **Writability**: a user-friendly programming model, designed for agility.
+* Performance: To guarantee the fastest implementation for any compute-intensive algorithm.
+* Readability: To ensure effective implementation of algorithms without sacrificing the readability of code.
+* Writability: To provide a user-friendly programming model, designed for agility and maintainability.
 
-The Accera language was designed with the following guiding principles in mind:
+Accera is designed based on the following guiding principles: 
 
 ### 1: Strict separation of logic from implementation
-Traditional programming languages tend to tightly couple the code logic (*what* the program does) with its implementation (*how* the program is implemented). For example, consider the simple example of multiplying a 16&times;11 matrix *A* by a 11&times;10 matrix *B*. The logic of the algorithm is to calculate, for each value of *i* and *j*, the sum over *k* of *A[i,k]&middot;B[k,j]*. In Python, this logic can be expressed as
+Traditional programming languages are prone to the tight coupling of code logic (*what* the program does) with its implementation (*how* the program is implemented). Consider an example of multiplying a 16&times;11 matrix *A* by an 11&times;10 matrix *B*. The logic of the algorithm calculates the sum over *k* of *A[i,k]&middot;B[k,j]* for each value of *i* and *j*. In Python, this logic can be expressed as:
 ```python
 # C += A @ B
 for i in range(16):
@@ -23,19 +23,19 @@ for i in range(16):
         for k in range(11):
             C[i, j] += A[i, k] * B[k, j]
 ```
-However, the code above expresses more than just the logic of matrix multiplication, it also specifies a concrete plan for executing this logic: first perform all the work required to calculate `C(0,0)` in ascending order of `k`; then proceed to `C(0,1)`; etc. In principle, the iterations of this loop could be performed in any order and the logic would remain intact, but the code above insists on one specific order. Moreover, this code doesn't take advantage of important optimization techniques, such as double-buffered caching or vectorization.
+The above code expresses more than just the logic of matrix multiplication. It insists on a specific execution flow: first perform all the steps required to calculate `C(0,0)` in ascending order of `k`; then proceed to `C(0,1)`. However, in principle, a single order of execution should not be imposed because the iterations of this loop can be performed in any order while keeping the logic intact. Moreover, the above logic doesn’t utilize important optimization techniques, such as double-buffered caching or vectorization.
 
-In contrast, the Accera programming model draws a strict distinction between the logic and its implementation. Namely, the programmer first writes the logic using a pseudocode-like syntax, independent of the target platform and without any consideration for performance. After the abstract logic is specified, the programmer moves on to define the concrete implementation details.
+Accera on the other hand provides a strict distinction between the logic and its implementation. The programmer first implements the logic without performance considerations using a pseudocode-like syntax that is independent of the target platform. Once the logic is specified, only then the programmer moves to define the concrete implementation details. 
 
 ### 2: Mindfully trade-off safety versus expressivity
-The Accera programming model starts with a default implementation of the specified logic and allows the programmer to transform and manipulate that implementation in different ways. When used correctly, these transformations should be *safe*, which means that they do not influence the underlying logic. Using safe transformations allows the programmer to focus on performance, without having to worry about correctness. Moreover, safe transformations allow automatic search algorithms to search the space of transformations more aggressively, converge faster, and find better optima.
+Accera offers a programming model that provides a default implementation of the specified logic which can be transformed and manipulated in different ways. If used correctly, these transformations are *safe*, which means that the underlying logic remains intact. This allows the programmer to completely focus on the performance of the logic without worrying about its correctness. Moreover, these safe transformations allow automatic search algorithms to aggressively search for the space of transformations to converge faster and to find better optima. 
 
-However, safety is usually achieved by restricting and constraining a programming language. Excessive restrictions can limit the expressivity and the power of a language and prevent its users from creating highly-sophisticated and highly-optimized implementations.
+However, this safety is achieved by trading off the true potential of a programming language since it demands restricting the scope of that language. Nevertheless, extensive constraints significantly restrict the expressivity and the power of the programming language eventually preventing the end-users from developing highly-optimized and sophisticated implementations. 
 
-The Accera programming model navigates the trade-off between safety and expressivity by being very explicit about the safety guarantees provided by each transformation under different circumstances. Some situations are safer than others, but in all cases, the programmer knows exactly what safety guarantees are given.
+Accera moderates this tradeoff between safety and expressivity by explicitly defining what level of safety guarantees are being given by each transformation under different circumstances. Some situations are safer than others. However, in all cases, the programmer knows exactly what safeties are being guaranteed. 
 
 ### 3: The programmer is in control
-The Accera language gives the programmer maximal control over the generated code and avoids under-the-hood magic that cannot be overridden or controlled. Convenience methods and carefully chosen default values prevent verbosity, but the programmer can always override these and fine-tune the implementation as they see fit.
+Accera steers clear of all sorts of under-the-hood magic that cannot be overridden or controlled by giving the programmer maximum control over the generated logic. Convenience methods and carefully used default values can prevent verbosity. These helper methods can always be tuned, even overridden as per the use case. 
 
 
 <div style="page-break-after: always;"></div>

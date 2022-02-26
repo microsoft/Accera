@@ -2,9 +2,9 @@
 [//]: # (Version: v1.2.1)
 
 # Introduction
-Accera is a Python-based embedded domain-specific programming language (eDSL) that enables cross-compiler optimization for compute-intensive codes. Currently, optimization of nested for-loops is the primary focus of Accera while supporting CPU and GPU targets.
+Accera is a Python-based embedded domain-specific programming language (eDSL) that enables cross-compiler optimization for compute-intensive code. Currently, optimization of nested for-loops is the primary focus of Accera for CPU and GPU targets.
 
-Optimization of compute-intensive code in a traditional programming language is not only difficult and time-consuming, but manual optimization of simplest numerical algorithms is also a nightmare even for an engineer who has an advanced understanding of computer architecture and fluency in Assembly Language. Even with all these efforts, implemented code is prone to critical bugs and requires extensive engineering effort for maintenance. Accera aims at resolving all these issues by providing optimized solutions for compute-intensive algorithms that are highly efficient, readable, and maintainable. 
+Optimization of compute-intensive code in a traditional programming language is not only difficult and time-consuming, but manual optimization of simplest numerical algorithms demands significant engineering effort from an engineer who has an advanced understanding of computer architecture and fluency in Assembly Language. Even with all these efforts, implemented code is prone to critical bugs and requires extensive engineering effort for maintenance. Accera aims at resolving all these issues by providing optimized solutions for compute-intensive algorithms that are highly efficient, readable, and maintainable. 
 
 Accera has THREE primary goals:
 
@@ -28,7 +28,7 @@ The above code expresses more than just the logic of matrix multiplication. It i
 Accera on the other hand provides a strict distinction between the logic and its implementation. The programmer first implements the logic without performance considerations using a pseudocode-like syntax that is independent of the target platform. Once the logic is specified, only then does the programmer move to define the concrete implementation details. 
 
 ### 2: Mindfully trade-off safety versus expressivity
-Accera offers a programming model that provides a default implementation of the specified logic which can be transformed and manipulated in different ways. If used correctly, these transformations are *safe*, which means that the underlying logic remains intact. This allows the programmer to completely focus on the performance of the logic without worrying about its correctness. Moreover, these safe transformations allow automatic search algorithms to aggressively search for the space of transformations to converge faster and to find better optima. 
+Accera offers a programming model that provides a default implementation of the specified logic which can be transformed and manipulated in different ways. If used correctly, these transformations are *safe*, which means that the underlying logic remains intact. This allows the programmer to completely focus on the performance of the logic without worrying about its correctness. Moreover, these safe transformations allow automatic search algorithms to aggressively search the space of transformations to converge faster and to find better optima. 
 
 However, this safety is achieved by trading off the true potential of a programming language since it demands restricting the scope of that language. Nevertheless, extensive constraints significantly restrict the expressivity and the power of the programming language eventually preventing the end-users from developing highly-optimized and sophisticated implementations. 
 

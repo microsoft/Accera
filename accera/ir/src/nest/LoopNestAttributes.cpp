@@ -545,7 +545,8 @@ namespace loopnest
             {
                 auto expr = domain.GetIndexExpr(index);
                 auto range = domain.GetIndexRange(index);
-                result.indices.push_back({ index, expr, range });
+                auto padding = domain.GetIndexPadding(index);
+                result.indices.push_back({ index, expr, range, padding });
             }
 
             return result;
@@ -599,7 +600,7 @@ namespace loopnest
         if (failed(parser.parseComma()))
             return {};
 
-        std::vector<std::tuple<Index, AffineExpression, Range>> indexInfos;
+        std::vector<std::tuple<Index, AffineExpression, Range, std::vector<int64_t>>> indexInfos;
         if (failed(parser.parseKeyword("indices")))
             return {};
         if (failed(parser.parseColon()))
@@ -621,6 +622,7 @@ namespace loopnest
                 AffineExpression expr;
                 if (succeeded(parser.parseOptionalEqual()))
                 {
+                    // Example: {i,14} : {0:16:1} = {(d0, d1) -> (d0 + d1), {{i_o,19}, {i_i,20}}}
                     mlir::AffineMap map;
                     std::vector<Index> exprIndices;
 
@@ -638,8 +640,8 @@ namespace loopnest
                     {
                         do
                         {
-                            auto index = parseIndex(parser);
-                            exprIndices.push_back(index.getValue());
+                            auto exprIndex = parseIndex(parser);
+                            exprIndices.push_back(exprIndex.getValue());
                         } while (succeeded(parser.parseOptionalComma()));
                         if (failed(parser.parseRBrace()))
                             return {};
@@ -658,10 +660,25 @@ namespace loopnest
                     expr = { map.getResult(0), exprIndices };
                 }
 
+                std::vector<int64_t> padding;
+                if (succeeded(parser.parseOptionalComma()))
+                {
+                    if (failed(parser.parseLBrace()))
+                        return {};
+                    do
+                    {
+                        int padValue = 0;
+                        parser.parseInteger(padValue);
+                        padding.push_back(padValue);
+                    } while (succeeded(parser.parseOptionalComma()));
+                    if (failed(parser.parseRBrace()))
+                        return {};
+                }
+
                 if (failed(parser.parseRBrace()))
                     return {};
 
-                indexInfos.emplace_back(index, expr, range);
+                indexInfos.emplace_back(index, expr, range, padding);
             } while (succeeded(parser.parseOptionalComma()));
             if (failed(parser.parseRBrace()))
                 return {};
@@ -717,6 +734,16 @@ namespace loopnest
                 printer << "{";
                 llvm::interleaveComma(exprIndices, printer); // interleaveComma relies on op<<
                 printer << "}";
+                printer << "}";
+            }
+
+            // padding
+            auto padding = domain.GetIndexPadding(index);
+            if (!padding.empty())
+            {
+                printer << ", ";
+                printer << "{";
+                llvm::interleaveComma(padding, printer);
                 printer << "}";
             }
 

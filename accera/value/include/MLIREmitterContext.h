@@ -147,7 +147,7 @@ namespace value
 
         void CopyDataImpl(const Value& source, Value& destination) override;
 
-        Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& shape, const std::vector<Scalar>& strides) override;
+        Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& shape, const std::vector<int64_t>& strides) override;
 
         Value SliceImpl(Value source, std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets) override;
 

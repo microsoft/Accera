@@ -45,6 +45,20 @@ namespace utilities
             }
             return { result };
         }
+
+        MemoryShape StridedIncrement(const MemoryShape& extent, const MemoryShape& strides)
+        {
+            const auto numDimensions = extent.NumDimensions();
+            std::vector<int64_t> result(numDimensions);
+            int64_t prevScale = 1;
+            for (int64_t index = numDimensions - 1; index >= 0; --index)
+            {
+                result[index] = prevScale * strides[index];
+                prevScale *= extent[index];
+            }
+
+            return { result };
+        }
     } // namespace
 
     //
@@ -163,6 +177,10 @@ namespace utilities
             }
         }
     }
+
+    MemoryLayout::MemoryLayout(const MemoryLayout& originalLayout, const MemoryShape& size, const MemoryShape& strides) :
+        MemoryLayout(size, originalLayout.GetExtent(), originalLayout.GetOffset(), StridedIncrement(originalLayout.GetExtent(), strides))
+    {}
 
     // Constructors that deal with ordering
     MemoryLayout::MemoryLayout(const MemoryShape& size, const DimensionOrder& order) :

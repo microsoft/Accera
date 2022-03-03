@@ -259,7 +259,7 @@ namespace value
         /// <param name="strides"> The strides of the view </param>
         /// <returns> A Value instance that refers to the sub-part of the input </returns>
         /// <remarks> source must be constrained and the number of items in offset must match the degree of source </remarks>
-        Value View(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape, std::vector<Scalar> strides = {});
+        Value View(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape, const std::vector<int64_t>& strides);
 
         /// <summary> Returns a slice of a portion of a memory buffer </summary>
         /// <param name="source"> The source location </param>
@@ -443,7 +443,7 @@ namespace value
 
         virtual void CopyDataImpl(const Value& source, Value& destination) = 0;
 
-        virtual Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape, const std::vector<Scalar>& strides) = 0;
+        virtual Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape, const std::vector<int64_t>& strides) = 0;
 
         virtual Value SliceImpl(Value source, std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets) = 0;
 

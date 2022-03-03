@@ -125,9 +125,9 @@ mlir::Type ToMLIRType(mlir::OpBuilder& builder, ValueType type)
     }
 }
 
-MemoryLayout GetSubArrayLayout(const MemoryLayout& originalLayout, const MemoryShape& shape)
+MemoryLayout GetSubArrayLayout(const MemoryLayout& originalLayout, const MemoryShape& shape, const std::vector<int64_t>& stridesValue)
 {
-    return { shape, originalLayout.GetExtent(), originalLayout.GetOffset() };
+    return { originalLayout, shape, stridesValue };
 }
 
 MemoryLayout GetSliceLayout(const MemoryLayout& originalLayout, std::vector<int64_t> slicedDimensions)
@@ -1357,7 +1357,7 @@ Value MLIRContext::ResolveConstantDataReferenceImpl(Value constantDataSource)
         globalOp->removeAttr("value"); // can't set null attribute (mlir::Attribute()) if existing
     }
 
-    // Clone a RefefenceGlobalOp to refer to the GlobalOp. Since this is a clone, the reference *should* "carry over" without
+    // Clone a ReferenceGlobalOp to refer to the GlobalOp. Since this is a clone, the reference *should* "carry over" without
     // explicitly wrapping globalOp from above
     mlir::OpBuilder::InsertionGuard guard(builder);
     auto insertionBlock = builder.getInsertionBlock();
@@ -1575,19 +1575,13 @@ void MLIRContext::CopyDataImpl(const Value& source, Value& destination)
     }
 }
 
-Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offsetsValue, const MemoryShape& shape, const std::vector<Scalar>& strides_)
+Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offsetsValue, const MemoryShape& shape, const std::vector<int64_t>& stridesValue)
 {
     const MemoryLayout& currentLayout = sourceValue.GetLayout();
-    auto destLayout = GetSubArrayLayout(currentLayout, shape);
-
-    std::vector<Scalar> strides = strides_;
-    if (strides.empty())
-    {
-        strides = std::vector<Scalar>(offsetsValue.size(), Scalar(1));
-    }
+    auto destLayout = GetSubArrayLayout(currentLayout, shape, stridesValue);
 
     llvm::SmallVector<mlir::Value, 4> linalgRanges;
-    auto ranges = utilities::MakeZipRange(offsetsValue, shape, strides);
+    auto ranges = utilities::MakeZipRange(offsetsValue, shape, stridesValue);
     std::transform(
         begin(ranges),
         end(ranges),
@@ -1595,13 +1589,13 @@ Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offset
         [this](std::tuple<Scalar, Scalar, Scalar> s) -> mlir::Value {
             auto& builder = _impl->builder;
             auto loc = builder.getUnknownLoc();
-            auto offset = Scalar(Cast(std::get<0>(s), ValueType::Index));
-            auto size = Scalar(Cast(Scalar(std::get<1>(s)), ValueType::Index));
-            auto step = Scalar(Cast(Scalar(std::get<2>(s)), ValueType::Index));
+            auto offset = Cast(std::get<0>(s), ValueType::Index);
+            auto size = Cast(std::get<1>(s), ValueType::Index);
+            auto stride = Cast(std::get<2>(s), ValueType::Index);
             auto lowerBound = ResolveMLIRIndex(builder, offset);
             auto upperBound = ResolveMLIRIndex(builder, size);
-            auto stride = ResolveMLIRIndex(builder, step);
-            return builder.create<mlir::linalg::RangeOp>(loc, lowerBound, upperBound, stride);
+            auto step = ResolveMLIRIndex(builder, stride);
+            return builder.create<mlir::linalg::RangeOp>(loc, lowerBound, upperBound, step);
         });
 
     auto& builder = _impl->builder;
@@ -2478,13 +2472,20 @@ void MLIRContext::EmitNestDebugFunction(FunctionDeclaration targetFunc, const st
                     valueMap.map(fromValue, toValue);
                 }
 
-                // Replicate local allocations (e.g. TEMP arrays) that exist outside of the nest
-                // (Assumes that these are needed before the nest)
-                targetFnOp->walk([&builder, &valueMap](ir::value::AllocOp op) {
-                    auto newOp = mlir::cast<ir::value::AllocOp>(builder.clone(*op.getOperation()));
-                    valueMap.map(op.getResult(), newOp.getResult());
+                targetFnOp->walk([&builder, &valueMap](mlir::Operation* op) {
+                    mlir::TypeSwitch<mlir::Operation*>(op)
+                        .Case([&](ir::value::AllocOp allocOp) {
+                            // Replicate local allocations (e.g. TEMP arrays)
+                            auto newOp = mlir::cast<ir::value::AllocOp>(builder.clone(*allocOp.getOperation()));
+                            valueMap.map(allocOp.getResult(), newOp.getResult());
+                        })
+                        .Case([&](ir::value::ReferenceGlobalOp refGlobalOp) {
+                            // Replicate references to globals (e.g. CONST arrays)
+                            auto newOp = mlir::cast<ir::value::ReferenceGlobalOp>(builder.clone(*refGlobalOp.getOperation()));
+                            valueMap.map(refGlobalOp.getResult(), newOp.getResult());
+                        });
                 });
-
+                    
                 // Create the reference schedule(s)
                 auto targetNestOp = scheduleOp.getNest();
                 if (auto fusedDomains = scheduleOp.getFusedDomains(); !fusedDomains.empty())
@@ -2582,7 +2583,16 @@ void MLIRContext::EmitNestDebugFunction(FunctionDeclaration targetFunc, const st
                             {
                                 // Simplify any identity affine maps, e.g. (d0, d1) -> (d0 * 256 + d1) can become (d0, d1) -> (d0, d1)
                                 // Required by ConvertToLLVMPattern::isConvertibleAndHasIdentityMaps() in GlobalMemrefOpLowering
-                                auto argCopy = ir::util::CreateGlobalBuffer(builder, dbgFnOp, mlir::canonicalizeStridedLayout(memrefType), name);
+                                // First, try simplifying the layout as it is
+                                memrefType = mlir::canonicalizeStridedLayout(memrefType);
+                                if (!memrefType.getAffineMaps().empty())
+                                {
+                                    // The layout could not be simplified (e.g. SubArrays) - force an identity map
+                                    // The logical access indices will still work but there is a potential performance tradeoff with
+                                    // a change in the physical layout (acceptable for Debug mode)
+                                    memrefType = mlir::MemRefType::Builder(memrefType).setAffineMaps({});
+                                }
+                                auto argCopy = ir::util::CreateGlobalBuffer(builder, dbgFnOp, memrefType, name);
 
                                 // Replace the global-scoped ReferenceGlobalOp with one within the function context
                                 auto globalScopeGlobalRef = mlir::dyn_cast_or_null<ir::value::ReferenceGlobalOp>(argCopy.getDefiningOp());

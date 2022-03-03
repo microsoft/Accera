@@ -114,7 +114,7 @@ namespace loopnest
         PartitionList GetPartitions(const Index& loopIndex, Range loopRange, const RecursionState& state, const LoopVisitSchedule& schedule) const;
 
         // TODO: change this to take a KernelPredicate instead of Operation*
-        void AddSplits(const Index& loopIndex, Range loopRange, Operation* predicate, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule, std::set<int64_t>& splits) const;
+        void AddSplits(const Index& loopIndex, const Range& loopRange, Operation* predicate, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule, std::set<int64_t>& splits) const;
 
         void UpdateSubdomainSizes(const Index& loopIndex, const LoopRange& range, std::vector<int64_t>& subdomainSize);
 

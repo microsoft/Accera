@@ -24,6 +24,7 @@ namespace loopnest
 
     Range LoopVisitSchedule::GetActiveLoopRange(const TransformedDomain& domain, const Index& loopIndex, const LoopIndexSymbolTable& activeRanges) const
     {
+        // Compute the active loop range bounds. This will fix the end boundaries of a loop index.
         if (!domain.IsLoopIndex(loopIndex))
         {
             throw std::runtime_error("Error: emitting a loop for a non-loop index");
@@ -32,6 +33,7 @@ namespace loopnest
         auto loopRange = domain.GetIndexRange(loopIndex);
         int begin = loopRange.Begin();
         int end = loopRange.End();
+
         int rangeSize = end - begin;
         int increment = loopRange.Increment();
 
@@ -57,10 +59,18 @@ namespace loopnest
             }
         };
 
-        // if (activeRanges.count(loopIndex) != 0)
-        // {
-        //     return loopRange;
-        // }
+        if (domain.IsPaddedIndex(loopIndex))
+        {
+            const auto constraints = domain.GetConstraints();
+            auto [unpaddedBegin, unused] = constraints.GetEffectiveRangeBounds(loopIndex);
+
+            // clamp the front-padded ranges for non-fused indices only
+            // (fused indices will require the full range to apply predicates)
+            if (unpaddedBegin > 0 && !domain.IsFusedPaddedIndex(loopIndex))
+            {
+                loopRange = { unpaddedBegin, end, increment };
+            }
+        }
         if (domain.IsSplitIndex(loopIndex, /*inner=*/ true))
         {
             fixBoundaryRange(loopIndex);

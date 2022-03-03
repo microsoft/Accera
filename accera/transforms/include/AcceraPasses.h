@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include "accera/AcceraLoweringPass.h"
 #include "exec/ExecutionPlanToAffineLoweringPass.h"
 #include "gpu/AcceraToGPUPass.h"
 #include "gpu/AcceraToSPIRVPass.h"
@@ -15,6 +14,7 @@
 #include "nest/LoopNestPasses.h"
 #include "nest/LoopNestToValueFunc.h"
 #include "value/FunctionPointerResolutionPass.h"
+#include "value/RangeValueOptimizePass.h"
 #include "value/ValueFuncToTargetPass.h"
 #include "value/ValueSimplifyPass.h"
 #include "value/ValueToLLVMLoweringPass.h"

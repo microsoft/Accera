@@ -169,7 +169,7 @@ namespace value
 
     void EmitterContext::CopyData(const Value& source, Value& destination) { return CopyDataImpl(source, destination); }
 
-    Value EmitterContext::View(Value source, const std::vector<Scalar>& offsets, const MemoryShape& newShape, const std::vector<Scalar> strides)
+    Value EmitterContext::View(Value source, const std::vector<Scalar>& offsets, const MemoryShape& newShape, const std::vector<int64_t>& strides)
     {
         return ViewImpl(source, offsets, newShape, strides);
     }

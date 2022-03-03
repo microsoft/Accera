@@ -1090,6 +1090,53 @@ class SmokeTest(unittest.TestCase):
                 after=(Input_test, Kernel_test, Output_ref)
             )
 
+    def test_strided_sub_array(self) -> None:
+        N = 5
+        subArrayNumRows = 2
+        subArrayNumCols = 3
+
+        Input = Array(role=Array.Role.INPUT_OUTPUT,
+                      element_type=ScalarType.float32, shape=(N, N))
+
+        # Zero out a sub array of size [2, 3]:
+        # xxxxx
+        # x000x
+        # xxxxx
+        # x000x
+        # xxxxx
+
+        out_nest = Nest(shape=(subArrayNumRows, subArrayNumCols))
+        i, j = out_nest.get_indices()
+
+        @out_nest.iteration_logic
+        def _():
+            Output = Input.sub_array([1, 1], [subArrayNumRows, subArrayNumCols], [2, 1])
+            Output[i, j] = 0.0
+
+        schedule = out_nest.create_schedule()
+
+        package = Package()
+        function = package.add(schedule, args=(Input,), base_name="strided_sub_array")
+
+        package_name = "test_strided_sub_array"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT,
+                          mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+            # correctness check
+            Data = np.random.random([N, N]).astype(np.float32)
+            DataStrided = Data.copy()
+            DataStrided[1, 1] = 0.0
+            DataStrided[1, 2] = 0.0
+            DataStrided[1, 3] = 0.0
+            DataStrided[3, 1] = 0.0
+            DataStrided[3, 2] = 0.0
+            DataStrided[3, 3] = 0.0
+            v.check_correctness(function.name, before=(Data,), after=(DataStrided,))
+
     def test_padded_nchwc_conv2d_manual_cache(self) -> None:
         input_channels = 64
         base_input_shape = (input_channels, 28, 28)    # CHW order

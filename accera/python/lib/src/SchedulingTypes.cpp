@@ -73,7 +73,7 @@ Args:
 Returns:
     The 'fusing' index, which will be the outermost loop index
 )pbdoc")
-        .def("pad", py::overload_cast<value::ScalarIndex, int>(&value::Schedule::Pad), "i"_a, "size"_a)
+        .def("pad", py::overload_cast<value::ScalarIndex, int, bool>(&value::Schedule::Pad), "i"_a, "size"_a, "pad_front"_a)
         .def("skew", py::overload_cast<value::ScalarIndex, value::ScalarIndex>(&value::Schedule::Skew), "i"_a, "reference_index"_a)
         .def("create_plan", &value::Schedule::CreatePlan, "Creates a plan for the host")
         .def("create_gpu_plan", &value::Schedule::CreateGPUPlan, "Creates a plan for the GPU", "gpu_options"_a, "runtime"_a = value::ExecutionRuntime::Default)

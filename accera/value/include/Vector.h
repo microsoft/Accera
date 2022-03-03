@@ -72,7 +72,7 @@ namespace value
         /// <param name="offset"> The starting index of the subvector </param>
         /// <param name="size"> The size of the subvector </param>
         /// <returns> A Vector instance that starts at the data specified by the offset and is of the specified size </returns>
-        Vector SubVector(Scalar offset, int size) const;
+        Vector SubVector(Scalar offset, int size, int stride = 1) const;
 
         /// <summary> Creates a new Vector instance that contains the same data as this instance </summary>
         /// <returns> A new Vector instance that points to a new, distinct memory that contains the same data as this instance </returns>

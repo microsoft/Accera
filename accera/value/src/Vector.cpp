@@ -62,9 +62,9 @@ namespace value
 
     Value Vector::GetValue() const { return _value; }
 
-    Vector Vector::SubVector(Scalar offset, int size) const
+    Vector Vector::SubVector(Scalar offset, int size, const int stride) const
     {
-        Value indexedValue = GetContext().View(_value, { offset }, { size });
+        Value indexedValue = GetContext().View(_value, { offset }, { size }, { stride });
         return indexedValue;
     }
 

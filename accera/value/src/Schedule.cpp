@@ -69,14 +69,14 @@ namespace value
             return result;
         }
 
-        Index Pad(Index i, int size)
+        Index Pad(Index i, int size, bool padFront)
         {
-            return _op.pad(i, size);
+            return _op.pad(i, size, padFront);
         }
 
-        ScalarIndex Pad(ScalarIndex i, int size)
+        ScalarIndex Pad(ScalarIndex i, int size, bool padFront)
         {
-            auto paddedIndex = _op.pad(GetIndexOp(i), size);
+            auto paddedIndex = _op.pad(GetIndexOp(i), size, padFront);
             return MakeScalarIndex(paddedIndex);
         }
 
@@ -345,13 +345,13 @@ namespace value
         return _impl->Split(i, factor);
     }
 
-    Index Schedule::Pad(Index i, int size)
+    Index Schedule::Pad(Index i, int size, bool padFront)
     {
-        return _impl->Pad(i, size);
+        return _impl->Pad(i, size, padFront);
     }
-    ScalarIndex Schedule::Pad(ScalarIndex i, int size)
+    ScalarIndex Schedule::Pad(ScalarIndex i, int size, bool padFront)
     {
-        return _impl->Pad(i, size);
+        return _impl->Pad(i, size, padFront);
     }
 
     Index Schedule::Skew(Index i, Index reference)

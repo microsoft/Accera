@@ -1261,15 +1261,17 @@ LogicalResult ViewOpLowering::matchAndRewrite(
         return true;
     };
 
-    llvm::SmallVector<mlir::Value, 4> offsets, strides;
+    llvm::SmallVector<mlir::Value, 4> offsets, sizes, strides;
     for (auto offset : op.offsets())
     {
         if (auto r = mlir::dyn_cast<linalg::RangeOp>(offset.getDefiningOp()))
         {
             auto min = r.min();
+            auto max = r.max();
             auto step = r.step();
-            strides.push_back(step.getDefiningOp()->getResult(0));
             offsets.push_back(min.getDefiningOp()->getResult(0));
+            sizes.push_back(max.getDefiningOp()->getResult(0));
+            strides.push_back(step.getDefiningOp()->getResult(0));
         }
         else
         {
@@ -1279,12 +1281,6 @@ LogicalResult ViewOpLowering::matchAndRewrite(
 
     if (isStaticCanonicalOrder(sourceType))
     {
-        llvm::SmallVector<mlir::Value, 4> sizes;
-        for (auto extent : shape)
-        {
-            sizes.push_back(rewriter.create<ConstantIndexOp>(loc, extent));
-        }
-
         bool isStaticShape = true;
         llvm::SmallVector<int64_t, 4> staticOffsets, staticSizes, staticStrides;
         for (auto [size, offset, stride] : llvm::zip(sizes, offsets, strides))
@@ -1305,17 +1301,17 @@ LogicalResult ViewOpLowering::matchAndRewrite(
             }
         }
 
-        auto subviewType = isStaticShape
-                               ? memref::SubViewOp::inferResultType(
-                                     sourceType, staticOffsets, staticSizes, staticStrides)
-                                     .cast<mlir::MemRefType>()
-                               : op.getType();
-        rewriter.replaceOpWithNewOp<memref::SubViewOp>(
-            op, subviewType, source, offsets, sizes, strides);
+        if (isStaticShape)
+        {
+            rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, source, staticOffsets, staticSizes, staticStrides);
+        }
+        else
+        {
+            rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, source, offsets, sizes, strides);
+        }
     }
     else
     {
-
         llvm::SmallVector<mlir::Value, 4> sizes;
         llvm::SmallVector<mlir::Value, 4> strides;
 
@@ -1382,7 +1378,7 @@ LogicalResult SliceOpLowering::matchAndRewrite(
     }
 
     auto view = rewriter.create<memref::SubViewOp>(loc, source, offsets, sizes, strides);
-    rewriter.replaceOp(op, { rewriter.create<memref::SubViewOp>(loc, op.getType(), view, linalgSliceIndexings, sizes, strides) });
+    rewriter.replaceOp(op, { rewriter.create<memref::SubViewOp>(loc, view, linalgSliceIndexings, sizes, strides) });
 
     return success();
 }

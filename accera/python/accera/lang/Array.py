@@ -172,7 +172,7 @@ class Array:
         self._layout = cache.layout
         self._create_native_array()
 
-    def sub_array(self, offsets: Tuple[int], shape: Tuple[int]):
+    def sub_array(self, offsets: Tuple[int], shape: Tuple[int], strides: Tuple[int] = ()):
         """Gets a sub-view of the Array.
 
         Similar to numpy.ndarray.view, this does not make a copy of the Array,
@@ -180,10 +180,11 @@ class Array:
         of the sub-view will apply to the original Array (and vice-versa).
 
         Args:
-            offsets: The offsets into the Array where the sub-view begins
+            offsets: The offsets into the Array where the sub-view begins (required only for signature parity)
             shape: The shape of the sub-view
+            strides: The stride values for each rank used for creating the sub-view (required only for signature parity)
         """
-        return SubArray(self, offsets, shape)
+        return SubArray(self, shape)
 
     def __hash__(self):
         return id(self)
@@ -274,9 +275,7 @@ class SubArray(Array):
             package.add(main, args=(A,), base_name="main")
 
     """
-    def __init__(self, source: Array, offsets: Tuple[int], shape: Tuple[int]):
-        self._offsets = offsets
-
+    def __init__(self, source: Array, shape: Tuple[int]):
         self._source = source
         self._role = source.role
         self._shape = shape or source.shape

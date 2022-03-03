@@ -1845,7 +1845,7 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
 
     auto constantShapeOpt = GetConstantActiveBlockShape(lbMaps, ubMaps);
 
-    std::optional<v::ExecutionTarget> execTargetOpt = util::ResolveExecutionTarget(cacheCopyOp); 
+    std::optional<v::ExecutionTarget> execTargetOpt = util::ResolveExecutionTarget(cacheCopyOp);
     auto execTarget = *execTargetOpt;
 
     if (constantShapeOpt.has_value())

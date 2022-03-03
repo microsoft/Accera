@@ -102,10 +102,17 @@ namespace value
         return indexedValue;
     }
 
-    Array Array::SubArray(const std::vector<Scalar>& offsets, const MemoryShape& shape) const
+    Array Array::SubArray(const std::vector<Scalar>& offsets, const MemoryShape& shape, std::optional<std::vector<int64_t>> strides) const
     {
         assert(offsets.size() == (size_t) Rank() && shape.NumDimensions() == Rank());
-        return GetContext().View(_value, offsets, shape);
+        if (!strides)
+        {
+            strides = std::vector<int64_t>(Rank(), 1LL);
+        }
+
+        assert(strides->size() == static_cast<size_t>(Rank()));
+
+        return GetContext().View(_value, offsets, shape, *strides);
     }
 
     Array Array::Slice(std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets) const

@@ -8,7 +8,7 @@
 
 include "mlir/Pass/PassBase.td"
 
-class rcModulePass<string passArg> : PassBase<passArg, "::accera::transforms::ModulePass">;
+class accModulePass<string passArg> : PassBase<passArg, "::accera::transforms::ModulePass">;
 
 //===----------------------------------------------------------------------===//
 // ExecutionPlanCacheRegion
@@ -191,10 +191,28 @@ def ConvertValueSimplify : Pass<"simplify-value"> {
 }
 
 //===----------------------------------------------------------------------===//
+// RangeValueOptimization
+//===----------------------------------------------------------------------===//
+
+def ConvertRangeValueOptimize : Pass<"optimize-range-value"> {
+  let summary = "Performing optimization using Range Value analysis";
+  let constructor = "accera::transforms::value::createRangeValueOptimizePass()";
+  let dependentDialects = [
+    "mlir::StandardOpsDialect",
+    "mlir::AffineDialect",
+    "mlir::linalg::LinalgDialect",
+    "mlir::memref::MemRefDialect",
+    "mlir::math::MathDialect",
+    "mlir::scf::SCFDialect",
+    "mlir::gpu::GPUDialect"
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // ValueToLLVM
 //===----------------------------------------------------------------------===//
 
-def ConvertValueToLLVM : rcModulePass<"value-to-llvm"> {
+def ConvertValueToLLVM : accModulePass<"value-to-llvm"> {
   let summary = "Lower Value ops to LLVM";
   let constructor = "accera::transforms::value::createValueToLLVMPass()";
   let dependentDialects = [
@@ -227,7 +245,7 @@ def ConvertValueToLLVM : rcModulePass<"value-to-llvm"> {
 // ValueToStd
 //===----------------------------------------------------------------------===//
 
-def ConvertValueToStd : rcModulePass<"convert-value-to-std"> {
+def ConvertValueToStd : accModulePass<"convert-value-to-std"> {
   let summary = "Lower Value ops to standard MLIR dialects";
   let constructor = "accera::transforms::value::createValueToStdPass()";
   let options = [
@@ -237,48 +255,15 @@ def ConvertValueToStd : rcModulePass<"convert-value-to-std"> {
   let dependentDialects = [
     "mlir::StandardOpsDialect",
     "mlir::AffineDialect",
-    "mlir::scf::SCFDialect"
-  ];
-}
-
-//===----------------------------------------------------------------------===//
-// AcceraLowering
-//===----------------------------------------------------------------------===//
-
-def ConvertAcceraToLower : rcModulePass<"lower-accera"> {
-  let summary = "Lower Accera ops";
-  let constructor = "accera::transforms::rc::createAcceraLoweringPass()";
-  let dependentDialects = [
-    "accera::ir::value::ValueDialect",
-    "accera::ir::loopnest::LoopNestDialect",
-    "accera::ir::executionPlan::ExecutionPlanDialect",
-    "mlir::StandardOpsDialect",
+    "mlir::scf::SCFDialect",
     "mlir::memref::MemRefDialect",
-    "mlir::math::MathDialect"
+    "mlir::linalg::LinalgDialect"
   ];
 }
 
-def ConvertAcceraToLLVM : FunctionPass<"convert-accera-to-llvm"> {
-  let summary = "Lower Accera ops to LLVM";
-  let constructor = "accera::transforms::rc::createAcceraToLLVMPass()";
-  let dependentDialects = [
-    "accera::ir::value::ValueDialect",
-    "accera::ir::loopnest::LoopNestDialect",
-    "accera::ir::executionPlan::ExecutionPlanDialect",
-    "mlir::LLVM::LLVMDialect"
-  ];
-}
-
-def ConvertGlobalAcceraToLLVM : rcModulePass<"convert-global-accera-to-llvm"> {
-  let summary = "Lower Accera ops";
-  let constructor = "accera::transforms::rc::createGlobalAcceraToLLVMPass()";
-  let dependentDialects = [
-    "accera::ir::value::ValueDialect",
-    "accera::ir::loopnest::LoopNestDialect",
-    "accera::ir::executionPlan::ExecutionPlanDialect",
-    "mlir::LLVM::LLVMDialect"
-  ];
-}
+//===----------------------------------------------------------------------===//
+// ValueFuncToTarget
+//===----------------------------------------------------------------------===//
 
 def ValueFuncToTarget : Pass<"value-func-to-target", "::mlir::ModuleOp"> {
   let constructor = "accera::transforms::value::createValueFuncToTargetPass()";
@@ -286,6 +271,10 @@ def ValueFuncToTarget : Pass<"value-func-to-target", "::mlir::ModuleOp"> {
     "mlir::StandardOpsDialect"
   ];
 }
+
+//===----------------------------------------------------------------------===//
+// LoopNestToValueFunc
+//===----------------------------------------------------------------------===//
 
 def LoopNestToValueFunc : Pass<"loopnest-to-value-func", "accera::ir::value::ValueFuncOp"> {
   let summary = "Lower loop nests";
@@ -312,7 +301,8 @@ def LoopNestToValueFunc : Pass<"loopnest-to-value-func", "accera::ir::value::Val
 //===----------------------------------------------------------------------===//
 // ConvertVulkanLaunchFuncToVulkanCallsWithTiming
 //===----------------------------------------------------------------------===//
-def ConvertVulkanLaunchFuncToVulkanCallsWithTiming : rcModulePass<"launch-func-to-vulkan-with-timing"> {
+
+def ConvertVulkanLaunchFuncToVulkanCallsWithTiming : accModulePass<"launch-func-to-vulkan-with-timing"> {
   let summary = "Convert vulkanLaunch external call to Vulkan runtime external "
                 "calls with custom timing configuration runtime calls";
   let constructor = "accera::transforms::vulkan::createConvertVulkanLaunchFuncToVulkanCallsWithTimingPass()";
@@ -332,7 +322,8 @@ def ConvertVulkanLaunchFuncToVulkanCallsWithTiming : rcModulePass<"launch-func-t
 //===----------------------------------------------------------------------===//
 // EmitVulkanWrappers
 //===----------------------------------------------------------------------===//
-def EmitVulkanWrapper : rcModulePass<"emit-vulkan-wrappers"> {
+
+def EmitVulkanWrapper : accModulePass<"emit-vulkan-wrappers"> {
   let summary = "Mark vulkanLaunch calls to emit C wrappers";
   let constructor = "accera::transforms::vulkan::createEmitVulkanWrapperPass()";
   let dependentDialects = ["mlir::StandardOpsDialect"];
@@ -341,7 +332,8 @@ def EmitVulkanWrapper : rcModulePass<"emit-vulkan-wrappers"> {
 //===----------------------------------------------------------------------===//
 // FunctionPointerResolution
 //===----------------------------------------------------------------------===//
-def FunctionPointerResolution : rcModulePass<"resolve-function-pointers"> {
+
+def FunctionPointerResolution : accModulePass<"resolve-function-pointers"> {
   let summary = "Resolve Accera temporary functions to their fully-realized counterparts";
   let constructor = "accera::transforms::value::createFunctionPointerResolutionPass()";
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];

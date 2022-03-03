@@ -253,6 +253,75 @@ TEST_CASE_METHOD(Fixture, "Test4", "[cpu][lang]")
                          << debugString(module));
 }
 
+TEST_CASE_METHOD(Fixture, "strided_subvector", "[cpu][lang]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    [[maybe_unused]] auto f =
+        DeclareFunction("func_test")
+            .Parameters(Value({ ValueType::Float, 0 }, { 5 }))
+            .Define([](Vector x) {
+                Vector y = x.SubVector(1, 2, 2);
+                Return(y);
+            });
+
+    RunConversionPasses(target, "strided_subvector_" + stringify(target));
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "strided_subvector2", "[cpu][lang]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+    using accera::value::Value, accera::value::Matrix;
+
+    const auto N = 16;
+
+    [[maybe_unused]] auto f =
+        DeclareFunction("func_test")
+            .Parameters(Value({ ValueType::Float, 0 }, { N }))
+            .Define([=](Vector x) {
+                Vector y = x.SubVector(1, N/2, 2);
+                y(0) = 4.0f;
+            });
+
+    RunConversionPasses(target, "strided_subvector2_" + stringify(target));
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "strided_submatrix", "[cpu][lang]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value, accera::value::Matrix;
+
+    const auto N = 16;
+
+    [[maybe_unused]] auto f =
+        DeclareFunction("func_test")
+            .Parameters(
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ N, N }) }))
+            .Define([](Matrix a) {
+                auto slice = a.SubMatrix(1, 1, 2, 2, 1, 1);
+                slice(0, 0) = 3.0f;
+            });
+
+    RunConversionPasses(target, "strided_submatrix_" + stringify(target));
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
 TEST_CASE_METHOD(Fixture, "vector_add", "[gpu][lang]")
 {
     auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
@@ -263,7 +332,7 @@ TEST_CASE_METHOD(Fixture, "vector_add", "[gpu][lang]")
 
     auto gpu_f1 =
         DeclareFunction("gpu_f1")
-            .Target(targets::GPU( {128, 1, 1}, {128, 1, 1}))
+            .Target(targets::GPU({ 128, 1, 1 }, { 128, 1, 1 }))
             .Parameters(Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } })
@@ -304,7 +373,6 @@ TEST_CASE_METHOD(Fixture, "vector_add", "[gpu][lang]")
                          << debugString(module));
 }
 
-
 TEST_CASE_METHOD(Fixture, "vector_add_rocm", "[gpu][lang]")
 {
     auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
@@ -315,7 +383,7 @@ TEST_CASE_METHOD(Fixture, "vector_add_rocm", "[gpu][lang]")
 
     auto gpu_f1 =
         DeclareFunction("gpu_f1")
-            .Target(targets::GPU( {128, 1, 1}, {128, 1, 1}))
+            .Target(targets::GPU({ 128, 1, 1 }, { 128, 1, 1 }))
             .Runtime(ExecutionRuntime::Rocm)
             .Parameters(Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
@@ -2052,7 +2120,7 @@ TEST_CASE_METHOD(Fixture, "basic_conv_skew", "[cpu][nest]")
                          << debugString(module));
 }
 
-TEST_CASE_METHOD(Fixture, "basic_matmul_pad", "[cpu][nest]")
+TEST_CASE_METHOD(Fixture, "basic_matmul_pad", "[cpu][nest][pad]")
 {
     auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
 
@@ -2118,7 +2186,7 @@ TEST_CASE_METHOD(Fixture, "basic_matmul_pad", "[cpu][nest]")
                          << debugString(module));
 }
 
-TEST_CASE_METHOD(Fixture, "fused_unequal_shapes", "[cpu][nest]")
+TEST_CASE_METHOD(Fixture, "fused_unequal_shapes", "[cpu][nest][pad]")
 {
     auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
 
@@ -2134,7 +2202,7 @@ TEST_CASE_METHOD(Fixture, "fused_unequal_shapes", "[cpu][nest]")
     std::string testName = "fused_unequal_shapes_";
 
     DeclareFunction("FusedUnequalShapes")
-        // .Public(true)
+        .Public(true)
         .Parameters(
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N0 }) }),
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N0 }) }))
@@ -2167,14 +2235,163 @@ TEST_CASE_METHOD(Fixture, "fused_unequal_shapes", "[cpu][nest]")
             auto sched2 = nest2.CreateSchedule();
 
             // Fuse when the iteration spaces are not the same shape
+            auto jp1 = sched1.Pad(j1, N0 - N1, /*padFront=*/false);
+            auto jp2 = sched2.Pad(j2, N0 - N2, /*padFront=*/false);
+
             std::vector<Schedule> otherScheds{ sched1, sched2 };
-            sched0.Fuse(otherScheds, { { i0, i1, i2 }, { j0, j1, j2 } });
+            sched0.Fuse(otherScheds, { { i0, i1, i2 }, { j0, jp1, jp2 } });
 
             auto indices3 = sched0.GetIndices();
             auto f = indices3[0];
             auto i3 = indices3[1];
             auto j3 = indices3[2];
             sched0.SetOrder({ i3, j3, f });
+
+            auto [j3Outer, j3Inner] = sched0.Split(j3, 3);
+        });
+
+    accera::transforms::AcceraPassPipelineOptions options;
+    // options.dumpPasses = true;   // set .Public(true) in the function above to see the full IR
+    // options.dumpIntraPassIR = true;
+    // options.printLoops = true;
+
+    RunConversionPasses(target, testName + stringify(target), options);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "fused_unequal_shapes_smaller_first", "[cpu][nest][pad]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    const int M = 16;
+    const int N0 = 20; // smaller shape first
+    const int N1 = 32;
+    const int N2 = 30;
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    std::string testName = "fused_unequal_shapes_smaller_first_";
+
+    // BUGBUG: .Public(true) results in this lowering error (does not reproduce with E2E testing from the Python DSL):
+    //
+    // fused_unequal_shapes_smaller_first_llvm_9_ConvertSCFToOpenMP.mlir:4:6: error: failed to legalize operation 'accln.sym_index'
+    //       %0 = accln.sym_index {name = "j_p"} #accln<"index{j_p,28}"> loc("fused_unequal_shapes_smaller_first_llvm_8_ConvertAffineToStandard.mlir":4:6)
+    //      ^
+    // fused_unequal_shapes_smaller_first_llvm_9_ConvertSCFToOpenMP.mlir:4:6: note: see current operation: %0 = "accln.sym_index"() {index = #accln<"index{j_p,28}">, name = "j_p"} : () -> index
+    //
+    DeclareFunction("FusedUnequalShapes")
+        // .Public(true)
+        .Parameters(
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N1 }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N1 }) }))
+        .Define([=, &testName](Array A, Array B) {
+            Nest nest0({ M, N0 });
+            auto indices0 = nest0.GetIndices();
+            auto i0 = indices0[0];
+            auto j0 = indices0[1];
+            nest0.Set([&]() {
+                A(i0, j0) += B(i0, j0);
+            });
+            auto sched0 = nest0.CreateSchedule();
+
+            Nest nest1({ M, N1 });
+            auto indices1 = nest1.GetIndices();
+            auto i1 = indices1[0];
+            auto j1 = indices1[1];
+            nest1.Set([&]() {
+                A(i1, j1) *= B(i1, j1);
+            });
+            auto sched1 = nest1.CreateSchedule();
+
+            Nest nest2({ M, N2 });
+            auto indices2 = nest2.GetIndices();
+            auto i2 = indices2[0];
+            auto j2 = indices2[1];
+            nest2.Set([&]() {
+                A(i2, j2) -= B(i2, j2);
+            });
+            auto sched2 = nest2.CreateSchedule();
+
+            // Fuse when the iteration spaces are not the same shape
+            auto jp0 = sched0.Pad(j0, N1 - N0, /*padFront=*/false);
+            auto jp2 = sched2.Pad(j2, N1 - N2, /*padFront=*/false);
+
+            std::vector<Schedule> otherScheds{ sched1, sched2 };
+            sched0.Fuse(otherScheds, { { i0, i1, i2 }, { jp0, j1, jp2 } });
+
+            auto indices3 = sched0.GetIndices();
+            auto f = indices3[0];
+            auto i3 = indices3[1];
+            auto j3 = indices3[2];
+            sched0.SetOrder({ i3, j3, f });
+
+            auto [j3Outer, j3Inner] = sched0.Split(j3, 3);
+        });
+
+    accera::transforms::AcceraPassPipelineOptions options;
+    // options.dumpPasses = true;   // set .Public(true) in the function above to see the full IR
+    // options.dumpIntraPassIR = true;
+    // options.printLoops = true;
+
+    RunConversionPasses(target, testName + stringify(target), options);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "fused_unequal_shapes_tiled", "[cpu][nest][pad]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    const int M = 16;
+    const int N0 = 16;
+    const int N1 = 10;
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    std::string testName = "fused_unequal_shapes_tiled_";
+
+    DeclareFunction("FusedUnequalShapes")
+        .Public(true)
+        .Parameters(
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N0 }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N0 }) }))
+        .Define([=, &testName](Array A, Array B) {
+            Nest nest0({ M, N0 });
+            auto indices0 = nest0.GetIndices();
+            auto i0 = indices0[0];
+            auto j0 = indices0[1];
+            nest0.Set([&]() {
+                A(i0, j0) += B(i0, j0);
+            });
+            auto sched0 = nest0.CreateSchedule();
+
+            Nest nest1({ M, N1 });
+            auto indices1 = nest1.GetIndices();
+            auto i1 = indices1[0];
+            auto j1 = indices1[1];
+            nest1.Set([&]() {
+                A(i1, j1) *= B(i1, j1);
+            });
+            auto sched1 = nest1.CreateSchedule();
+            auto jp1 = sched1.Pad(j1, N0 - N1, /*padFront=*/false);
+
+            std::vector<Schedule> otherScheds{ sched1 };
+            sched0.Fuse(otherScheds, { { i0, i1 }, { j0, jp1 } });
+
+            auto indices2 = sched0.GetIndices();
+            auto f = indices2[0];
+            auto i2 = indices2[1];
+            auto j2 = indices2[2];
+
+            auto [i2Outer, i2Inner] = sched0.Split(i2, 4);
+            auto [j2Outer, j2Inner] = sched0.Split(j2, 4);
+
+            sched0.SetOrder({ i2Outer, j2Outer, f, i2Inner, j2Inner });
         });
 
     accera::transforms::AcceraPassPipelineOptions options;

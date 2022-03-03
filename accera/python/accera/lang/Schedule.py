@@ -177,7 +177,7 @@ class Schedule:
             transform=(IndexTransform.SKEW, (reference_index, unroll_loops_smaller_than))
         )
 
-    def pad(self, index: LoopIndex, size: Union[int, DelayedParameter]) -> None:
+    def pad(self, index: LoopIndex, size: Union[int, DelayedParameter], _front: bool = True) -> None:
         """Pads the beginning of a specified dimension of the iteration-space with empty (no-op) elements.
 
         Args:
@@ -195,14 +195,14 @@ class Schedule:
         start, stop, _ = self._index_map[index].interval()
 
         if isinstance(size, DelayedParameter):
-            self._delayed_calls[partial(self._pad_delayed, padded_index)] = size
+            self._delayed_calls[partial(self._pad_delayed, padded_index, _front)] = size
             self._index_map[padded_index] = IndexEntry(
-                start=start, stop=stop, parent=index, transform=(IndexTransform.PAD, 0)
+                start=start, stop=stop, parent=index, transform=(IndexTransform.PAD, (0, _front))
             )
             return
 
         self._index_map[padded_index] = IndexEntry(
-            start=start, stop=stop + size, parent=index, transform=(IndexTransform.PAD, size)
+            start=start, stop=stop + size, parent=index, transform=(IndexTransform.PAD, (size, _front))
         )
 
     def reorder(
@@ -309,8 +309,8 @@ class Schedule:
                             context.schedule.unroll(native_idx, unroll_loops_smaller_than)
                             context.schedule.unroll(native_ref_idx, unroll_loops_smaller_than)
                     elif transform is IndexTransform.PAD:
-                        size = params
-                        native_idx = Scalar(context.schedule.pad(native_parent, size))
+                        size, pad_front = params
+                        native_idx = Scalar(context.schedule.pad(native_parent, size, pad_front))
                     else:
                         raise NotImplementedError(f"Unsupported transform {transform}")
 
@@ -348,9 +348,9 @@ class Schedule:
         self._index_map[inner_index].stop = size + rem
         self._index_map[inner_index].transform = IndexTransform.SPLIT, size
 
-    def _pad_delayed(self, index: LoopIndex, size: int):
+    def _pad_delayed(self, index: LoopIndex, front: bool, size: int):
         self._index_map[index].stop += size
-        self._index_map[index].transform = IndexTransform.PAD, size
+        self._index_map[index].transform = IndexTransform.PAD, (size, front)
 
     def _skew_delayed(self, index: LoopIndex, reference_index: LoopIndex, unroll_loops_smaller_than: int):
         self._index_map[index].transform = IndexTransform.SKEW, (reference_index, unroll_loops_smaller_than)
@@ -424,6 +424,7 @@ class Schedule:
 
 
 class FusedSchedule(Schedule):
+
     def __init__(self, schedules: List[Schedule], partial: int = None):
 
         s_indices = [s.get_indices() for s in schedules]
@@ -446,25 +447,28 @@ class FusedSchedule(Schedule):
         orig_to_common_map: Mapping[LoopIndex, LoopIndex] = {}
 
         for dim_indices in zip(*(idxs[:partial] for idxs in s_indices)):
-            # convenience
-            s0 = schedules[0]
-            i0 = dim_indices[0]
+            # compute the outer limits of the index ranges
+            start = min(s.get_index_range(i)[0] for i, s in zip(dim_indices, schedules))
+            stop = max(s.get_index_range(i)[1] for i, s in zip(dim_indices, schedules))
+            step = schedules[0].get_index_range(dim_indices[0])[2]
 
-            start, stop, step = s0.get_index_range(i0)
-
-            # require the first schedule to have the largest iteration space dimensions
-            # TODO: remove this check entirely
+            # pad indices so that all schedule dimensions are equal-sized
             for dim_idx, dim_sched in zip(dim_indices, schedules):
                 start_d, stop_d, step_d = dim_sched.get_index_range(dim_idx)
-                if start_d < start or stop_d > stop or step_d < step:
+                if start_d > start:
+                    dim_sched.pad(dim_idx, start_d - start, _front=True)
+                if stop_d < stop:
+                    dim_sched.pad(dim_idx, stop - stop_d, _front=False)
+                if step_d != step:
                     raise ValueError("Incompatible ranges for fusion")
 
             common_idx = LoopIndex()
 
-            for dim_idx in dim_indices:
+            padded_indices = [s._resolve_index(i) for i, s in zip(dim_indices, schedules)]
+            for dim_idx in padded_indices:
                 orig_to_common_map[dim_idx] = common_idx
 
-            common_to_orig_map[common_idx] = list(dim_indices)
+            common_to_orig_map[common_idx] = list(padded_indices)
             common_indices.append(common_idx)
 
             # TODO: how do parent links propagate?

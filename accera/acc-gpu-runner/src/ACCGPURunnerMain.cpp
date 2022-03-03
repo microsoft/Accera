@@ -12,8 +12,8 @@
 
 #include <ir/include/DialectRegistry.h>
 #include <transforms/include/AcceraPasses.h>
-#include <transforms/include/accera/AcceraLoweringPass.h>
 #include <transforms/include/gpu/AcceraVulkanPasses.h>
+#include <transforms/include/value/RangeValueOptimizePass.h>
 #include <transforms/include/value/ValueSimplifyPass.h>
 #include <transforms/include/value/ValueToStandardLoweringPass.h>
 

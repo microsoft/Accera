@@ -19,6 +19,7 @@ set(src src/AcceraPasses.cpp)
 
 set(rcvalue_src
     src/value/FunctionPointerResolutionPass.cpp
+    src/value/RangeValueOptimizePass.cpp
     src/value/ValueFuncToTargetPass.cpp
     src/value/ValueSimplifyPass.cpp
     src/value/ValueToLLVMLoweringPass.cpp
@@ -27,6 +28,7 @@ set(rcvalue_src
 
 set(rcvalue_include
     include/value/FunctionPointerResolutionPass.h
+    include/value/RangeValueOptimizePass.h
     include/value/ValueFuncToTargetPass.h
     include/value/ValueSimplifyPass.h
     include/value/ValueToLLVMLoweringPass.h
@@ -65,10 +67,6 @@ set(rcgpu_include
   # include/gpu/AcceraToSPIRVPass.h
 )
 
-set(rcaccera_src src/accera/AcceraLoweringPass.cpp)
-
-set(rcaccera_include include/accera/AcceraLoweringPass.h)
-
 set(util_src
   src/util/MathUtilities.cpp
   src/util/SnapshotUtilities.cpp
@@ -97,7 +95,6 @@ set(src
     ${rcnest_src}
     ${rcexec_src}
     ${rcgpu_src}
-    ${rcaccera_src}
     ${util_src}
 )
 
@@ -107,7 +104,6 @@ set(include
     ${rcnest_include}
     ${rcexec_include}
     ${rcgpu_include}
-    ${rcaccera_include}
     ${util_include}
 )
 

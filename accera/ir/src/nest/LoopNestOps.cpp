@@ -622,13 +622,13 @@ namespace loopnest
         return { outerIndexOp, innerIndexOp };
     }
 
-    Index ScheduleOp::pad(Index index, int size)
+    Index ScheduleOp::pad(Index index, int size, bool padFront)
     {
         OpBuilder builder(getContext());
 
         auto domainAttr = getDomain(); // A TransformedDomainAttr
         auto domain = domainAttr.getValue(); // A TransformedDomain
-        auto paddedIndex = domain.Pad(index, size, getContext());
+        auto paddedIndex = domain.Pad(index, size, padFront, getContext());
 
         // Replace index with the padded index in the loop sequence order
         auto loopSequence = getOrder();
@@ -646,9 +646,9 @@ namespace loopnest
         return paddedIndex;
     }
 
-    SymbolicIndexOp ScheduleOp::pad(SymbolicIndexOp index, int size)
+    SymbolicIndexOp ScheduleOp::pad(SymbolicIndexOp index, int size, bool padFront)
     {
-        auto paddedIndex = pad(index.getValue(), size);
+        auto paddedIndex = pad(index.getValue(), size, padFront);
         OpBuilder builder(getContext());
         builder.setInsertionPoint(*this);
 
@@ -1159,7 +1159,21 @@ namespace loopnest
         nestOps[0].walk([&](SymbolicIndexOp index) {
             if (!index.use_empty())
             {
-                auto newIndex = fusedNest.getOrCreateSymbolicIndex(nestBuilder, index.getValue());
+                auto indexVal = index.getValue();
+                for (const auto& correspondence : indexCorrespondences)
+                {
+                    auto i0 = correspondence[0];
+                    if (domains[0].IsPrePaddedIndexOf(indexVal, i0))
+                    {
+                        // The indices used in the nests may be unpadded versions of the fused index
+                        // If the fused index is padded, check if its parent is the index-in-use
+                        // (BUGBUG: can the nest construction take padded indices into account?)
+                        indexVal = i0;
+                        break;
+                    }
+                }
+
+                auto newIndex = fusedNest.getOrCreateSymbolicIndex(nestBuilder, indexVal);
                 valueMap[0].map(index.getResult(), newIndex.getResult());
 
                 // Reverse map "newIndex" to its fused indices, for recovering the original schedules in Debug mode
@@ -1176,11 +1190,21 @@ namespace loopnest
                     auto schedule = schedules[idx];
                     auto& fusedMap = schedFusedIndexMap[schedule];
                     auto indexVal = index.getValue();
-                    if (auto it = fusedMap.find(indexVal); it != fusedMap.end())
+
+                    for (const auto &it : fusedMap)
                     {
-                        indexVal = it->second;
-                        // TODO: don't add this if it's already been added
+                        // Replace the index-in-use with the corresponding index
+                        // If the corresponding index is padded, check if its parent is the index-in-use
+                        // (BUGBUG: can the nest construction take padded indices into account?)
+                        if (it.first == indexVal ||
+                            domains[idx].IsPrePaddedIndexOf(indexVal, it.first))
+                        {
+                            indexVal = it.second;
+                            break;
+                            // TODO: don't add this if it's already been added
+                        }
                     }
+
                     auto newIndex = fusedNest.getOrCreateSymbolicIndex(nestBuilder, indexVal);
                     valueMap[idx].map(index.getResult(), newIndex.getResult());
 
@@ -1198,18 +1222,21 @@ namespace loopnest
         {
             // First predicate is on the fusing index to ensure schedule ordering.
             auto predicate = IndexAt(nestBuilder, fusingIndex, static_cast<int64_t>(idx));
+            auto constraints = domains[idx].GetConstraints();
 
             // Next predicate is on the fused index, to ensure that each schedule conforms to the
-            // the bounds of its original iteration space.
+            // the bounds of its active (unpadded) iteration space.
             for (const auto& correspondence : indexCorrespondences)
             {
-                auto originalIndex = correspondence[idx];
-                auto originalRange = domains[idx].GetIndexRange(originalIndex);
+                // Derive the active range from the correspondence index's constraints
+                auto [begin, end] = constraints.GetEffectiveRangeBounds(correspondence[idx]);
+                auto activeRange = Range(begin, end, /*unused*/1);
+
                 auto fusedIndex = correspondence[0];
                 auto fusedRange = fusedDomain.GetIndexRange(fusedIndex);
-                if (fusedRange != originalRange)
+                if (fusedRange != activeRange)
                 {
-                    predicate = Conjunction(nestBuilder, predicate, InRange(nestBuilder, fusedIndex, originalRange));
+                    predicate = Conjunction(nestBuilder, predicate, InRange(nestBuilder, fusedIndex, activeRange));
                 }
             }
 

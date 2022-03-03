@@ -68,7 +68,7 @@ namespace value
         /// <param name="offsets"> The origin of the view --- the indices of the first entry in the subarray </param>
         /// <param name="shape"> The shape of the view </param>
         /// <returns> The resulting subarray block </returns>
-        Array SubArray(const std::vector<Scalar>& offsets, const utilities::MemoryShape& shape) const;
+        Array SubArray(const std::vector<Scalar>& offsets, const utilities::MemoryShape& shape, std::optional<std::vector<int64_t>> strides = {}) const;
 
         /// <summary> Get a reduced-rank slice of the data </summary>
         /// <param name="slicedDimensions"> The dimensions to remove from the domain. </param>

@@ -797,7 +797,7 @@ def _recompute_known_devices():
 _recompute_known_devices()
 
 
-class GridUnits(dict):
+class GridUnits(Enum):
     # Not expected to change from GPU to GPU
     BLOCK_X = BLOCK_X
     BLOCK_Y = BLOCK_Y

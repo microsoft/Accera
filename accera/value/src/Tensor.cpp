@@ -66,7 +66,7 @@ namespace value
 
     Value Tensor::GetValue() const { return _value; }
 
-    Tensor Tensor::SubTensor(Scalar row, Scalar column, Scalar channel, int numRows, int numColumns, int numChannels) const
+    Tensor Tensor::SubTensor(Scalar row, Scalar column, Scalar channel, int numRows, int numColumns, int numChannels, const int rowStride, const int colStride, const int channelStride) const
     {
         const MemoryLayout& currentLayout = _value.GetLayout();
 
@@ -78,7 +78,7 @@ namespace value
         }
 
         // Need to cast so that row and numRows are the same type (and similarly with columns and channels)
-        Value indexedValue = GetContext().View(_value, { row, column, channel }, { numRows, numColumns, numChannels });
+        Value indexedValue = GetContext().View(_value, { row, column, channel }, { numRows, numColumns, numChannels }, {rowStride, colStride, channelStride});
         return indexedValue;
     }
 

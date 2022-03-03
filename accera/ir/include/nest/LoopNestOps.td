@@ -107,8 +107,8 @@ def rcln_ScheduleOp : rcln_Op<"schedule",
     void unrollAndJam(Index index, uint64_t factor);
     std::optional<uint64_t> getUnrollAndJamFactor(Index index);
 
-    Index pad(Index index, int size);
-    SymbolicIndexOp pad(SymbolicIndexOp index, int size);
+    Index pad(Index index, int size, bool padFront);
+    SymbolicIndexOp pad(SymbolicIndexOp index, int size, bool padFront);
 
     Index skew(Index index, Index reference);
     SymbolicIndexOp skew(SymbolicIndexOp index, SymbolicIndexOp reference);

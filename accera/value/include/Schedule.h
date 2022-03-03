@@ -70,14 +70,16 @@ namespace value
         /// <summary> Pads one dimension with empty (no-op) elements </summary>
         /// <param name="i"> The dimension to pad </param>
         /// <param name="size"> The number of elements to pad </param>
+        /// <param name="padFront"> If set to true, inserts padding before the zeroth element, else appends padding</param>
         /// <returns> The padded index </returns>
-        Index Pad(Index i, int size);
+        Index Pad(Index i, int size, bool padFront=true);
 
         /// <summary> Pads one dimension with empty (no-op) elements </summary>
         /// <param name="i"> The dimension to pad </param>
         /// <param name="size"> The number of elements to pad </param>
+        /// <param name="padFront"> If set to true, inserts padding before the zeroth element, else appends padding</param>
         /// <returns> The padded index </returns>
-        ScalarIndex Pad(ScalarIndex i, int size);
+        ScalarIndex Pad(ScalarIndex i, int size, bool padFront=true);
 
         /// <summary> Skews one dimension along another dimension </summary>
         /// <param name="i"> The dimension to skew </param>

@@ -54,7 +54,7 @@ namespace value
         /// <param name="numColumns"> The extent of the subtensor in the column dimension </param>
         /// <param name="numChannels"> The extent of the subtensor in the channel dimension </param>
         /// <returns> The resulting subtensor block </returns>
-        Tensor SubTensor(Scalar row, Scalar column, Scalar channel, int numRows, int numColumns, int numChannels) const;
+        Tensor SubTensor(Scalar row, Scalar column, Scalar channel, int numRows, int numColumns, int numChannels, int rowStride = 1, int colStride = 1, int channelStride = 1) const;
 
         /// <summary> Creates a new Tensor instance that contains the same data as this instance </summary>
         /// <returns> A new Tensor instance that points to a new, distinct memory that contains the same data as this instance </returns>

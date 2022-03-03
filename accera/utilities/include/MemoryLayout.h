@@ -311,6 +311,13 @@ namespace utilities
         /// <param name="offset"> The offset into memory to the active area of the memory region. </param>
         MemoryLayout(const MemoryShape& size, const MemoryShape& extent, const MemoryShape& offset);
 
+        /// <summary> Constructor for strided layout. </summary>
+        ///
+        /// <param name="originalLayout"> The layout from which to construct this layout. </param>
+        /// <param name="size"> The shape of the active area of the memory region. </param>
+        /// <param name="strides"> The strides into memory to the active area of the memory region. </param>
+        MemoryLayout(const MemoryLayout& originalLayout, const MemoryShape& size, const MemoryShape& strides);
+
         //
         // Constructors with a user-supplied logical dimension ordering
         //

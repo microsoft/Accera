@@ -22,7 +22,6 @@ from .._lang_python._lang import CacheIndexing, _MemorySpace
 
 
 class Plan:
-
     def __init__(self, schedule: Schedule, target: Target = Target.HOST):
         self._sched = schedule
         self._target = target
@@ -30,6 +29,7 @@ class Plan:
         self._delayed_calls = {}
         self._index_attrs: Mapping[LoopIndex, List[str]] = {}
         self._dynamic_dependencies = set()
+        self._bindings = {}
 
         if target.category == Target.Category.GPU:
             self._dynamic_dependencies.add(LibraryDependency.VULKAN)
@@ -415,13 +415,17 @@ class Plan:
 
         if self._target is not None and self._target.category == Target.Category.GPU:
             self._commands.append(partial(self._bind, indices, grid))
+
+            for index, proc in zip(indices, grid):
+                self._bindings[proc] = index
+
         else:
             raise ValueError("Only supported on plans with GPU targets")
 
     def _bind(self, indices, grid, context: NativeLoopNestContext):
         for index, proc in zip(indices, grid):
             index = context.mapping[id(index)]
-            context.plan.map_index_to_processor(index, proc)
+            context.plan.map_index_to_processor(index, proc.value)
 
     def kernelize(
         self,
@@ -476,34 +480,63 @@ class Plan:
         if target and target.category == Target.Category.GPU:
             from .._lang_python._lang import _GPU, _Dim3
 
-            BASE_BLOCK_DIM = 16
-            block_dims = [BASE_BLOCK_DIM, BASE_BLOCK_DIM]
-            grid_dims = [1, 1]
-
-            # lookup the split factors for each loop index
             assert isinstance(self._sched, Schedule)
 
+            # lookup the split factors for each loop index
             index_to_splitfactor_map = {
                 i: self._sched.get_index_transform(i)[1]
                 for i in self._sched.get_indices()
                 if self._sched.get_index_transform(i) and self._sched.get_index_transform(i)[0] is IndexTransform.SPLIT
             }
 
-            n = min(len(block_dims), len(nest._shape))
+            def units_to_dim(units, dims):
+                for i, u in enumerate(units):
+                    index = self._bindings.get(u)
+                    if index is not None:
 
-            # infer the block dimension from the split factor (if specified)
-            for i, x in enumerate(nest._shape[:n]):
-                shape, index = x
-                if index in index_to_splitfactor_map:
-                    block_dims[i] = index_to_splitfactor_map[index]
+                        if index in index_to_splitfactor_map:
+                            dims[i] = index_to_splitfactor_map[index]
 
-                # compute the grid size based on the block size
-                grid_dims[i], remainder = divmod(shape, block_dims[i])
-                if remainder != 0:
-                    # TODO: remove this restriction
-                    raise (RuntimeError(f"Shape {shape} must be a multiple of split factor {block_dims[i]}"))
+                        else:
+                            begin, end, step = self._sched.get_index_range(index)
+                            dims[i], rem = divmod(end - begin, step)
 
-            context.options = _GPU(grid=_Dim3(*grid_dims, 1), block=_Dim3(*block_dims, 1))
+                            if rem:
+                                raise RuntimeError("Range for index must not have boundary conditions")
+
+            block_dims = [1, 1, 1]
+            grid_dims = [1, 1, 1]
+
+            if any(proc in self._bindings for proc in target.GridUnit):
+
+                # TODO: move this into the C++ layer
+                block_units = [target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_Z]
+                thread_units = [target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_Z]
+
+                # Block units map to the grid specification
+                units_to_dim(block_units, grid_dims)
+
+                # Thread units map to the block specification
+                units_to_dim(thread_units, block_dims)
+            else:
+                BASE_BLOCK_DIM = 16
+                block_dims = [BASE_BLOCK_DIM, BASE_BLOCK_DIM, 1]
+
+                n = min(len(block_dims), len(nest._shape))
+
+                # infer the block dimension from the split factor (if specified)
+                for i, x in enumerate(nest._shape[:n]):
+                    shape, index = x
+                    if index in index_to_splitfactor_map:
+                        block_dims[i] = index_to_splitfactor_map[index]
+
+                    # compute the grid size based on the block size
+                    grid_dims[i], remainder = divmod(shape, block_dims[i])
+                    if remainder != 0:
+                        # TODO: remove this restriction
+                        raise RuntimeError(f"Shape {shape} must be a multiple of split factor {block_dims[i]}")
+
+            context.options = _GPU(grid=_Dim3(*grid_dims), block=_Dim3(*block_dims))
             context.plan = context.schedule.create_gpu_plan(context.options)
         else:
             context.plan = context.schedule.create_plan()

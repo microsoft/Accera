@@ -323,15 +323,17 @@ class DSLTest_01Arrays(unittest.TestCase):
     def test_array_value_type_cast(self) -> None:
         from accera import Nest
         A = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR)
-        B = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR, element_type=ScalarType.int32)
+        B = Array(
+            shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR, element_type=ScalarType.int32
+        )
 
         nest = Nest(shape=(256, 32))
         i, j = nest.get_indices()
 
         @nest.iteration_logic
         def _():
-            A[i, j] = 5 # implicit cast from int8 to float
-            B[i, j] = 10 # implicit cast from int8 to int32
+            A[i, j] = 5    # implicit cast from int8 to float
+            B[i, j] = 10    # implicit cast from int8 to int32
 
         A_test = np.random.random((256, 32)).astype(np.float32)
         A_expected = np.ndarray((256, 32)).astype(np.float32)
@@ -345,11 +347,8 @@ class DSLTest_01Arrays(unittest.TestCase):
             "pre": (A_test, B_test),
             "post": (A_expected, B_expected)
         }
-        self._verify_nest(
-            nest, (A, B), "test_array_value_type_cast", correctness_check_values=correctness_check_values
-        )
+        self._verify_nest(nest, (A, B), "test_array_value_type_cast", correctness_check_values=correctness_check_values)
 
-    @expectedFailure(FailedReason.BUG, "Debug mode doesn't support sub-arrays", TEST_MODE == Package.Mode.DEBUG)
     def test_subarray(self) -> None:
         from accera import Nest
         package = Package()
@@ -386,7 +385,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
-    @expectedFailure(FailedReason.BUG, "Debug mode doesn't support sub-arrays", TEST_MODE == Package.Mode.DEBUG)
     def test_subarray_l2(self) -> None:
         from accera import Nest
         package = Package()
@@ -1093,7 +1091,128 @@ class DSLTest_04Fusing(unittest.TestCase):
 
         self._verify_schedule(fs, (A, B), "test_partial_iteration_space_fusing_2", correctness_check_values)
 
-    def test_unequal_iteration_space_fusing(self) -> None:
+    def test_unequal_iteration_space_fusing_1(self) -> None:
+        from accera import fuse, Nest
+
+        A = Array(role=Array.Role.INPUT, shape=(16, 16))
+        B = Array(role=Array.Role.INPUT, shape=(16, 10))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 16))
+
+        # Create nest0 and schedule
+        nest0 = Nest(shape=(16, 16))
+        i0, j0 = nest0.get_indices()
+
+        @nest0.iteration_logic
+        def _():
+            C[i0, j0] += A[i0, j0]
+
+        schedule0 = nest0.create_schedule()
+
+        # Create nest1 and schedule1 with a smaller iteration space size
+        nest1 = Nest(shape=(16, 10))
+        i1, j1 = nest1.get_indices()
+
+        @nest1.iteration_logic
+        def _():
+            C[i1, j1] *= B[i1, j1]
+
+        schedule1 = nest1.create_schedule()
+
+        # Create a fused schedule: the smaller iteration space (nest1) should
+        # be automatically end-padded with no-ops
+
+        schedule = fuse(schedule0, schedule1)
+        f, i, j = schedule.get_indices()
+        schedule.reorder(i, j, f)
+
+        # Emitted fused loop should look like:
+        # for i in range(0, 16):
+        #   for j in range(0, 10):
+        #      for f in range(2):
+        #         if f == 0:
+        #           C[i, j] += A[i, j]
+        #         if f == 1:
+        #           C[i, j] *= B[i, j]
+        #   for j in range(10, 16):
+        #      for f in range(2):
+        #         if f == 0:
+        #           C[i, j] += A[i, j]
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+
+        C_ref = C_test + A_test    # nest0
+        C_ref[:, :B.shape[1]] = C_ref[:, :B.shape[1]] * B_test    # nest1
+
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_test, B_test, C_ref]
+        }
+        self._verify_schedule(schedule, (A, B, C), "test_unequal_iteration_space_fusing_1", correctness_check_values)
+
+    def test_unequal_iteration_space_fusing_2(self) -> None:
+        from accera import fuse, Nest
+
+        A = Array(role=Array.Role.INPUT, shape=(16, 10))
+        B = Array(role=Array.Role.INPUT, shape=(16, 16))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 16))
+
+        # Create nest0 and schedule
+        nest0 = Nest(shape=(16, 10))
+        i0, j0 = nest0.get_indices()
+
+        @nest0.iteration_logic
+        def _():
+            C[i0, j0] += A[i0, j0]
+
+        schedule0 = nest0.create_schedule()
+
+        # Create nest1 and schedule1 with a larger iteration space size
+        nest1 = Nest(shape=(16, 16))
+        i1, j1 = nest1.get_indices()
+
+        @nest1.iteration_logic
+        def _():
+            C[i1, j1] *= B[i1, j1]
+
+        schedule1 = nest1.create_schedule()
+
+        # Create a fused schedule: the smaller iteration space (nest0) should
+        # be automatically end-padded with no-ops
+
+        schedule = fuse(schedule0, schedule1)
+        f, i, j = schedule.get_indices()
+        schedule.reorder(i, j, f)
+
+        # Emitted fused loop should look like:
+        # for i in range(0, 16):
+        #   for j in range(0, 10):
+        #      for f in range(2):
+        #         if f == 0:
+        #           C[i, j] += A[i, j]
+        #         if f == 1:
+        #           C[i, j] *= B[i, j]
+        #   for j in range(10, 16):
+        #      for f in range(2):
+        #         if f == 1:
+        #           C[i, j] *= B[i, j]
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+        C_ref = np.copy(C_test)
+
+        C_ref[:, :A.shape[1]] = C_test[:, :A.shape[1]] + A_test    # nest0
+        C_ref *= B_test    # nest1
+
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_test, B_test, C_ref]
+        }
+        self._verify_schedule(schedule, (A, B, C), "test_unequal_iteration_space_fusing_2", correctness_check_values)
+
+    def test_unequal_iteration_space_fusing_3(self) -> None:
         from accera import fuse, Nest
 
         A = Array(role=Array.Role.INPUT, shape=(16, 16))
@@ -1124,18 +1243,46 @@ class DSLTest_04Fusing(unittest.TestCase):
         # be automatically end-padded with no-ops
         schedule = fuse(schedule0, schedule1)
         f, i, j = schedule.get_indices()
-        schedule.reorder(i, j, f)
+
+        # computing the output block-by-block:
+        #  first computing C[0:4, 0:4] += A[0:4, 0:4]
+        #  then computing C[0:4, 0:4] *= B[0:4, 0:4]
+        ii, jj = schedule.tile((i, j), (4, 4))
+        schedule.reorder(i, j, f, ii, jj)
 
         # Emitted fused loop should look like:
-        # for i in range(0, 16):
-        #   for j in range(0, 10):
-        #      if f == 0:
-        #       C[i, j] += A[i, j]
-        #      if f == 1:
-        #       C[i, j] *= B[i, j]
-        #   for j in range(10, 16):
-        #      if f == 0:
-        #       C[i, j] += A[i, j]
+        # for i in range(0, 16, 4):
+        #   # run both kernels in the smaller iteration spaces
+        #   # (tiled block)
+        #   for j in range(0, 8, 4):
+        #       for f in range(2):
+        #           if f == 0:
+        #               for ii in range(0, 4):
+        #                   for jj in range(0, 4):
+        #                       C[i+ii, j+jj] += A[i+ii, j+jj]
+        #           if f == 1:
+        #               for ii in range(0, 4):
+        #                   for jj in range(0, 4):
+        #                       C[i+ii, j+jj] *= B[i+ii, j+jj]
+        #
+        #   # run both kernels in the smaller iteration space
+        #   # (boundary block for split)
+        #   for j in range(8, 10): # range < split size
+        #       for f in range(2):
+        #           if f == 0:
+        #               for ii in range(0, 4):
+        #                   C[i+ii, j] += A[i+ii, j]
+        #           if f == 1:
+        #               for ii in range(0, 4):
+        #                   C[i+ii, j] *= B[i+ii, j]
+        #
+        #   # run kernel with the larger iteration space
+        #   # (boundary block for split)
+        #   for j in range(10, 16): # range < split size
+        #       for f in range(2):
+        #           if f == 0:
+        #               for ii in range(0, 4):
+        #                   C[i+ii, j] += A[i+ii, j]
 
         A_test = np.random.random(A.shape).astype(np.float32)
         B_test = np.random.random(B.shape).astype(np.float32)
@@ -1148,27 +1295,7 @@ class DSLTest_04Fusing(unittest.TestCase):
             "pre": [A_test, B_test, C_test],
             "post": [A_test, B_test, C_ref]
         }
-        self._verify_schedule(schedule, (A, B, C), "test_unequal_iteration_space_fusing1", correctness_check_values)
-
-        try:
-            # computing the output block-by-block:
-            #  first computing C[0:4, 0:4] += A[0:4, 0:4]
-            #  then computing C[0:4, 0:4] *= B[0:4, 0:4]
-            ii, jj = schedule.tile((i, j), (4, 4))
-            schedule.reorder(i, j, f, ii, jj)
-
-            self._verify_schedule(schedule, (A, B, C), "test_unequal_iteration_space_fusing2", correctness_check_values)
-        except Exception as e:
-            # TODO: split of padded fused indices not done correctly yet
-            # need to unswitch the boundary block
-            print(e)
-
-        try:
-            schedule2 = fuse(schedule1, schedule0)
-        except ValueError as e:
-            # TODO: support fuse(schedule1, schedule0)
-            # where schedule1's iteration space < schedule0 iteration space
-            print(e)
+        self._verify_schedule(schedule, (A, B, C), "test_unequal_iteration_space_fusing_3", correctness_check_values)
 
     def test_concat_fusing_1(self) -> None:
         from accera import fuse, Nest
@@ -1947,7 +2074,6 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
                     function.name, before=correctness_check_values["pre"], after=correctness_check_values["post"]
                 )
 
-    @expectedFailure(FailedReason.BUG, "Debug mode doesn't support deferred layouts", TEST_MODE == Package.Mode.DEBUG)
     def test_deferred_layout_predefined(self) -> None:
         from accera import Nest, ScalarType
         import numpy as np
@@ -1994,7 +2120,6 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
                 "post": [B_test + matrix]
             })
 
-    @expectedFailure(FailedReason.BUG, "Debug mode doesn't support deferred layouts", TEST_MODE == Package.Mode.DEBUG)
     def test_deferred_layout_coefficients(self) -> None:
         from accera import Nest, ScalarType
         import numpy as np

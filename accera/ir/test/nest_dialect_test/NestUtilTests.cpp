@@ -330,20 +330,36 @@ TEST_CASE("Domain pad tests")
     const int64_t padSize = 7;
     const int64_t splitSize = 3;
 
-    // pad then split
+    // front pad then split
     // this should result in both front and back padding
-    auto i1 = td.Pad(i, padSize, context);
-    REQUIRE(td.GetIndexRange(i1) == Range(padSize, M + padSize, 1));
+    auto i1 = td.Pad(i, padSize, /*padFront=*/true, context);
+    REQUIRE(td.GetIndexRange(i1) == Range(0, M + padSize, 1)); // range is increased by padding size
     REQUIRE(td.IsPaddedIndex(i1));
+    REQUIRE(td.IsPrePaddedIndexOf(i, i1));
+    REQUIRE_THAT(td.GetIndexPadding(i1), Catch::Matchers::Equals(std::vector<int64_t>{-1*padSize}));
 
     auto [i2, i3] = td.Split(i1, splitSize, context);
-    REQUIRE(td.GetIndexRange(i2) == Range(padSize, M + padSize, splitSize));
+    REQUIRE(td.GetIndexRange(i2) == Range(0, M + padSize, splitSize));
     REQUIRE(td.GetIndexRange(i3) == Range(0, splitSize, 1));
-    REQUIRE(td.HasPaddedParentIndex(i2));
-    REQUIRE(td.HasPaddedParentIndex(i3));
+    REQUIRE(td.IsPaddedIndex(i2));  // a split outer index of a padded index is still a padded index
+    REQUIRE_FALSE(td.IsPaddedIndex(i3));  // .. but the inner index is not padded
+
+    // back pad then split
+    // this will only result in back padding
+    auto j1 = td.Pad(j, padSize, /*padFront=*/false, context);
+    REQUIRE(td.GetIndexRange(j1) == Range(0, N + padSize, 1)); // range is increased by padding size
+    REQUIRE(td.IsPaddedIndex(j1));
+    REQUIRE(td.IsPrePaddedIndexOf(j, j1));
+    REQUIRE_THAT(td.GetIndexPadding(j1), Catch::Matchers::Equals(std::vector<int64_t>{padSize}));
+
+    auto [j2, j3] = td.Split(j1, splitSize, context);
+    REQUIRE(td.GetIndexRange(j2) == Range(0, N + padSize, splitSize));
+    REQUIRE(td.GetIndexRange(j3) == Range(0, splitSize, 1));
+    REQUIRE(td.IsPaddedIndex(j2));
+    REQUIRE_FALSE(td.IsPaddedIndex(j3));
 
     auto constraints = td.GetConstraints();
-    constraints.dump();
+    // constraints.dump();
 
     auto [begin, end] = constraints.GetEffectiveRangeBounds(i);
     REQUIRE(begin == 0);
@@ -383,7 +399,7 @@ TEST_CASE("Domain pad tests")
         auto [pLB, pUB, iLB, iUB] = parentBoundToInnerBound;
         auto [beginOld, endOld] = constraintsTest.GetEffectiveRangeBounds(i3);
 
-        // One limitation of FlatAffineConstraints is that constant ranges are dervied
+        // One limitation of FlatAffineConstraints is that constant ranges are derived
         // from constant ranges, therefore we simply constrain the inner range size
         // with the parent range size
         auto innerEnd = pUB - pLB;
@@ -395,9 +411,12 @@ TEST_CASE("Domain pad tests")
     }
 }
 
-TEST_CASE("Domain fusion tests")
+TEST_CASE("Domain padded fusion tests")
 {
+    auto context = GetTestBuilder().getContext();
+
     const int64_t M = 21, N0 = 10, N1 = 8, K = 16;
+    const int64_t splitSize = 3;
     Index i0("i0"), j0("j0"), i1("i1"), j1("j1"), k("k");
     IterationDomain d0({ { i0, { 0, M } }, { j0, { 0, N0 } }, {k, { 0, K }} });
     TransformedDomain td0(d0);
@@ -405,9 +424,44 @@ TEST_CASE("Domain fusion tests")
     IterationDomain d1({ { i1, { 0, M } }, { j1, { 0, N1 } } });
     TransformedDomain td1(d1);
 
-    // fuse unequally-shaped iteration domains
-    auto td2 = TransformedDomain::Fuse({td0, td1}, { {i0, i1}, {j0, j1} });
-    REQUIRE(td2.NumDimensions() == 3); // 2 fused, 1 unfused
-    REQUIRE(td2.NumLoopIndices() == 3);
-    REQUIRE(td2.NumIndices() == 3);
+    // Fusing unequally-sized domains (- padding, larger space first)
+    REQUIRE_THROWS(TransformedDomain::Fuse({td0, td1}, { {i0, i1}, {j0, j1} }));
+
+    // Fusing unequally-sized domains (+ padding, larger space first)
+    auto j1p = td1.Pad(j1, N0 - N1, /*padFront=*/false, context);
+    auto td2 = TransformedDomain::Fuse({td0, td1}, { {i0, i1}, {j0, j1p} });
+    REQUIRE(td2.NumDimensions() == 3); // i0, j0, k
+    REQUIRE(td2.NumLoopIndices() == 3); // i0, j0, k
+    REQUIRE(td2.NumIndices() == td2.NumLoopIndices()); // no unused indices
+
+    // split
+    REQUIRE(td2.IsPaddedIndex(j0)); // a fused index of one or more padded indices is a padded index
+    auto [jo0, ji0] = td2.Split(j0, splitSize, context);
+    REQUIRE(td2.GetIndexRange(jo0) == Range(0, N0, splitSize));
+    REQUIRE(td2.GetIndexRange(ji0) == Range(0, splitSize, 1));
+    REQUIRE(td2.IsPaddedIndex(jo0)); // an outer split index of a padded index is still a padded index
+    REQUIRE(td2.IsFusedPaddedIndex(jo0));
+    REQUIRE_THAT(td2.GetIndexPadding(jo0), Catch::Matchers::Equals(std::vector<int64_t>{0, N0 - N1}));
+    REQUIRE_FALSE(td2.IsPaddedIndex(ji0)); // an inner split index of a padded index is NOT a padded index
+    REQUIRE_FALSE(td2.IsFusedPaddedIndex(ji0)); // an inner split index of a padded index is NOT a padded index
+
+    // Fusing unequally-sized domains (- padding, smaller space first)
+    REQUIRE_THROWS(TransformedDomain::Fuse({td1, td0}, { {i1, i0}, {j1, j0} }));
+
+    // Fusing unequally-sized domains (+ padding, padded space first)
+    auto td3 = TransformedDomain::Fuse({td1, td0}, { {i1, i0}, {j1p, j0} });
+    REQUIRE(td3.NumDimensions() == 3); // i1, j1, k
+    REQUIRE(td3.NumLoopIndices() == 3); // i1, j1, k
+    REQUIRE(td3.NumIndices() == 4); // i1, j1, j1p, k
+
+    // split
+    REQUIRE(td3.IsPaddedIndex(j1p)); // a fused index of one or more padded indices is a padded index
+    auto [jo1p, ji1p] = td3.Split(j1p, splitSize, context);
+    REQUIRE(td3.GetIndexRange(jo1p) == Range(0, N0, splitSize));
+    REQUIRE(td3.GetIndexRange(ji1p) == Range(0, splitSize, 1));
+    REQUIRE(td3.IsPaddedIndex(jo1p)); // an outer split index of a padded index is still a padded index
+    REQUIRE(td3.IsFusedPaddedIndex(jo1p));
+    REQUIRE_THAT(td3.GetIndexPadding(jo1p), Catch::Matchers::Equals(std::vector<int64_t>{N0 - N1, 0}));
+    REQUIRE_FALSE(td3.IsPaddedIndex(ji1p)); // an inner split index of a padded index is NOT a padded index
+    REQUIRE_FALSE(td3.IsPaddedIndex(ji1p)); // an inner split index of a padded index is NOT a padded index
 }

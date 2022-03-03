@@ -48,7 +48,7 @@ namespace loopnest
         /// have been split and no longer correspond to an acutal loop)
         int64_t NumIndices() const;
         /// Return all of the indices in the domain --- both "loop indices" and "computed" indices (indices that
-        /// have been split and no longer correspond to an acutal loop)
+        /// have been split and no longer correspond to an actual loop)
         std::vector<Index> GetIndices() const;
 
         bool Exists(const Index& index) const; // any index in this domain
@@ -56,7 +56,7 @@ namespace loopnest
         bool IsLoopIndex(const Index& index) const; // a leaf node in the index tree
         bool IsComputedIndex(const Index& index) const;
 
-        Index Pad(const Index& index, int64_t size, mlir::MLIRContext* context);
+        Index Pad(const Index& index, int64_t size, bool padFront, mlir::MLIRContext* context);
         SplitIndex Split(const Index& index, int64_t splitSize, mlir::MLIRContext* context);
         Index Skew(const Index& index, const Index& referenceIndex, mlir::MLIRContext* context);
 
@@ -64,6 +64,7 @@ namespace loopnest
         int64_t GetDimensionSize(const Index& dimensionIndex) const;
         int64_t GetDimensionBegin(const Index& dimensionIndex) const;
         Range GetIndexRange(const Index& index) const;
+        std::vector<int64_t> GetIndexPadding(const Index& index) const;
         AffineExpression GetIndexExpr(const Index& index) const;
         AffineExpression GetReducedIndexExpr(const Index& index, mlir::MLIRContext* context) const; // gets an expression that depends only on loop indices
 
@@ -79,7 +80,9 @@ namespace loopnest
         bool IsSplitIndex(const Index& index, bool inner) const;
         Index GetOtherSplitIndex(const Index& index) const;
         bool IsPaddedIndex(const Index& index) const;
-        bool HasPaddedParentIndex(const Index& index) const;
+        bool IsFusedPaddedIndex(const Index& index) const;
+        bool IsPrePaddedIndexOf(const Index& index, const Index& paddedIndex) const;
+
         std::vector<Index> GetBaseIndices(const Index& index) const;
         Index GetBaseIndex(const Index& index) const;
         std::optional<std::pair<bool, Index>> IsSkewedOrReferenceIndex(const Index& index) const;
@@ -94,11 +97,11 @@ namespace loopnest
 
         AffineConstraints GetConstraints() const;
 
-        // Vector of (index, isDimension, expr, range) tuples
+        // Vector of (index, isDimension, expr, range, padding) tuples
         struct AttributeKey
         {
             std::vector<Index> dimensions;
-            std::vector<std::tuple<Index, AffineExpression, Range>> indices;
+            std::vector<std::tuple<Index, AffineExpression, Range, std::vector<int64_t>>> indices;
             friend bool operator==(const AttributeKey& a, const AttributeKey& b) { return (a.dimensions == b.dimensions) && (a.indices == b.indices); }
         };
         TransformedDomain(const AttributeKey& info);
@@ -110,10 +113,10 @@ namespace loopnest
         struct IndexInfo
         {
             IndexInfo() :
-                expr({}), range(0, 0), parents({}) {}
+                expr({}), range(0, 0), padding({}), parents({}) {}
 
-            IndexInfo(const AffineExpression& expr, const Range& range, const std::vector<Index>& parents) :
-                expr(expr), range(range)
+            IndexInfo(const AffineExpression& expr, const Range& range, std::vector<int64_t> padding, const std::vector<Index>& parents) :
+                expr(expr), range(range), padding(padding)
             {
                 this->parents.insert(parents.begin(), parents.end());
             }
@@ -121,6 +124,13 @@ namespace loopnest
             AffineExpression expr;
             Range range;
             std::unordered_set<Index> parents;
+
+            // Padding (the sign indicates location in the iteration space):
+            //   negative: front-padding (at beginning of index),
+            //   positive: back-padding (at end of index)
+            // When multiple values are present, this index has been fused with one or more padded indices
+            // the padding will follow the correspondence index (i.e. its fusing-index) ordering
+            std::vector<int64_t> padding;
 
             friend bool operator==(const TransformedDomain::IndexInfo& a, const TransformedDomain::IndexInfo& b);
             friend bool operator!=(const TransformedDomain::IndexInfo& a, const TransformedDomain::IndexInfo& b);

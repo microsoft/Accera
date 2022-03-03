@@ -793,8 +793,11 @@ namespace loopnest
         return result;
     }
 
-    void LoopNestBuilder::AddSplits(const Index& loopIndex, Range loopRange, Operation* predicateOp, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule, std::set<int64_t>& allSplits) const
+    void LoopNestBuilder::AddSplits(const Index& loopIndex, const Range& loopRange, Operation* predicateOp, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule, std::set<int64_t>& allSplits) const
     {
+        // Adds split points for a fixed loopRange. This does not change the top level boundaries of the loop.
+        // To adjust the top level boundaries, see LoopVisitSchedule::GetActiveLoopRange
+
         // For some reason, simplifying a FragmentTypePredicate here erroneously returns a constant (empty) predicate
         // auto predicate = predicateOp.Simplify(GetDomain(), runtimeIndexVariables, schedule);
 
@@ -824,7 +827,7 @@ namespace loopnest
 
                     // Calculate range of possible split points.
                     auto begin = loopRange.Begin() + loopRange.Increment();
-                    auto end = loopRange.End(); // TODO: need to handle boundary conditions?
+                    auto end = loopRange.End();
 
                     // S = N + M - 1 => N = S - M + 1
                     auto rangeBeforeSkew = loopRange.Size() - dependentIndexRange.Size() + 1;
@@ -871,40 +874,56 @@ namespace loopnest
             }
             else if (domain.IsSplitIndex(loopIndex, /*inner=*/false))
             {
+                auto splitSize = loopRange.Increment();
+
                 // An outer split index: some loops need to be unswitched depending on whether padding exists
                 //
+                // Front-padding:
                 //  Suppose padSize = 8, splitSize = 5 (padSize can easily be 3 as well):
+                //
                 //  o o o o o
                 //  o o o x x <-- unswitch at first ceiling boundary [padded outer indices]
                 //  x x x x x
                 //  x x x x x
                 //  x x x x x
                 //  x x x o o <-- unswitch at (rangeSize - extra) [all outer indices, if applicable]
+                //
+                // Back-padding: handled by unswitching the end boundary block
 
-                auto splitSize = loopRange.Increment();
-                if (domain.HasPaddedParentIndex(loopIndex))
+                // Reconcile the domain constraints with the active loop range by taking their overlap:
+                // - The domain constraints represent the active iteration space (with padding excluded)
+                // - The active loop range represents the loop variable's current state, such as whether we are within a boundary block
+                const auto constraints = domain.GetConstraints();
+                auto [begin, end] = constraints.GetEffectiveRangeBounds(loopIndex);
+                begin = std::max(loopRange.Begin(), begin);
+                end = std::min(loopRange.End(), end);
+                assert(begin < end && "Could not reconcile loop ranges"); // likely a boundary block splitting logic error
+
+                if (domain.IsPaddedIndex(loopIndex) && begin > 0)
                 {
-                    // This is an outer split index that has a padded parent index
-                    // As outer split indices are only split once, we've only needed to check the immediate parent
-                    auto padSize = loopRange.Begin();
+                    // Front-padded index
+                    // Unswitch the first partial block, at the first ceiling boundary
+                    // (i.e. the split boundary that immediately follows padding)
+                    // TODO: is begin > 0 sufficient or do we need to add logic to detect if we are in a boundary block?
+                    auto padSize = begin;
                     if (padSize != 0 && padSize != splitSize)
                     {
                         // Unswitch the first partial block, at the first ceiling boundary
                         // (i.e. the split boundary that immediately follows the padSize element)
                         auto firstCeilBound = (padSize / splitSize + 1) * splitSize;
-                        if (firstCeilBound < loopRange.End())
+                        if (firstCeilBound < end)
                         {
                             splits.insert(firstCeilBound);
                         }
-                    } // else front padding does not affect the size of the first split block
+                    } // else front-padding does not affect the size of the first split block 
                 }
-
-                // Unswitch the final partial block if the range exceeds the split size AND is a non-multiple of the split size
-                auto rangeSize = loopRange.End();
-                auto extra = rangeSize % splitSize;
-                if (rangeSize > splitSize && extra > 0)
+ 
+                // Unswitch the final partial block if the end-block exceeds the split size AND is a non-multiple of the split size
+                // (also handles the end-padding case)
+                auto extra = end % splitSize;
+                if (end > splitSize && extra > 0)
                 {
-                    splits.insert(rangeSize - extra);
+                    splits.insert(end - extra);
                 }
             }
         };
@@ -949,12 +968,37 @@ namespace loopnest
                         case FragmentType::endBoundary:
                             // already set by automatic boundary-handling code
                             break;
-                        case FragmentType::range:
+                        case FragmentType::range: {
                             // custom begin & end (increment is ignored for now)
                             assert(indexValues.size() >= 2 && "Invalid number of index values for range predicate");
-                            splitVals.push_back(indexValues[0]);
-                            splitVals.push_back(indexValues[1]);
+                            auto customBegin = indexValues[0];
+                            auto customEnd = indexValues[1];
+                            splitVals.push_back(customBegin);
+
+                            if (domain.IsSplitIndex(loopIndex, /*inner=*/false))
+                            {
+                                // compute the boundary blocks
+                                // first possible range is [customBegin, customEnd)
+                                // second possible range is [customEnd, loopRange.End())
+                                // Note: we ignore/don't care if other intermediate ranges are defined elsewhere
+                                // and err on the side of splitting more often than necessary
+                                std::vector<int64_t> blockEnds = { customEnd, loopRange.End() };
+                                auto splitSize = loopRange.Increment();
+                                int64_t start = customBegin;
+                                for (auto e : blockEnds)
+                                {
+                                    auto rangeSize = e - start;
+                                    auto extra = rangeSize % splitSize;
+                                    if (rangeSize > splitSize && extra > 0)
+                                    {
+                                        splitVals.push_back(e - extra);
+                                    }
+                                    start = e;
+                                }
+                            }
+                            splitVals.push_back(customEnd);
                             break;
+                        }
                         default:
                             // nothing
                             break;

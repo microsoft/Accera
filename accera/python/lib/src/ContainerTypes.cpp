@@ -222,11 +222,12 @@ Args:
                 "Array element access operator. Sets the Scalar value that is at the specified index within the array")
             .def("_copy", &value::Array::Copy)
             .def(
-                "sub_array", [](value::Array& arr, const std::vector<value::Scalar>& offsets, const std::vector<int64_t>& shape) {
-                    return arr.SubArray(offsets, shape);
+                "sub_array", [](value::Array& arr, const std::vector<value::Scalar>& offsets, const std::vector<int64_t>& shape, std::optional<std::vector<int64_t>> strides) {
+                    return arr.SubArray(offsets, shape, strides);
                 },
                 "offsets"_a,
-                "shape"_a)
+                "shape"_a,
+                "strides"_a = std::nullopt)
             .def("_slice", &value::Array::Slice)
 // TODO: Enable when functionality is needed and semantics are fully cleared
 #if 0

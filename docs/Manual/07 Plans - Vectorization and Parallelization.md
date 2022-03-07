@@ -5,7 +5,7 @@
 The plan includes operations and optimizations that control instruction pipelining, vectorized SIMD instructions, and parallelization.
 
 ## `unroll`
-By default, each dimension of the iteration space is implemented as a for-loop. The `unroll` instruction marks a dimension for *unrolling* rather than looping. Consider the following nest that multiplies the entires of an array by a constant:
+By default, each dimension of the iteration space is implemented as a for-loop. The `unroll` instruction marks a dimension for *unrolling* rather than looping. Imagine the following nest that multiplies the entries of an array by a constant:
 ```python
 import accera as acc
 
@@ -20,7 +20,7 @@ def _():
 
 plan = nest.create_plan(my_target)
 ```
-If we build the `plan` as is, the resulting implementation would be equivalent to the following Python code:
+If we build `plan` as is, the resulting implementation would be equivalent to the following Python code:
 ```python
 for i in range(3):
     for j in range(5):
@@ -47,9 +47,9 @@ for j in range(5):
 And, of course, we can also unroll both dimensions, removing for-loops completely.
 
 ## `vectorize`
-Many modern and advanced target platforms support SIMD vector instructions. These instructions perform the same operation on an entire vector of elements, all at once. By default, each dimension of an iteration space becomes a for-loop. However, the `vectorize` instruction labels a dimension for vectorized execution, rather than for-looping.  
+Modern target platforms support SIMD vector instructions. These instructions perform the same operation on an entire vector of elements, all at once. By default, each dimension of an iteration space becomes a for-loop. However, the `vectorize` instruction labels a dimension for vectorized execution, rather than for-looping.  
 
-Assume that a host supports 256-bit vector instructions, indicating that its vector instructions operate on eight floating-point elements at once. Also, consider that we already have arrays `A`, `B`, and `C`, and we write the following code: 
+For example, assume that a host supports 256-bit vector instructions, indicating that its vector instructions operate on eight floating-point elements at once. Also, consider that we already have arrays `A`, `B`, and `C`, and we write the following code: 
 ```python
 nest = acc.Nest(shape=(64,))
 i = nest.get_indices()
@@ -73,7 +73,7 @@ The dimension marked for the vectorization is of size 8, which is a supported ve
   00000001400010C3: 48 83 E8 01        sub         rax,1
   00000001400010C7: 75 E7              jne         00000001400010B0
 ```
-Note how the multiplication instruction *vmulps* and the memory move instruction *vmovups* deal with *eight* 32-bit floating-point values at a time.
+Note how the multiplication instruction *vmulps* and the memory move instruction *vmovups* deal with eight 32-bit floating-point values at a time.
 
 Different targets support different vector instructions having different vector sizes. The following table includes iteration logic that vectorizes correctly on most targets with vectorization support, such as Intel Haswell, Broadwell or newer, and ARM v7/A32. Other examples of iteration logic may or may not vectorize correctly. Variables prefixed with *v* are vector types, and those prefixed with *s* are scalar types.
 
@@ -100,8 +100,8 @@ Different targets support different vector instructions having different vector 
 | `v1 = v0 << s0` | `for i in range(vector_size):` <br>&emsp; `v1[i] = v0[i] << s0` | int16/32/64, float32 |
 | `v1 = v0 >> s0` | `for i in range(vector_size):` <br>&emsp; `v1[i] = v0[i] >> s0` | int16/32/64, float32 |
 | `s0 = sum(v0)` | `for i in range(vector_size):` <br>&emsp; `s0 += v0[i]` | int8/16/32/64, float32 |
-| `s0 = max(v0 + v1)` | `for i in range(vector_size):` <br>&emsp; `s0 = max(v0[i] + v1[i], s0)` | int/8int16/32/64, float32 |
-| `s0 = max(v0 - v1)` | `for i in range(vector_size):` <br>&emsp; `s0 = max(v0[i] - v1[i], s0)` | int/8int16/32/64, float32 |
+| `s0 = max(v0 + v1)` | `for i in range(vector_size):` <br>&emsp; `s0 = max(v0[i] + v1[i], s0)` | int8/16/32/64, float32 |
+| `s0 = max(v0 - v1)` | `for i in range(vector_size):` <br>&emsp; `s0 = max(v0[i] - v1[i], s0)` | int8/16/32/64, float32 |
 
 Additionally, Accera can perform vectorized load and store operations to/from vector registers and memory if the memory locations are contiguous. 
 
@@ -110,10 +110,10 @@ To vectorize dimension `i`, the number of active elements that corresponds to di
 ## Convenience syntax: `kernelize`
 The `kernelize` instruction is a convenience syntax that does not provide any unique functionality. Specifically, `kernelize` is equivalent to a sequence of `unroll` instructions, followed by an optional `vectorize` instruction.
 
-A typical Accera design pattern is; to first break a loop-nest into tiles and then apply an optimized kernel to each tile. For example, imagine that the loop nest multiplies two 256&times;256 matrices and the kernel is a highly optimized procedure for multiplying 4&times;4 matrices. Accera will introduce different ways to write highly optimized kernels in the future. However, currently, it only supports *automatic kernelization* using the `kernelize` instruction. As mentioned above, `kernelize` is shorthand for unrolling and vectorizing. These instructions structure the code in a way that makes it easy for downstream compiler heuristics to automatically generate kernels.
+A typical Accera design pattern is to first break a loop-nest into tiles and then apply an optimized kernel to each tile. For example, imagine that the loop nest multiplies two 256&times;256 matrices and the kernel is a highly optimized procedure for multiplying 4&times;4 matrices. Accera will introduce different ways to write highly optimized kernels in the future. However, currently, it only supports *automatic kernelization* using the `kernelize` instruction. As mentioned above, `kernelize` is shorthand for unrolling and vectorizing. These instructions structure the code in a way that makes it easy for downstream compiler heuristics to automatically generate kernels.
 
 Consider, once again, the matrix multiplication example we discussed previously in [Section 2](<02%20Simple%20Affine%20Loop%20Nests.md>).
-Assume that we declare the schedule and reorder as follows
+Assume that we declare the schedule and reorder as follows:
 
 ```python
 schedule = nest.create_schedule()
@@ -140,7 +140,7 @@ plan.vectorize(j)
 ```
 Applying this sequence of instructions allows the compiler to automatically create an optimized kernel from loops `i, k, j`.
 
-For simplicity, assume that the matrix sizes defined by M, N, and S are 3, 4, and 2.
+For simplicity, assume that the matrix sizes defined by M, N, and S are 3, 4, and 2 respectively.
 
 After applying `kernelize`, the schedule is equivalent to the following Python code:
 ```python

@@ -5,7 +5,7 @@
 The plan includes operations and optimizations that control instruction pipelining, vectorized SIMD instructions, and parallelization.
 
 ## `unroll`
-By default, each dimension of the iteration space is implemented as a for-loop. The `unroll` instruction marks a dimension for *unrolling* rather than looping. For example, imagine that we have the following nest, which multiplies the entires of an array by a constant:
+By default, each dimension of the iteration space is implemented as a for-loop. The `unroll` instruction marks a dimension for *unrolling* rather than looping. Consider the following nest that multiplies the entires of an array by a constant:
 ```python
 import accera as acc
 
@@ -20,7 +20,7 @@ def _():
 
 plan = nest.create_plan(my_target)
 ```
-If we build `plan` as is, the resulting implementation would be equivalent to the following Python code:
+If we build the `plan` as is, the resulting implementation would be equivalent to the following Python code:
 ```python
 for i in range(3):
     for j in range(5):
@@ -44,12 +44,12 @@ for j in range(5):
 for j in range(5):
     A[2, j] *= 2.0
 ```
-And, of course, we could also unroll both dimensions, removing for-loops completely.
+And, of course, we can also unroll both dimensions, removing for-loops completely.
 
 ## `vectorize`
-Many modern target platforms support SIMD vector instructions. SIMD instructions perform the same operation on an entire vector of elements, all at once. By default, each dimension of an iteration space becomes a for-loop, but the `vectorize` instruction labels a dimension for vectorized execution, rather than for-looping.
+Many modern and advanced target platforms support SIMD vector instructions. These instructions perform the same operation on an entire vector of elements, all at once. By default, each dimension of an iteration space becomes a for-loop. However, the `vectorize` instruction labels a dimension for vectorized execution, rather than for-looping.  
 
-For example, assume that the host supports 256-bit vector instructions, which means that its vector instructions operate on 8 floating-point elements at once. Imagine that we already have arrays `A`, `B`, and `C`, and that we write the following code:
+Assume that a host supports 256-bit vector instructions, indicating that its vector instructions operate on eight floating-point elements at once. Also, consider that we already have arrays `A`, `B`, and `C`, and we write the following code: 
 ```python
 nest = acc.Nest(shape=(64,))
 i = nest.get_indices()
@@ -64,7 +64,7 @@ ii = schedule.split(i, 8)
 plan = nest.create_plan()
 plan.vectorize(index=ii)
 ```
-The dimension marked for vectorization is of size 8, which is a supported vector size on the specific target platform. Therefore, the resulting binary will contain something like:
+The dimension marked for the vectorization is of size 8, which is a supported vector size on the specific target platform. Therefore, the resulting binary will contain something like:
 ```
   00000001400010B0: C5 FC 10 0C 11     vmovups     ymm1,ymmword ptr [rcx+rdx]
   00000001400010B5: C5 F4 59 0A        vmulps      ymm1,ymm1,ymmword ptr [rdx]
@@ -73,9 +73,9 @@ The dimension marked for vectorization is of size 8, which is a supported vector
   00000001400010C3: 48 83 E8 01        sub         rax,1
   00000001400010C7: 75 E7              jne         00000001400010B0
 ```
-Note how the multiplication instruction *vmulps* and the memory move instruction *vmovups* deal with 8 32-bit floating point values at a time.
+Note how the multiplication instruction *vmulps* and the memory move instruction *vmovups* deal with *eight* 32-bit floating-point values at a time.
 
-Different targets support different vector instructions, with different vector sizes. The following table includes iteration logic that vectorizes correctly on most targets with vectorization support, such as Intel Haswell, Broadwell or newer, and ARM v7/A32. Other examples of iteration logic may or may not vectorize correctly. Variables prefixed with *v* are vector types, and those prefixed with *s* are scalar types.
+Different targets support different vector instructions having different vector sizes. The following table includes iteration logic that vectorizes correctly on most targets with vectorization support, such as Intel Haswell, Broadwell or newer, and ARM v7/A32. Other examples of iteration logic may or may not vectorize correctly. Variables prefixed with *v* are vector types, and those prefixed with *s* are scalar types.
 
 | Vector pseudocode | Equivalent to | Supported types |
 |---------|---------------|---------|
@@ -103,17 +103,17 @@ Different targets support different vector instructions, with different vector s
 | `s0 = max(v0 + v1)` | `for i in range(vector_size):` <br>&emsp; `s0 = max(v0[i] + v1[i], s0)` | int/8int16/32/64, float32 |
 | `s0 = max(v0 - v1)` | `for i in range(vector_size):` <br>&emsp; `s0 = max(v0[i] - v1[i], s0)` | int/8int16/32/64, float32 |
 
-In addition, Accera can perform vectorized load and store operations to/from vector registers and memory if the memory locations are contiguous.
+Additionally, Accera can perform vectorized load and store operations to/from vector registers and memory if the memory locations are contiguous. 
 
-To vectorize dimension `i`, the number of active elements that corresponds to dimension `i` must exactly match the vector instruction width of the target processor. For example, if the target processor has vector instructions that operate on either 4 or 8 floating point elements at once, then the number of active elements can be either 4 or 8. Additionally, those active elements must occupy adjacent memory locations (they cannot be spread out).
+To vectorize dimension `i`, the number of active elements that corresponds to dimension `i` must exactly match the vector instruction width of the target processor. For example, if the target processor has vector instructions that operate on either 4 or 8 floating-point elements at once, then the number of active elements can either be 4 or 8. Additionally, those active elements must occupy adjacent memory locations (they cannot be spread out).
 
 ## Convenience syntax: `kernelize`
-The `kernelize` instruction is a convenience syntax and does not provide any unique functionality. Specifically, `kernelize` is equivalent to a sequence of `unroll` instructions, followed by an optional `vectorize` instruction.
+The `kernelize` instruction is a convenience syntax that does not provide any unique functionality. Specifically, `kernelize` is equivalent to a sequence of `unroll` instructions, followed by an optional `vectorize` instruction.
 
-A typical Accera design pattern is to break a loop-nest into tiles and then apply an optimized kernel to each tile. For example, imagine that the loop nest multiplies two 256&times;256 matrices and the kernel is a highly optimized procedure for multiplying 4&times;4 matrices. In the future, Accera will introduce different ways to write highly optimized kernels, but currently, it only supports *automatic kernelization* using the `kernelize` instruction. As mentioned above, `kernelize` is shorthand for unrolling and vectorizing. These instructions structure the code in a way that makes it easy for downstream compiler heuristics to automatically generate kernels.
+A typical Accera design pattern is; to first break a loop-nest into tiles and then apply an optimized kernel to each tile. For example, imagine that the loop nest multiplies two 256&times;256 matrices and the kernel is a highly optimized procedure for multiplying 4&times;4 matrices. Accera will introduce different ways to write highly optimized kernels in the future. However, currently, it only supports *automatic kernelization* using the `kernelize` instruction. As mentioned above, `kernelize` is shorthand for unrolling and vectorizing. These instructions structure the code in a way that makes it easy for downstream compiler heuristics to automatically generate kernels.
 
-Consider, once again, the matrix multiplication example we saw previously in [Section 2](<02%20Simple%20Affine%20Loop%20Nests.md>).
-Imagine we declare the schedule and reorder as follows:
+Consider, once again, the matrix multiplication example we discussed previously in [Section 2](<02%20Simple%20Affine%20Loop%20Nests.md>).
+Assume that we declare the schedule and reorder as follows
 
 ```python
 schedule = nest.create_schedule()
@@ -140,7 +140,7 @@ plan.vectorize(j)
 ```
 Applying this sequence of instructions allows the compiler to automatically create an optimized kernel from loops `i, k, j`.
 
-For simplicity, let's assume that the matrix sizes, defined by M, N, S are M=3, N=4, S=2.
+For simplicity, assume that the matrix sizes defined by M, N, and S are 3, 4, and 2.
 
 After applying `kernelize`, the schedule is equivalent to the following Python code:
 ```python
@@ -185,10 +185,10 @@ plan.parallelize(indices=(i,j,k))
 Specifying multiple dimensions is equivalent to the `collapse` argument in OpenMP. Therefore, the dimensions must be contiguous in the iteration space dimension order.
 
 ### Static scheduling policy
-A static scheduling strategy is invoked by setting the argument `policy="static"` in the call to `parallelize`. If *n* iterations are parallelized across *c* cores, static scheduling partitions the work into *c* fixed parts, some of size *floor(n/c)* and some of size *ceil(n/c)*, and executes each part on a different core.
+Static scheduling strategy is invoked by setting the argument `policy="static"` in the call to `parallelize`. If *n* iterations are parallelized across *c* cores, the static scheduling partitions the work into *c* fixed parts, some of size *floor(n/c)*, some of size *ceil(n/c)*, and executes each part on a different core.
 
 ### Dynamic scheduling policy
-A dynamic scheduling strategy is invoked by setting the argument `policy="dynamic"` in the call to `parallelize`. Dynamic scheduling creates a single queue of work that is shared across the different cores.
+Dynamic scheduling strategy is invoked by setting the argument `policy="dynamic"` in the call to `parallelize`. Dynamic scheduling creates a single work queue that is shared across different cores.
 
 ### __Not yet implemented:__ Pinning to specific cores
 The `pin` argument allows the parallel work to be pinned to specific cores.

@@ -47,7 +47,7 @@ for j in range(5):
 And, of course, we can also unroll both dimensions, removing for-loops completely.
 
 ## `vectorize`
-Modern target platforms support SIMD vector instructions. These instructions perform the same operation on an entire vector of elements, all at once. By default, each dimension of an iteration space becomes a for-loop. However, the `vectorize` instruction labels a dimension for vectorized execution, rather than for-looping.  
+Modern target platforms support SIMD vector instructions. These instructions perform the same operation on an entire vector of elements, all at once. By default, each dimension of an iteration space becomes a for-loop. The `vectorize` instruction instead labels a dimension for vectorized execution, rather than for-looping.  
 
 For example, assume that a host supports 256-bit vector instructions, indicating that its vector instructions operate on eight floating-point elements at once. Also, consider that we already have arrays `A`, `B`, and `C`, and we write the following code: 
 ```python

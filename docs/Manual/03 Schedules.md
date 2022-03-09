@@ -64,7 +64,7 @@ for k in range(11):
 ```
 
 However, some orders are not allowed. Describing these restrictions in full will require concepts that are yet to be introduced. Therefore, we are stating these restrictions here and will discuss them later in the upcoming sections. The restrictions are: 
-1. The *inner dimension* created by a split transformation (see below) must be ordered after its corresponding *outer dimension*.
+1. The *inner dimension* created by a `split` transformation (see below) must be ordered later than its corresponding *outer dimension*.
 2. The *fusing dimension* created by a `fuse` operation (see [Section 4](<04%20Fusing.md>)) must always precede any *unfused dimensions*.
 
 

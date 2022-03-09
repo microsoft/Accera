@@ -21,7 +21,7 @@ In other words, each of the logical pseudo-code loops in `nest` becomes an actua
 We can now transform this schedule in various ways. However, these transformations do not change the underlying logic defined in `nest` and merely change the order of the loop iterations. We can even generate as many independent schedules as we want by calling `nest.create_schedule()`.
 
 ## Iteration spaces: a geometric representation of schedules
-In the Accera programming model, schedules are geometrically interpreted as a multi-dimensional discrete hypercube called the *iteration space* of the nest. The elements of the iteration space represent the individual iterations of the loop nest. Initially, the dimensions of the iteration space correspond to the logical loops defined in `nest`. For example, the default iteration space for the matrix-matrix multiplication nest forms a three-dimensional discrete hypercube, whose shape is (16, 10, 11).
+In the Accera programming model, a schedule is geometrically interpreted as a multi-dimensional discrete hypercube called the *iteration space* of the nest. The elements of the iteration space represent the individual iterations of the loop nest. Initially, the dimensions of the iteration space correspond to the logical loops defined in `nest`. For example, the default iteration space for the matrix-matrix multiplication nest forms a three-dimensional discrete hypercube, whose shape is (16, 10, 11).
 
 ### How does an iteration space imply an order over the iterations?
 The dimensions of the iteration space are ordered, and this order corresponds to the original order of the logical loops in `nest` by default. In fact, the order over the dimensions induces a lexicographic sequence over the individual elements of the iteration space. 
@@ -64,7 +64,7 @@ for k in range(11):
 ```
 
 However, some orders are not allowed. Describing these restrictions in full will require concepts that are yet to be introduced. Therefore, we are stating these restrictions here and will discuss them later in the upcoming sections. The restrictions are: 
-1. The *inner dimension* created by a `split` transformation (see below) is always followed by its corresponding *outer dimension*.
+1. The *inner dimension* created by a split transformation (see below) must be ordered after its corresponding *outer dimension*.
 2. The *fusing dimension* created by a `fuse` operation (see [Section 4](<04%20Fusing.md>)) must always precede any *unfused dimensions*.
 
 
@@ -106,7 +106,7 @@ ii = schedule.split(i,4)
 iii = schedule.split(i,2)
 iiii = schedule.split(ii,2)
 ```
-After the first split, the iteration space has the shape (4, 4, 10, 11). After the second split, the shape becomes (2, 2, 4, 10, 11). Finally, the shape becomes (2, 2, 2, 2, 10, 11) after the third split. The transformed schedule corresponds to the following python code:
+After the first split, the iteration space has the shape (4, 4, 10, 11). After the second split, the shape becomes (2, 2, 4, 10, 11). Finally, the shape becomes (2, 2, 2, 2, 10, 11) after the third split. The transformed schedule corresponds to the following Python code:
 ```python
 for i in range(0, 16, 8):
     for iii in range(0, 8, 4):
@@ -276,7 +276,7 @@ schedule.pad(i, size)
 The `pad` transformation pads the beginning of dimension `i` with empty elements. This operation is meaningless by itself, but can be useful when used with splitting or fusing.
 
 ## Order-invariant schedules and safety
-A schedule is *order-invariant* if its underlying logic doesn't depend on the execution order of its iterations. For example, schedules created from a single `Nest` (via `create_schedule()` call) are order-invariant. All of the schedules discussed so far have been order-invariant.
+A schedule is *order-invariant* if its underlying logic doesn't depend on the execution order of its iterations. For example, schedules created from a single `Nest` (via `create_schedule()`) are order-invariant. All of the schedules discussed so far have been order-invariant.
 
 A schedule is *safe* if its underlying logic is guaranteed to remain intact regardless of the applied transformations. Not all schedules are safe, but order-invariant schedules are. This is because the transformations introduced in this section only change the execution order of iterations without adding or removing any work.
 

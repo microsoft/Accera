@@ -3,10 +3,10 @@
 
 # Section 9: Parameters
 
-Accera parameters are placeholders that get replaced with concrete values when we add a function to a package. A parameter can be used in a `Nest`, a `Schedule`, or an `Plan`.
+Accera's parameters are placeholders that get replaced with concrete values when adding a function to a package. A parameter can be used in a `Nest`, a `Schedule`, or a `plan`.
 
 ## Parameterized nests
-Recall that a `Nest` represents the loop-nest logic. We can parameterize the nest shape and the iteration logic. For example, consider the following parameterized version of matrix multiplication:
+Recall that a `Nest` represents the loop-nest logic. We can parametrize the nest shape and iteration logic. For example, consider the following parameterized version of matrix multiplication:
 
 ```python
 # Create parameters
@@ -32,10 +32,10 @@ package = acc.Package()
 package.add(nest, args=(A, B, C), parameters={P0:16, P1:16, P2:16, P3:1.0}, base_name="matmul_16_16_16_1")
 package.add(nest, args=(A, B, C), parameters={P0:32, P1:32, P2:32, P3:2.0}, base_name="matmul_32_32_32_2")
 ```
-In this example, the shape of the nest is parameterized by (`P0`, `P1`, `P2`) and its iteration logic includes the parameter `P3`. The nest is used twice, with different settings of these parameters, to create two separate functions in the package.
+In the above scenario, the shape of the nest is parameterized by (`P0`, `P1`, `P2`) and its iteration logic includes the parameter `P3`. The nest is used twice with different settings of these parameters to create two separate functions in the package.
 
 ## Parameterized schedules and plans
-Parameters can also appear in schedules and plans. For example, we could add the following to the code above:
+As mentioned before, parameters can be used in schedules and plans. For example, we can add the following code snippet to the above logic:
 ```python
 P4, P5 = acc.create_parameters(2)
 
@@ -52,15 +52,15 @@ package.add(plan, args=(A, B, C), parameters={P0:16, P1:16, P2:16, P3:1.0, P4:4,
 ```
 
 ## Tuple parameter values
-Parameters can be used as placeholders for tuples, and specifically tuples of indices. For example, say that we wanted to parameterize the order of the iteration space dimensions. We could write:
+Parameters can be used as placeholders for tuples, specifically for tuples of indices. For example, assume that we want to parameterize the order of the iteration space dimensions. We can then write:
 ```python
 P6 = acc.create_parameters(1)
 schedule.reorder(order=P6)
 ```
-Later, we could set the value of `P6` to the index tuple `(j,k,i)`.
+Later, we can set the value of `P6` to the index tuple `(j,k,i)`.
 
 ## Get parameters from an entire parameter grid
-Consider the parameterized nest defined above. Rather than setting each parameter to one specific value, imagine that we had a set of different values for each parameter. For example, say that we wanted `P0` to take a value in the set `{8, 16}`, `P1` in `{16, 32}`, `P2` would always equal 16, and `P3` would take a value in `{1,2}`. This list of all valid parameter combinations is called a *parameter grid*. In this case, the grid includes the following parameter settings:
+Consider the parameterized nest defined above. Rather than setting a specific value for each parameter, imagine that we have a set of different values for each parameter. For example, consider that we want `P0` to have a value in set `{8, 16}`, `P1` in `{16, 32}`, `P2` to be always `16`, and `P3` in `{1,2}`. We can define the *parameter grid* with this data, which lists all the valid parameter combinations. In our case, this grid includes the following parameter settings:
 ```python
 {P0:8, P1:16, P2:16, P3:1.0}
 {P0:8, P1:16, P2:16, P3:2.0}
@@ -72,13 +72,12 @@ Consider the parameterized nest defined above. Rather than setting each paramete
 {P0:16, P1:32, P2:16, P3:2.0}
 ```
 
-Accera provides an easy way to add all of the functions that correspond to the parameter grid at once.
+Accera provides an easy way to add all the functions that correspond to the parameter grid at once:
 ```python
 parameters = get_parameters_from_grid(parameter_grid={P0:[8,16], P1:[16,32], P2:[16], P3:[1.0,2.0]})
 package.add(nest, args=(A, B, C), base_name="matmul", parameters)
 ```
-In this case, `package.add` generates a function eight times, once for each parameter combination in the grid. Instead of `nest`, this function could take a schedule or a plan. All eight functions share the same base name, and Accera automatically adds a unique suffix to each function name to prevent duplicates.
-This pattern allows you to optionally perform filtering by inspecting the list of generated parameter values before calling `package.add`.
+In this case, `package.add` generates a function eight times, once for each parameter combination in the grid. Instead of `nest`, this function can take a schedule or a plan. All eight functions share the same base name. However, Accera automatically adds a unique suffix to each function name to prevent duplication. This pattern allows optional filtering by inspecting the generated parameter values list before calling `package.add`.
 
 
 <div style="page-break-after: always;"></div>

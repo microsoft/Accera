@@ -35,7 +35,7 @@ package.add(nest, args=(A, B, C), parameters={P0:32, P1:32, P2:32, P3:2.0}, base
 In the above scenario, the shape of the nest is parameterized by (`P0`, `P1`, `P2`) and its iteration logic includes the parameter `P3`. The nest is used twice with different settings of these parameters to create two separate functions in the package.
 
 ## Parameterized schedules and plans
-As mentioned before, parameters can be used in schedules and plans. For example, we can add the following code snippet to the above logic:
+As mentioned before, parameters can be used in schedules and plans. For example, we can add the following code snippet to the above code:
 ```python
 P4, P5 = acc.create_parameters(2)
 

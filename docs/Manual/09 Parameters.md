@@ -3,10 +3,10 @@
 
 # Section 9: Parameters
 
-Accera's parameters are placeholders that get replaced with concrete values when adding a function to a package. A parameter can be used in a `Nest`, a `Schedule`, or a `plan`.
+Accera's parameters are placeholders that get replaced with concrete values when adding a function to a package. A parameter can be used in a `Nest`, a `Schedule`, or a `Plan`.
 
 ## Parameterized nests
-Recall that a `Nest` represents the loop-nest logic. We can parametrize the nest shape and iteration logic. For example, consider the following parameterized version of matrix multiplication:
+Recall that a `Nest` represents the loop-nest logic. We can parameterize the nest's shape and iteration logic. For example, consider the following parameterized version of matrix multiplication:
 
 ```python
 # Create parameters
@@ -35,7 +35,7 @@ package.add(nest, args=(A, B, C), parameters={P0:32, P1:32, P2:32, P3:2.0}, base
 In the above scenario, the shape of the nest is parameterized by (`P0`, `P1`, `P2`) and its iteration logic includes the parameter `P3`. The nest is used twice with different settings of these parameters to create two separate functions in the package.
 
 ## Parameterized schedules and plans
-As mentioned before, parameters can be used in schedules and plans. For example, we can add the following code snippet to the above logic:
+Parameters can also appear in schedules and plans. For example, we can add the following code snippet to the above logic:
 ```python
 P4, P5 = acc.create_parameters(2)
 
@@ -77,7 +77,7 @@ Accera provides an easy way to add all the functions that correspond to the para
 parameters = get_parameters_from_grid(parameter_grid={P0:[8,16], P1:[16,32], P2:[16], P3:[1.0,2.0]})
 package.add(nest, args=(A, B, C), base_name="matmul", parameters)
 ```
-In this case, `package.add` generates a function eight times, once for each parameter combination in the grid. Instead of `nest`, this function can take a schedule or a plan. All eight functions share the same base name. However, Accera automatically adds a unique suffix to each function name to prevent duplication. This pattern allows optional filtering by inspecting the generated parameter values list before calling `package.add`.
+In this case, `package.add` generates a function eight times, once for each parameter combination in the grid.  Other than `nest`, `package.add` can alternatively accept a Schedule (if we are performing schedule transformations), or a Plan (if we are setting target-specific options). All eight functions share the same base name. However, Accera automatically adds a unique suffix to each function name to prevent duplication. This pattern allows optional filtering by inspecting the generated parameter values list before calling `package.add`.
 
 
 <div style="page-break-after: always;"></div>

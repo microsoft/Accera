@@ -77,7 +77,7 @@ Accera provides an easy way to add all the functions that correspond to the para
 parameters = get_parameters_from_grid(parameter_grid={P0:[8,16], P1:[16,32], P2:[16], P3:[1.0,2.0]})
 package.add(nest, args=(A, B, C), base_name="matmul", parameters)
 ```
-In this case, `package.add` generates a function eight times, once for each parameter combination in the grid.  Other than `nest`, `package.add` can alternatively accept a Schedule (if we are performing schedule transformations), or a Plan (if we are setting target-specific options). All eight functions share the same base name. However, Accera automatically adds a unique suffix to each function name to prevent duplication. This pattern allows optional filtering by inspecting the generated parameter values list before calling `package.add`.
+In this case, `package.add` generates a function eight times, once for each parameter combination in the grid.  Other than `nest`, `package.add` can alternatively accept a `Schedule` (if we are performing schedule transformations), or a `Plan` (if we are setting target-specific options). All eight functions share the same base name. However, Accera automatically adds a unique suffix to each function name to prevent duplication. This pattern allows optional filtering by inspecting the generated parameter values list before calling `package.add`.
 
 
 <div style="page-break-after: always;"></div>

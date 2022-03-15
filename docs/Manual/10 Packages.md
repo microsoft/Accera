@@ -7,7 +7,7 @@ The `Package` class represents a collection of Accera-generated functions. Whene
 ## HAT package format
 [HAT](https://github.com/microsoft/hat) "Header Annotated with TOML" is a format for packaging compiled libraries in the C programming language. HAT implies that a standard C header is styled with useful metadata in the TOML markup language.
 
-Consider a nest that holds some loop-nest logic. To build a HAT package containing a function with this logic for Windows operating system, we write the following lines of code: 
+Consider a nest that holds some loop-nest logic. To build a HAT package containing a function with this logic for the Windows operating system, we write the following lines of code: 
 ```python
 package = acc.Package()
 package.add(nest, base_name="func1")

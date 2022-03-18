@@ -5,6 +5,7 @@
 
 #include "AcceraTypes.h"
 
+#include <utilities/include/Exception.h>
 #include <value/include/Plan.h>
 
 #include <ir/include/value/ValueEnums.h>
@@ -37,7 +38,7 @@ namespace
             .value("NONE", value::MemorySpace::None)
             .value("GLOBAL", value::MemorySpace::Global)
             .value("SHARED", value::MemorySpace::Shared)
-            .value("LOCAL", value::MemorySpace::Local);
+            .value("PRIVATE", value::MemorySpace::Private);
 
         py::enum_<ir::value::Processor>(module, "Processor", "An enumeration of processors for loop index mapping")
             .value("BLOCK_X", ir::value::Processor::BlockX)
@@ -54,10 +55,17 @@ namespace
             .value("DYNAMIC", value::ParallelizationPolicy::Dynamic);
 
         py::enum_<value::ExecutionRuntime>(module, "_ExecutionRuntime", "Used for specifying the execution runtime of the module")
-            .value("DEFAULT", value::ExecutionRuntime::Default)
-            .value("VULKAN", value::ExecutionRuntime::Vulkan)
-            .value("ROCM", value::ExecutionRuntime::Rocm)
-            .value("CUDA", value::ExecutionRuntime::CUDA);
+            .value("DEFAULT", value::ExecutionRuntime::DEFAULT)
+            .value("VULKAN", value::ExecutionRuntime::VULKAN)
+            .value("ROCM", value::ExecutionRuntime::ROCM)
+            .value("CUDA", value::ExecutionRuntime::CUDA)
+            .value("OPENMP", value::ExecutionRuntime::OPENMP)
+            .value("NONE", value::ExecutionRuntime::NONE);
+
+        py::enum_<value::GPU::BarrierScope>(module, "BarrierScope", "An enumeration of barrier scopes")
+            .value("BLOCK", value::GPU::BarrierScope::Block)
+            .value("WARP", value::GPU::BarrierScope::Warp)
+            .value("THREADFENCE", value::GPU::BarrierScope::Threadfence);
     }
 
     void DefineExecutionPlanStructs(py::module& module)
@@ -106,36 +114,39 @@ namespace
                    value::CacheAllocation allocation,
                    value::MemorySpace memorySpace,
                    const std::optional<util::MemoryAffineCoefficients>& memoryMap,
-                   const std::optional<util::DimensionOrder>& dimOrder) {
+                   const std::optional<util::DimensionOrder>& dimOrder,
+                   bool thrifty,
+                   bool doubleBuffer,
+                   value::MemorySpace doubleBufferMemorySpace) {
                     if (outermostIncludedSplitIndex.has_value())
                     {
                         value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
                         if (memoryMap.has_value())
                         {
-                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *memoryMap, indexing, allocation, memorySpace);
+                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *memoryMap, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else if (dimOrder.has_value())
                         {
-                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, indexing, allocation, memorySpace);
+                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else
                         {
-                            return plan.AddCache(target, *outermostIncludedSplitIndex, indexing, allocation, memorySpace);
+                            return plan.AddCache(target, *outermostIncludedSplitIndex, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                     }
                     else
                     {
                         if (memoryMap.has_value())
                         {
-                            return plan.AddCache(target, *maxElements, *memoryMap, indexing, allocation, memorySpace);
+                            return plan.AddCache(target, *maxElements, *memoryMap, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else if (dimOrder.has_value())
                         {
-                            return plan.AddCache(target, *maxElements, *dimOrder, indexing, allocation, memorySpace);
+                            return plan.AddCache(target, *maxElements, *dimOrder, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else
                         {
-                            return plan.AddCache(target, *maxElements, indexing, allocation, memorySpace);
+                            return plan.AddCache(target, *maxElements, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                     }
                 },
@@ -147,7 +158,10 @@ namespace
                 "allocation"_a,
                 "location"_a,
                 "memory_map"_a,
-                "dim_order"_a)
+                "dim_order"_a,
+                "thrifty"_a,
+                "double_buffer"_a,
+                "double_buffer_location"_a)
             .def("emit_runtime_init_packing", py::overload_cast<value::ViewAdapter, const std::string&, const std::string&, value::CacheIndexing>(&value::Plan::EmitRuntimeInitPacking), "target"_a, "packing_func_name"_a, "packed_buf_size_func_name"_a, "indexing"_a = value::CacheIndexing::GlobalToPhysical)
             .def("pack_and_embed_buffer", py::overload_cast<value::ViewAdapter, value::ViewAdapter, const std::string&, const std::string&, value::CacheIndexing>(&value::Plan::PackAndEmbedBuffer), "target"_a, "constant_data_buffer"_a, "wrapper_fn_name"_a, "packed_buffer_name"_a, "indexing"_a = value::CacheIndexing::GlobalToPhysical)
             .def("vectorize", &value::Plan::Vectorize, "i"_a, "vectorization_info"_a)
@@ -159,7 +173,8 @@ namespace
                  }),
                  py::return_value_policy::move)
             .def(
-                "add_cache", [](value::GPUPlan& plan,
+                "add_cache",
+                [](value::GPUPlan& plan,
                    const std::variant<value::ViewAdapter, value::Cache*>& target,
                    const std::optional<value::ScalarIndex>& outermostIncludedSplitIndex,
                    const std::optional<value::ScalarIndex>& triggerIndex,
@@ -168,10 +183,25 @@ namespace
                    value::CacheAllocation allocation,
                    value::MemorySpace memorySpace,
                    const std::optional<util::MemoryAffineCoefficients>& memoryMap,
-                   const std::optional<util::DimensionOrder>& dimOrder) {
-                        value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
-                        return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, indexing, allocation, memorySpace);
-                        //return outermostIncludedSplitIndex.has_value() ? plan.AddCache(target, *outermostIncludedSplitIndex, memorySpace) : plan.AddCache(target, *maxElements, memorySpace);
+                   const std::optional<util::DimensionOrder>& dimOrder,
+                   bool thrifty,
+                   bool doubleBuffer,
+                   value::MemorySpace doubleBufferMemorySpace) {
+                    value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
+                    if (outermostIncludedSplitIndex.has_value())
+                    {
+                        return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                    }
+                    else if (maxElements.has_value())
+                    {
+                        // TODO : convert all GPUPlan::AddCache() impls to use manual caching rather than automatic, then plumb remaining arguments
+                        return plan.AddCache(std::get<value::ViewAdapter>(target), *maxElements, memorySpace);
+                    }
+                    else
+                    {
+                        // TODO : reach parity with GPUPlan::AddCache() and Plan::AddCache() functions
+                        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented);
+                    }
                 },
                 "target"_a,
                 "index"_a,
@@ -181,7 +211,10 @@ namespace
                 "allocation"_a,
                 "location"_a,
                 "memory_map"_a,
-                "dim_order"_a)
+                "dim_order"_a,
+                "thrifty"_a,
+                "double_buffer"_a,
+                "double_buffer_location"_a)
             .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a)
             .def("map_index_to_processor", &value::GPUPlan::MapIndexToProcessor, "index"_a, "proc"_a);
     }

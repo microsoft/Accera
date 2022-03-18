@@ -8,11 +8,11 @@
 
 #include "exec/ExecutionPlanToAffineLoweringPass.h"
 #include "gpu/AcceraToGPUPass.h"
-#include "gpu/AcceraToSPIRVPass.h"
 #include "gpu/AcceraVulkanPasses.h"
 #include "ir/include/value/ValueEnums.h"
 #include "nest/LoopNestPasses.h"
 #include "nest/LoopNestToValueFunc.h"
+#include "value/BarrierOptPass.h"
 #include "value/FunctionPointerResolutionPass.h"
 #include "value/RangeValueOptimizePass.h"
 #include "value/ValueFuncToTargetPass.h"
@@ -74,11 +74,13 @@ struct AcceraPassPipelineOptions : mlir::PassPipelineOptions<AcceraPassPipelineO
         "runtime",
         llvm::cl::desc("Execution runtime"),
         llvm::cl::values(
-            clEnumValN(accera::value::ExecutionRuntime::Default, "default", "default runtime"),
-            clEnumValN(accera::value::ExecutionRuntime::Vulkan, "vulkan", "Vulkan runtime"),
-            clEnumValN(accera::value::ExecutionRuntime::Rocm, "rocm", "Rocm runtime"),
-            clEnumValN(accera::value::ExecutionRuntime::CUDA, "cuda", "CUDA runtime")),
-        llvm::cl::init(accera::value::ExecutionRuntime::Default)
+            clEnumValN(accera::value::ExecutionRuntime::NONE, "none", "No runtimes"),
+            clEnumValN(accera::value::ExecutionRuntime::CUDA, "cuda", "CUDA runtime"),
+            clEnumValN(accera::value::ExecutionRuntime::ROCM, "rocm", "ROCm runtime"),
+            clEnumValN(accera::value::ExecutionRuntime::VULKAN, "vulkan", "Vulkan runtime"),
+            clEnumValN(accera::value::ExecutionRuntime::OPENMP, "openmp", "OpenMP runtime"),
+            clEnumValN(accera::value::ExecutionRuntime::DEFAULT, "default", "default runtime")),
+        llvm::cl::init(accera::value::ExecutionRuntime::DEFAULT)
     };
     Option<bool> enableAsync{ *this, "enable-async", llvm::cl::init(false) };
     Option<bool> enableProfile{ *this, "enable-profiling", llvm::cl::init(false) };

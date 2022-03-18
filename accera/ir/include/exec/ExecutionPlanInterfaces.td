@@ -7,7 +7,7 @@ include "mlir/IR/OpBase.td"
 // Cache region common interface
 //
 
-def rcxp_BeginCacheRegionOpInterface : OpInterface<"BeginCacheRegion"> {
+def accxp_BeginCacheRegionOpInterface : OpInterface<"BeginCacheRegion"> {
   let description = [{
     Interface for the cache region begin ops
   }];
@@ -26,7 +26,7 @@ def rcxp_BeginCacheRegionOpInterface : OpInterface<"BeginCacheRegion"> {
   ];
 }
 
-def rcxp_EndCacheRegionOpInterface : OpInterface<"EndCacheRegion"> {
+def accxp_EndCacheRegionOpInterface : OpInterface<"EndCacheRegion"> {
   let description = [{
     Interface for the cache region end ops
   }];

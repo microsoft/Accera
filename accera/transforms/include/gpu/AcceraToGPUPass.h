@@ -41,6 +41,8 @@ void populateAcceraToSPIRVPatterns(
     mlir::OwningRewritePatternList& patterns);
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createAcceraToSPIRVPass();
 
+void populateGPUSimplificationPatterns(mlir::OwningRewritePatternList& patterns);
+
 void populateAcceraToNVVMPatterns(mlir::OwningRewritePatternList& patterns);
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createAcceraToNVVMPass();
 

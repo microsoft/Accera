@@ -48,6 +48,7 @@ class Schedule:
     def __init__(self, nest: Nest):
         self._nest = nest
         self._delayed_calls = {}
+        self._parameterized_index_map = {}
 
         # nest.get_indices gives us a single index if there's only one index
         self._indices = nest.get_indices()
@@ -357,13 +358,29 @@ class Schedule:
 
     # If this function is updated to return something, fused schedule needs to be updated as well
     def _replay_delayed_calls(self):
-        for delayed_call in self._delayed_calls:
-            params = self._delayed_calls[delayed_call]
+        '''
+        This method is called once per adding function, so it can be called multiple times when  
+        multiple functions get added. In order for the functions to be added correctly, we need to make sure all 
+        the residual states are cleared between different method calls.
 
-            if isinstance(params, DelayedParameter):
-                delayed_call(params.get_value())
+        In Schedule class, we identify that Schedule._index_map can have residual states, so we need to reset self._index_map
+        before we replay the delayed methods.
+        '''
+
+        if self._delayed_calls:
+            # Reset the index map to its pre-parameterized state before applying function-specific parameters
+            if self._parameterized_index_map:
+                self._index_map = self._deep_copy_index_map(self._parameterized_index_map)
             else:
-                delayed_call(params)
+                self._parameterized_index_map = self._deep_copy_index_map(self._index_map)
+
+            for delayed_call in self._delayed_calls:
+                params = self._delayed_calls[delayed_call]
+
+                if isinstance(params, DelayedParameter):
+                    delayed_call(params.get_value())
+                else:
+                    delayed_call(params)
 
     def _resolve_index(self, index):
         if index not in self._index_map:
@@ -422,6 +439,13 @@ class Schedule:
             result += self._get_index_num_blocks(i)
         return result
 
+    def _deep_copy_index_map(self, index_map):
+        index_map_copy = {}
+        for index, entry in index_map.items():
+            inners_copy = [idx for idx in entry.inners]
+            index_map_copy[index] = IndexEntry(entry.stop, entry.start, entry.step, inners_copy, entry.parent, entry.transform)
+
+        return index_map_copy
 
 class FusedSchedule(Schedule):
 

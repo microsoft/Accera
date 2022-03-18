@@ -159,7 +159,7 @@ namespace executionPlan
         return getImpl()->getValue();
     }
 
-    TensorizationInfoAttr parseTensorizeInfo(mlir::DialectAsmParser& parser)
+    TensorizationInfoAttr parseTensorizationInfo(mlir::DialectAsmParser& parser)
     {
         int dim0, dim1, dim2;
         if (failed(parser.parseLBrace()))
@@ -176,12 +176,12 @@ namespace executionPlan
             return {};
         if (failed(parser.parseRBrace()))
             return {};
-        return TensorizationInfoAttr::get(TensorizationInfo{std::vector<int>{dim0, dim1, dim2}}, parser.getBuilder().getContext());
+        return TensorizationInfoAttr::get(TensorizationInfo{std::array<int, 3>{dim0, dim1, dim2}}, parser.getBuilder().getContext());
     }
 
     void print(TensorizationInfoAttr attr, mlir::DialectAsmPrinter& printer)
     {
-        printer << "tensorizeinfo";
+        printer << "tensorizationinfo";
         auto tensorizelInfo = attr.cast<TensorizationInfoAttr>().getValue();
         printer << tensorizelInfo;
     }

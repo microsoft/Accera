@@ -34,6 +34,7 @@ namespace loopnest
         Id GetId() const;
 
         static Index none;
+        static constexpr Id DefaultID = -1;
 
     private:
         static int GetNextId();
@@ -43,7 +44,7 @@ namespace loopnest
         friend inline bool operator<(const Index& i1, const Index& i2) { return i1.GetId() < i2.GetId(); }
 
         std::string _name;
-        Id _id = -1;
+        Id _id = Index::DefaultID;
     };
 
     struct SplitIndex

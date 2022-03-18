@@ -17,9 +17,9 @@ from .LoopIndex import LoopIndex
 from .NativeLoopNestContext import NativeLoopNestContext
 from ..Targets import Target
 from ..Platforms import LibraryDependency
+from ..Constants import AUTO
 
-from .._lang_python._lang import CacheIndexing, _MemorySpace
-
+from .._lang_python._lang import BarrierScope, CacheIndexing, _MemorySpace
 
 class Plan:
     def __init__(self, schedule: Schedule, target: Target = Target.HOST):
@@ -31,7 +31,7 @@ class Plan:
         self._dynamic_dependencies = set()
         self._bindings = {}
 
-        if target.category == Target.Category.GPU:
+        if target.category == Target.Category.GPU and target.runtime == Target.Runtime.VULKAN:
             self._dynamic_dependencies.add(LibraryDependency.VULKAN)
 
     def _add_index_attr(self, index: LoopIndex, attr: str):
@@ -137,6 +137,52 @@ class Plan:
             idxs, num_threads, _ParallelizationPolicy.DYNAMIC if policy == "dynamic" else _ParallelizationPolicy.STATIC
         )
 
+
+    def tensorize(
+        self,
+        indices: Union[LoopIndex, Tuple[LoopIndex]]
+    ):
+        if self._target.category != Target.Category.GPU:
+            raise ValueError("tensorization currently only supported on GPU targets")
+
+        indices = [indices] if isinstance(indices, LoopIndex) else list(indices) 
+
+        if len(indices) != 3:
+            raise ValueError("tensorization requires three input indices")
+
+        # ensure the indices are contiguous and follow the Schedule ordering
+        start = self._sched._indices.index(indices[0])
+        end = start + len(indices)
+        if end > len(self._sched._indices) or indices != self._sched._indices[start:end]:
+            raise ValueError("indices must be contiguous in the Schedule dimension order")
+
+        for index in indices:
+            self._add_index_attr(index, "tensorized")
+
+        self._commands.append(partial(self._tensorize, indices))
+
+    def _tensorize(self, indices, context: NativeLoopNestContext):
+        from .._lang_python import ScalarType 
+
+        tensorize_dims = []
+        for index in list(map(self._sched._resolve_index, indices)): 
+            index_map = self._sched._index_map
+            inners = index_map[index].inners 
+            if len(inners) != 0:
+                raise ValueError("The tensorization index cannot be split")
+            start, stop, step = self._sched.get_index_range(index)
+            if start != 0:
+                raise ValueError("The tensorization index must start at 0")
+            if step != 1:
+                raise ValueError("The tensorization index stride must be contiguous") 
+            tensorize_dims.append(stop) 
+        if not self._target.tensor_core.supports(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=tensorize_dims):
+            raise ValueError("The target does not support the given tensorization dimensions") 
+
+        idxs = [context.mapping[id(index)] for index in indices] 
+
+        context.plan.tensorize(indices=idxs, dims=tensorize_dims)
+
     def cache(
         self,
         source: Union[Array, Cache],
@@ -144,10 +190,12 @@ class Plan:
         trigger_index: Union[LoopIndex, DelayedParameter] = None,
         layout: Array.Layout = None,
         max_elements: int = None,
-        thrifty: bool = None,
+        thrifty: Union[bool, DelayedParameter] = None,
         location: _MemorySpace = _MemorySpace.NONE,
         level: Union[int, DelayedParameter] = None,
         trigger_level: Union[int, DelayedParameter] = None,
+        double_buffer: Union[bool, DelayedParameter] = False,
+        double_buffer_location: Union[object, _MemorySpace, DelayedParameter] = AUTO,
         _delayed_cache: DelayedCache = None
     ):
         """Adds a cache for a view target
@@ -160,9 +208,16 @@ class Plan:
             level: The key-slice level to cache (the number of wildcard dimensions in a key-slice). Specify one and only one of `index`, `level`, `max_elements`.
             trigger_level: The key-slice level to fill the cache at. `trigger_level` can't be smaller than `level`, and will default to `level` if not specified. Specify at most one of `trigger_index` or `trigger_level`.
             max_elements: The maximum elements to include in the cached region. Specify one and only one of `index`, `level`, `max_elements`.
-            thrifty: Use thrifty caching (copy data into a cache only if the cached data differs from the original active block).
+            thrifty: Use thrifty caching (copy data into a cache only if the cached data differs from the original active block). This defaults to False as it slows down compilation speed so it is intended as an opt-in feature.
+            double_buffer: Make this a double buffer cache by copying data one iteration ahead and using private memory on GPU for this procedure.
+            double_buffer_location: The memory space used for storing iteration data for the double buffer cache. Requires that double_buffer is set to True. Defaults to AUTO.
+                AUTO will configure the double buffering location based on the following:
+                | location            | double_buffer | double_buffer_location = `AUTO` |
+                | ------------------- | ------------- | ------------------------------- |
+                | MemorySpace.SHARED  | True          | MemorySpace.PRIVATE             |
+                | !MemorySpace.SHARED | True          | Same value as location          |
         """
-        if any([isinstance(arg, DelayedParameter) for arg in (index, trigger_index, level, trigger_level)]) or \
+        if any([isinstance(arg, DelayedParameter) for arg in (index, trigger_index, level, trigger_level, thrifty, double_buffer, double_buffer_location)]) or \
             (isinstance(source, DelayedCache) and not source.completed):
             # If any of the cache level arguments are parameters, then this cache call is incomplete until those parameters
             # have values. Additionally, if this is a hierarchical cache and an outer cache is parameterized,
@@ -176,25 +231,44 @@ class Plan:
                 source=source,
                 layout=layout,
                 max_elements=max_elements,
-                thrifty=thrifty,
                 location=location,
                 _delayed_cache=delayed_cache
             )] = {
                 "index": index,
                 "trigger_index": trigger_index,
                 "level": level,
-                "trigger_level": trigger_level
+                "trigger_level": trigger_level,
+                "thrifty": thrifty,
+                "double_buffer": double_buffer,
+                "double_buffer_location" : double_buffer_location
             }
             return delayed_cache
-
-        if thrifty:
-            raise NotImplementedError("Thrifty caching is not yet implemented")    # TODO
 
         if sum(i is not None for i in [index, level, max_elements]) != 1:
             raise ValueError("Specify one and only one of index, level, or max_elements")
 
         if max_elements is not None and max_elements <= 0:
             raise ValueError("Max element count specified as a cache budget must be greater than 0")
+
+        if isinstance(source, Array):
+            array_role = source.role
+        elif isinstance(source, Cache):
+            array_role = source.target_role
+
+        if double_buffer and array_role not in [Array.Role.CONST, Array.Role.INPUT]:
+            raise ValueError("Double-buffering is only supported for CONST and INPUT arrays")
+
+        if not double_buffer and double_buffer_location != AUTO:
+            raise ValueError("double_buffer_location is only valid to specify when double_buffer is set to True")
+
+        if double_buffer_location is AUTO:
+            if double_buffer:
+                if self._target.category == Target.Category.GPU and location == _MemorySpace.SHARED:
+                    double_buffer_location = _MemorySpace.PRIVATE
+                else:
+                    double_buffer_location = location
+            else:
+                double_buffer_location = _MemorySpace.NONE
 
         if max_elements is None:
             # Validate or set index / level values
@@ -217,9 +291,8 @@ class Plan:
                 index_pos = self._sched._indices.index(index)
                 level = len(self._sched._indices) - index_pos
 
-            if (trigger_level or trigger_index):
-                if isinstance(source, Array) and source.role not in [Array.Role.CONST, Array.Role.INPUT]:
-                    raise ValueError("Multicaching is only supported for CONST and INPUT arrays")
+            if (trigger_level or trigger_index) and array_role not in [Array.Role.CONST, Array.Role.INPUT]:
+                raise ValueError("Multicaching is only supported for CONST and INPUT arrays")
 
             if layout is None:
                 layout = source._requested_layout
@@ -283,7 +356,9 @@ class Plan:
             layout=layout,
             max_elements=max_elements,
             thrifty=thrifty,
-            location=location
+            location=location,
+            double_buffer=double_buffer,
+            double_buffer_location=double_buffer_location
         )
 
         if _delayed_cache:
@@ -305,7 +380,6 @@ class Plan:
         else:
             target = cache.target.native_cache
 
-        # TODO: support layout, location, thrifty
         if (isinstance(self._target, Target) and self._target.category == Target.Category.GPU):
             cache.native_cache = context.plan.add_cache(
                 target=target,
@@ -316,7 +390,10 @@ class Plan:
                 allocation=cache.allocation,
                 location=cache.location,
                 memory_map=cache.memory_map,
-                dim_order=cache.dimension_permutation
+                dim_order=cache.dimension_permutation,
+                thrifty=cache.thrifty,
+                double_buffer=cache.double_buffer,
+                double_buffer_location=cache.double_buffer_location
             )
         else:
             cache.native_cache = context.plan.add_cache(
@@ -328,7 +405,10 @@ class Plan:
                 allocation=cache.allocation,
                 location=cache.location,
                 memory_map=cache.memory_map,
-                dim_order=cache.dimension_permutation
+                dim_order=cache.dimension_permutation,
+                thrifty=cache.thrifty,
+                double_buffer=cache.double_buffer,
+                double_buffer_location=cache.double_buffer_location
             )
 
     def pack_and_embed_buffer(
@@ -493,12 +573,11 @@ class Plan:
                 for i, u in enumerate(units):
                     index = self._bindings.get(u)
                     if index is not None:
-
-                        if index in index_to_splitfactor_map:
+                        begin, end, step = self._sched.get_index_range(index)
+                        if step == 1 and index in index_to_splitfactor_map:
                             dims[i] = index_to_splitfactor_map[index]
 
                         else:
-                            begin, end, step = self._sched.get_index_range(index)
                             dims[i], rem = divmod(end - begin, step)
 
                             if rem:
@@ -537,7 +616,7 @@ class Plan:
                         raise RuntimeError(f"Shape {shape} must be a multiple of split factor {block_dims[i]}")
 
             context.options = _GPU(grid=_Dim3(*grid_dims), block=_Dim3(*block_dims))
-            context.plan = context.schedule.create_gpu_plan(context.options)
+            context.plan = context.schedule.create_gpu_plan(gpu_options=context.options, runtime=target.runtime)
         else:
             context.plan = context.schedule.create_plan()
 
@@ -546,6 +625,16 @@ class Plan:
             cmd(context)
 
     def _replay_delayed_calls(self):
+        '''
+        This method is called once per adding function, so it can be called multiple times when  
+        multiple functions get added. In order for the functions to be added correctly, we need to make sure all 
+        the residual states are cleared between different method calls.
+
+        For example, in Schedule class, we identify that Schedule._index_map can have residual states, so we need to reset self._index_map
+        before we replay the delayed methods.
+
+        If there is no residual states between different method calls, no need to reset.
+        '''
         for delayed_call in self._delayed_calls:
             params = self._delayed_calls[delayed_call]
             if isinstance(params, dict):

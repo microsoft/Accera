@@ -2,9 +2,9 @@
 [//]: # (Version: v1.2.1)
 
 # Introduction
-Accera is a Python-based embedded domain-specific programming language (eDSL) that enables cross-compiler optimization for compute-intensive code. Currently, optimization of nested for-loops is the primary focus of Accera for CPU and GPU targets.
+Accera is a framework with a Python-based Domain-specific Language (eDSL) that produces optimized compute-intensive code. Currently, optimization of nested for-loops is the primary focus of Accera for CPU and GPU targets.
 
-Optimization of compute-intensive code in a traditional programming language is not only difficult and time-consuming, but manual optimization of simplest numerical algorithms demands significant engineering effort from an engineer who has an advanced understanding of computer architecture and fluency in Assembly Language. Even with all these efforts, implemented code is prone to critical bugs and requires extensive engineering effort for maintenance. Accera aims at resolving all these issues by providing optimized solutions for compute-intensive algorithms that are highly efficient, readable, and maintainable. 
+Optimization of compute-intensive code in a traditional programming language is not only difficult and time-consuming, but manual optimization of simplest numerical algorithms demands significant engineering effort and requires an advanced understanding of computer architecture and fluency in C++, C, or Assembly Language. Even with all these efforts, implemented code is prone to critical bugs and requires extensive engineering effort for maintenance. Accera aims at resolving all these issues by providing optimized solutions for compute-intensive algorithms that are highly efficient, readable, and maintainable. 
 
 Accera has THREE primary goals:
 

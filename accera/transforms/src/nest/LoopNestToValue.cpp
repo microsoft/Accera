@@ -452,7 +452,7 @@ LogicalResult ScheduleOpConversion::matchAndRewrite(ScheduleOp op, PatternRewrit
 
 LogicalResult SaturatedAccumulateLoopRewrite::matchAndRewrite(AffineForOp loopOp, PatternRewriter& rewriter) const
 {
-    if (!loopOp->getAttr("rcv_saturated"))
+    if (!loopOp->getAttr("accv_saturated"))
         return success();
 
     if (!loopOp.hasConstantBounds())
@@ -787,7 +787,7 @@ LogicalResult GPUMappedAffineForOpRewrite::matchAndRewrite(mlir::AffineForOp aff
 {
     auto loc = affineForOp.getLoc();
 
-    if (auto gpuMapAttr = affineForOp->getAttrOfType<StringAttr>("rcv_gpu_map"))
+    if (auto gpuMapAttr = affineForOp->getAttrOfType<StringAttr>("accv_gpu_map"))
     {
         auto iv = affineForOp.getInductionVar();
         int64_t begin = affineForOp.getConstantLowerBound();

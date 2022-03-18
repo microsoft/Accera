@@ -7,6 +7,7 @@
 #include "gpu/AcceraToGPUPass.h"
 
 #include "AcceraPasses.h"
+#include "ir/include/value/ValueDialect.h"
 #include "ir/include/value/ValueEnums.h"
 #include "ir/include/value/ValueMFMAOp.h"
 
@@ -14,34 +15,46 @@
 
 #include <utilities/include/Exception.h>
 
-#include <llvm/Support/ErrorHandling.h>
-
 #include <mlir/Conversion/GPUToSPIRV/GPUToSPIRV.h>
 #include <mlir/Conversion/SCFToSPIRV/SCFToSPIRV.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
 #include <mlir/Conversion/StandardToSPIRV/StandardToSPIRV.h>
+#include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/NVVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/OpenMP/OpenMPDialect.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVDialect.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVEnums.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
 #include <mlir/Dialect/SPIRV/Transforms/SPIRVConversion.h>
+#include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Dialect/Vector/VectorOps.h>
+#include <mlir/IR/AffineExpr.h>
+#include <mlir/IR/BuiltinDialect.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
+#include <llvm/ADT/StringSwitch.h>
+#include <llvm/Support/Debug.h>
+#include <llvm/Support/ErrorHandling.h>
+
 #include <optional>
-#include <string>
+
+#define DEBUG_TYPE "accera-to-gpu"
 
 using namespace mlir;
 using accera::transforms::populateAcceraToNVVMPatterns;
 using accera::transforms::populateAcceraToROCDLPatterns;
 using accera::transforms::populateAcceraToSPIRVPatterns;
+using accera::transforms::populateGPUSimplificationPatterns;
 
+namespace ir = accera::ir;
 namespace utilir = accera::ir::util;
 namespace vir = accera::ir::value;
 
@@ -56,7 +69,7 @@ const char kPrivateMemoryVarPrefix[] = "__private_mem__";
 /// Returns true if the allocations of type `t` can be lowered to SPIR-V.
 static bool isSPIRVFunctionAllocationSupported(MemRefType t)
 {
-    // Currently only support workgroup local memory allocations with static
+    // Currently only support workgroup private memory allocations with static
     // shape and int or float or vector of int or float element type.
     if (!(t.hasStaticShape() && SPIRVTypeConverter::getMemorySpaceForStorageClass(spirv::StorageClass::Function) == t.getMemorySpaceAsInt()))
         return false;
@@ -68,57 +81,23 @@ static bool isSPIRVFunctionAllocationSupported(MemRefType t)
 
 static std::optional<vir::ExecutionRuntime> getGPURuntimeTarget(mlir::Operation* op)
 {
-    // TODO: Add tests, verify, enable generic version
-#if 1
-    return vir::ExecutionRuntime::Rocm;
-#else
-    auto target = utilir::ResolveExecutionTarget(op);
-    if (!target || target != vir::ExecutionTarget::GPU)
-    {
-        return std::nullopt;
-    }
     return utilir::ResolveExecutionRuntime(op);
-#endif
-}
-
-static std::optional<vir::ExecutionRuntime> getRuntimeTarget(mlir::ModuleOp* op)
-{
-    auto funOps = op->getOps<FuncOp>();
-    for (auto funOp : funOps)
-    {
-        auto runtime = getGPURuntimeTarget(funOp);
-        if (runtime)
-        {
-            return runtime;
-        }
-    }
-    return std::nullopt;
 }
 
 template <vir::ExecutionRuntime Runtime>
 static bool hasRuntimeTarget(mlir::Operation* op)
 {
-    auto runtime = getGPURuntimeTarget(op);
-    if (!runtime)
-    {
-        return false;
-    }
-    return *runtime == Runtime;
+    auto runtime = getGPURuntimeTarget(op).value_or(vir::ExecutionRuntime::NONE);
+    return runtime == Runtime;
 }
 
-static bool hasVulkanRuntimeTarget(mlir::Operation* op)
+int dimIndexToInteger(llvm::StringRef dim)
 {
-    return hasRuntimeTarget<vir::ExecutionRuntime::Vulkan>(op);
-}
-
-static bool hasNVVMRuntimeTarget(mlir::Operation* op)
-{
-    return hasRuntimeTarget<vir::ExecutionRuntime::CUDA>(op);
-}
-
-static bool hasROCDLRuntimeTarget(mlir::Operation* op)
-{
-    return hasRuntimeTarget<vir::ExecutionRuntime::Rocm>(op);
+    return ::llvm::StringSwitch<int>(dim)
+        .Case("x", 0)
+        .Case("y", 1)
+        .Case("z", 2)
+        .Default(-1);
 }
 
 struct PrivateAllocToSPIRVConversion : public OpConversionPattern<memref::AllocOp>
@@ -129,11 +108,6 @@ struct PrivateAllocToSPIRVConversion : public OpConversionPattern<memref::AllocO
 
     LogicalResult matchAndRewrite(memref::AllocOp op, ArrayRef<Value> operands, ConversionPatternRewriter& rewriter) const final
     {
-
-        if (!hasVulkanRuntimeTarget(op))
-        {
-            return failure();
-        }
 
         // cf mlir/lib/Conversion/StandardToSPIRV/ConvertStandardToSPIRV.cpp
 
@@ -158,10 +132,6 @@ struct PrivateDeallocToSPIRVConversion final : public OpConversionPattern<memref
 
     LogicalResult matchAndRewrite(memref::DeallocOp op, ArrayRef<Value> operands, ConversionPatternRewriter& rewriter) const final
     {
-        if (!hasVulkanRuntimeTarget(op))
-        {
-            return failure();
-        }
 
         // cf mlir/lib/Conversion/StandardToSPIRV/ConvertStandardToSPIRV.cpp
 
@@ -181,10 +151,6 @@ struct EarlyReturnToSPIRVReturnPattern : public OpConversionPattern<vir::EarlyRe
 
     LogicalResult matchAndRewrite(vir::EarlyReturnOp op, ArrayRef<Value> operands, ConversionPatternRewriter& rewriter) const final
     {
-        if (!hasVulkanRuntimeTarget(op))
-        {
-            return failure();
-        }
 
         if (operands.empty())
         {
@@ -205,15 +171,74 @@ struct EarlyReturnToGPUReturnPattern : public OpRewritePattern<vir::EarlyReturnO
 
     LogicalResult matchAndRewrite(vir::EarlyReturnOp op, PatternRewriter& rewriter) const final
     {
-        if (!hasNVVMRuntimeTarget(op) && !hasROCDLRuntimeTarget(op))
-        {
-            return failure();
-        }
 
         rewriter.replaceOpWithNewOp<gpu::ReturnOp>(op, op->getOperands());
 
         return success();
     }
+};
+
+// Tries to match to a public facing function that calls another function as its
+// sole non-terminator op, which in turn launches a GPU function.
+// Once the match is found, renames the GPU function with the name of the top-level function
+// plus a suffix of '__gpu__', and updates the launch gpu func op. Updates the runtime used by the
+// top-level function.
+struct CreateDeviceFuncLauncherPairPattern : public OpRewritePattern<FuncOp>
+{
+    CreateDeviceFuncLauncherPairPattern(vir::ExecutionRuntime targetRuntime, MLIRContext* context, PatternBenefit benefit = 1) :
+        OpRewritePattern(context, benefit), _target(targetRuntime) {}
+
+    LogicalResult matchAndRewrite(FuncOp op, PatternRewriter& rewriter) const final
+    {
+        if (!op->hasAttr(ir::HeaderDeclAttrName) ||
+            !op->hasAttr(ir::RawPointerAPIAttrName)) return failure();
+
+        auto fnBodyOpIterator = op.front().without_terminator();
+        if (!llvm::hasSingleElement(fnBodyOpIterator)) return failure();
+
+        if (auto callOp = dyn_cast<CallOp>(fnBodyOpIterator.begin()))
+        {
+            auto calleeFnOp = dyn_cast_or_null<FuncOp>(SymbolTable::lookupNearestSymbolFrom(op, callOp.callee()));
+            if (!calleeFnOp) return failure();
+
+            auto calleeFnBodyOpIterator = calleeFnOp.front().back().getReverseIterator();
+            assert(calleeFnBodyOpIterator->hasTrait<OpTrait::IsTerminator>());
+
+            ++calleeFnBodyOpIterator;
+            if (auto launchOp = dyn_cast<gpu::LaunchFuncOp>(*calleeFnBodyOpIterator))
+            {
+                auto launchedGPUFnOp = dyn_cast_or_null<gpu::GPUFuncOp>(SymbolTable::lookupNearestSymbolFrom(calleeFnOp, launchOp.kernel()));
+                if (!launchedGPUFnOp) return failure();
+
+                auto gpuTargetFuncName = op.getName().str() + "__gpu__";
+                if (SymbolTable::lookupNearestSymbolFrom(launchedGPUFnOp, gpuTargetFuncName)) return failure();
+
+                auto context = rewriter.getContext();
+                auto execRuntimeAttr = vir::ExecutionRuntimeAttr::get(context, _target);
+                auto execTargetAttr = vir::ExecutionTargetAttr::get(context, vir::ExecutionTarget::GPU);
+                launchedGPUFnOp->setAttr(vir::ValueModuleOp::getExecRuntimeAttrName(), execRuntimeAttr);
+                launchedGPUFnOp->setAttr(vir::ValueFuncOp::getExecTargetAttrName(), execTargetAttr);
+                launchedGPUFnOp->setAttr(ir::HeaderDeclAttrName, rewriter.getUnitAttr());
+                launchedGPUFnOp->setAttr(ir::RawPointerAPIAttrName, rewriter.getUnitAttr());
+
+                launchedGPUFnOp.setName(gpuTargetFuncName);
+                auto kernelSymAttr = launchOp.kernel();
+                auto root = kernelSymAttr.getRootReference();
+                launchOp.kernelAttr(rewriter.getSymbolRefAttr(root, rewriter.getSymbolRefAttr(gpuTargetFuncName)));
+
+                rewriter.updateRootInPlace(op, [&] {
+                    op->setAttr(vir::ValueModuleOp::getExecRuntimeAttrName(), execRuntimeAttr);
+                });
+
+                return success();
+            }
+        }
+
+        return failure();
+    }
+
+private:
+    vir::ExecutionRuntime _target;
 };
 
 struct ValueBarrierToSPIRVBarrierConversion final : public OpConversionPattern<vir::BarrierOp>
@@ -224,10 +249,6 @@ struct ValueBarrierToSPIRVBarrierConversion final : public OpConversionPattern<v
 
     LogicalResult matchAndRewrite(vir::BarrierOp op, ArrayRef<Value>, ConversionPatternRewriter& rewriter) const final
     {
-        if (!hasVulkanRuntimeTarget(op))
-        {
-            return failure();
-        }
         switch (op.scope())
         {
         case vir::BarrierScope::Block:
@@ -274,174 +295,417 @@ struct ValueBarrierToGPUBarrierConversion final : public OpRewritePattern<vir::B
     }
 };
 
-struct ValueMFMALoadMatrixOpToRocDLConversion final : public OpRewritePattern<vir::MFMALoadMatrixOp>
+struct ValueMFMALoadOpToRocDLConversion final : public OpConversionPattern<vir::MFMALoadOp>
 {
-    using OpRewritePattern<vir::MFMALoadMatrixOp>::OpRewritePattern;
+    using OpConversionPattern<vir::MFMALoadOp>::OpConversionPattern;
 
-    LogicalResult matchAndRewrite(vir::MFMALoadMatrixOp op, PatternRewriter& rewriter) const final
+    LogicalResult matchAndRewrite(vir::MFMALoadOp op,
+                                  ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter& rewriter) const final
     {
-        using namespace accera::utilities;
-
-        throw LogicException(LogicExceptionErrors::notImplemented);
-
-        if (!hasROCDLRuntimeTarget(op))
-        {
-            return failure();
-        }
+        auto ctx = rewriter.getContext();
         auto loc = op.getLoc();
-        auto memref = op.srcMemref();
-        auto memrefType = memref.getType().cast<MemRefType>();
-        auto shape = memrefType.getShape();
-        auto elementType = memrefType.getElementType();
+        vir::MFMALoadOp::Adaptor MFMALoadOpAdaptor(operands, op->getAttrDictionary());
+        auto memref = MFMALoadOpAdaptor.memref();
+        auto mfmaMatrixType = op.getMFMAMatrixType();
+        auto mfmaMatrixOperand = mfmaMatrixType.getOperand();
+        auto elementType = mfmaMatrixType.getElementType();
 
-        // TODO: Literal constants should be provided by a helper struct (TensorizationInfo?)
-        auto vecSize = shape[0] == 16 ? 4 : 16;
-
-        auto vecTy = mlir::VectorType::get({ vecSize }, elementType);
-
-        auto i32Ty = rewriter.getIntegerType(32);
-        Value zero = rewriter.create<mlir::ConstantOp>(loc, i32Ty, rewriter.getZeroAttr(i32Ty));
+        auto leadingDim = mfmaMatrixType.getLeadingDim();
+        if (leadingDim != 16) // 16x16x4
+        {
+            return rewriter.notifyMatchFailure(op, "unhandled matrix shape");
+        }
 
         mlir::OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPoint(op);
 
-        // TODO: Literal constants should be provided by a helper struct (TensorizationInfo?)
-        if (vecSize == 4)
+        const auto warpSize = 64;
+
+        auto strideOffset = rewriter.getAffineSymbolExpr(0);
+        auto threadIdxX = rewriter.getAffineSymbolExpr(0);
+        auto threadIdxY = rewriter.getAffineSymbolExpr(1);
+        auto blockDimX = rewriter.getAffineSymbolExpr(2);
+        auto blockTid = threadIdxX + threadIdxY * blockDimX;
+        auto warpTid = blockTid % warpSize;
+        auto wmmaM = leadingDim;
+        auto m = warpTid % wmmaM;
+        auto ks = warpTid.floorDiv(wmmaM);
+
+        auto vecSize = 4;
+        auto vecTy = mlir::VectorType::get({ vecSize }, elementType);
+        // For AOp load from the input memref with a column stride of 4
+        //
+        // for AOp this transformation is equivalent to:
+        // float4 result;
+        // memrefView = &memred[loadOperands]
+        // for (int i = 0; i < 4; i++) {
+        //    result[i] = memrefView[m, ks + 4*i];
+        // }
+        ////////////////////////////////////////
+        // For BOp load from the input memref with a row stride of 4
+        //
+        // for BOp this transformation is equivalent to:
+        // float4 result;
+        // memrefView = &memred[loadOperands]
+        // for (int i = 0; i < 4; i++) {
+        //    result[i] = memrefView[ks + 4*i, m];
+        // }
+        //
+        ////////////////////////////////////////
+        // For COp load
+        //
+        // for COp this transformation is equivalent to:
+        // float4 result;
+        // memrefView = &memred[loadOperands]
+        // for (int i = 0; i < 4; i++) {
+        //    result[i] = memrefView[ks * 4 + i, m];
+        // }
+        //
+
+        auto d0 = rewriter.getAffineDimExpr(0);
+        auto d1 = rewriter.getAffineDimExpr(1);
+        auto loadAffineMap = MFMALoadOpAdaptor.map().getValue(); // [d0, d1, d2, sa, sb]
+        auto offsetAOpMap = AffineMap::get(2, 3, { d0 + m, d1 + ks }, ctx); // [d0, d1, sx, sy, sz]
+        auto strideAOpMap = AffineMap::get(2, 1, { d0, d1 + strideOffset * 4 }, ctx); // [d0, d1, s0]
+        auto offsetBOpMap = AffineMap::get(2, 3, { d0 + ks, d1 + m }, ctx); // [d0, d1, sx, sy, sz]
+        auto strideBOpMap = AffineMap::get(2, 1, { d0 + strideOffset * 4, d1 }, ctx); // [d0, d1, s0]
+        auto offsetCOpMap = AffineMap::get(2, 3, { d0 + ks * 4, d1 + m }, ctx); // [d0, d1, sx, sy, sz]
+        auto strideCOpMap = AffineMap::get(2, 1, { d0 + strideOffset, d1 }, ctx); // [d0, d1, s0]
+        auto matrixLayoutMap = ::llvm::StringSwitch<AffineMap>(mfmaMatrixOperand.str())
+                                   .Case("AOp", strideAOpMap.compose(offsetAOpMap))
+                                   .Case("BOp", strideBOpMap.compose(offsetBOpMap))
+                                   .Case("COp", strideCOpMap.compose(offsetCOpMap))
+                                   .Default(/*this is really an error */ AffineMap());
+        auto composedMap = matrixLayoutMap.compose(loadAffineMap); // [d0, d1, d2, s0, sx, sy, sz, sa, sb]
+
+        LLVM_DEBUG(llvm::dbgs() << "op: " << *op << "\n"
+                                << "loadAffineMap: " << loadAffineMap << "\n"
+                                << "offsetAOpMap: " << offsetAOpMap << "\n"
+                                << "strideAOpMap: " << strideAOpMap << "\n"
+                                << "offsetBOpMap: " << offsetBOpMap << "\n"
+                                << "strideBOpMap: " << strideBOpMap << "\n"
+                                << "offsetCOpMap: " << offsetCOpMap << "\n"
+                                << "strideCOpMap: " << strideCOpMap << "\n"
+                                << "matrixLayoutMap: " << matrixLayoutMap << "\n"
+                                << "composedMap: " << composedMap << "\n"
+                                << "simplify(composedMap): " << simplifyAffineMap(composedMap) << "\n");
+        auto indices = MFMALoadOpAdaptor.indices();
+        std::vector<Value> mapOperands;
+        for (size_t i = 0; i < loadAffineMap.getNumDims(); i++)
         {
-            llvm::SmallVector<int64_t, 4> offsets{ 0, 0 };
-            llvm::SmallVector<int64_t, 4> sizes{ 16, 16 };
-            llvm::SmallVector<int64_t, 4> strides{ 4, 1 };
-            auto rowMemrefTy = MemRefType::get({ 4, 4 }, elementType);
-            [[maybe_unused]] auto row = rewriter.create<memref::SubViewOp>(loc, rowMemrefTy, memref, offsets, sizes, strides);
-            // auto vec = rewriter.replaceOpWithNewOp<AffineVectorLoadOp>(op, vecTy, row, ValueRange{ rewriter.create<ConstantIndexOp>(loc, 0) });
+            mapOperands.push_back(indices[i]);
         }
-        else
+        mapOperands.push_back(rewriter.create<ConstantIndexOp>(loc, 0));
+        mapOperands.push_back(rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x"));
+        mapOperands.push_back(rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y"));
+        mapOperands.push_back(rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x"));
+        for (size_t i = loadAffineMap.getNumDims(); i < loadAffineMap.getNumInputs(); i++)
         {
-            return rewriter.notifyMatchFailure(op, "unhandled vector size");
+            mapOperands.push_back(indices[i]);
         }
+
+        auto zero = rewriter.create<ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
+        mlir::Value vec = rewriter.create<vector::BroadcastOp>(loc, vecTy, zero);
+
+        auto i32Ty = rewriter.getIntegerType(32);
+        auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, 4, 1, vec);
+        auto loopBuilder = utilir::MakeBodyBuilder(loop);
+        auto inductionVar = loop.getInductionVar();
+        auto regionIterArg = loop.getRegionIterArgs()[0];
+        auto laneIndex = loopBuilder.create<mlir::IndexCastOp>(loc, inductionVar, i32Ty);
+        mapOperands[loadAffineMap.getNumDims()] = inductionVar; // we override the strideOffset symbol with the current index value
+
+        LLVM_DEBUG(llvm::dbgs() << "mapOperands: ["
+                                << "\n";
+                   for (auto op
+                        : mapOperands) {
+                       llvm::dbgs() << "  " << op << "\n";
+                   } llvm::dbgs()
+                   << "]\n");
+
+        auto mappedOperands = utilir::MultiDimAffineApply(loopBuilder, loc, composedMap, mapOperands);
+        auto load = loopBuilder.create<memref::LoadOp>(loc, memref, mappedOperands);
+        vec = loopBuilder.create<vector::InsertElementOp>(loc, load, regionIterArg, laneIndex);
+        loopBuilder.create<AffineYieldOp>(loc, ValueRange{ vec });
 
         return success();
     }
 };
 
-struct ValueMFMAStoreMatrixOpToRocDLConversion final : public OpRewritePattern<vir::MFMAStoreMatrixOp>
+struct ValueMFMAStoreOpToRocDLConversion final : public OpConversionPattern<vir::MFMAStoreOp>
 {
-    using OpRewritePattern<vir::MFMAStoreMatrixOp>::OpRewritePattern;
+    using OpConversionPattern<vir::MFMAStoreOp>::OpConversionPattern;
 
-    LogicalResult matchAndRewrite(vir::MFMAStoreMatrixOp op, PatternRewriter& rewriter) const final
+    LogicalResult matchAndRewrite(vir::MFMAStoreOp op,
+                                  ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter& rewriter) const final
     {
-        using namespace accera::utilities;
-
-        throw LogicException(LogicExceptionErrors::notImplemented);
-
-        return success();
-    }
-};
-
-struct ValueMFMAComputeToRocDLConversion final : public OpRewritePattern<vir::MFMAComputeOp>
-{
-    using OpRewritePattern<vir::MFMAComputeOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(vir::MFMAComputeOp op, PatternRewriter& rewriter) const final
-    {
-        using namespace accera::utilities;
-
-        throw LogicException(LogicExceptionErrors::notImplemented);
-
-        if (!hasROCDLRuntimeTarget(op))
-        {
-            return failure();
-        }
-        auto adaptor = vir::MFMAComputeOpAdaptor(op);
+        auto ctx = rewriter.getContext();
         auto loc = op.getLoc();
+        vir::MFMAStoreOp::Adaptor mfmaStoreOpAdaptor(operands, op->getAttrDictionary());
+        auto value = mfmaStoreOpAdaptor.value();
+        auto memref = mfmaStoreOpAdaptor.memref();
+        auto indices = mfmaStoreOpAdaptor.indices();
+        auto mfmaMatrixType = op.getMFMAMatrixType();
 
-        auto opA = adaptor.opA();
-        auto opB = adaptor.opB();
-        auto opC = adaptor.opC();
-        if (!opA.getType().isa<vir::MFMAMatrixType>())
+        auto leadingDim = mfmaMatrixType.getLeadingDim();
+        if (leadingDim != 16) // 16x16x4
         {
-            return rewriter.notifyMatchFailure(op, "expecting a matrix type for OpA");
+            return rewriter.notifyMatchFailure(op, "unhandled matrix shape");
         }
-        if (!opB.getType().isa<vir::MFMAMatrixType>())
+
+        const auto warpSize = utilir::ResolveWarpSize(op).value();
+
+        auto d0 = rewriter.getAffineDimExpr(0);
+        auto d1 = rewriter.getAffineDimExpr(1);
+        auto strideOffset = rewriter.getAffineSymbolExpr(0);
+        auto threadIdxX = rewriter.getAffineSymbolExpr(1);
+        auto threadIdxY = rewriter.getAffineSymbolExpr(2);
+        auto blockDimX = rewriter.getAffineSymbolExpr(3);
+        auto blockTid = threadIdxY * blockDimX + threadIdxX;
+        auto warpTid = blockTid % warpSize;
+        auto wmmaM = leadingDim;
+        auto m = warpTid % wmmaM;
+        auto ks = warpTid.floorDiv(wmmaM);
+        auto offsetMap = AffineMap::get(2, 4, { d0 + ks * 4 + strideOffset, d1 + m }, ctx);
+
+        auto storeAffineMap = op.getAffineMap();
+        auto composedMap = offsetMap.compose(storeAffineMap);
+
+        std::vector<Value> mapOperands;
+        for (size_t i = 0; i < storeAffineMap.getNumDims(); i++)
         {
-            return rewriter.notifyMatchFailure(op, "expecting a matrix type for OpB");
+            mapOperands.push_back(indices[i]);
         }
-        if (!opC.getType().isa<vir::MFMAMatrixType>())
+        mapOperands.push_back(rewriter.create<ConstantIndexOp>(loc, 0));
+        mapOperands.push_back(rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x"));
+        mapOperands.push_back(rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y"));
+        mapOperands.push_back(rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x"));
+        for (size_t i = storeAffineMap.getNumDims(); i < storeAffineMap.getNumInputs(); i++)
         {
-            return rewriter.notifyMatchFailure(op, "expecting a matrix type for OpC");
+            mapOperands.push_back(indices[i]);
         }
 
         auto i32Ty = rewriter.getIntegerType(32);
-        [[maybe_unused]] Value zero = rewriter.create<mlir::ConstantOp>(loc, i32Ty, rewriter.getZeroAttr(i32Ty));
+        auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, 4, 1);
+        auto loopBuilder = utilir::MakeBodyBuilder(loop);
+        auto inductionVar = loop.getInductionVar();
+        auto laneIndex = loopBuilder.create<mlir::IndexCastOp>(loc, inductionVar, i32Ty);
+        mapOperands[storeAffineMap.getNumDims()] = inductionVar; // we override the strideOffset symbol with the current index value
+        auto mappedOperands = utilir::MultiDimAffineApply(loopBuilder, loc, composedMap, mapOperands);
+        auto elem = loopBuilder.create<vector::ExtractElementOp>(loc, value, laneIndex);
+        loopBuilder.create<memref::StoreOp>(loc, elem, memref, mappedOperands);
 
-        // Value accumVecIn;
-        // if (accumIn.getType().dyn_cast<MemRefType>())
-        // {
-        //     auto memRefType = accumIn.getType().cast<MemRefType>();
-        //     unsigned rank = memRefType.getRank();
-        //     if (rank != 1)
-        //     {
-        //         return rewriter.notifyMatchFailure(op, "accumulation type for the MFMA op must be a vector (memref rank = 1).");
-        //     }
-        //     if (!memRefType.hasStaticShape())
-        //     {
-        //         return rewriter.notifyMatchFailure(op, "accumulation type for the MFMA op must have a static shape.");
-        //     }
-        //     if (memRefType.getElementType() != rewriter.getF32Type())
-        //     {
-        //         return rewriter.notifyMatchFailure(op, "accumulation type for the MFMA op must be a floating point number.");
-        //     }
-        //     auto numElements = memRefType.getNumElements();
-        //     if (numElements != 4 && numElements != 16)
-        //     {
-        //         return rewriter.notifyMatchFailure(op, "accumulation type for the MFMA op must be a floating point vector of size 4 or 16.");
-        //     }
+        return success();
+    }
+};
 
-        //     auto vecF32Ty = mlir::VectorType::get({ numElements }, rewriter.getF32Type());
-        //     accumVecIn = rewriter.create<AffineVectorLoadOp>(loc, vecF32Ty, accumIn, ValueRange{ rewriter.create<ConstantIndexOp>(loc, 0) });
-        // }
-        // else
-        // {
-        //     accumVecIn = accumIn;
-        // }
-        // auto accumVecInTy = accumVecIn.getType().cast<MFMAMatrix>();
-        // Operation* newOp;
+struct ValueMFMAConstantOpToRocDLConversion final : public OpRewritePattern<vir::MFMAConstantOp>
+{
+    using OpRewritePattern<vir::MFMAConstantOp>::OpRewritePattern;
 
-        // if (accumVecInTy.getNumElements() == 16)
-        // {
-        //     newOp = rewriter.replaceOpWithNewOp<ROCDL::mfma_f32_32x32x2f32>(op, accumVecIn.getType(), ValueRange{ adaptor.opA(), adaptor.opB(), accumVecIn, zero, zero, zero });
-        // }
-        // else
-        // {
-        //     newOp = rewriter.replaceOpWithNewOp<ROCDL::mfma_f32_16x16x4f32>(op, accumVecIn.getType(), ValueRange{ adaptor.opA(), adaptor.opB(), accumVecIn, zero, zero, zero });
-        // }
-        // rewriter.setInsertionPointAfter(newOp);
+    LogicalResult matchAndRewrite(vir::MFMAConstantOp op, PatternRewriter& rewriter) const final
+    {
 
-        // assert(op->getNumResults() > 0);
-        // auto result = newOp->getResult(0);
+        auto mfmaType = op.getMFMAMatrixType();
 
-        // for (auto user : result.getUsers())
-        // {
-        //     if (memref::LoadOp loadOp = dyn_cast<memref::LoadOp>(user))
-        //     {
-        //         mlir::OpBuilder::InsertionGuard guard(rewriter);
-        //         rewriter.setInsertionPoint(loadOp);
-        //         auto idx =  loadOp.indices().front();
-        //         auto idxAsInt = rewriter.create<IndexCastOp>(loadOp->getLoc(), idx, rewriter.getI64Type());
-        //         rewriter.replaceOpWithNewOp<vector::ExtractElementOp>(loadOp, result, idxAsInt);
-        //     }
-        //     else if (memref::StoreOp storeOp = dyn_cast<memref::StoreOp>(user))
-        //     {
-        //         mlir::OpBuilder::InsertionGuard guard(rewriter);
-        //         rewriter.setInsertionPoint(storeOp);
-        //         auto value = storeOp.getValueToStore();
-        //         auto idx =  loadOp.indices().front();
-        //         auto idxAsInt = rewriter.create<IndexCastOp>(loadOp->getLoc(), idx, rewriter.getI64Type());
-        //         rewriter.replaceOpWithNewOp<vector::InsertElementOp>(storeOp, value, result, idxAsInt);
-        //     } else {
-        //         return rewriter.notifyMatchFailure(op, "Unsupported op. Users for the result of the MFMA op must be either store or load instructions.");
-        //     }
-        // }
+        auto leadingDim = mfmaType.getLeadingDim();
+        if (leadingDim != 16) // 16x16x4
+        {
+            return rewriter.notifyMatchFailure(op, "unhandled matrix shape");
+        }
+
+        auto vecSize = 4;
+        auto vecTy = VectorType::get({ vecSize }, mfmaType.getElementType());
+
+        rewriter.replaceOpWithNewOp<vector::BroadcastOp>(op, vecTy, op.value());
+
+        return success();
+    }
+};
+
+struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir::MFMAComputeOp>
+{
+    using OpConversionPattern<vir::MFMAComputeOp>::OpConversionPattern;
+
+    LogicalResult matchAndRewrite(vir::MFMAComputeOp op,
+                                  ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter& rewriter) const final
+    {
+        using namespace accera::utilities;
+        auto loc = op.getLoc();
+        vir::MFMAComputeOp::Adaptor mfmaComputeMatrixOpAdaptor(operands, op->getAttrDictionary());
+        auto opA = mfmaComputeMatrixOpAdaptor.opA();
+        auto opB = mfmaComputeMatrixOpAdaptor.opB();
+        auto opC = mfmaComputeMatrixOpAdaptor.opC();
+        if (!opA.getType().isa<VectorType>())
+        {
+            return rewriter.notifyMatchFailure(op, "expecting a vector type for OpA");
+        }
+        if (!opB.getType().isa<VectorType>())
+        {
+            return rewriter.notifyMatchFailure(op, "expecting a vector type for OpB");
+        }
+        if (!opC.getType().isa<VectorType>())
+        {
+            return rewriter.notifyMatchFailure(op, "expecting a vector type for OpC");
+        }
+
+        mlir::OpBuilder::InsertionGuard guard(rewriter);
+        rewriter.setInsertionPoint(op);
+
+        auto i32Ty = rewriter.getIntegerType(32);
+        Value zero = rewriter.create<mlir::ConstantOp>(loc, i32Ty, rewriter.getZeroAttr(i32Ty));
+
+        auto destVectorType = opC.getType().cast<VectorType>();
+        auto numElems = destVectorType.getShape()[0];
+        if (numElems != 4)
+        {
+            return rewriter.notifyMatchFailure(op, "expecting a 16x16 matrix type for OpC");
+        }
+
+        if (numElems == 4)
+        {
+            auto numIterations = 4;
+            auto result = opC;
+            //
+            // equivalent to:
+            // result = opC;
+            // for (int i = 0; i < 4; i++) {
+            //    result = mfma_f32_16x16x4f32(opA[i], opB[i], result);
+            // }
+            //
+            auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, numIterations, 1, result);
+            auto loopBuilder = utilir::MakeBodyBuilder(loop);
+            auto inductionVar = loop.getInductionVar();
+            auto regionIterArg = loop.getRegionIterArgs()[0];
+            auto laneIndex = loopBuilder.create<mlir::IndexCastOp>(loc, inductionVar, i32Ty);
+            auto elemA = loopBuilder.create<vector::ExtractElementOp>(loc, opA, laneIndex);
+            auto elemB = loopBuilder.create<vector::ExtractElementOp>(loc, opB, laneIndex);
+            auto mfmaOp = loopBuilder.create<ROCDL::mfma_f32_16x16x4f32>(loc, result.getType(), ValueRange{ elemA, elemB, regionIterArg, zero, zero, zero });
+            loopBuilder.create<AffineYieldOp>(loc, ValueRange{ mfmaOp });
+        }
+        else
+        {
+            return rewriter.notifyMatchFailure(op, "Unsupported op size.");
+        }
+        return success();
+    }
+};
+
+struct ValueMFMAStoreOpToGPUConversion final : public OpConversionPattern<vir::MFMAStoreOp>
+{
+    using OpConversionPattern<vir::MFMAStoreOp>::OpConversionPattern;
+
+    LogicalResult matchAndRewrite(vir::MFMAStoreOp op,
+                                  ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter& rewriter) const final
+    {
+        return success();
+    }
+};
+
+struct ValueMFMALoadOpToGPUConversion final : public OpConversionPattern<vir::MFMALoadOp>
+{
+    using OpConversionPattern<vir::MFMALoadOp>::OpConversionPattern;
+
+    LogicalResult matchAndRewrite(vir::MFMALoadOp op,
+                                  ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter& rewriter) const final
+    {
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
+struct ValueMFMAConstantOpToGPUConversion final : public OpConversionPattern<vir::MFMAConstantOp>
+{
+    using OpConversionPattern<vir::MFMAConstantOp>::OpConversionPattern;
+
+    LogicalResult matchAndRewrite(vir::MFMAConstantOp op,
+                                  ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter& rewriter) const final
+    {
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+struct ValueMFMAComputeToGPUConversion final : public OpConversionPattern<vir::MFMAComputeOp>
+{
+    using OpConversionPattern<vir::MFMAComputeOp>::OpConversionPattern;
+
+    LogicalResult matchAndRewrite(vir::MFMAComputeOp op,
+                                  ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter& rewriter) const final
+    {
+        rewriter.replaceOpWithNewOp<gpu::SubgroupMmaComputeOp>(op, operands[2].getType(), operands, op->getAttrs());
+        return success();
+    }
+};
+
+struct ResolveBlockDimPattern final : public OpRewritePattern<gpu::BlockDimOp>
+{
+    using OpRewritePattern<gpu::BlockDimOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(gpu::BlockDimOp op, PatternRewriter& rewriter) const final
+    {
+        auto gpuFunc = op->getParentOfType<gpu::GPUFuncOp>();
+        if (!gpuFunc)
+        {
+            return failure();
+        }
+        auto blockSizeAttr = gpuFunc->getAttrOfType<ArrayAttr>("blockSize");
+        auto blockDimIdx = dimIndexToInteger(op.dimension());
+        if (!blockSizeAttr || blockDimIdx == -1)
+        {
+            return failure();
+        }
+        auto val = blockSizeAttr.getValue()[blockDimIdx].cast<IntegerAttr>().getInt();
+        rewriter.replaceOpWithNewOp<mlir::ConstantIndexOp>(op, val);
+        return success();
+    }
+};
+struct ConditionalBarrierHoistingPattern : public OpRewritePattern<vir::BarrierOp>
+{
+    using OpRewritePattern<vir::BarrierOp>::OpRewritePattern;
+
+    mlir::Operation* GetAncestorIfOp(vir::BarrierOp op) const
+    {
+        mlir::Operation* parentAffineIfOp = utilir::GetHighestAncestorOfType<mlir::AffineIfOp>(op);
+        mlir::Operation* parentSCFIfOp = utilir::GetHighestAncestorOfType<mlir::scf::IfOp>(op);
+
+        if (parentAffineIfOp && parentSCFIfOp)
+        {
+            // There are both affine.if and scf.if parents, so return the highest ancestor between the two
+            return parentAffineIfOp->isAncestor(parentSCFIfOp) ? parentAffineIfOp : parentSCFIfOp;
+        }
+        else
+        {
+            // Return whichever is nonnull, or return nullptr if both are null
+            return parentAffineIfOp == nullptr ? parentSCFIfOp : parentAffineIfOp;
+        }
+    }
+
+    LogicalResult matchAndRewrite(vir::BarrierOp op, PatternRewriter& rewriter) const final
+    {
+        // Hoist barrier ops outside of any affine.if or scf.if conditional blocks they are contained inside of
+
+        // As a simple hoist, remove all barriers inside of the conditional and place a barrier before and after the conditional block
+        // TODO : instead of hoisting this way, split conditional blocks at the barriers to keep the same relative
+
+        // Get the highest level affine.if or scf.if op that contains this barrier, if one exists
+        if (auto ancestorIfOp = GetAncestorIfOp(op))
+        {
+            // This barrier is contained within a conditional, so clone it before and after the conditional then erase it
+            rewriter.setInsertionPoint(ancestorIfOp);
+            rewriter.clone(*(op.getOperation()));
+            rewriter.setInsertionPointAfter(ancestorIfOp);
+            rewriter.clone(*(op.getOperation()));
+
+            rewriter.eraseOp(op);
+        }
+
         return success();
     }
 };
@@ -451,14 +715,21 @@ struct AcceraToSPIRVPass : public accera::transforms::ConvertAcceraToSPIRVBase<A
     void runOnOperation() final
     {
         ModuleOp module = getOperation();
-        auto runtime = getRuntimeTarget(&module);
-        if (!runtime || *runtime != vir::ExecutionRuntime::Vulkan)
+
+        if (!hasRuntimeTarget<vir::ExecutionRuntime::VULKAN>(module))
         {
             return;
         }
 
-        // cf mlir/lib/Conversion/GPUToSPIRV/ConvertGPUToSPIRVPass.cpp -- GPUToSPIRVPass::runOnOperation
         MLIRContext* context = &getContext();
+
+        {
+            RewritePatternSet patterns(context);
+            populateGPUSimplificationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(module, std::move(patterns));
+        }
+
+        // cf mlir/lib/Conversion/GPUToSPIRV/ConvertGPUToSPIRVPass.cpp -- GPUToSPIRVPass::runOnOperation
         SmallVector<Operation*, 1> kernelModules;
         OpBuilder builder(context);
         module.walk([&builder, &kernelModules](gpu::GPUModuleOp moduleOp) {
@@ -483,7 +754,7 @@ struct AcceraToSPIRVPass : public accera::transforms::ConvertAcceraToSPIRVBase<A
         if (failed(applyFullConversion(kernelModules, *target, std::move(patterns))))
             return signalPassFailure();
     }
-};
+}; // namespace
 
 struct AcceraToROCDLPass : public accera::transforms::ConvertAcceraToROCDLBase<AcceraToROCDLPass>
 {
@@ -491,18 +762,51 @@ struct AcceraToROCDLPass : public accera::transforms::ConvertAcceraToROCDLBase<A
     {
         MLIRContext* context = &getContext();
         auto module = getOperation();
+        ConversionTarget target(*context);
 
-        // TODO: Enable querying of module for execution runtime
-        // auto runtime = getRuntimeTarget(&module);
-        // if (!runtime || *runtime != vir::ExecutionRuntime::Rocm)
-        // {
-        //     return;
-        // }
+        if (!hasRuntimeTarget<vir::ExecutionRuntime::ROCM>(module))
+        {
+            return;
+        }
 
-        RewritePatternSet patterns(context);
-        populateAcceraToROCDLPatterns(patterns);
+        target.addLegalOp<ModuleOp>();
+        target.addIllegalOp<
+            vir::EarlyReturnOp,
+            vir::MFMAComputeOp,
+            vir::MFMAConstantOp,
+            vir::MFMALoadOp,
+            vir::MFMAStoreOp,
+            vir::BarrierOp,
+            gpu::BlockDimOp
+            >();
+        target.addLegalDialect<
+            mlir::AffineDialect,
+            mlir::BuiltinDialect,
+            mlir::gpu::GPUDialect,
+            mlir::memref::MemRefDialect,
+            mlir::ROCDL::ROCDLDialect,
+            mlir::scf::SCFDialect,
+            mlir::StandardOpsDialect,
+            mlir::vector::VectorDialect,
+            omp::OpenMPDialect,
+            vir::ValueDialect>();
 
-        (void)applyPatternsAndFoldGreedily(module, std::move(patterns));
+        {
+            RewritePatternSet patterns(context);
+            populateGPUSimplificationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(module, std::move(patterns));
+        }
+        {
+            RewritePatternSet patterns(context);
+            patterns.insert<CreateDeviceFuncLauncherPairPattern>(vir::ExecutionRuntime::ROCM, context);
+            (void)applyPatternsAndFoldGreedily(module, std::move(patterns));
+        }
+        {
+            RewritePatternSet patterns(context);
+            populateAcceraToROCDLPatterns(patterns);
+            if (failed(applyFullConversion(module, target, std::move(patterns))))
+                signalPassFailure();
+        }
     }
 };
 
@@ -513,18 +817,52 @@ struct AcceraToNVVMPass : public accera::transforms::ConvertAcceraToNVVMBase<Acc
 
         MLIRContext* context = &getContext();
         auto module = getOperation();
+        ConversionTarget target(*context);
 
-        // TODO: Enable querying of module for execution runtime
-        // auto runtime = getRuntimeTarget(&module);
-        // if (!runtime || *runtime != vir::ExecutionRuntime::CUDA)
-        // {
-        //     return;
-        // }
+        if (!hasRuntimeTarget<vir::ExecutionRuntime::CUDA>(module))
+        {
+            return;
+        }
 
-        RewritePatternSet patterns(context);
-        populateAcceraToNVVMPatterns(patterns);
+        target.addLegalOp<ModuleOp>();
+        target.addIllegalOp<
+            vir::EarlyReturnOp,
+            vir::MFMAComputeOp,
+            vir::MFMAConstantOp,
+            vir::MFMALoadOp,
+            vir::MFMAStoreOp,
+            vir::BarrierOp,
+            gpu::BlockDimOp
+            >();
+        target.addLegalDialect<
+            mlir::AffineDialect,
+            mlir::BuiltinDialect,
+            mlir::gpu::GPUDialect,
+            mlir::memref::MemRefDialect,
+            mlir::NVVM::NVVMDialect,
+            mlir::scf::SCFDialect,
+            mlir::StandardOpsDialect,
+            mlir::vector::VectorDialect,
+            omp::OpenMPDialect,
+            vir::ValueDialect>();
 
-        (void)applyPatternsAndFoldGreedily(module, std::move(patterns));
+        {
+            RewritePatternSet patterns(context);
+            populateGPUSimplificationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(module, std::move(patterns));
+        }
+        {
+            RewritePatternSet patterns(context);
+            patterns.insert<CreateDeviceFuncLauncherPairPattern>(vir::ExecutionRuntime::CUDA, context);
+            (void)applyPatternsAndFoldGreedily(module, std::move(patterns));
+        }
+        {
+            RewritePatternSet patterns(context);
+            populateAcceraToNVVMPatterns(patterns);
+
+            if (failed(applyFullConversion(module, target, std::move(patterns))))
+                signalPassFailure();
+        }
     }
 };
 } // namespace
@@ -544,18 +882,30 @@ void populateAcceraToSPIRVPatterns(mlir::SPIRVTypeConverter& typeConverter, mlir
 void populateAcceraToROCDLPatterns(mlir::OwningRewritePatternList& patterns)
 {
     patterns.insert<
+        ResolveBlockDimPattern,
         EarlyReturnToGPUReturnPattern,
         ValueBarrierToGPUBarrierConversion,
-        ValueMFMALoadMatrixOpToRocDLConversion,
+        ValueMFMALoadOpToRocDLConversion,
         ValueMFMAComputeToRocDLConversion,
-        ValueMFMAStoreMatrixOpToRocDLConversion>(patterns.getContext());
+        ValueMFMAStoreOpToRocDLConversion,
+        ValueMFMAConstantOpToRocDLConversion>(patterns.getContext());
 }
 
 void populateAcceraToNVVMPatterns(mlir::OwningRewritePatternList& patterns)
 {
     patterns.insert<
+        ResolveBlockDimPattern,
         EarlyReturnToGPUReturnPattern,
-        ValueBarrierToGPUBarrierConversion>(patterns.getContext());
+        ValueBarrierToGPUBarrierConversion,
+        ValueMFMALoadOpToGPUConversion,
+        ValueMFMAComputeToGPUConversion,
+        ValueMFMAStoreOpToGPUConversion,
+        ValueMFMAConstantOpToGPUConversion>(patterns.getContext());
+}
+
+void populateGPUSimplificationPatterns(mlir::OwningRewritePatternList& patterns)
+{
+    patterns.insert<ConditionalBarrierHoistingPattern>(patterns.getContext());
 }
 
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createAcceraToSPIRVPass()
@@ -578,17 +928,21 @@ std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createAcceraToGPUPass(accer
     using accera::value::ExecutionRuntime;
     switch (runtime)
     {
-    case ExecutionRuntime::CUDA:
-        return createAcceraToNVVMPass();
-    case ExecutionRuntime::Rocm:
+    case ExecutionRuntime::DEFAULT:
         // TODO: default gpu runtime is rocm
         [[fallthrough]];
-    case ExecutionRuntime::Default:
+    case ExecutionRuntime::ROCM:
         return createAcceraToROCDLPass();
-    case ExecutionRuntime::Vulkan:
+    case ExecutionRuntime::CUDA:
+        return createAcceraToNVVMPass();
+    case ExecutionRuntime::VULKAN:
         return createAcceraToSPIRVPass();
+    case ExecutionRuntime::NONE:
+        [[fallthrough]];
+    case ExecutionRuntime::OPENMP:
+        [[fallthrough]];
     default:
-        llvm::llvm_unreachable_internal("The execution runtime must be specified.");
+        return {};
     }
 }
 

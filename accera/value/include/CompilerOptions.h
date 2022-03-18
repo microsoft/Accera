@@ -49,7 +49,7 @@ namespace value
         TargetDevice targetDevice = { "host" };
 
         /// <summary> Name of the target runtime. </summary>
-        ExecutionRuntime executionRuntime = ExecutionRuntime::Default;
+        ExecutionRuntime executionRuntime = ExecutionRuntime::DEFAULT;
 
         // Options that can be changed during code generation (e.g., per function)
         /// <summary> Emit code that calls an external BLAS library. </summary>

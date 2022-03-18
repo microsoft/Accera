@@ -14,84 +14,84 @@ include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
-class rc_HasShape<list<int> shape> :
+class acc_HasShape<list<int> shape> :
     CPred<"$_self.cast<ShapedType>().hasStaticShape({" # !interleave(shape, ",") # "})">;
 
-class rc_HasNumElements<int length> :
+class acc_HasNumElements<int length> :
     CPred<"$_self.cast<ShapedType>().getNumElements() == " # length>;
 
-class rc_MemRefOfTypeWithShape<list<Type> allowedTypes, list<int> shape> :
-    Type<And<[MemRefOf<allowedTypes>.predicate, rc_HasShape<shape>]>,
+class acc_MemRefOfTypeWithShape<list<Type> allowedTypes, list<int> shape> :
+    Type<And<[MemRefOf<allowedTypes>.predicate, acc_HasShape<shape>]>,
         MemRefOf<allowedTypes>.description # " with shape { " #
         !interleave(shape, ",") # " }">;
 
-class rc_MemRefOfTypeWithNumElements<list<Type> allowedTypes, int length> :
-    Type<And<[MemRefOf<allowedTypes>.predicate, rc_HasNumElements<length>]>,
+class acc_MemRefOfTypeWithNumElements<list<Type> allowedTypes, int length> :
+    Type<And<[MemRefOf<allowedTypes>.predicate, acc_HasNumElements<length>]>,
         MemRefOf<allowedTypes>.description # " with " # length # " elements">;
 
-class rc_MemRefWithShape<list<int> shape> :
-    Type<And<[AnyStaticShapeMemRef.predicate, rc_HasShape<shape>]>,
+class acc_MemRefWithShape<list<int> shape> :
+    Type<And<[AnyStaticShapeMemRef.predicate, acc_HasShape<shape>]>,
         AnyStaticShapeMemRef.description # " with shape { " # !interleave(shape, ",") # " }">;
 
-class rc_MemRefWithNumElements<int length> :
-    Type<And<[AnyStaticShapeMemRef.predicate, rc_HasNumElements<length>]>,
+class acc_MemRefWithNumElements<int length> :
+    Type<And<[AnyStaticShapeMemRef.predicate, acc_HasNumElements<length>]>,
         AnyStaticShapeMemRef.description # " with " # length # " elements">;
 
-class rc_TensorOfTypeWithShape<list<Type> allowedTypes, list<int> shape> :
-    Type<And<[TensorOf<allowedTypes>.predicate, rc_HasShape<shape>]>,
+class acc_TensorOfTypeWithShape<list<Type> allowedTypes, list<int> shape> :
+    Type<And<[TensorOf<allowedTypes>.predicate, acc_HasShape<shape>]>,
         TensorOf<allowedTypes>.description # " with shape { " #
         !interleave(shape, ",") # " }">;
 
-class rc_TensorOfTypeWithNumElements<list<Type> allowedTypes, int length> :
-    Type<And<[TensorOf<allowedTypes>.predicate, rc_HasNumElements<length>]>,
+class acc_TensorOfTypeWithNumElements<list<Type> allowedTypes, int length> :
+    Type<And<[TensorOf<allowedTypes>.predicate, acc_HasNumElements<length>]>,
         TensorOf<allowedTypes>.description # " with " # length # " elements">;
 
 
-class rc_TensorWithShape<list<int> shape> :
-    Type<And<[AnyStaticShapeTensor.predicate, rc_HasShape<shape>]>,
+class acc_TensorWithShape<list<int> shape> :
+    Type<And<[AnyStaticShapeTensor.predicate, acc_HasShape<shape>]>,
         AnyStaticShapeTensor.description # " with shape { " # !interleave(shape, ",") # " }">;
 
-class rc_TensorWithNumElements<int length> :
-    Type<And<[AnyStaticShapeTensor.predicate, rc_HasNumElements<length>]>,
+class acc_TensorWithNumElements<int length> :
+    Type<And<[AnyStaticShapeTensor.predicate, acc_HasNumElements<length>]>,
         AnyStaticShapeTensor.description # " with " # length # " elements">;
 
 
-class rc_ContainerOfTypeWithShape<list<Type> allowedTypes, list<int> shape> :
-    Type<Or<[rc_MemRefOfTypeWithShape<allowedTypes, shape>.predicate,
-        rc_TensorOfTypeWithShape<allowedTypes, shape>.predicate]>,
+class acc_ContainerOfTypeWithShape<list<Type> allowedTypes, list<int> shape> :
+    Type<Or<[acc_MemRefOfTypeWithShape<allowedTypes, shape>.predicate,
+        acc_TensorOfTypeWithShape<allowedTypes, shape>.predicate]>,
         MemRefOf<allowedTypes>.description # " or " #
         TensorOf<allowedTypes>.description # " with shape { " # !interleave(shape, ",") # " }">;
 
-class rc_ContainerOfTypeWithNumElements<list<Type> allowedTypes, int length> :
-    Type<Or<[rc_MemRefOfTypeWithNumElements<allowedTypes, length>.predicate,
-        rc_TensorOfTypeWithNumElements<allowedTypes, length>.predicate]>,
+class acc_ContainerOfTypeWithNumElements<list<Type> allowedTypes, int length> :
+    Type<Or<[acc_MemRefOfTypeWithNumElements<allowedTypes, length>.predicate,
+        acc_TensorOfTypeWithNumElements<allowedTypes, length>.predicate]>,
         MemRefOf<allowedTypes>.description # " or " #
         TensorOf<allowedTypes>.description # " with " # length # " elements">;
 
-class rc_ContainerWithShape<list<int> shape> :
-    Type<Or<[rc_MemRefWithShape<shape>.predicate, rc_TensorWithShape<shape>.predicate]>,
-        rc_MemRefWithShape<shape>.description # " or " #
-        rc_TensorWithShape<shape>.description>;
+class acc_ContainerWithShape<list<int> shape> :
+    Type<Or<[acc_MemRefWithShape<shape>.predicate, acc_TensorWithShape<shape>.predicate]>,
+        acc_MemRefWithShape<shape>.description # " or " #
+        acc_TensorWithShape<shape>.description>;
 
-class rc_ContainerWithNumElements<int length> :
-    Type<Or<[rc_MemRefWithNumElements<length>.predicate, rc_TensorWithNumElements<length>.predicate]>,
-        rc_MemRefWithNumElements<length>.description # " or " #
-        rc_TensorWithNumElements<length>.description>;
+class acc_ContainerWithNumElements<int length> :
+    Type<Or<[acc_MemRefWithNumElements<length>.predicate, acc_TensorWithNumElements<length>.predicate]>,
+        acc_MemRefWithNumElements<length>.description # " or " #
+        acc_TensorWithNumElements<length>.description>;
 
-def rc_NumericType :
+def acc_NumericType :
     Type<Or<[AnySignlessInteger.predicate, AnyFloat.predicate, Index.predicate]>, "Arithmetic type">;
 
-def rc_ScalarOrVectorNumericType :
-    AnyTypeOf<[rc_NumericType, VectorOf<[rc_NumericType]>]>;
+def acc_ScalarOrVectorNumericType :
+    AnyTypeOf<[acc_NumericType, VectorOf<[acc_NumericType]>]>;
 
-class rc_Scalarlike<Type type> :
-    AnyTypeOf<[type, rc_ContainerOfTypeWithNumElements<[type], 1>]>;
+class acc_Scalarlike<Type type> :
+    AnyTypeOf<[type, acc_ContainerOfTypeWithNumElements<[type], 1>]>;
 
-def rc_Indexlike : AnyTypeOf<[Index, rc_Scalarlike<AnySignlessInteger>]>;
+def acc_Indexlike : AnyTypeOf<[Index, acc_Scalarlike<AnySignlessInteger>]>;
 
-def rc_BoolType : Type<I1.predicate, "Boolean type">;
+def acc_BoolType : Type<I1.predicate, "Boolean type">;
 
-def rc_ScalarOrVectorBoolType :
-    AnyTypeOf<[rc_BoolType, VectorOf<[rc_BoolType]>]>;
+def acc_ScalarOrVectorBoolType :
+    AnyTypeOf<[acc_BoolType, VectorOf<[acc_BoolType]>]>;
 
 #endif // ACCERA_COMMON_TD

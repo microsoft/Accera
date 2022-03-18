@@ -7,6 +7,7 @@
 type | description
 --- | ---
 `accera.ScalarType.bool` | boolean
+`accera.ScalarType.float16` | 16-bit floating point number
 `accera.ScalarType.float32` | 32-bit floating point number
 `accera.ScalarType.float64` | 64-bit floating point number
 `accera.ScalarType.int8` | 8-bit signed integer

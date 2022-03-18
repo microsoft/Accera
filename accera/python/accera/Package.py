@@ -3,20 +3,28 @@
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
 
+import hatlib as hat
+import json
 import logging
+import os
+import re
+import shutil
 from collections import OrderedDict
 from enum import Enum, Flag, auto
 from functools import wraps, singledispatch
+from hashlib import md5
+from secrets import token_hex
 from typing import *
-import os
-import shutil
-import hatlib as hat
 
 from . import _lang_python, lang
 from .Targets import Target, Runtime
 from .Parameter import *
 from .Constants import inf
 from .Platforms import Platform, get_library_reference
+
+_R_DIM3 = r'dim3\((\d+),\s*(\d+),\s*(\d+)\)'
+_R_GPU_LAUNCH = f"<<<{_R_DIM3},\s*{_R_DIM3}>>>"
+del _R_DIM3
 
 
 @singledispatch
@@ -206,11 +214,14 @@ class Package:
             function_opts: A dictionary of advanced options to set on the function, e.g. {"no_inline" : True}
             auxiliary: A dictionary of auxiliary metadata to include in the HAT package.
         """
-
-        from secrets import token_hex
-
+        
+        # Auxiliary data should be one copy per function
+        auxiliary_metadata = auxiliary.copy()
+        param_value_dict = {}
         for delayed_param, value in parameters.items():
             delayed_param.set_value(value)
+            param_value_dict[delayed_param._name] = value if isinstance(value, int) else str(value)
+        auxiliary_metadata['accera'] = param_value_dict
 
         def validate_target(target: Target):
             # can't use set because targets are mutable (therefore unhashable)
@@ -220,9 +231,24 @@ class Package:
                         "Function target being added is currently incompatible with existing functions in package"
                     )
 
-        # Function names must begin with an _ or alphabetical character
-        name = token_hex(4)
-        name = (f"{base_name}_{name}" if base_name else f"_{name}")
+        def get_function_name(target: Target):
+            # Get a function name using a stable hash of [base_name, signature, target, and parameters]
+            # If no base_name is provided, use a unique identifier to avoid collisions (assume user
+            # does not care about the function name in this case)
+            # ref: https://death.andgravity.com/stable-hashing
+            suffix = md5(
+                json.dumps(
+                    tuple(
+                        map(
+                            lambda x: str(x), [base_name or token_hex(4), target, auxiliary_metadata['accera']] +
+                            [(a.role, a.element_type, a.shape, a.layout) for a in args]
+                        )
+                    )
+                ).encode('utf-8')
+            ).digest().hex()[:16]    # truncate
+
+            # Function names must begin with an _ or alphabetical character
+            return (f"{base_name}_{suffix}" if base_name else f"_{suffix}")
 
         # Resolve any undefined argument shapes based on the source usage pattern
         for arr in args:
@@ -248,9 +274,9 @@ class Package:
             native_array_args = [arg._get_native_array() for arg in args]
 
             assert source.public
-            source.name = name
+            source.name = get_function_name(source.target)
             source.base_name = base_name
-            source.auxiliary = auxiliary
+            source.auxiliary = auxiliary_metadata
             source.param_overrides = parameters
             source.args = tuple(native_array_args)
             source.requested_args = args
@@ -266,6 +292,7 @@ class Package:
             def wrapper_fn(args):
                 source(*map(_convert_arg, args))
 
+            name = get_function_name(Target.HOST)
             logging.debug(f"[API] Added {name}")
 
             wrapped_func = lang.Function(
@@ -277,7 +304,7 @@ class Package:
                 args=tuple(map(_convert_arg, args)),
                 requested_args=args,
                 definition=wrapper_fn,
-                auxiliary=auxiliary,
+                auxiliary=auxiliary_metadata,
                 target=Target.HOST,
             )
 
@@ -398,6 +425,9 @@ class Package:
 
         target, target_device, compiler_options, dynamic_dependencies = self._generate_target_options(platform, mode)
 
+        if target.category == Target.Category.GPU and target.runtime == Target.Runtime.NONE:
+            raise RuntimeError("GPU targets must specify a runtime")
+
         cross_compile = platform != Platform.HOST
 
         format_is_default = bool(
@@ -429,6 +459,7 @@ class Package:
             package_module.EmitDebugFunction(fn_name, utilities)
 
         # Emit the package module
+        # TODO: Update Format enum to use SOURCE instead and then this should take runtime into consideration
         if format & Package.Format.CPP:
             output_type = accc.ModuleOutputType.CPP
         elif format & Package.Format.CUDA:
@@ -442,7 +473,8 @@ class Package:
             supporting_hats.append(
                 Package._emit_default_module(compiler_options, target, mode, output_dir, f"{name}_Globals")
             )
-            if any(fn.target.category == Target.Category.GPU for fn in self._fns.values()):
+            if any(fn.target.category == Target.Category.GPU and fn.target.runtime == Target.Runtime.VULKAN
+                   for fn in self._fns.values()):
                 supporting_hats.append(self._create_gpu_utility_module(compiler_options, target, mode, output_dir))
 
         proj = accc.AcceraProject(output_dir=working_dir, library_name=name, output_type=output_type)
@@ -477,7 +509,7 @@ class Package:
             package_module.WriteHeader(header_path)
 
             # Complete the HAT file with information we have stored at this layer
-            hat_file = hat.HATFile.Deserialize(header_path)
+            hat_file: hat.HATFile = hat.HATFile.Deserialize(header_path)
 
             if format & (Package.Format.DYNAMIC_LIBRARY | Package.Format.STATIC_LIBRARY):
                 hat_file.dependencies.link_target = os.path.basename(proj.module_file_sets[0].object_filepath)
@@ -503,11 +535,45 @@ class Package:
             hat_file.declaration.code = decl_code._new('\n'.join(map(str, ['', decl_code] + supporting_decls)))
 
             for fn_name in self._fns:
-                if self._fns[fn_name].public:
+                fn: lang.Function = self._fns[fn_name]
+
+                if fn.public:
                     hat_func = hat_file.function_map.get(fn_name)
+
                     if hat_func is None:
                         raise ValueError(f"Couldn't find header-declared function {fn_name} in emitted HAT file")
-                    hat_func.auxiliary = self._fns[fn_name].auxiliary
+
+                    hat_func.auxiliary = fn.auxiliary
+
+                    if fn.target.category == Target.Category.GPU and fn.target.runtime != Target.Runtime.VULKAN:
+                        # TODO: Remove this when the header is emitted as part of the compilation
+                        gpu_source = proj.module_file_sets[0].translated_source_filepath
+                        gpu_device_func = fn_name + "__gpu__"
+                        with open(gpu_source) as gpu_source_f:
+                            s = re.search(gpu_device_func + _R_GPU_LAUNCH, gpu_source_f.read())
+                            if not s:
+                                raise RuntimeError("Couldn't parse emitted source code")
+                            launch_parameters = list(map(int, [s[n] for n in range(1, 7)]))
+                        gpu_source = os.path.split(gpu_source)[1]
+
+                        hat_target: hat.Target = hat_file.target
+                        hat_target.required.gpu.runtime = fn.target.runtime.name
+                        hat_target.required.gpu.model = fn.target.name
+
+                        hat_func.runtime = fn.target.runtime.name
+                        hat_func.launches = gpu_device_func
+
+                        hat_file.device_function_map[gpu_device_func] = hat.Function(
+                            name=gpu_device_func,
+                            description=f"Device function launched by {fn_name}",
+                            calling_convention=hat.CallingConventionType.Device,
+                            arguments=hat_func.arguments,
+                            return_info=hat_func.return_info,
+                            launch_parameters=launch_parameters,
+                            provider=gpu_source,
+                            runtime=fn.target.runtime.name
+                        )
+
             if target_device.is_windows():
                 hat_os = hat.OperatingSystem.Windows
             elif target_device.is_macOS():

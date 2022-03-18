@@ -18,6 +18,7 @@ add_subdirectory(src)
 set(src src/AcceraPasses.cpp)
 
 set(rcvalue_src
+    src/value/BarrierOptPass.cpp
     src/value/FunctionPointerResolutionPass.cpp
     src/value/RangeValueOptimizePass.cpp
     src/value/ValueFuncToTargetPass.cpp
@@ -27,6 +28,7 @@ set(rcvalue_src
 )
 
 set(rcvalue_include
+    include/value/BarrierOptPass.h
     include/value/FunctionPointerResolutionPass.h
     include/value/RangeValueOptimizePass.h
     include/value/ValueFuncToTargetPass.h
@@ -54,17 +56,11 @@ set(rcgpu_src
   src/gpu/ConvertLaunchFuncToVulkanCalls.cpp
   src/gpu/EmitVulkanWrappers.cpp
   src/gpu/SerializeToHSACO.cpp
-
-  # Disabled
-  # src/gpu/AcceraToSPIRVPass.cpp
 )
 
 set(rcgpu_include
   include/gpu/AcceraToGPUPass.h
   include/gpu/AcceraVulkanPasses.h
-
-  # Disabled
-  # include/gpu/AcceraToSPIRVPass.h
 )
 
 set(util_src

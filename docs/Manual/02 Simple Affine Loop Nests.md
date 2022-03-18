@@ -86,7 +86,7 @@ The iteration logic can include the following operations (assuming `accera` was 
 
 | Operation | Types (Operands must be of same type)  | Description  |
 |----------|----------|--------------|
-| `a = b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Assigns the value of scalar *b* to scalar *a* |
+| `a = b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Assigns the value of scalar *b* to scalar *a* |
 
 __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
@@ -94,14 +94,14 @@ __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
 | Operation | Types (Operands must be of same type)  | Description  |
 |----------|----------|--------------|
-| `a + b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns the sum of scalars *a* and *b* |
-| `a - b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns the difference between scalars *a* and *b* |
-| `a * b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns the product of scalars *a* and *b* |
-| `a / b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns the quotient of scalars *a* and *b*. If the operands are integers, an integer division result is returned |
-| `a ** b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns the *b*'th power of scalar *a* |
-| `a // b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns the floor of the quotient of scalars *a* and *b* |
-| `a % b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns the signed remainder after dividing scalar *a* by scalar *b* |
-| `-a` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns the additive inverse of scalar *a* |
+| `a + b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the sum of scalars *a* and *b* |
+| `a - b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the difference between scalars *a* and *b* |
+| `a * b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the product of scalars *a* and *b* |
+| `a / b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the quotient of scalars *a* and *b*. If the operands are integers, an integer division result is returned |
+| `a ** b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the *b*'th power of scalar *a* |
+| `a // b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the floor of the quotient of scalars *a* and *b* |
+| `a % b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the signed remainder after dividing scalar *a* by scalar *b* |
+| `-a` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the additive inverse of scalar *a* |
 
 __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
@@ -111,12 +111,12 @@ Comment: Accera also supports the corresponding compound-assignment operators, s
 
 | Operation | Types (Operands must be of same type) | Description  |
 |----------|----------|--------------|
-| `a == b` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns True if scalar *a* equals scalar *b*, else False |
-| `a != b` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns True if scalar *a* is not equal to scalar *b*, else False |
-| `a < b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns True if scalar *a* is strictly smaller than scalar *b*, else False |
-| `a <= b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns True if scalar *a* is smaller than or equal to scalar *b*, else False |
-| `a > b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns True if scalar *a* is strictly greater than scalar *b*, else False |
-| `a >= b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns True if scalar *a* is greater than or equal to scalar *b*, else False |
+| `a == b` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* equals scalar *b*, else False |
+| `a != b` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is not equal to scalar *b*, else False |
+| `a < b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is strictly smaller than scalar *b*, else False |
+| `a <= b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is smaller than or equal to scalar *b*, else False |
+| `a > b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is strictly greater than scalar *b*, else False |
+| `a >= b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is greater than or equal to scalar *b*, else False |
 
 __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
@@ -124,9 +124,9 @@ __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
 | Operation  | Types (Operands must be of same type) | Description  |
 |----------|----------|--------------|
-| `acc.logical_and(a, b)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns True if scalars *a* and *b* are non-zero, else False |
-| `acc.logical_or(a, b)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns True if either scalar *a* or scalar *b* are non-zero, else False |
-| `acc.logical_not(a)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns True if *a* is zero, else False |
+| `acc.logical_and(a, b)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalars *a* and *b* are non-zero, else False |
+| `acc.logical_or(a, b)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if either scalar *a* or scalar *b* are non-zero, else False |
+| `acc.logical_not(a)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if *a* is zero, else False |
 
 __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
@@ -149,22 +149,22 @@ __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
 | Operation  | Types (Operands must be of same type) | Description  |
 |----------|----------|--------------|
-| `acc.abs(a)` | `acc.ScalarType.float32/64` | Returns the absolute value of scalar *a* |
-| `acc.max(a, b)` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns the larger of the two scalars *a* and *b* |
-| `acc.min(a, b)` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float32/64` | Returns the smaller of the two scalars *a* and *b* |
-| `acc.ceil(a)` | `acc.ScalarType.float32/64` | Returns the value of scalar *a* rounded up to the nearest integer as an int64 type |
-| `acc.floor(a)` | `acc.ScalarType.float32/64` | Returns the value of scalar *a* rounded down to the nearest integer as an int64 type |
-| `acc.sqrt(a)` | `acc.ScalarType.float32/64` | Returns the square root of scalar *a* |
-| `acc.exp(a)` | `acc.ScalarType.float32/64` | Returns the exponential *e* raised to the scalar *a* |
-| `acc.log(a)` | `acc.ScalarType.float32/64` | Returns the natural logarithm (base *e*) of scalar *a* |
-| `acc.log10(a)` | `acc.ScalarType.float32/64` | Returns the common logarithm (base 10) of scalar *a* |
-| `acc.log2(a)` | `acc.ScalarType.float32/64` | Returns the binary logarithm (base 2) of scalar *a* |
-| `acc.sin(a)` | `acc.ScalarType.float32/64` | Returns the sine of scalar *a*, where *a* is in radians |
-| `acc.cos(a)` | `acc.ScalarType.float32/64` | Returns the cosine of scalar *a*, where *a* is in radians |
-| `acc.tan(a)` | `acc.ScalarType.float32/64` | Returns the tangent of scalar *a*, where *a* is in radians |
-| `acc.sinh(a)` | `acc.ScalarType.float32/64` | Returns the hyperbolic sine of scalar *a*, where *a* is in radians |
-| `acc.cosh(a)` | `acc.ScalarType.float32/64` | Returns the hyperbolic cosine of scalar *a*, where *a* is in radians |
-| `acc.tanh(a)` | `acc.ScalarType.float32/64` | Returns the hyperbolic tangent of scalar *a*, where *a* is in radians |
+| `acc.abs(a)` | `acc.ScalarType.float16/32/64` | Returns the absolute value of scalar *a* |
+| `acc.max(a, b)` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the larger of the two scalars *a* and *b* |
+| `acc.min(a, b)` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the smaller of the two scalars *a* and *b* |
+| `acc.ceil(a)` | `acc.ScalarType.float16/32/64` | Returns the value of scalar *a* rounded up to the nearest integer as an int64 type |
+| `acc.floor(a)` | `acc.ScalarType.float16/32/64` | Returns the value of scalar *a* rounded down to the nearest integer as an int64 type |
+| `acc.sqrt(a)` | `acc.ScalarType.float16/32/64` | Returns the square root of scalar *a* |
+| `acc.exp(a)` | `acc.ScalarType.float16/32/64` | Returns the exponential *e* raised to the scalar *a* |
+| `acc.log(a)` | `acc.ScalarType.float16/32/64` | Returns the natural logarithm (base *e*) of scalar *a* |
+| `acc.log10(a)` | `acc.ScalarType.float16/32/64` | Returns the common logarithm (base 10) of scalar *a* |
+| `acc.log2(a)` | `acc.ScalarType.float16/32/64` | Returns the binary logarithm (base 2) of scalar *a* |
+| `acc.sin(a)` | `acc.ScalarType.float16/32/64` | Returns the sine of scalar *a*, where *a* is in radians |
+| `acc.cos(a)` | `acc.ScalarType.float16/32/64` | Returns the cosine of scalar *a*, where *a* is in radians |
+| `acc.tan(a)` | `acc.ScalarType.float16/32/64` | Returns the tangent of scalar *a*, where *a* is in radians |
+| `acc.sinh(a)` | `acc.ScalarType.float16/32/64` | Returns the hyperbolic sine of scalar *a*, where *a* is in radians |
+| `acc.cosh(a)` | `acc.ScalarType.float16/32/64` | Returns the hyperbolic cosine of scalar *a*, where *a* is in radians |
+| `acc.tanh(a)` | `acc.ScalarType.float16/32/64` | Returns the hyperbolic tangent of scalar *a*, where *a* is in radians |
 
 __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 

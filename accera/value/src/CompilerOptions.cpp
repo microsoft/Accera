@@ -21,11 +21,13 @@ namespace value
     static ExecutionRuntime GetExecutionRuntime(std::string runtimeName)
     {
         return ::llvm::StringSwitch<ExecutionRuntime>(runtimeName)
-            .Case("Default", ExecutionRuntime::Default)
-            .Case("Vulkan", ExecutionRuntime::Vulkan)
-            .Case("Rocm", ExecutionRuntime::Rocm)
+            .Case("Default", ExecutionRuntime::DEFAULT)
+            .Case("Vulkan", ExecutionRuntime::VULKAN)
+            .Case("Rocm", ExecutionRuntime::ROCM)
             .Case("CUDA", ExecutionRuntime::CUDA)
-            .Default(ExecutionRuntime::Default);
+            .Case("None", ExecutionRuntime::NONE)
+            .Case("OpenMP", ExecutionRuntime::OPENMP)
+            .Default(ExecutionRuntime::DEFAULT);
     }
 
     /// <summary> Constructor from a property bag </summary>

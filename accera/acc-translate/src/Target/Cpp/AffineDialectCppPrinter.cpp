@@ -5,7 +5,9 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "AffineDialectCppPrinter.h"
+
 #include <llvm/ADT/Sequence.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <numeric>
 namespace
@@ -444,11 +446,22 @@ namespace cpp_printer
     LogicalResult
     AffineDialectCppPrinter::printAffineForOp(AffineForOp affineForOp)
     {
-        // TODO: handle returned values from affine.yield after we support
-        // affine.yield op
         if (!affineForOp.getResults().empty())
         {
-            affineForOp.emitError("cannot yield values from the op");
+            if (affineForOp.getIterOperands().size() > 1 || affineForOp->getResults().size() > 1)
+            {
+                os << "AffineForOp with multiple iter operands or results is not supported yet.\n";
+                return failure();
+            }
+            auto resultVar = affineForOp.getResults()[0];
+            auto iterVar = affineForOp.getRegionIterArgs()[0];
+            auto initVal = affineForOp.getIterOperands()[0];
+
+            StringRef iterVarName = state.nameState.getOrCreateName(
+                iterVar, SSANameState::SSANameKind::Variable);
+
+            RETURN_IF_FAILED(printer->printType(resultVar.getType()));
+            os << " " << iterVarName << " = " << state.nameState.getName(initVal) << ";\n";
         }
 
         if (!affineForOp.hasConstantLowerBound())
@@ -483,8 +496,33 @@ namespace cpp_printer
 
         auto& loopRegion = affineForOp.region();
         RETURN_IF_FAILED(printer->printRegion(loopRegion, /*printParens*/ false,
-                                              /*printBlockTerminator*/ false));
+                                              /*printBlockTerminator*/ true));
         os << "}\n";
+
+        if (!affineForOp.getResults().empty())
+        {
+            auto resultVar = affineForOp.getResults()[0];
+            auto iterVar = affineForOp.getRegionIterArgs()[0];
+            StringRef resultName = state.nameState.getOrCreateName(
+                resultVar, SSANameState::SSANameKind::Variable);
+            RETURN_IF_FAILED(printer->printType(resultVar.getType()));
+            os << " " << resultName << " = " << state.nameState.getName(iterVar) << ";\n";
+        }
+
+        return success();
+    }
+
+    LogicalResult AffineDialectCppPrinter::printAffineYieldOp(AffineYieldOp affineYieldOp)
+    {
+        if (affineYieldOp.getNumOperands() == 0)
+        {
+            return success();
+        }
+        auto affineForOp = affineYieldOp->getParentOfType<AffineForOp>();
+        auto iterVar = affineForOp.getRegionIterArgs()[0];
+        auto result = affineYieldOp.getOperand(0);
+
+        os << state.nameState.getName(iterVar) << " = " << state.nameState.getName(result);
 
         return success();
     }
@@ -509,6 +547,9 @@ namespace cpp_printer
 
         if (auto affineVectorStoreOp = dyn_cast<AffineVectorStoreOp>(op))
             return printAffineVectorStoreOp(affineVectorStoreOp);
+
+        if (auto affineYieldOp = dyn_cast<AffineYieldOp>(op))
+            return printAffineYieldOp(affineYieldOp);
 
         if (auto affineForOp = dyn_cast<AffineForOp>(op))
         {

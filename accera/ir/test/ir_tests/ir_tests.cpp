@@ -253,6 +253,66 @@ TEST_CASE_METHOD(Fixture, "Test4", "[cpu][lang]")
                          << debugString(module));
 }
 
+TEST_CASE_METHOD(Fixture, "vectorized_vector_add", "[cpu][nest]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    constexpr auto N = 1024;
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value, accera::value::Matrix;
+
+    DeclareFunction("NestVectorAdd")
+        .Public(true)
+        .Parameters(
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ N }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ N }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ N }) }))
+        .Define([=](Vector Out, Vector A, Vector B) {
+            // Declare and/or calculate constants
+            const int n = (int)(A.Size()); // N
+
+            // Schedule constants
+            const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+            const int vectorBytes = vectorSize * 4; // 4 bytes per float
+            const int vectorUnits = 16; // AVX-2 has 16 256-bit registers
+            const int innerLoopSize = 128;
+
+            // Define Nest
+            Nest nest(MemoryShape{ N });
+
+            // Get indexes
+            auto indices = nest.GetIndices();
+            Scalar i = indices[0];
+
+            nest.Set([&]() { Out(i) = A(i) + B(i); });
+
+            auto schedule = nest.CreateSchedule();
+
+            // Declare splits
+            auto [iCache, iInner1] = schedule.Split(i, innerLoopSize);
+            auto [iKernelOuter2, iInner2] = schedule.Split(iInner1, 2 * vectorSize);
+            auto [iKernelOuter, iInner3] = schedule.Split(iInner2, vectorSize);
+
+            // Set the order
+            schedule.SetOrder({ iCache, iKernelOuter2, iKernelOuter, iInner3 });
+
+            auto plan = schedule.CreatePlan();
+            plan.AddCache(A, iKernelOuter2);
+            plan.AddCache(B, iKernelOuter2);
+            plan.AddCache(Out, iKernelOuter2);
+
+            // Set unrolling
+            schedule.Unroll(iKernelOuter);
+            plan.Vectorize(iInner3, { vectorBytes, vectorUnits });
+        });
+
+    RunConversionPasses(target, "vectorized_vector_add_" + stringify(target));
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
 TEST_CASE_METHOD(Fixture, "strided_subvector", "[cpu][lang]")
 {
     auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
@@ -281,7 +341,6 @@ TEST_CASE_METHOD(Fixture, "strided_subvector2", "[cpu][lang]")
     using namespace accera::value;
     using namespace accera::utilities;
     using accera::value::Value;
-    using accera::value::Value, accera::value::Matrix;
 
     const auto N = 16;
 
@@ -289,7 +348,7 @@ TEST_CASE_METHOD(Fixture, "strided_subvector2", "[cpu][lang]")
         DeclareFunction("func_test")
             .Parameters(Value({ ValueType::Float, 0 }, { N }))
             .Define([=](Vector x) {
-                Vector y = x.SubVector(1, N/2, 2);
+                Vector y = x.SubVector(1, N / 2, 2);
                 y(0) = 4.0f;
             });
 
@@ -318,6 +377,54 @@ TEST_CASE_METHOD(Fixture, "strided_submatrix", "[cpu][lang]")
             });
 
     RunConversionPasses(target, "strided_submatrix_" + stringify(target));
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "fp32_vector_add", "[cpu][lang]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    [[maybe_unused]] auto f =
+        DeclareFunction("func_test")
+            .Public(true)
+            .Parameters(
+                Value({ ValueType::Float, 0 }, { 2 }),
+                Value({ ValueType::Float, 0 }, { 2 }),
+                Value({ ValueType::Float, 0 }, { 2 }))
+            .Define([](Vector a, Vector b, Vector c) {
+                c[0] = a[0] + b[0];
+            });
+
+    RunConversionPasses(target, "fp32_vector_add_" + stringify(target));
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "fp16_vector_add", "[cpu][lang]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    [[maybe_unused]] auto f =
+        DeclareFunction("func_test")
+            .Public(true)
+            .Parameters(
+                Value({ ValueType::Float16, 0 }, { 1 }),
+                Value({ ValueType::Float16, 0 }, { 1 }),
+                Value({ ValueType::Float16, 0 }, { 1 }))
+            .Define([](Vector a, Vector b, Vector c) {
+                c[0] = a[0] + b[0];
+            });
+
+    RunConversionPasses(target, "fp16_vector_add_" + stringify(target));
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
 }
@@ -384,7 +491,7 @@ TEST_CASE_METHOD(Fixture, "vector_add_rocm", "[gpu][lang]")
     auto gpu_f1 =
         DeclareFunction("gpu_f1")
             .Target(targets::GPU({ 128, 1, 1 }, { 128, 1, 1 }))
-            .Runtime(ExecutionRuntime::Rocm)
+            .Runtime(ExecutionRuntime::ROCM)
             .Parameters(Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } },
                         Value{ ValueType::Float, MemoryLayout{ { 16384 } } })
@@ -399,7 +506,7 @@ TEST_CASE_METHOD(Fixture, "vector_add_rocm", "[gpu][lang]")
                 C[offset] = summed;
             });
     accera::transforms::AcceraPassPipelineOptions opts{};
-    opts.runtime = accera::value::ExecutionRuntime::Rocm;
+    opts.runtime = accera::value::ExecutionRuntime::ROCM;
     RunConversionPasses(target, "vector_sum_rocm_" + stringify(target), opts);
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
@@ -1518,7 +1625,7 @@ TEST_CASE_METHOD(Fixture, "basic_gemm_loopnest", "[cpu][nest]")
                          << debugString(module));
 }
 
-TEST_CASE_METHOD(Fixture, "matmul_value_gpu_local_mem", "[gpu][lang]")
+TEST_CASE_METHOD(Fixture, "matmul_value_gpu_private_mem", "[gpu][lang]")
 {
     const int64_t M = 32;
     const int64_t N = 32;
@@ -1555,7 +1662,7 @@ TEST_CASE_METHOD(Fixture, "matmul_value_gpu_local_mem", "[gpu][lang]")
                 auto i = blockIdX * blockDimX + threadIdX;
                 auto j = blockIdY * blockDimY + threadIdY;
 
-                Vector accum_ref = Allocate(C.GetType(), MemoryLayout{ { 1 } }.SetMemorySpace(MemorySpace::Local));
+                Vector accum_ref = Allocate(C.GetType(), MemoryLayout{ { 1 } }.SetMemorySpace(MemorySpace::Private));
                 accum_ref[0] = Cast(0, C.GetType());
 
                 ForRange(K, [&](Scalar k) {
@@ -1597,7 +1704,7 @@ TEST_CASE_METHOD(Fixture, "matmul_value_gpu_local_mem", "[gpu][lang]")
             PrintMemref(C);
         });
 
-    RunConversionPasses(target, "matmul_value_gpu_local_mem_" + stringify(target));
+    RunConversionPasses(target, "matmul_value_gpu_private_mem_" + stringify(target));
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
 }
@@ -2556,6 +2663,297 @@ TEST_CASE_METHOD(Fixture, "parallelize_gemm_mlas_value", "[cpu][nest]")
     // options.dumpIntraPassIR = true;
 
     RunConversionPasses(target, "gemm_mlas_value_parallelized_" + std::to_string(M_) + "_" + std::to_string(N_) + "_" + std::to_string(K_) + "_" + "p" + std::to_string(numThreads) + "_" + stringify(target), options);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_mfma_rocm", "[gpu][nest][mfma][main]")
+{
+    const int64_t M = 32;
+    const int64_t N = 32;
+    const int64_t K = 32;
+
+    const int64_t blockDim = 16;
+    const int64_t tileSize = blockDim;
+    const int64_t mfmaOutLen = 4;
+
+    REQUIRE(M % tileSize == 0);
+    REQUIRE(N % tileSize == 0);
+
+    const int64_t gridDimX = N / blockDim;
+    const int64_t gridDimY = M / blockDim;
+
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::utilities::MemorySpace;
+    using accera::value::Value, accera::value::Matrix;
+
+    auto gpuConfig = targets::GPU{};
+    gpuConfig.grid = targets::Dim3(gridDimX, gridDimY);
+    gpuConfig.block = targets::Dim3(blockDim, blockDim);
+
+    auto matmul =
+        DeclareFunction("NestMatMul")
+            .Target(gpuConfig)
+            .Runtime(ExecutionRuntime::ROCM)
+            .Decorated(false)
+            .Public(true)
+            .Parameters(
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+            .Define([=](Matrix A, Matrix B, Matrix C) {
+                Nest matmul({ M, N });
+                auto indices = matmul.GetIndices();
+                Scalar i = indices[0];
+                Scalar j = indices[1];
+
+                matmul.Set([&]() {
+                    Scalar tidX = GPU::ThreadId().X();
+                    Scalar tidY = GPU::ThreadId().Y();
+
+                    auto mfmaAMatrix = MFMALoad(A.GetValue(), { 16, 16 }, "AOp");
+                    auto mfmaBMatrix = MFMALoad(B.GetValue(), { 16, 16 }, "BOp");
+                    auto mfmaCMatrix = MFMALoad(C.GetValue(), { 16, 16 }, "COp");
+                    auto mfmaDMatrix = MFMACompute(mfmaAMatrix, mfmaBMatrix, mfmaCMatrix);
+                    MFMAStore(mfmaDMatrix, C.GetValue());
+                });
+
+                auto sched = matmul.CreateSchedule();
+                auto [iOuter, iInner] = sched.Split(i, blockDim);
+                auto [jOuter, jInner] = sched.Split(j, blockDim);
+                auto plan = sched.CreateGPUPlan(gpuConfig);
+                plan.MapIndexToProcessor(iOuter, Processor::BlockY);
+                plan.MapIndexToProcessor(jOuter, Processor::BlockX);
+                plan.MapIndexToProcessor(iInner, Processor::ThreadY);
+                plan.MapIndexToProcessor(jInner, Processor::ThreadX);
+            });
+
+    accera::transforms::AcceraPassPipelineOptions opts{};
+    opts.dumpPasses = true;
+    opts.dumpIntraPassIR = false;
+    opts.gpuOnly = true;
+    opts.runtime = accera::value::ExecutionRuntime::ROCM;
+
+    RunConversionPasses(target, "mlir_nest_test_gemm_tiled_mfma_rocm_", opts);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "mlir_nest_test_tensorize_rocm_single_block_single_warp", "[gpu][nest][mfma][main]")
+{
+    const int64_t M = 16;
+    const int64_t N = 16;
+    const int64_t K = 16;
+
+    const int64_t blockDim = 16;
+    const int64_t tileSize = blockDim;
+
+    REQUIRE(M % tileSize == 0);
+    REQUIRE(N % tileSize == 0);
+
+    const int64_t gridDimX = N / blockDim;
+    const int64_t gridDimY = M / blockDim;
+
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::utilities::MemorySpace;
+    using accera::value::Value, accera::value::Matrix;
+
+    auto gpuConfig = targets::GPU{};
+    gpuConfig.grid = targets::Dim3(gridDimX, gridDimY);
+    gpuConfig.block = targets::Dim3(blockDim, blockDim);
+
+    auto matmul =
+        DeclareFunction("NestMatMul")
+            .Target(gpuConfig)
+            .Runtime(ExecutionRuntime::ROCM)
+            .Decorated(false)
+            .Public(true)
+            .Parameters(
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+            .Define([=](Matrix A, Matrix B, Matrix C) {
+                Nest nest({ M, N, K });
+                auto indices = nest.GetIndices();
+                Scalar i = indices[0];
+                Scalar j = indices[1];
+                Scalar k = indices[2];
+
+                nest.Set([&]() { C(i, j) += A(i, k) * B(k, j); });
+
+                auto sched = nest.CreateSchedule();
+                auto [iOuter, iInner] = sched.Split(i, blockDim);
+                auto [jOuter, jInner] = sched.Split(j, blockDim);
+                auto [kOuter, kInner] = sched.Split(k, 16);
+                auto [iInnerOuter, iInner2] = sched.Split(iInner, 2);
+                auto [jInnerOuter, jInner2] = sched.Split(jInner, 2);
+                sched.SetOrder({ iOuter, jOuter, iInnerOuter, jInnerOuter, kOuter, iInner2, jInner2, kInner });
+
+                auto plan = sched.CreateGPUPlan(gpuConfig);
+                plan.MapIndexToProcessor(iOuter, Processor::BlockY);
+                plan.MapIndexToProcessor(jOuter, Processor::BlockX);
+                plan.MapIndexToProcessor(iInnerOuter, Processor::ThreadY);
+                plan.MapIndexToProcessor(jInnerOuter, Processor::ThreadX);
+                plan.Tensorize({ iInner2, jInner2, kInner }, { 2, 2, 16 });
+            });
+
+    accera::transforms::AcceraPassPipelineOptions opts{};
+    opts.dumpPasses = true;
+    opts.dumpIntraPassIR = false;
+    opts.gpuOnly = true;
+    opts.runtime = accera::value::ExecutionRuntime::ROCM;
+
+    RunConversionPasses(target, "mlir_nest_test_tensorize_rocm_single_block_single_warp_", opts);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "mlir_nest_test_tensorize_rocm_single_block_multiple_warp", "[gpu][nest][mfma][main]")
+{
+    const int64_t M = 64;
+    const int64_t N = 64;
+    const int64_t K = 64;
+
+    const int64_t blockDim = 64;
+    const int64_t tileSize = blockDim;
+
+    REQUIRE(M % tileSize == 0);
+    REQUIRE(N % tileSize == 0);
+
+    const int64_t gridDimX = N / blockDim;
+    const int64_t gridDimY = M / blockDim;
+
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::utilities::MemorySpace;
+    using accera::value::Value, accera::value::Matrix;
+
+    auto gpuConfig = targets::GPU{};
+    gpuConfig.grid = targets::Dim3(gridDimX, gridDimY);
+    gpuConfig.block = targets::Dim3(blockDim, blockDim);
+
+    auto matmul =
+        DeclareFunction("NestMatMul")
+            .Target(gpuConfig)
+            .Runtime(ExecutionRuntime::ROCM)
+            .Decorated(false)
+            .Public(true)
+            .Parameters(
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+            .Define([=](Matrix A, Matrix B, Matrix C) {
+                Nest nest({ M, N, K });
+                auto indices = nest.GetIndices();
+                Scalar i = indices[0];
+                Scalar j = indices[1];
+                Scalar k = indices[2];
+
+                nest.Set([&]() { C(i, j) += A(i, k) * B(k, j); });
+
+                auto sched = nest.CreateSchedule();
+                auto [iOuter, iInner] = sched.Split(i, blockDim);
+                auto [jOuter, jInner] = sched.Split(j, blockDim);
+                auto [kOuter, kInner] = sched.Split(k, 16);
+                auto [iInnerOuter, iInner2] = sched.Split(iInner, 2);
+                auto [jInnerOuter, jInner2] = sched.Split(jInner, 2);
+                sched.SetOrder({ iOuter, jOuter, iInnerOuter, jInnerOuter, kOuter, iInner2, jInner2, kInner });
+
+                auto plan = sched.CreateGPUPlan(gpuConfig);
+                plan.MapIndexToProcessor(iOuter, Processor::BlockY);
+                plan.MapIndexToProcessor(jOuter, Processor::BlockX);
+                plan.MapIndexToProcessor(iInnerOuter, Processor::ThreadY);
+                plan.MapIndexToProcessor(jInnerOuter, Processor::ThreadX);
+                plan.Tensorize({ iInner2, jInner2, kInner }, { 2, 2, 16 });
+            });
+
+    accera::transforms::AcceraPassPipelineOptions opts{};
+    opts.dumpPasses = true;
+    opts.dumpIntraPassIR = false;
+    opts.gpuOnly = true;
+    opts.runtime = accera::value::ExecutionRuntime::ROCM;
+
+    RunConversionPasses(target, "mlir_nest_test_tensorize_rocm_single_block_multiple_warp_", opts);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "mlir_nest_test_tensorize_rocm_multiple_block_multiple_warp", "[gpu][nest][mfma][main]")
+{
+    const int64_t M = 1024;
+    const int64_t N = 1024;
+    const int64_t K = 1024;
+
+    const int64_t blockDim = 32;
+    const int64_t tileSize = blockDim;
+
+    REQUIRE(M % tileSize == 0);
+    REQUIRE(N % tileSize == 0);
+
+    const int64_t gridDimX = N / blockDim;
+    const int64_t gridDimY = M / blockDim;
+
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::utilities::MemorySpace;
+    using accera::value::Value, accera::value::Matrix;
+
+    auto gpuConfig = targets::GPU{};
+    gpuConfig.grid = targets::Dim3(gridDimX, gridDimY);
+    gpuConfig.block = targets::Dim3(blockDim, blockDim);
+
+    auto matmul =
+        DeclareFunction("NestMatMul")
+            .Target(gpuConfig)
+            .Runtime(ExecutionRuntime::ROCM)
+            .Decorated(false)
+            .Public(true)
+            .Parameters(
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
+                Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+            .Define([=](Matrix A, Matrix B, Matrix C) {
+                Nest nest({ M, N, K });
+                auto indices = nest.GetIndices();
+                Scalar i = indices[0];
+                Scalar j = indices[1];
+                Scalar k = indices[2];
+
+                nest.Set([&]() { C(i, j) += A(i, k) * B(k, j); });
+
+                auto sched = nest.CreateSchedule();
+                auto [iOuter, iInner] = sched.Split(i, blockDim);
+                auto [jOuter, jInner] = sched.Split(j, blockDim);
+                auto [kOuter, kInner] = sched.Split(k, 16);
+                auto [iInnerOuter, iInner2] = sched.Split(iInner, 2);
+                auto [jInnerOuter, jInner2] = sched.Split(jInner, 2);
+                sched.SetOrder({ iOuter, jOuter, iInnerOuter, jInnerOuter, kOuter, iInner2, jInner2, kInner });
+
+                auto plan = sched.CreateGPUPlan(gpuConfig);
+                plan.MapIndexToProcessor(iOuter, Processor::BlockY);
+                plan.MapIndexToProcessor(jOuter, Processor::BlockX);
+                plan.MapIndexToProcessor(iInnerOuter, Processor::ThreadY);
+                plan.MapIndexToProcessor(jInnerOuter, Processor::ThreadX);
+                plan.Tensorize({ iInner2, jInner2, kInner }, { 2, 2, 16 });
+            });
+
+    accera::transforms::AcceraPassPipelineOptions opts{};
+    opts.dumpPasses = true;
+    opts.dumpIntraPassIR = false;
+    opts.gpuOnly = true;
+    opts.runtime = accera::value::ExecutionRuntime::ROCM;
+
+    RunConversionPasses(target, "mlir_nest_test_tensorize_rocm_multiple_block_multiple_warp_", opts);
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
 }

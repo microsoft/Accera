@@ -9,6 +9,7 @@
 #include <optional>
 #include <queue>
 #include <set>
+#include <stack>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -31,7 +32,15 @@
 namespace mlir
 {
 class AffineForOp;
+class AffineLoadOp;
+class AffineStoreOp;
 class OpBuilder;
+
+namespace memref
+{
+    class LoadOp;
+    class StoreOp;
+} // namespace memref
 } // namespace mlir
 
 namespace accera::ir
@@ -248,16 +257,17 @@ namespace util
 
     mlir::Operation* CloneRecursively(mlir::OpBuilder& builder, mlir::Operation* op, mlir::BlockAndValueMapping& mapping);
 
-    std::optional<ir::value::ExecutionTarget> ResolveExecutionTarget(mlir::Operation* op);
-    std::optional<ir::value::ExecutionRuntime> ResolveExecutionRuntime(mlir::Operation* op);
+    std::optional<ir::value::ExecutionTarget> ResolveExecutionTarget(mlir::Operation* op, bool exact = false);
+    std::optional<ir::value::ExecutionRuntime> ResolveExecutionRuntime(mlir::Operation* op, bool exact = false);
+    std::optional<int64_t> ResolveWarpSize(mlir::Operation* op);
 
     mlir::Operation* CreateGPUControlBarrier(mlir::OpBuilder& builder, const std::string scope, std::optional<mlir::Location> loc = std::nullopt);
 
     std::optional<int64_t> GetDimSizeAt(const loopnest::Index& dimensionIndex, mlir::Operation* where);
 
-    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Operation* where);
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Operation* where, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices = {});
 
-    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Block* where);
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Block* where, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices = {});
 
     std::vector<loopnest::Index> GetIndicesForLoopIVs(const std::vector<mlir::Value>& loopIVs);
 
@@ -334,6 +344,43 @@ namespace util
         }
         return true;
     }
+
+    mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::AffineStoreOp op);
+    mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::AffineLoadOp op);
+    mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::memref::StoreOp op);
+    mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::memref::LoadOp op);
+
+    mlir::AffineMap ComposeAffineMapSequence(const std::vector<mlir::AffineMap>& maps);
+
+    struct TempOpCleanupGuard
+    {
+        TempOpCleanupGuard(std::stack<mlir::Operation*>* opStack, mlir::PatternRewriter& rewriter);
+        ~TempOpCleanupGuard();
+        std::stack<mlir::Operation*>* _opStack;
+        mlir::PatternRewriter& _rewriter;
+    };
+
+    mlir::Attribute MemorySpaceToAttribute(const value::MemorySpace& memorySpace, mlir::MLIRContext* context);
+    value::MemorySpace AttributeToMemorySpace(mlir::Attribute memorySpaceAttr);
+
+    // Similar to mlir::AffineMap::getMinorIdentityMap(), but instead this creates the mapping
+    // (d0, ..., dn) -> (d0, ... , dk) where n = (num dims - 1) and k = (num results - 1)
+    mlir::AffineMap GetMajorIdentityMap(unsigned dims, unsigned results, mlir::MLIRContext* context);
+
+    template <typename OpType>
+    mlir::Operation* GetHighestAncestorOfType(mlir::Operation* op)
+    {
+        mlir::Operation* current = nullptr;
+        mlir::Operation* parent = op->getParentOfType<OpType>();
+        while (parent != nullptr)
+        {
+            current = parent;
+            parent = current->getParentOfType<OpType>();
+        }
+        return current;
+    }
+
+    void EraseAllOpsInBlock(mlir::PatternRewriter& rewriter, mlir::Block& block);
 
 } // namespace util
 } // namespace accera::ir

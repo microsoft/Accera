@@ -5,8 +5,8 @@
 
 #include "AcceraTypes.h"
 
-#include <value/include/ScalarOperations.h>
 #include <value/include/FastMath.h>
+#include <value/include/ScalarOperations.h>
 
 namespace py = pybind11;
 namespace value = accera::value;
@@ -30,6 +30,7 @@ namespace
             .value("int32", value::ValueType::Int32, "4 byte signed integer")
             .value("int64", value::ValueType::Int64, "8 byte signed integer")
             .value("index", value::ValueType::Index, "index type")
+            .value("float16", value::ValueType::Float16, "2 byte floating point")
             .value("float32", value::ValueType::Float, "4 byte floating point")
             .value("float64", value::ValueType::Double, "8 byte floating point");
 
@@ -102,6 +103,9 @@ Args:
 )pbdoc")
             .def("__repr__", [](const util::MemoryLayout& layout) {
                 return layout.ToString();
+            })
+            .def("set_memory_space", [](util::MemoryLayout& layout, util::MemorySpace space) {
+                return layout.SetMemorySpace(space);
             })
             .def(py::self == py::self)
             .def_static("get_subarray_layout", [](const util::MemoryLayout& originalLayout, std::vector<int64_t> size) {
@@ -178,19 +182,19 @@ Args:
                  "value"_a,
                  "name"_a = "")
             .def(py::init([](const py::buffer buffer, const std::optional<util::MemoryLayout> layout, const std::string& name) {
-                // constructor for np.float32 python buffers, a special case because python floats are 64-bit
-                py::buffer_info info = buffer.request();
-                if (info.format != py::format_descriptor<float>::format())
-                {
-                    throw std::runtime_error("Unsupported buffer format");
-                }
-                assert(info.itemsize == sizeof(float));
-                std::vector<float> v(static_cast<float*>(info.ptr), static_cast<float*>(info.ptr) + info.size);
-                return value::Array(v, layout, name);
-            }),
-            "buffer"_a,
-            "memory_layout"_a,
-            "name"_a = "")
+                     // constructor for np.float32 python buffers, a special case because python floats are 64-bit
+                     py::buffer_info info = buffer.request();
+                     if (info.format != py::format_descriptor<float>::format())
+                     {
+                         throw std::runtime_error("Unsupported buffer format");
+                     }
+                     assert(info.itemsize == sizeof(float));
+                     std::vector<float> v(static_cast<float*>(info.ptr), static_cast<float*>(info.ptr) + info.size);
+                     return value::Array(v, layout, name);
+                 }),
+                 "buffer"_a,
+                 "memory_layout"_a,
+                 "name"_a = "")
             // .ADD_CTOR(bool) // BUG: bool requires std::vector nonsense
             .ADD_CTOR(int8_t)
             .ADD_CTOR(int16_t)
@@ -343,13 +347,13 @@ specific to the EmitterContext, specified by the Emittable type.
             })
             .def("__floordiv__", [](value::Scalar& a, value::Scalar& b) {
                 return (a.GetType() == value::ValueType::Float || a.GetType() == value::ValueType::Double) ?
-                    // Floor is limited to floating point types
-                    value::Floor(value::Divide(a, b)) : value::Divide(a, b);
+                           // Floor is limited to floating point types
+                           value::Floor(value::Divide(a, b)) : value::Divide(a, b);
             })
             .def("__and__", &value::BitwiseAnd)
             .def("__or__", &value::BitwiseOr)
             .def("__invert__", &value::BitwiseNot)
-            .def("__xor__",&value::BitwiseXOr)
+            .def("__xor__", &value::BitwiseXOr)
             .def("__pow__", &value::Pow)
             .def("copy", &value::Scalar::Copy)
             .def_property("name", &value::Scalar::GetName, &value::Scalar::SetName)

@@ -6,11 +6,12 @@
 
 #ifndef AFFINE_DIALECT_CPP_PRINTER_H_
 #define AFFINE_DIALECT_CPP_PRINTER_H_
-
-#include <cassert>
-#include <mlir/Dialect/Affine/IR/AffineOps.h>
-
+ 
 #include "CppPrinter.h"
+
+#include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Vector/VectorOps.h>
+
 
 namespace mlir
 {
@@ -40,6 +41,8 @@ namespace cpp_printer
         LogicalResult printAffineVectorStoreOp(AffineVectorStoreOp affineVecStoreOp);
 
         LogicalResult printAffineForOp(AffineForOp affineForOp);
+
+        LogicalResult printAffineYieldOp(AffineYieldOp affineYieldOp);
 
         LogicalResult printAffineMapFunc(AffineMap map, StringRef funcName);
 

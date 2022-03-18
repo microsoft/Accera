@@ -5,17 +5,19 @@
 
 #pragma once
 
+#include <array>
+
 namespace accera::ir
 {
 namespace executionPlan
 {
     struct TensorizationInfo
     {
-        std::vector<int> dim{16,16,16};
+        std::array<int, 3> dim{0,0,0};
     private:
         friend inline bool operator==(const TensorizationInfo& p1, const TensorizationInfo& p2)
         {
-            return p1.dim[0] == p2.dim[0] && p1.dim[1] == p2.dim[1] && p1.dim[2] == p2.dim[2];
+            return p1.dim == p2.dim;
         }
         friend inline bool operator!=(const TensorizationInfo& p1, const TensorizationInfo& p2)
         {

@@ -35,8 +35,10 @@ option(USE_MKL "Build with Intel MKL" OFF)
 
 option(USE_LIBCXX "Build with libc++ if using the Clang compiler" OFF)
 if(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+  if(USE_LIBCXX OR (CMAKE_HOST_SYSTEM_NAME STREQUAL Darwin))
     add_compile_options(-stdlib=libc++)
     link_libraries(-lc++ -lc++abi)
+  endif(USE_LIBCXX OR (CMAKE_HOST_SYSTEM_NAME STREQUAL Darwin))
 endif(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
 
 # Try to create a compilation database, which is useful to have when working
@@ -156,11 +158,14 @@ else()
   set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -ggdb3")
   set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -ggdb3")
   if(${CMAKE_CXX_COMPILER_ID} STREQUAL Clang)
+    if(CMAKE_BUILD_TYPE STREQUAL Debug)
+    # Set options for Control Flow Integrity
+      add_compile_options(-fsanitize=cfi)
+    endif(CMAKE_BUILD_TYPE STREQUAL Debug)
+
     add_compile_options(-Wno-backslash-newline-escape)
     add_compile_options(-Wno-self-assign)
     add_compile_options(-fcolor-diagnostics)
-    # Set options for Control Flow Integrity
-    add_compile_options(-fsanitize=cfi)
     # Enable Shadow Stack mitigation
     add_compile_options(-fsanitize=shadow-call-stack)
     # Exit after the first 2 errors are reported

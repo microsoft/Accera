@@ -209,6 +209,20 @@ def ConvertRangeValueOptimize : Pass<"optimize-range-value"> {
 }
 
 //===----------------------------------------------------------------------===//
+// BarrierOpt
+//===----------------------------------------------------------------------===//
+
+def BarrierOpt : Pass<"optimize-barriers"> {
+  let summary = "Optimize Barrier ops";
+  let constructor = "accera::transforms::value::createBarrierOptPass()";
+  let dependentDialects = [
+    "mlir::StandardOpsDialect",
+    "mlir::AffineDialect",
+    "mlir::memref::MemRefDialect"
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // ValueToLLVM
 //===----------------------------------------------------------------------===//
 
@@ -346,11 +360,14 @@ def FunctionPointerResolution : accModulePass<"resolve-function-pointers"> {
 def SerializeToHSACO : Pass<"serialize-to-hsaco", "::mlir::gpu::GPUModuleOp"> {
   let summary = "Serializes the GPU kernel to HSACO object (WIP)";
   let constructor = "accera::transforms::createSerializeToHSACOPass()";
-  let dependentDialects = ["mlir::ROCDL::ROCDLDialect", "mlir::gpu::GPUDialect"];
+  let dependentDialects = [
+    "mlir::gpu::GPUDialect",
+    "mlir::ROCDL::ROCDLDialect"
+  ];
   let options = [
     Option<"chip", "chip", "std::string",
           //  TODO: Should this default to something else?
-           "\"gfx906\"",
+           "\"gfx908\"",
            "The GPU target architecture.">
   ];
 }
@@ -372,7 +389,15 @@ def ConvertAcceraToSPIRV : Pass<"convert-accera-to-spirv", "::mlir::ModuleOp"> {
 def ConvertAcceraToROCDL : Pass<"convert-accera-to-rocdl", "::mlir::ModuleOp"> {
   let summary = "Convert Accera dialects to ROCDL dialect";
   let constructor = "accera::transforms::createAcceraToROCDLPass()";
-  let dependentDialects = ["mlir::ROCDL::ROCDLDialect", "mlir::gpu::GPUDialect"];
+  let dependentDialects = [
+    "accera::ir::value::ValueDialect",
+    "mlir::StandardOpsDialect",
+    "mlir::AffineDialect",
+    "mlir::vector::VectorDialect",
+    "mlir::memref::MemRefDialect",
+    "mlir::gpu::GPUDialect",
+    "mlir::ROCDL::ROCDLDialect"
+  ];
 }
 
 
@@ -383,7 +408,15 @@ def ConvertAcceraToROCDL : Pass<"convert-accera-to-rocdl", "::mlir::ModuleOp"> {
 def ConvertAcceraToNVVM : Pass<"convert-accera-to-nvvm", "::mlir::ModuleOp"> {
   let summary = "Convert Accera dialects to NVVM dialect";
   let constructor = "accera::transforms::createAcceraToNVVMPass()";
-  let dependentDialects = ["mlir::NVVM::NVVMDialect", "mlir::gpu::GPUDialect"];
+  let dependentDialects = [
+    "accera::ir::value::ValueDialect",
+    "mlir::StandardOpsDialect",
+    "mlir::AffineDialect",
+    "mlir::vector::VectorDialect",
+    "mlir::memref::MemRefDialect",
+    "mlir::gpu::GPUDialect",
+    "mlir::NVVM::NVVMDialect"
+  ];
 }
 
 #endif // ACCERA_CONVERSION_PASSES

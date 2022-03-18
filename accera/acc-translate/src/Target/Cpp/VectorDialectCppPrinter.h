@@ -27,6 +27,9 @@ namespace cpp_printer
         LogicalResult printDialectOperation(Operation* op, bool* skipped, bool* consumed) override;
         LogicalResult printExtractElementOp(vector::ExtractElementOp op);
         LogicalResult printInsertElementOp(vector::InsertElementOp op);
+        LogicalResult printLoadOp(vector::LoadOp op);
+        LogicalResult printStoreOp(vector::StoreOp op);
+        LogicalResult printBroadcastOp(vector::BroadcastOp op);
     };
 
 } // namespace cpp_printer

@@ -32,10 +32,12 @@ class SystemTarget(Enum):
 
 
 class Runtime(Enum):
-    DEFAULT = "default"
+    NONE = "none"
     CUDA = "cuda"
     ROCM = "rocm"
     VULKAN = "vulkan"
+    OPENMP = "openmp"
+    DEFAULT = "default"
 
 
 system_target_options = [t.value for t in SystemTarget]

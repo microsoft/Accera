@@ -524,6 +524,8 @@ struct ValueModuleOpRewritePattern : OpRewritePattern<vir::ValueModuleOp>
         {
             gpuModOp->setAttr(mlir::gpu::getDefaultGpuBinaryAnnotation(),
                               rewriter.getStringAttr("HSACO"));
+            gpuModOp->setAttr(vir::ValueModuleOp::getExecRuntimeAttrName(),
+                              ir::value::ExecutionRuntimeAttr::get(getContext(), vir::ExecutionRuntime::ROCM));
         }
     }
     void AddNVVMAnnotations(vir::ValueModuleOp module, PatternRewriter& rewriter) const
@@ -533,6 +535,8 @@ struct ValueModuleOpRewritePattern : OpRewritePattern<vir::ValueModuleOp>
         {
             gpuModOp->setAttr(mlir::gpu::getDefaultGpuBinaryAnnotation(),
                               rewriter.getStringAttr("CUBIN"));
+            gpuModOp->setAttr(vir::ValueModuleOp::getExecRuntimeAttrName(),
+                              ir::value::ExecutionRuntimeAttr::get(getContext(), vir::ExecutionRuntime::CUDA));
         }
     }
 
@@ -556,6 +560,8 @@ struct ValueModuleOpRewritePattern : OpRewritePattern<vir::ValueModuleOp>
         module->setAttr(
             mlir::spirv::getTargetEnvAttrName(),
             targetEnvAttr);
+        module->setAttr(vir::ValueModuleOp::getExecRuntimeAttrName(),
+                        ir::value::ExecutionRuntimeAttr::get(getContext(), vir::ExecutionRuntime::VULKAN));
     }
 
     LogicalResult matchAndRewrite(vir::ValueModuleOp vModuleOp, PatternRewriter& rewriter) const final
@@ -569,7 +575,7 @@ struct ValueModuleOpRewritePattern : OpRewritePattern<vir::ValueModuleOp>
             AddGPUAnnotations(module, rewriter);
 
             const auto runtime = utilir::ResolveExecutionRuntime(vModuleOp);
-            if (runtime == vir::ExecutionRuntime::Vulkan)
+            if (runtime == vir::ExecutionRuntime::VULKAN)
             {
                 AddVulkanAnnotations(module, rewriter);
             }
@@ -577,7 +583,7 @@ struct ValueModuleOpRewritePattern : OpRewritePattern<vir::ValueModuleOp>
             {
                 AddNVVMAnnotations(vModuleOp, rewriter);
             }
-            else if (runtime == vir::ExecutionRuntime::Rocm)
+            else if (runtime == vir::ExecutionRuntime::ROCM)
             {
                 AddRocmAnnotations(vModuleOp, rewriter);
             }
@@ -608,16 +614,16 @@ auto GetGPUModuleBinaryAnnotationAttrValue(vir::ExecutionRuntime runtime)
     switch (runtime)
     {
     // ref: mlir/test/Conversion/GPUToROCm/lower-rocdl-kernel-to-hsaco.mlir
-    case vir::ExecutionRuntime::Rocm:
+    case vir::ExecutionRuntime::ROCM:
         return "HSACO";
 
     // ref: mlir/test/Conversion/GPUToCUDA/lower-nvvm-kernel-to-cubin.mlir
     case vir::ExecutionRuntime::CUDA:
         return "CUBIN";
 
-    case vir::ExecutionRuntime::Vulkan:
+    case vir::ExecutionRuntime::VULKAN:
         [[fallthrough]];
-    case vir::ExecutionRuntime::Default:
+    case vir::ExecutionRuntime::DEFAULT:
         [[fallthrough]];
     default:
         return "";
@@ -635,8 +641,7 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
 
     void rewrite(FuncOp funcOp, PatternRewriter& rewriter) const final
     {
-        // TODO: Make this an attribute on the gpu.module
-        const auto gpuRuntime = vir::ExecutionRuntime::Rocm;
+        auto gpuRuntime = utilir::ResolveExecutionRuntime(funcOp).value_or(vir::ExecutionRuntime::NONE);
 
         auto loc = rewriter.getFusedLoc({ funcOp.getLoc(), RC_FILE_LOC(rewriter) });
         OpBuilder::InsertionGuard guard(rewriter);
@@ -647,6 +652,8 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
 
         auto gpuModule = rewriter.create<gpu::GPUModuleOp>(loc, newFuncName + "_module");
         gpuModule->setAttr(GetGPUModuleBinaryAnnotationAttrName(), rewriter.getStringAttr(GetGPUModuleBinaryAnnotationAttrValue(gpuRuntime)));
+        gpuModule->setAttr(vir::ValueModuleOp::getExecRuntimeAttrName(),
+                           ir::value::ExecutionRuntimeAttr::get(getContext(), gpuRuntime));
         gpuModule.setVisibility(mlir::SymbolTable::Visibility::Public);
 
         auto insertPt = utilir::GetTerminalInsertPoint<gpu::GPUModuleOp, gpu::ModuleEndOp>(gpuModule);
@@ -672,7 +679,7 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
 
         fnAttrs.emplace_back(rewriter.getIdentifier(mlir::gpu::GPUDialect::getKernelFuncAttrName()),
                              rewriter.getUnitAttr());
-        if (gpuRuntime == vir::ExecutionRuntime::Vulkan)
+        if (gpuRuntime == vir::ExecutionRuntime::VULKAN)
         {
             auto entryPointLocalSize = blockDimsLaunchConfig;
             assert(entryPointLocalSize.size() == kLocalSizeDimSize);

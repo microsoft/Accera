@@ -15,6 +15,10 @@
 
 using namespace mlir::gpu;
 
+namespace ir = accera::ir;
+namespace utilir = accera::ir::util;
+namespace vir = accera::ir::value;
+
 namespace mlir
 {
 namespace cpp_printer
@@ -33,22 +37,11 @@ namespace cpp_printer
 
     static int dimIndexToInteger(llvm::StringRef dim)
     {
-        if (dim == "x")
-        {
-            return 0;
-        }
-        else if (dim == "y")
-        {
-            return 1;
-        }
-        else if (dim == "z")
-        {
-            return 2;
-        }
-        else
-        {
-            return -1;
-        }
+        return StringSwitch<int>(dim)
+            .Case("x", 0)
+            .Case("y", 1)
+            .Case("z", 2)
+            .Default(-1);
     }
 
     static Optional<uint64_t> getGridDim(Operation* op, llvm::StringRef dim)
@@ -60,7 +53,7 @@ namespace cpp_printer
             {
                 return llvm::None;
             }
-            auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(fn->getAttrOfType<ArrayAttr>("gridSize"));
+            auto arrayAttr = utilir::ArrayAttrToVector<mlir::IntegerAttr>(fn->getAttrOfType<ArrayAttr>("gridSize"));
             auto idx = dimIndexToInteger(dim);
             if (idx == -1) return llvm::None;
             return arrayAttr[idx].getInt();
@@ -76,7 +69,7 @@ namespace cpp_printer
             {
                 return llvm::None;
             }
-            auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(fn->getAttrOfType<ArrayAttr>("blockSize"));
+            auto arrayAttr = utilir::ArrayAttrToVector<mlir::IntegerAttr>(fn->getAttrOfType<ArrayAttr>("blockSize"));
             auto idx = dimIndexToInteger(dim);
             if (idx == -1) return llvm::None;
             return arrayAttr[idx].getInt();
@@ -94,7 +87,7 @@ namespace cpp_printer
         const std::string varPrefix = std::string("gridDim_") + gridDimOp.dimension().str() + "_";
         auto idx = state.nameState.getOrCreateName(
             gridDimOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
-        os << "const uint " << idx << " = ";
+        os << "const unsigned int " << idx << " = ";
         if (auto c = getGridDim(gridDimOp, gridDimOp.dimension()); c)
         {
             os << c.getValue();
@@ -116,7 +109,7 @@ namespace cpp_printer
         const std::string varPrefix = std::string("blockDim_") + blockDimOp.dimension().str() + "_";
         auto idx = state.nameState.getOrCreateName(
             blockDimOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
-        os << "const uint " << idx << " = ";
+        os << "const unsigned int " << idx << " = ";
         if (auto c = getBlockDim(blockDimOp, blockDimOp.dimension()); c)
         {
             os << c.getValue();
@@ -138,7 +131,7 @@ namespace cpp_printer
         const std::string varPrefix = std::string("blockIdx_") + bidOp.dimension().str() + "_";
         auto idx = state.nameState.getOrCreateName(
             bidOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
-        os << "const uint " << idx << " = ";
+        os << "const unsigned int " << idx << " = ";
         if (auto c = getGridDim(bidOp, bidOp.dimension()); c)
         {
             os << "(blockIdx." << bidOp.dimension() << "%" << c.getValue() << ")";
@@ -161,7 +154,7 @@ namespace cpp_printer
         const std::string varPrefix = std::string("threadIdx_") + tidOp.dimension().str() + "_";
         auto idx = state.nameState.getOrCreateName(
             tidOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
-        os << "const uint " << idx << " = ";
+        os << "const unsigned int " << idx << " = ";
         if (auto c = getBlockDim(tidOp, tidOp.dimension()); c)
         {
             os << "(threadIdx." << tidOp.dimension() << "%" << c.getValue() << ")";
@@ -190,10 +183,10 @@ namespace cpp_printer
             .Case<BlockIdOp>(handler)
             .Case<GPUFuncOp>(handler)
             .Case<GPUModuleOp>(handler)
+            .Case<gpu::ReturnOp>(handler)
             .Case<GridDimOp>(handler)
             .Case<LaunchFuncOp>(handler)
             .Case<ModuleEndOp>(handler)
-            .Case<ReturnOp>(handler)
             .Case<ThreadIdOp>(handler)
             .Default([&](Operation*) { *consumed = false; });
 
@@ -289,7 +282,7 @@ namespace cpp_printer
 using vfloatx2_t = float __attribute__((ext_vector_type(2)));
 using vfloatx4_t = float __attribute__((ext_vector_type(4)));
 using vfloatx16_t = float __attribute__((ext_vector_type(16)));
-#else
+#elif defined(__CUDA__)
 #include "cuda_fp16.h"
 #endif // !defined(__HIP_PLATFORM_AMD__)
 
@@ -304,13 +297,27 @@ using vfloatx16_t = float __attribute__((ext_vector_type(16)));
         gpu::GPUFuncOp funcOp,
         bool trailingSemiColon)
     {
+        auto execRuntime = utilir::ResolveExecutionRuntime(funcOp, /* exact */ false);
+        if (execRuntime && (execRuntime != vir::ExecutionRuntime::CUDA &&
+                            execRuntime != vir::ExecutionRuntime::ROCM &&
+                            // TODO: ugh. remove
+                            execRuntime != vir::ExecutionRuntime::DEFAULT))
+        {
+            return funcOp.emitError("Expected either CUDA or ROCm runtimes on GPU function");
+        }
+
+        if (funcOp->hasAttr(ir::HeaderDeclAttrName) && funcOp->hasAttr(ir::RawPointerAPIAttrName))
+        {
+            os << "extern \"C\" ";
+        }
+
         // TODO: We treat all functions to be CUDA global functions.
         // Need to add support for device functions
         os << "__global__ ";
 
         if (state.hasRuntime(Runtime::CUDA) && funcOp->hasAttrOfType<mlir::ArrayAttr>("blockSize"))
         {
-            auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(funcOp->getAttrOfType<mlir::ArrayAttr>("blockSize"));
+            auto arrayAttr = utilir::ArrayAttrToVector<mlir::IntegerAttr>(funcOp->getAttrOfType<mlir::ArrayAttr>("blockSize"));
             auto blockSizeX = arrayAttr[0].getInt();
             auto blockSizeY = arrayAttr[1].getInt();
             auto blockSizeZ = arrayAttr[2].getInt();
@@ -390,7 +397,7 @@ using vfloatx16_t = float __attribute__((ext_vector_type(16)));
         return success();
     }
 
-    LogicalResult GpuDialectCppPrinter::printOp(ReturnOp)
+    LogicalResult GpuDialectCppPrinter::printOp(gpu::ReturnOp)
     {
         return success();
     }

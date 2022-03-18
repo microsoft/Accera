@@ -92,7 +92,7 @@ module @optimized_matmul attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:3
         "accln.schedule"(%55, %57) ( {
           "accln.exec_plan"() {exec_target = 0 : i64} : () -> () loc(unknown)
           accln.terminator loc(unknown)
-        }) {domain = #xdomain0, kernels = [@scheduled__], loopattrs = [{rcxp_vectorizationInfo = #accxp<"vectorizationinfo{8,16,1}">, scheduledIndex = #accln<"index{j_i_i_i,16}">}], order = [#accln<"index{j_o,3}">, #accln<"index{k_o,5}">, #accln<"index{i_o,7}">, #accln<"index{j_i_o,13}">, #accln<"index{k_i_o,9}">, #accln<"index{i_i_o,11}">, #accln<"index{k_i_i,10}">, #accln<"index{i_i_i,12}">, #accln<"index{j_i_i_o,15}">, #accln<"index{j_i_i_i,16}">], parallel = [], unroll_and_jammed = {}, unrolled = [15 : index, 11 : index]} : (index, index) -> () loc(unknown)
+        }) {domain = #xdomain0, kernels = [@scheduled__], loopattrs = [{accxp_vectorizationInfo = #accxp<"vectorizationinfo{8,16,1}">, scheduledIndex = #accln<"index{j_i_i_i,16}">}], order = [#accln<"index{j_o,3}">, #accln<"index{k_o,5}">, #accln<"index{i_o,7}">, #accln<"index{j_i_o,13}">, #accln<"index{k_i_o,9}">, #accln<"index{i_i_o,11}">, #accln<"index{k_i_i,10}">, #accln<"index{i_i_i,12}">, #accln<"index{j_i_i_o,15}">, #accln<"index{j_i_i_i,16}">], parallel = [], unroll_and_jammed = {}, unrolled = [15 : index, 11 : index]} : (index, index) -> () loc(unknown)
         accln.terminator loc(unknown)
       }) {domain = #domain0, exec_target = 0 : i64, kernels = []} : () -> () loc(unknown)
       accv.return loc(unknown)

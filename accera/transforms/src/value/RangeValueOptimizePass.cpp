@@ -60,8 +60,20 @@ struct RangeValue
         min = APInt(maxBitWidth, min_, true);
         max = APInt(maxBitWidth, max_, true);
     }
-    RangeValue(APInt min, APInt max) :
-        min(min), max(max) {}
+    RangeValue(APInt min_, APInt max_)
+    {
+        if (min_.isSingleWord() && max_.isSingleWord())
+        {
+            min = APInt(maxBitWidth, min_.getSExtValue(), true);
+            max = APInt(maxBitWidth, max_.getSExtValue(), true);
+        }
+        else
+        {
+            // is not an int64_t, then the range is not valid
+            min = negInf();
+            max = inf();
+        }
+    }
 
     RangeValue(DictionaryAttr dict)
     {
@@ -187,19 +199,48 @@ struct RangeValue
         return RangeValue(lowerbound, upperbound);
     }
 
-    RangeValue join(const RangeValue& other) const
+    RangeValue operator%(const RangeValue& other) const
     {
-        if (isUnBounded())
+        if (isUnBounded() || other.isUnBounded())
         {
-            return other;
+            return RangeValue();
         }
-        if (other.isUnBounded())
+        auto zero = APInt(maxBitWidth, 0, true);
+        if (other.isConstant(zero))
         {
-            return *this;
+            // handle mod 0
+            return RangeValue();
         }
-        return RangeValue(min.slt(other.min) ? min : other.min,
-                          max.sgt(other.max) ? max : other.max);
+
+        SmallVector<APInt, 4> cases;
+        if (isBoundedLower())
+        {
+            if (other.isBoundedLower())
+            {
+                cases.emplace_back(min.srem(other.min));
+            }
+            if (other.isBoundedUpper())
+            {
+                cases.emplace_back(min.srem(other.max));
+            }
+        }
+        if (isBoundedUpper())
+        {
+            if (other.isBoundedLower())
+            {
+                cases.emplace_back(max.srem(other.min));
+            }
+            if (other.isBoundedUpper())
+            {
+                cases.emplace_back(max.srem(other.max));
+            }
+        }
+        auto [minElem, maxElem] = std::minmax_element(cases.begin(), cases.end(), [](const APInt& a, const APInt& b) {
+            return a.slt(b);
+        });
+        return RangeValue(*minElem, *maxElem);
     }
+
     bool operator==(const RangeValue& other) const
     {
         return min.eq(other.min) && max.eq(other.max);
@@ -239,13 +280,33 @@ struct RangeValue
     {
         return !isUnBounded();
     }
+    bool isBoundedLower() const
+    {
+        return !isUnBoundedLower();
+    }
+    bool isBoundedUpper() const
+    {
+        return !isUnBoundedUpper();
+    }
+    bool isUnBoundedLower() const
+    {
+        return min.eq(negInf());
+    }
+    bool isUnBoundedUpper() const
+    {
+        return max.eq(inf());
+    }
     bool isUnBounded() const
     {
-        return min.eq(negInf()) || max.eq(inf());
+        return isUnBoundedLower() || isUnBoundedUpper();
     }
     bool isConstant() const
     {
         return isBounded() && min.eq(max);
+    }
+    bool isConstant(APInt val) const
+    {
+        return isConstant() && min.eq(val);
     }
     APInt getConstant() const
     {
@@ -295,7 +356,7 @@ struct RangeValueAnalysis
             if (nextOp == worklist.end())
                 break;
             Operation* op = *nextOp;
-            worklist.erase(op); 
+            worklist.erase(op);
 
             auto range = resolveRangeValue(op);
 
@@ -365,11 +426,13 @@ private:
             .Case([&](ConstantOp op) { return resolveRangeValue(op); })
             .Case([&](ConstantIndexOp op) { return resolveRangeValue(op); })
             .Case([&](ConstantIntOp op) { return resolveRangeValue(op); })
+            .Case([&](IndexCastOp op) { return resolveRangeValue(op); })
             .Case([&](gpu::ThreadIdOp op) { return resolveRangeValue(op); })
             .Case([&](gpu::BlockIdOp op) { return resolveRangeValue(op); })
             .Case([&](AddIOp op) { return resolveRangeValue(op); })
             .Case([&](SubIOp op) { return resolveRangeValue(op); })
             .Case([&](MulIOp op) { return resolveRangeValue(op); })
+            .Case([&](SignedRemIOp op) { return resolveRangeValue(op); })
             .Case([&](scf::ForOp op) { return resolveRangeValue(op); })
             .Case([&](AffineForOp op) { return resolveRangeValue(op); })
             .Default([&](Operation*) { return RangeValue(); });
@@ -393,6 +456,16 @@ private:
     {
         auto value = op.getValue();
         return RangeValue(value, value);
+    }
+    RangeValue resolveRangeValue(IndexCastOp op)
+    {
+        auto val = op.in();
+        if (auto defOp = val.getDefiningOp())
+        {
+            return resolveRangeValue(defOp);
+        }
+        // otherwise this is a BlockArgument which conservatively we assume has no range
+        return RangeValue();
     }
     RangeValue resolveRangeValue(gpu::ThreadIdOp op)
     {
@@ -441,7 +514,12 @@ private:
         auto operands = resolveOperands(op);
         return operands[0] * operands[1];
     }
-    RangeValue resolveLoopBounds(AffineForOp op)
+    RangeValue resolveRangeValue(SignedRemIOp op)
+    {
+        auto operands = resolveOperands(op);
+        return operands[0] % operands[1];
+    }
+    RangeValue resolveRangeValue(AffineForOp op)
     {
         return op.hasConstantBounds() ? RangeValue(op.getConstantLowerBound(), op.getConstantUpperBound()) : RangeValue();
     }
@@ -471,7 +549,7 @@ struct RangeValueOptimizePass : public ConvertRangeValueOptimizeBase<RangeValueO
                 Value val = builder.create<ConstantOp>(op->getLoc(), i1Ty, builder.getBoolAttr(classification == CmpIOpClassification::AlwaysTrue));
                 op.replaceAllUsesWith(val);
                 op.erase();
-            } 
+            }
         });
     }
 
@@ -498,7 +576,7 @@ private:
         if (lhsRange.isUnBounded() || rhsRange.isUnBounded())
         {
             return CmpIOpClassification::Unknown;
-        } 
+        }
 
         switch (predicate)
         {

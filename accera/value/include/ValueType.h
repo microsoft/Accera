@@ -19,6 +19,10 @@ namespace value
 {
 
     enum class index_t : int64_t {};
+    struct float16_t {
+        using underlying_type = float;
+        float data;
+    };
 
     /// <summary> An enumeration of primitive types supported by the value library </summary>
     enum class ValueType
@@ -41,6 +45,8 @@ namespace value
         Int32,
         /// <summary> 8 byte signed integer </summary>
         Int64,
+        /// <summary> 2 byte floating point </summary>
+        Float16,
         /// <summary> 4 byte floating point </summary>
         Float,
         /// <summary> 8 byte floating point </summary>
@@ -116,6 +122,10 @@ namespace value
         else if constexpr (std::is_same_v<T, index_t>)
         {
             return ValueType::Index;
+        }
+        else if constexpr (std::is_same_v<T, float16_t>)
+        {
+            return ValueType::Float16;
         }
         else if constexpr (std::is_same_v<T, float>)
         {

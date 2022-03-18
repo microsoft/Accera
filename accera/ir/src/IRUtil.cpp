@@ -291,15 +291,18 @@ namespace util
         return builder.clone(*op, mapping);
     }
 
-    std::optional<vir::ExecutionTarget> ResolveExecutionTarget(mlir::Operation* op)
+    std::optional<vir::ExecutionTarget> ResolveExecutionTarget(mlir::Operation* op, bool exact /* = false */)
     {
-        // modules can define the execution runtime
-        // search if the current module specifies the execution runtime
+        // modules can define the execution target
+        // search if the current module specifies the execution target
         auto getExecTarget = [](Operation* op) { return op->getAttrOfType<vir::ExecutionTargetAttr>(vir::ValueFuncOp::getExecTargetAttrName()); };
 
         Operation* execAwareOp = op;
         auto execTargetAttr = getExecTarget(execAwareOp);
-        while (execAwareOp && !execAwareOp->hasTrait<mlir::OpTrait::FunctionLike>() && !execTargetAttr)
+        while (!exact &&
+               execAwareOp &&
+               !execAwareOp->hasTrait<mlir::OpTrait::FunctionLike>() &&
+               !execTargetAttr)
         {
             if ((execAwareOp = execAwareOp->getParentWithTrait<mlir::OpTrait::FunctionLike>()))
             {
@@ -314,7 +317,7 @@ namespace util
 
         assert(execAwareOp && "Unable to find a function-like op which surrounds the curent op");
         return mlir::TypeSwitch<Operation*, std::optional<vir::ExecutionTarget>>(execAwareOp)
-            .Case([=](mlir::gpu::GPUFuncOp op) {
+            .Case([](mlir::gpu::GPUFuncOp op) {
                 return vir::ExecutionTarget::GPU;
             })
             .Case([](mlir::spirv::FuncOp op) {
@@ -323,51 +326,63 @@ namespace util
             .Case([](mlir::FuncOp op) {
                 return vir::ExecutionTarget::CPU;
             })
+            .Case([](mlir::LLVM::LLVMFuncOp op) {
+                return vir::ExecutionTarget::CPU;
+            })
             .Default([](Operation* op) {
                 op->emitWarning("Couldn't determine execution environment");
                 return std::nullopt;
             });
     }
 
-    std::optional<vir::ExecutionRuntime> ResolveExecutionRuntime(mlir::Operation* op)
+    std::optional<vir::ExecutionRuntime> ResolveExecutionRuntime(mlir::Operation* op, bool exact /* = false */)
     {
-        // search the rcv.Module for the runtime
-        std::function getExecRuntime = [](Operation* op) {
-            return op->getAttrOfType<vir::ExecutionRuntimeAttr>(vir::ValueModuleOp::getExecRuntimeAttrName());
+        auto execRuntimeAttrName = ir::value::ValueModuleOp::getExecRuntimeAttrName();
+
+        auto getExecRuntime = [&](Operation* op) {
+            return op->getAttrOfType<vir::ExecutionRuntimeAttr>(execRuntimeAttrName);
         };
+
         Operation* moduleLikeOp = op;
         auto execRuntimeAttr = getExecRuntime(moduleLikeOp);
-        while (moduleLikeOp && !execRuntimeAttr)
+        // if the runtime attribute is not found in the rcv.module, then
+        // search the mlir.module for the runtime (using a fully qualified attribute name) 
+        if (!exact && op && !execRuntimeAttr)
         {
-            if ((moduleLikeOp = moduleLikeOp->getParentOfType<vir::ValueModuleOp>()))
+            if ((moduleLikeOp = op->getParentOfType<vir::ValueModuleOp>()))
+            {
+                execRuntimeAttr = getExecRuntime(moduleLikeOp);
+            }
+            if (!execRuntimeAttr && (moduleLikeOp = op->getParentOfType<mlir::ModuleOp>()))
             {
                 execRuntimeAttr = getExecRuntime(moduleLikeOp);
             }
         }
 
-        // if the runtime attribute is not found in the rcv.module, then
-        // search the mlir.module for the runtime (using a fully qualified attribute name)
+        // the runtime attribute was not set by the user, so set it to NONE
         if (!execRuntimeAttr)
         {
-            auto execRuntimeAttrName = ir::value::ValueModuleOp::getExecRuntimeAttrName();
-            getExecRuntime = [=](Operation* op) { return op->getAttrOfType<vir::ExecutionRuntimeAttr>(execRuntimeAttrName.str()); };
-
-            moduleLikeOp = op;
-            execRuntimeAttr = getExecRuntime(moduleLikeOp);
-            while (moduleLikeOp && !execRuntimeAttr)
-            {
-                if ((moduleLikeOp = moduleLikeOp->getParentOfType<mlir::ModuleOp>()))
-                    execRuntimeAttr = getExecRuntime(moduleLikeOp);
-            }
-        }
-
-        // the runtime attribute was not set by the user, so set it as default
-        if (!execRuntimeAttr)
-        {
-            return vir::ExecutionRuntime::Default;
+            return vir::ExecutionRuntime::NONE;
         }
 
         return execRuntimeAttr.getValue();
+    }
+
+    std::optional<int64_t> ResolveWarpSize(mlir::Operation* op)
+    {
+        auto runtime = ResolveExecutionRuntime(op);
+        if (runtime == vir::ExecutionRuntime::CUDA)
+        {
+            return 32;
+        }
+        else if (runtime == vir::ExecutionRuntime::ROCM)
+        {
+            return 64;
+        }
+        else
+        {
+            return std::nullopt;
+        }
     }
 
     mlir::Operation* CreateGPUControlBarrier(mlir::OpBuilder& builder, const std::string scope, std::optional<mlir::Location> loc /*= std::nullopt*/)
@@ -409,14 +424,32 @@ namespace util
         return {};
     }
 
-    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Operation* where)
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Operation* where, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices)
     {
-        return GetCurrentIndexIVs(loopIndices, where->getBlock());
+        return GetCurrentIndexIVs(loopIndices, where->getBlock(), unrealizedLoopNestIndices);
     }
 
-    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Block* where)
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Block* where, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices)
     {
         std::vector<mlir::Value> ivs(loopIndices.size());
+
+        // First check the unrealizedLoopNestIndices for any loopnest indices that haven't been resolved to full AffineForOps yet
+        for (const auto& indexIVPair : unrealizedLoopNestIndices)
+        {
+            const auto& currentIndex = indexIVPair.first;
+            const auto& currentIV = indexIVPair.second;
+            auto it = std::find_if(loopIndices.begin(), loopIndices.end(), [&](const loopnest::Index& searchIndex) {
+                return (searchIndex == currentIndex) ||
+                       (searchIndex.GetId() == loopnest::Index::DefaultID &&
+                        searchIndex.GetName() == currentIndex.GetName());
+            });
+            if (it != loopIndices.end())
+            {
+                size_t idx = std::distance(loopIndices.begin(), it);
+                assert(ivs[idx] == nullptr && "Found same index on multiple loops");
+                ivs[idx] = currentIV;
+            }
+        }
 
         auto blockParentOp = where->getParentOp();
         mlir::AffineForOp currentParentLoop;
@@ -434,7 +467,16 @@ namespace util
             if (auto indexAttr = currentParentLoop->getAttrOfType<loopnest::IndexAttr>("index"))
             {
                 auto currentIndex = indexAttr.getValue();
-                auto it = std::find(loopIndices.begin(), loopIndices.end(), currentIndex);
+
+                // If the indices we're looking for have a default ID, then only compare by the name of the index
+                // This is to support well-known named loops created internally by Accera
+                // If the ID's are not the default, then compare IDs as well
+                auto it = std::find_if(loopIndices.begin(), loopIndices.end(), [&](const loopnest::Index& searchIndex) {
+                    return (searchIndex == currentIndex) ||
+                           (searchIndex.GetId() == loopnest::Index::DefaultID &&
+                            searchIndex.GetName() == currentIndex.GetName());
+                });
+
                 if (it != loopIndices.end())
                 {
                     size_t idx = std::distance(loopIndices.begin(), it);
@@ -624,8 +666,7 @@ namespace util
         }
         // Move the loop body operations, except for its terminator, to the loop's
         // containing block.
-
-        rewriter.eraseOp(&forOp.getBody()->back());
+        rewriter.eraseOp(forOp.getBody()->getTerminator());
 
         parentBlock->getOperations().splice(mlir::Block::iterator(forOp),
                                             forOp.getBody()->getOperations());
@@ -715,5 +756,108 @@ namespace util
         assert(false && "Neither op found in block");
     }
 
+    mlir::AffineMap ComposeAffineMapSequence(const std::vector<mlir::AffineMap>& maps)
+    {
+        if (maps.empty())
+        {
+            return mlir::AffineMap();
+        }
+        else
+        {
+            auto accessMapComposition = maps.front();
+            for (size_t mapIdx = 1; mapIdx < maps.size(); ++mapIdx)
+            {
+                accessMapComposition = maps[mapIdx].compose(accessMapComposition);
+            }
+            return accessMapComposition;
+        }
+    }
+
+    template <typename MemoryOp>
+    mlir::AffineMap GetMemRefIndexToMemoryLocationMap(mlir::MLIRContext* context, MemoryOp op)
+    {
+        auto memRefType = op.memref().getType().template cast<mlir::MemRefType>();
+        std::vector<mlir::AffineMap> memRefMaps = memRefType.getAffineMaps().vec();
+        if (memRefMaps.empty())
+        {
+            auto stridedLayout = mlir::makeCanonicalStridedLayoutExpr(memRefType.getShape(), context);
+            memRefMaps.push_back(mlir::AffineMap::get(memRefType.getRank(), 0, stridedLayout));
+        }
+        auto accessMapComposition = ComposeAffineMapSequence(memRefMaps);
+        assert(accessMapComposition.getNumResults() == 1);
+        return accessMapComposition;
+    }
+
+    template <typename AffineMemoryOp>
+    mlir::AffineMap GetAffineOpIndexToMemoryLocationMap(mlir::MLIRContext* context, AffineMemoryOp op)
+    {
+        auto composedMemRefMap = GetMemRefIndexToMemoryLocationMap(context, op);
+        mlir::AffineMap affineOpMap = op.getAffineMapAttr().getValue();
+        mlir::AffineMap accessMapComposition = composedMemRefMap.compose(affineOpMap);
+        assert(accessMapComposition.getNumResults() == 1);
+        return accessMapComposition;
+    }
+
+    mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::AffineStoreOp op)
+    {
+        return GetAffineOpIndexToMemoryLocationMap(context, op);
+    }
+
+    mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::AffineLoadOp op)
+    {
+        return GetAffineOpIndexToMemoryLocationMap(context, op);
+    }
+
+    mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::memref::StoreOp op)
+    {
+        return GetMemRefIndexToMemoryLocationMap(context, op);
+    }
+
+    mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::memref::LoadOp op)
+    {
+        return GetMemRefIndexToMemoryLocationMap(context, op);
+    }
+
+    TempOpCleanupGuard::TempOpCleanupGuard(std::stack<mlir::Operation*>* opStack, mlir::PatternRewriter& rewriter) :
+        _opStack(opStack),
+        _rewriter(rewriter)
+    {}
+
+    TempOpCleanupGuard::~TempOpCleanupGuard()
+    {
+        while (!_opStack->empty())
+        {
+            auto eraseOp = _opStack->top();
+            assert(eraseOp->use_empty());
+            _rewriter.eraseOp(eraseOp);
+            _opStack->pop();
+        }
+    }
+
+    mlir::Attribute MemorySpaceToAttribute(const value::MemorySpace& memorySpace, mlir::MLIRContext* context)
+    {
+        return mlir::IntegerAttr::get(mlir::IntegerType::get(context, 64), static_cast<int64_t>(memorySpace));
+    }
+
+    value::MemorySpace AttributeToMemorySpace(mlir::Attribute memorySpaceAttr)
+    {
+        return static_cast<value::MemorySpace>(memorySpaceAttr.cast<mlir::IntegerAttr>().getInt());
+    }
+
+    mlir::AffineMap GetMajorIdentityMap(unsigned dims, unsigned results, mlir::MLIRContext* context)
+    {
+        assert(dims >= results && "Dimension mismatch");
+        auto id = mlir::AffineMap::getMultiDimIdentityMap(dims, context);
+        return mlir::AffineMap::get(dims, 0, id.getResults().take_front(results), context);
+    }
+
+    void EraseAllOpsInBlock(mlir::PatternRewriter& rewriter, mlir::Block& block)
+    {
+        for (auto& op : llvm::make_early_inc_range(llvm::reverse(block)))
+        {
+            assert(op.use_empty() && "expected 'op' to have no uses");
+            rewriter.eraseOp(&op);
+        }
+    }
 } // namespace util
 } // namespace accera::ir

@@ -224,7 +224,7 @@ namespace value
         std::optional<Scalar> _pointer;
 
         ExecutionTarget _execTarget;
-        ExecutionRuntime _execRuntime = ExecutionRuntime::Default;
+        ExecutionRuntime _execRuntime = ExecutionRuntime::DEFAULT;
         FunctionInlining _inlineState = FunctionInlining::defaultInline;
         bool _isDecorated = true;
         bool _isPublic = false;

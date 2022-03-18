@@ -12,3 +12,4 @@ packaging
 plotly
 kaleido
 hatlib
+varname

@@ -6,11 +6,12 @@
 
 #pragma once
 
+#include <mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/Dialect.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Dialect.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/TypeUtilities.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
@@ -29,7 +30,10 @@ using llvm::SmallVectorImpl;
 using llvm::StringRef;
 
 using mlir::AffineMap;
+using mlir::AffineMapAccessInterface;
 using mlir::AffineMapAttr;
+using mlir::AffineReadOpInterface;
+using mlir::AffineWriteOpInterface;
 using mlir::Attribute;
 using mlir::Block;
 using mlir::Builder;

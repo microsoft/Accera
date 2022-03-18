@@ -119,7 +119,10 @@ void DefineOperations(py::module& module)
              [=](std::string pos) {
                  return getFromGPUIndex(value::GPU::ThreadId(), pos);
              })
-        .def("Barrier", &value::GPU::Barrier)
-        .def("MFMA", &value::MFMA);
+        .def(
+            "Barrier", [=](value::GPU::BarrierScope scope) {
+                return value::GPU::Barrier(scope);
+            },
+            "scope"_a = value::GPU::BarrierScope::Block);
 }
 } // namespace accera::python::lang

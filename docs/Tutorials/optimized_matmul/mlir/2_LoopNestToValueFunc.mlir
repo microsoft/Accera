@@ -31,7 +31,7 @@ module @optimized_matmul attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:3
                           %5 = affine.apply affine_map<(d0, d1, d2) -> (d0 + d1 + d2 * 8)>(%arg3, %arg6, %arg8)
                           %6 = vector.transfer_read %arg1[%4, %5], %cst_0 {masked = [false]} : memref<128x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>, vector<8xf32>
                           store %6, %0[%arg7, %arg8] : memref<1x16xvector<8xf32>>
-                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_1,24}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{i_0,23}">, #accln<"index{i_1,24}">], subdomainSize = [1, 1]}
+                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_1,24}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{i_0,23}">, #accln<"index{i_1,24}">], subdomainSize = [1, 1]}
                       } {begin = 0 : i64, end = 1 : i64, index = #accln<"index{i_0,23}">, subdomainIndexOrder = [#accln<"index{i_0,23}">, #accln<"index{i_1,24}">], subdomainSize = [1, 16]}
                       accv.return
                     }) {exec_target = 0 : i64, sym_name = "NestFunction_15", type = () -> ()} : () -> ()
@@ -40,7 +40,7 @@ module @optimized_matmul attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:3
                         affine.for %arg8 = 0 to 16 {
                           %4 = load %0[%arg7, %arg8] : memref<1x16xvector<8xf32>>
                           affine.store %4, %3[((%arg6 + %arg8 * 8) floordiv 16) mod 16, (%arg5 + %arg7) mod 128, (((%arg6 + %arg8 * 8) mod 16) floordiv 8) mod 2] : memref<16x128x2xvector<8xf32>>
-                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_1,26}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{i_0,25}">, #accln<"index{i_1,26}">], subdomainSize = [1, 1]}
+                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_1,26}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{i_0,25}">, #accln<"index{i_1,26}">], subdomainSize = [1, 1]}
                       } {begin = 0 : i64, end = 1 : i64, index = #accln<"index{i_0,25}">, subdomainIndexOrder = [#accln<"index{i_0,25}">, #accln<"index{i_1,26}">], subdomainSize = [1, 16]}
                       accv.return
                     }) {exec_target = 0 : i64, sym_name = "NestFunction_14", type = () -> ()} : () -> ()
@@ -52,7 +52,7 @@ module @optimized_matmul attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:3
                           %5 = affine.apply affine_map<(d0, d1, d2) -> (d0 + d1 + d2 * 8)>(%arg3, %arg6, %arg8)
                           %6 = vector.transfer_read %arg1[%4, %5], %cst_0 : memref<128x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>, vector<8xf32>
                           store %6, %0[%arg7, %arg8] : memref<1x16xvector<8xf32>>
-                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_1,28}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{i_0,27}">, #accln<"index{i_1,28}">], subdomainSize = [1, 1]}
+                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_1,28}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{i_0,27}">, #accln<"index{i_1,28}">], subdomainSize = [1, 1]}
                       } {begin = 0 : i64, end = 1 : i64, index = #accln<"index{i_0,27}">, subdomainIndexOrder = [#accln<"index{i_0,27}">, #accln<"index{i_1,28}">], subdomainSize = [1, 16]}
                       accv.return
                     }) {exec_target = 0 : i64, sym_name = "NestFunction_13", type = () -> ()} : () -> ()
@@ -61,7 +61,7 @@ module @optimized_matmul attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:3
                         affine.for %arg8 = 0 to 16 {
                           %4 = load %0[%arg7, %arg8] : memref<1x16xvector<8xf32>>
                           affine.store %4, %3[((%arg6 + %arg8 * 8) floordiv 16) mod 16, (%arg5 + %arg7) mod 128, (((%arg6 + %arg8 * 8) mod 16) floordiv 8) mod 2] : memref<16x128x2xvector<8xf32>>
-                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_1,30}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{i_0,29}">, #accln<"index{i_1,30}">], subdomainSize = [1, 1]}
+                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_1,30}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{i_0,29}">, #accln<"index{i_1,30}">], subdomainSize = [1, 1]}
                       } {begin = 0 : i64, end = 1 : i64, index = #accln<"index{i_0,29}">, subdomainIndexOrder = [#accln<"index{i_0,29}">, #accln<"index{i_1,30}">], subdomainSize = [1, 16]}
                       accv.return
                     }) {exec_target = 0 : i64, sym_name = "NestFunction_12", type = () -> ()} : () -> ()
@@ -238,10 +238,10 @@ module @optimized_matmul attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:3
                             %136 = vector.insertelement %90, %135[%c7_i64 : i64] : vector<8xf32>
                             affine.store %136, %2[((%134 - %arg3) floordiv 16) mod 16, (%11 - %arg5) mod 6, (((%134 - %arg3) mod 16) floordiv 8) mod 2] : memref<16x6x2xvector<8xf32>>
                           } {begin = 0 : i64, end = 8 : i64, index = #accln<"index{j_i_i_i,16}">, scheduledIndex = #accln<"index{j_i_i_i,16}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 1, 1]}
-                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{j_i_i_o,15}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 8, 1]}
+                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{j_i_i_o,15}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 8, 1]}
                       } {begin = 0 : i64, end = 0 : i64, index = #accln<"index{i_i_i,12}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 16, 1]}
                     } {begin = 0 : i64, end = 4 : i64, index = #accln<"index{k_i_i,10}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 16, 1]}
-                  } {begin = 0 : i64, end = 0 : i64, index = #accln<"index{i_i_o,11}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 16, 4]}
+                  } {begin = 0 : i64, end = 0 : i64, index = #accln<"index{i_i_o,11}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 16, 4]}
                   affine.for %arg8 = 0 to 1 step 6 {
                     affine.for %arg9 = 0 to 4 {
                       affine.for %arg10 = 0 to 1 {
@@ -397,10 +397,10 @@ module @optimized_matmul attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:3
                             %136 = vector.insertelement %90, %135[%c7_i64 : i64] : vector<8xf32>
                             affine.store %136, %2[((%134 - %arg3) floordiv 16) mod 16, (%11 - %arg5) mod 6, (((%134 - %arg3) mod 16) floordiv 8) mod 2] : memref<16x6x2xvector<8xf32>>
                           } {begin = 0 : i64, end = 8 : i64, index = #accln<"index{j_i_i_i,16}">, scheduledIndex = #accln<"index{j_i_i_i,16}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 1, 1]}
-                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{j_i_i_o,15}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 8, 1]}
+                        } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{j_i_i_o,15}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 8, 1]}
                       } {begin = 0 : i64, end = 1 : i64, index = #accln<"index{i_i_i,12}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 16, 1]}
                     } {begin = 0 : i64, end = 4 : i64, index = #accln<"index{k_i_i,10}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 16, 1]}
-                  } {begin = 0 : i64, end = 1 : i64, index = #accln<"index{i_i_o,11}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 16, 4]}
+                  } {begin = 0 : i64, end = 1 : i64, index = #accln<"index{i_i_o,11}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 16, 4]}
                 } {begin = 0 : i64, end = 128 : i64, index = #accln<"index{k_i_o,9}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 16, 4]}
               } {begin = 0 : i64, end = 256 : i64, index = #accln<"index{j_i_o,13}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 16, 128]}
               "accv.lambda"() ( {
@@ -416,7 +416,7 @@ module @optimized_matmul attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:3
                             %7 = affine.load %2[((%arg7 + %arg9 * 8) floordiv 16) mod 16, (%arg6 + %arg8) mod 6, (((%arg7 + %arg9 * 8) mod 16) floordiv 8) mod 2] : memref<16x6x2xvector<8xf32>>
                             %8 = addf %6, %7 : vector<8xf32>
                             store %8, %1[%arg8, %arg9] : memref<1x16xvector<8xf32>>
-                          } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_o,7}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{k_i,6}">, #accln<"index{i_o,7}">], subdomainSize = [1, 1]}
+                          } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_o,7}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{k_i,6}">, #accln<"index{i_o,7}">], subdomainSize = [1, 1]}
                         } {begin = 0 : i64, end = 1 : i64, index = #accln<"index{k_i,6}">, subdomainIndexOrder = [#accln<"index{k_i,6}">, #accln<"index{i_o,7}">], subdomainSize = [1, 16]}
                         accv.return
                       }) {exec_target = 0 : i64, sym_name = "NestFunction_11", type = () -> ()} : () -> ()
@@ -441,7 +441,7 @@ module @optimized_matmul attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:3
                             %7 = affine.load %2[((%arg7 + %arg9 * 8) floordiv 16) mod 16, (%arg6 + %arg8) mod 6, (((%arg7 + %arg9 * 8) mod 16) floordiv 8) mod 2] : memref<16x6x2xvector<8xf32>>
                             %8 = addf %6, %7 : vector<8xf32>
                             store %8, %1[%arg8, %arg9] : memref<1x16xvector<8xf32>>
-                          } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_i_o,11}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{k_i_i,10}">, #accln<"index{i_i_o,11}">], subdomainSize = [1, 1]}
+                          } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{i_i_o,11}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{k_i_i,10}">, #accln<"index{i_i_o,11}">], subdomainSize = [1, 1]}
                         } {begin = 0 : i64, end = 1 : i64, index = #accln<"index{k_i_i,10}">, subdomainIndexOrder = [#accln<"index{k_i_i,10}">, #accln<"index{i_i_o,11}">], subdomainSize = [1, 16]}
                         accv.return
                       }) {exec_target = 0 : i64, sym_name = "NestFunction_9", type = () -> ()} : () -> ()

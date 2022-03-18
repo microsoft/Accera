@@ -86,6 +86,7 @@ set(rcexec_src
 
 set(rcexec_include
     include/exec/CacheAccessMaps.h
+    include/exec/ExecutionOptions.h
     include/exec/ExecutionPlanAttributes.h
     include/exec/ExecutionPlanOps.h
     include/exec/VectorizationInfo.h

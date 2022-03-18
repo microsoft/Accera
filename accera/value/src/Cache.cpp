@@ -182,7 +182,19 @@ namespace value
             _cacheAccessContext.cacheRegionRelevantScheduleIndexRanges = _cacheInfo.cacheRegionRelevantScheduleIndexRanges;
             _cacheAccessContext.cacheRegionBaseIndices = _cacheInfo.cacheRegionBaseIndices;
 
-            BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc, _mlirValueInput, _cacheAccessContext, _mlirValueInput, *_cacheInfo.cacheIndex, *_cacheInfo.triggerIndex, _cacheId, _hierarchicalCacheLevel, false, false);
+            BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc,
+                                                                             _mlirValueInput,
+                                                                             _cacheAccessContext,
+                                                                             _mlirValueInput,
+                                                                             *_cacheInfo.cacheIndex,
+                                                                             *_cacheInfo.triggerIndex,
+                                                                             _cacheId,
+                                                                             _hierarchicalCacheLevel,
+                                                                             false, // activeBlockCache
+                                                                             false, // dimReorderCache
+                                                                             false, // thrifty
+                                                                             false, // doubleBufferCache
+                                                                             ir::value::MemorySpace::None); // doubleBufferMemorySpace
             [[maybe_unused]] auto endOp = builder.create<EndCacheRegionOp>(loc, regionOp);
             _scheduleOp.injectMapping(regionOp);
         }
@@ -200,9 +212,12 @@ namespace value
                              const std::optional<Index>& triggerIndex,
                              const std::optional<int64_t>& maxElements,
                              const std::variant<MemoryAffineCoefficients, DimensionOrder>& cacheMapping,
+                             bool thrifty,
+                             bool doubleBufferCache,
                              CacheIndexing mapping,
                              CacheAllocation allocation,
                              MemorySpace dslMemorySpace,
+                             MemorySpace dslDoubleBufferMemorySpace,
                              ExecutionTarget execTarget) :
             CacheImpl(schedule, value, mapping),
             _execTarget(execTarget)
@@ -210,6 +225,7 @@ namespace value
             auto builder = GetBuilder();
             auto loc = builder.getUnknownLoc();
             auto memorySpace = *ir::value::symbolizeMemorySpace((uint64_t)dslMemorySpace);
+            auto doubleBufferMemorySpace = *ir::value::symbolizeMemorySpace((uint64_t)dslDoubleBufferMemorySpace);
 
             _cacheInfo = MakeManualCacheInfo(builder, _baseMlirValueInput, allocation, schedule, keySliceIndex, triggerIndex, maxElements, cacheMapping, memorySpace);
 
@@ -245,12 +261,27 @@ namespace value
                                                                                                      innermostIndex,
                                                                                                      _cacheId,
                                                                                                      _hierarchicalCacheLevel,
-                                                                                                     _cacheInfo.dimReorderCache);
+                                                                                                     _cacheInfo.dimReorderCache,
+                                                                                                     thrifty,
+                                                                                                     doubleBufferCache,
+                                                                                                     doubleBufferMemorySpace);
                 cacheRegionOp = regionOp;
             }
             else
             {
-                BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc, _mlirValueInput, _cacheAccessContext, _baseMlirValueInput, *_cacheInfo.cacheIndex, *_cacheInfo.triggerIndex, _cacheId, _hierarchicalCacheLevel, true, _cacheInfo.dimReorderCache);
+                BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc,
+                                                                                 _mlirValueInput,
+                                                                                 _cacheAccessContext,
+                                                                                 _baseMlirValueInput,
+                                                                                 *_cacheInfo.cacheIndex,
+                                                                                 *_cacheInfo.triggerIndex,
+                                                                                 _cacheId,
+                                                                                 _hierarchicalCacheLevel,
+                                                                                 true, // activeBlockCache
+                                                                                 _cacheInfo.dimReorderCache,
+                                                                                 thrifty,
+                                                                                 doubleBufferCache,
+                                                                                 doubleBufferMemorySpace);
                 cacheRegionOp = regionOp;
             }
             auto regionHandle = cacheRegionOp->getResult(0);
@@ -451,7 +482,10 @@ namespace value
         void AddCacheZero(mlir::OpBuilder& builder, mlir::Value cache)
         {
             auto loc = builder.getUnknownLoc();
-            [[maybe_unused]] auto cacheZero = builder.create<CacheZeroOp>(loc, cache);
+            [[maybe_unused]] auto cacheZero = builder.create<CacheZeroOp>(loc,
+                                                                          cache,
+                                                                          "", // activeBlockTag
+                                                                          false); // thrifty
         }
 
         void AddCacheCopy(mlir::OpBuilder& builder, mlir::Value input, CacheAccessContext cacheAccessContext, CopyDirection direction)
@@ -546,6 +580,9 @@ namespace value
                 break;
             case ValueType::Int64:
                 _packedBuffer = EmbedPackedBuffer<int64_t>(builder, constData, packedBufferName);
+                break;
+            case ValueType::Float16:
+                _packedBuffer = EmbedPackedBuffer<short>(builder, constData, packedBufferName);
                 break;
             case ValueType::Float:
                 _packedBuffer = EmbedPackedBuffer<float>(builder, constData, packedBufferName);
@@ -740,9 +777,12 @@ namespace value
                  const std::optional<ScalarIndex>& triggerIndex,
                  const std::optional<int64_t>& maxElements,
                  const MemoryAffineCoefficients& memoryMap,
+                 bool thrifty,
+                 bool doubleBufferCache,
                  CacheIndexing mapping,
                  CacheAllocation allocation,
                  MemorySpace memorySpace,
+                 MemorySpace doubleBufferMemorySpace,
                  ExecutionTarget execTarget)
     {
         std::optional<Index> keySlice;
@@ -757,11 +797,35 @@ namespace value
         }
         if (std::holds_alternative<ViewAdapter>(value))
         {
-            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<ViewAdapter>(value), keySlice, resolvedTriggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, execTarget);
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule,
+                                                           std::get<ViewAdapter>(value),
+                                                           keySlice,
+                                                           resolvedTriggerIndex,
+                                                           maxElements,
+                                                           memoryMap,
+                                                           thrifty,
+                                                           doubleBufferCache,
+                                                           mapping,
+                                                           allocation,
+                                                           memorySpace,
+                                                           doubleBufferMemorySpace,
+                                                           execTarget);
         }
         else
         {
-            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<Cache*>(value)->_impl.get(), keySlice, resolvedTriggerIndex, maxElements, memoryMap, mapping, allocation, memorySpace, execTarget);
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule,
+                                                           std::get<Cache*>(value)->_impl.get(),
+                                                           keySlice,
+                                                           resolvedTriggerIndex,
+                                                           maxElements,
+                                                           memoryMap,
+                                                           thrifty,
+                                                           doubleBufferCache,
+                                                           mapping,
+                                                           allocation,
+                                                           memorySpace,
+                                                           doubleBufferMemorySpace,
+                                                           execTarget);
         }
     }
 
@@ -771,9 +835,12 @@ namespace value
                  const std::optional<ScalarIndex>& triggerIndex,
                  const std::optional<int64_t>& maxElements,
                  const DimensionOrder& dimOrder,
+                 bool thrifty,
+                 bool doubleBufferCache,
                  CacheIndexing mapping,
                  CacheAllocation allocation,
                  MemorySpace memorySpace,
+                 MemorySpace doubleBufferMemorySpace,
                  ExecutionTarget execTarget)
     {
         std::optional<Index> keySlice;
@@ -789,11 +856,35 @@ namespace value
 
         if (std::holds_alternative<ViewAdapter>(value))
         {
-            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<ViewAdapter>(value), keySlice, resolvedTriggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, execTarget);
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule,
+                                                           std::get<ViewAdapter>(value),
+                                                           keySlice,
+                                                           resolvedTriggerIndex,
+                                                           maxElements,
+                                                           dimOrder,
+                                                           thrifty,
+                                                           doubleBufferCache,
+                                                           mapping,
+                                                           allocation,
+                                                           memorySpace,
+                                                           doubleBufferMemorySpace,
+                                                           execTarget);
         }
         else
         {
-            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule, std::get<Cache*>(value)->_impl.get(), keySlice, resolvedTriggerIndex, maxElements, dimOrder, mapping, allocation, memorySpace, execTarget);
+            _impl = std::make_unique<ActiveBlockCacheImpl>(schedule,
+                                                           std::get<Cache*>(value)->_impl.get(),
+                                                           keySlice,
+                                                           resolvedTriggerIndex,
+                                                           maxElements,
+                                                           dimOrder,
+                                                           thrifty,
+                                                           doubleBufferCache,
+                                                           mapping,
+                                                           allocation,
+                                                           memorySpace,
+                                                           doubleBufferMemorySpace,
+                                                           execTarget);
         }
     }
 

@@ -17,7 +17,6 @@
 #include <ir/include/value/ValueAttributes.h>
 #include <ir/include/value/ValueFuncOp.h>
 
-#include <llvm/Support/ErrorHandling.h>
 #include <transforms/include/value/ValueToStandardLoweringPass.h>
 
 #include <utilities/include/Exception.h>
@@ -57,12 +56,15 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Debug.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_os_ostream.h>
 
 using namespace accera;
 using namespace accera::utilities;
 using namespace accera::value;
+
 using ConstantData = accera::value::detail::ConstantData;
 
 namespace
@@ -112,6 +114,8 @@ mlir::Type ToMLIRType(mlir::OpBuilder& builder, ValueType type)
         return builder.getIntegerType(64);
     case ValueType::Index:
         return builder.getIndexType();
+    case ValueType::Float16:
+        return builder.getF16Type();
     case ValueType::Float:
         return builder.getF32Type();
     case ValueType::Double:
@@ -432,6 +436,14 @@ auto ConstantDataToDenseElementAttr(mlir::ShapedType shape, const ConstantData& 
             else if constexpr (std::is_same_v<ElementType, index_t>)
             {
                 throw InputException(InputExceptionErrors::invalidArgument, "Can't store an array of index type");
+            }
+            else if constexpr (std::is_same_v<ElementType, float16_t>)
+            {
+                using float16_underlying_type = typename float16_t::underlying_type;
+                std::vector<float16_underlying_type> fp16Data(data.size());
+                std::transform(data.begin(), data.end(), fp16Data.begin(), [](float16_t value) { return value.data; });
+
+                return mlir::DenseElementsAttr::get(shape, llvm::makeArrayRef(fp16Data));
             }
             else
             {
@@ -1015,7 +1027,7 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
 
             if constexpr (std::is_same_v<decltype(target), targets::GPU>)
             {
-                if (funcRuntime != ExecutionRuntime::Default)
+                if (funcRuntime != ExecutionRuntime::DEFAULT)
                 {
                     auto execRuntimeAttrName = ir::value::ValueModuleOp::getExecRuntimeAttrName();
                     auto execRuntimeAttrValue = ir::value::ExecutionRuntimeAttr::get(b.getContext(), (ir::value::ExecutionRuntime)funcRuntime);
@@ -1031,14 +1043,7 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
 
                 fnOp->setAttr(
                     fnOp.getGPULaunchAttrName(),
-                    b.getIndexArrayAttr({
-                        target.grid.x,
-                        target.grid.y,
-                        target.grid.z,
-                        target.block.x,
-                        target.block.y,
-                        target.block.z,
-                    }));
+                    target.ToArrayAttr(b.getContext()));
             }
 
             return std::pair{ fnOp.getOperation(), &fnOp.body().back() };
@@ -1047,6 +1052,8 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
 
     {
         auto fnContext = _impl->CreateNewScope({ entryBlock, entryBlock->begin() });
+        mlir::OpBuilder::InsertionGuard guard(b);
+        b.restoreInsertionPoint({ entryBlock, entryBlock->begin() });
 
         {
             std::lock_guard lock{ _mutex };
@@ -1260,6 +1267,13 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
                 {
                     op = b.create<mlir::ConstantIndexOp>(loc, static_cast<int64_t>(data[0]));
                 }
+                else if constexpr (std::is_same_v<ElementType, float16_t>)
+                {
+                    bool losesInfo = false;
+                    auto f = llvm::APFloat(data[0].data);
+                    f.convert(llvm::APFloat::IEEEhalf(), llvm::APFloat::rmNearestTiesToEven, &losesInfo);
+                    op = b.create<mlir::ConstantFloatOp>(loc, f, mlirElemTy.cast<mlir::Float16Type>());
+                }
                 else if constexpr (std::is_integral_v<ElementType> || std::is_same_v<ElementType, Boolean>)
                 {
                     auto elem = static_cast<int64_t>(data[0]);
@@ -1303,6 +1317,14 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
 
                     dataAttribute = mlir::DenseElementsAttr::get(flattenedTensorShapeTy, llvm::makeArrayRef(indexData));
                 }
+                else if constexpr (std::is_same_v<ElementType, float16_t>)
+                {
+                    using float16_underlying_type = typename float16_t::underlying_type;
+                    std::vector<float16_underlying_type> fp16Data(data.size());
+                    std::transform(data.begin(), data.end(), fp16Data.begin(), [](float16_t value) { return value.data; });
+
+                    dataAttribute = mlir::DenseElementsAttr::get(flattenedTensorShapeTy, llvm::makeArrayRef(fp16Data));
+                }
                 else
                 {
                     dataAttribute = mlir::DenseElementsAttr::get(flattenedTensorShapeTy, llvm::makeArrayRef(data));
@@ -1332,13 +1354,13 @@ Value MLIRContext::ResolveConstantDataReferenceImpl(Value constantDataSource)
     auto valueModuleOp = _impl->module();
     auto searchSymName = mlir::dyn_cast<ir::value::ReferenceGlobalOp>(sourceRefGlobalOp).getGlobal().sym_name();
 
-    // TODO: valueModuleOp.lookupSymbol() should be called here to look for an existing symbol, but so far, 
-    // it doesn't work as expected. So manually walk the top level ops inside the ValueModuleOp to look for the symbol.   
+    // TODO: valueModuleOp.lookupSymbol() should be called here to look for an existing symbol, but so far,
+    // it doesn't work as expected. So manually walk the top level ops inside the ValueModuleOp to look for the symbol.
     // Replace this workaround with a ValueModuleOp SymbolTable lookup once issues with comparing mlir::Identifiers is resolved.
     bool foundMatch = false;
-    for (auto globalOp : valueModuleOp.getOps<ir::value::GlobalOp>()) 
+    for (auto globalOp : valueModuleOp.getOps<ir::value::GlobalOp>())
     {
-        if (globalOp.sym_name() == searchSymName) 
+        if (globalOp.sym_name() == searchSymName)
         {
             foundMatch = true;
             break;
@@ -1372,10 +1394,10 @@ Value MLIRContext::ResolveConstantDataReferenceImpl(Value constantDataSource)
     auto refGlobalOp = mlir::dyn_cast<ir::value::ReferenceGlobalOp>(clonedRefGlobalOp);
 
     EmittableInfo& emittableInfo = StoreLocalEmittable({ const_cast<void*>(
-                                                            refGlobalOp
-                                                                .getResult()
-                                                                .getAsOpaquePointer()),
-                                                        { constantDataSource.GetBaseType(), 1 } });
+                                                             refGlobalOp
+                                                                 .getResult()
+                                                                 .getAsOpaquePointer()),
+                                                         { constantDataSource.GetBaseType(), 1 } });
     Emittable emittable{ &emittableInfo };
 
     return Value(emittable, constantDataSource.GetLayout());
@@ -1826,38 +1848,59 @@ Value MLIRContext::LogicalOperationImpl(ValueLogicalOperation op, Value source1,
     return { emittable, ScalarLayout };
 }
 
-void MLIRContext::MFMAImpl(Matrix& dest, Matrix A, Matrix B, Matrix C)
+static ir::value::MFMAMatrixType getMatrixTypeOfMemref(mlir::Value val, const std::vector<int64_t>& shape, llvm::StringRef operand)
 {
-    using namespace accera::ir::value;
+    auto memrefType = val.getType().cast<mlir::MemRefType>();
+    return ir::value::MFMAMatrixType::get(shape, memrefType.getElementType(), operand);
+};
 
+Matrix MLIRContext::MFMALoadImpl(Value source, const std::vector<int64_t>& shape, const std::string& operand)
+{
     auto& builder = _impl->builder;
     auto loc = builder.getUnknownLoc();
 
-    auto destValue = ToMLIRValue(builder, dest);
+    auto matValue = ToMLIRValue(builder, source);
+    auto mfmaMatTy = getMatrixTypeOfMemref(matValue, shape, operand);
+    auto mfmaMatShape = mfmaMatTy.getShape();
+    auto mfmaMatLayout = MemoryLayout(mfmaMatShape[0], mfmaMatShape[1]);
+
+    auto zeroIdx = builder.create<mlir::ConstantIndexOp>(loc, 0);
+
+    mlir::Value result = builder.create<ir::value::MFMALoadOp>(loc, mfmaMatTy, matValue, mlir::ValueRange{ zeroIdx, zeroIdx });
+
+    EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { source.GetBaseType(), 1 } });
+    Emittable emittable{ &emittableInfo };
+
+    return Matrix(Value(emittable, mfmaMatLayout));
+}
+
+void MLIRContext::MFMAStoreImpl(Matrix source, Value target)
+{
+    auto& builder = _impl->builder;
+    auto loc = builder.getUnknownLoc();
+
+    auto sourceValue = ToMLIRValue(builder, source);
+    auto targetValue = ToMLIRValue(builder, target);
+    auto zeroIdx = builder.create<mlir::ConstantIndexOp>(loc, 0);
+
+    builder.create<ir::value::MFMAStoreOp>(loc, sourceValue, targetValue, mlir::ValueRange{ zeroIdx, zeroIdx });
+}
+
+Matrix MLIRContext::MFMAComputeImpl(Matrix A, Matrix B, Matrix C)
+{
+    auto& builder = _impl->builder;
+    auto loc = builder.getUnknownLoc();
+
     auto aValue = ToMLIRValue(builder, A);
     auto bValue = ToMLIRValue(builder, B);
     auto cValue = ToMLIRValue(builder, C);
 
-    auto getMatrixTypeOfMemref = [=](mlir::Value val, llvm::StringRef kind) {
-        auto memrefType = val.getType().cast<mlir::MemRefType>();
-        return MFMAMatrixType::get(
-            memrefType.getShape(), memrefType.getElementType(), kind);
-    };
+    mlir::Value result = builder.create<ir::value::MFMAComputeOp>(loc, cValue.getType(), aValue, bValue, cValue);
 
-    mlir::Value aMatrix = builder.create<ir::value::MFMALoadMatrixOp>(loc, getMatrixTypeOfMemref(aValue, "AOp"), aValue);
-    mlir::Value bMatrix = builder.create<ir::value::MFMALoadMatrixOp>(loc, getMatrixTypeOfMemref(aValue, "BOp"), bValue);
-    mlir::Value cMatrix = builder.create<ir::value::MFMALoadMatrixOp>(loc, getMatrixTypeOfMemref(aValue, "COp"), cValue);
+    EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { C.GetType(), 1 } });
+    Emittable emittable{ &emittableInfo };
 
-    auto result = builder.create<ir::value::MFMAComputeOp>(loc, cValue.getType(), aMatrix, bMatrix, cMatrix);
-
-    builder.create<ir::value::MFMAStoreMatrixOp>(loc, result, destValue);
-
-    throw LogicException(LogicExceptionErrors::notImplemented);
-
-    // EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { C.GetBaseType(), 1 } });
-    // Emittable emittable{ &emittableInfo };
-
-    // return Value( emittable, C.GetLayout() );
+    return Matrix(Value(emittable, C.GetValue().GetLayout()));
 }
 
 Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool srcSigned)
@@ -2485,7 +2528,7 @@ void MLIRContext::EmitNestDebugFunction(FunctionDeclaration targetFunc, const st
                             valueMap.map(refGlobalOp.getResult(), newOp.getResult());
                         });
                 });
-                    
+
                 // Create the reference schedule(s)
                 auto targetNestOp = scheduleOp.getNest();
                 if (auto fusedDomains = scheduleOp.getFusedDomains(); !fusedDomains.empty())
@@ -2721,7 +2764,9 @@ ValueType MLIRTypeToValueType(mlir::Type ty)
             return ValueType::Index;
         })
         .Case<mlir::FloatType>([](mlir::FloatType fTy) {
-            if (fTy.isF32())
+            if (fTy.isF16())
+                return ValueType::Float16;
+            else if (fTy.isF32())
                 return ValueType::Float;
             else if (fTy.isF64())
                 return ValueType::Double;

@@ -23,8 +23,8 @@ using llvm::StringRef;
 using mlir::Type;
 using mlir::LogicalResult;
 
-/// MFMAMatrixType storage and uniquing. Array is uniqued based on its shape
-/// and type.
+/// MFMAMatrixType storage and uniquing. Array is uniqued based on its shape,
+/// type, and operand.
 struct MFMAMatrixStorageType : public mlir::TypeStorage
 {
     MFMAMatrixStorageType(unsigned numDims, const int64_t* dimShapes, Type elementType, StringRef operand) :
@@ -71,7 +71,7 @@ struct MFMAMatrixStorageType : public mlir::TypeStorage
     StringRef operand;
 };
 
-/// MFMAMatrix represents a matrix held by a subgroup for matrix-matrix multiply
+/// MFMAMatrix represents a matrix held by for matrix-matrix multiply
 /// accumulate operations. MFMAMatrices are taken as direct operands by these
 /// operations and are also produced as results. These matrices are meant to
 /// reside in the registers. A limited number of pointwise operations can be
@@ -81,8 +81,8 @@ struct MFMAMatrixStorageType : public mlir::TypeStorage
 /// inside the matrix is opaque i.e., the elements may be present in the
 /// matrix in any order. The general usage of this type is shown as follows:-
 ///
-///   %0 = gpu.subgroup_mma_load_matrix %arg0[%c0, %c0] {leadDimension = 16 :
-///           index} : memref<16x16xf16> -> !gpu.mma_matrix<16x16xf16, "AOp">
+///   %0 = accv.mfma_load_matrix %arg0[%c0, %c0] {leadDimension = 16 :
+///           index} : memref<16x16xf16> -> !accv.mfma_matrix<16x16xf16, "AOp">
 ///
 /// The MFMAMatrixType describes the shape of the matrix being loaded and the
 /// operand being loaded too. The operand needs to be specified to aid the
@@ -92,14 +92,13 @@ struct MFMAMatrixStorageType : public mlir::TypeStorage
 /// and 8 f32s for f32 data type of MFMAMatrix. Some other instances of usage
 /// are:-
 ///
-///   %3 = gpu.subgroup_mma_compute %0, %1, %2 :
-///   !gpu.mma_matrix<16x16xf16, "AOp">, !gpu.mma_matrix<16x16xf16, "BOp">
-///    -> !gpu.mma_matrix<16x16xf32, "COp">
+///   %3 = accv.mfma_compute %0, %1, %2 :
+///   !accv.mfma_matrix<16x16xf16, "AOp">, !accv.mfma_matrix<16x16xf16, "BOp">
+///    -> !accv.mfma_matrix<16x16xf32, "COp">
 ///
 ///
-///   gpu.subgroup_mma_store_matrix %3, %arg22[%c0, %c0] {leadDimension = 16
-///           : index}: !gpu.mma_matrix<16x16xf32, "COp">, memref<16x16xf32>
-// TODO: consider moving this to ODS.
+///   accv.mfma_store_matrix %3, %arg22[%c0, %c0] {leadDimension = 16
+///           : index}: !accv.mfma_matrix<16x16xf32, "COp">, memref<16x16xf32>
 class MFMAMatrixType
     : public Type::TypeBase<MFMAMatrixType, Type, MFMAMatrixStorageType>
 {
@@ -139,5 +138,8 @@ public:
     /// C += A*B. This function returns which operand in the given equation is
     /// held by this type. String returned can be one of"AOp", "BOp" and "COp".
     StringRef getOperand() const;
+
+    /// The stride between consecutive rows of the MFMA matrix.
+    int64_t getLeadingDim() const;
 };
 } // namespace accera::ir::value

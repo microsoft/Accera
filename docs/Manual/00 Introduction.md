@@ -2,7 +2,7 @@
 [//]: # (Version: v1.2.1)
 
 # Introduction
-Accera is a framework with a Python-based Domain-specific Language (eDSL) that produces optimized compute-intensive code. Currently, optimization of nested for-loops is the primary focus of Accera for CPU and GPU targets.
+Accera is a framework with a Python-based Domain-specific Language (eDSL) that produces optimized compute-intensive code. Accera's primary focus is the optimization of affine and semi-affine nested for-loops for CPU and GPU targets.
 
 Optimization of compute-intensive code in a traditional programming language is not only difficult and time-consuming, but manual optimization of simplest numerical algorithms demands significant engineering effort and requires an advanced understanding of computer architecture and fluency in C++, C, or Assembly Language. Even with all these efforts, implemented code is prone to critical bugs and requires extensive engineering effort for maintenance. Accera aims at resolving all these issues by providing optimized solutions for compute-intensive algorithms that are highly efficient, readable, and maintainable. 
 
@@ -30,12 +30,12 @@ Accera on the other hand provides a strict distinction between the logic and its
 ### 2: Mindfully trade-off safety versus expressivity
 Accera offers a programming model where a default implementation of the specified logic can be transformed and manipulated in different ways. If used correctly, these transformations are *safe*, which means that the underlying logic remains intact. This allows the programmer to completely focus on the performance of the logic without worrying about its correctness. Moreover, these safe transformations allow automatic search algorithms to aggressively search the space of transformations to converge faster and to find better optima. 
 
-However, this safety is achieved by trading off the true potential of a programming language since it demands restricting the scope of that language. Nevertheless, extensive constraints significantly restrict the expressivity and the power of the programming language eventually preventing the end-users from developing highly-optimized and sophisticated implementations. 
+Traditionally, this safety is achieved by trading off the true potential of a programming language since it demands restricting the scope of that language. Nevertheless, extensive constraints significantly restrict the expressivity and the power of the programming language eventually preventing the end-users from developing highly-optimized and sophisticated implementations. 
 
 Accera moderates this tradeoff between safety and expressivity by explicitly defining what level of safety guarantees are being given by each transformation under different circumstances. Some situations are safer than others. However, in all cases, the programmer knows exactly what safeties are being guaranteed. 
 
 ### 3: The programmer is in control
-Accera steers clear of all sorts of under-the-hood magic that cannot be overridden or controlled by giving the programmer maximum control over the generated logic. Convenience methods and carefully used default values can prevent verbosity. These helper methods can always be tuned, even overridden as per the use case. 
+Accera gives the programmer maximum control over the generated logic, by providing access to the underlying knobs that determine how algorithms are optimized.  Convenience methods and carefully used default values can prevent verbosity. These helper methods can always be tuned, even overridden as per the use case. 
 
 
 <div style="page-break-after: always;"></div>

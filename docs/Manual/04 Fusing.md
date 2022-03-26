@@ -2,7 +2,7 @@
 [//]: # (Version: v1.2.1)
 
 # Section 4: Fusing
-Multiple schedules can be combined into a single schedule using the `fuse` operation. The fused schedule represents the union of the work in the original schedules. The fused schedule can be transformed using any of the transformations presented in [Section 3](<03%20Schedules.md>).
+With `fuse` operation, multiple schedules can be combined into a single schedule representing the union of the work in the original schedules. These fused schedules can be transformed by any of the transformations presented in [Section 3](<03%20Schedules.md>).
 
 ## Full fusing
 ```python
@@ -12,18 +12,17 @@ import accera as acc
 schedule = acc.fuse(schedule0, schedule1, ...)
 ```
 
-*Full fusing* is the most straightforward form of fusing, where each dimension is fused with the corresponding dimension from the other schedules.
+*Full fusing* is the most straightforward fusing where each dimension is fused with the corresponding dimension from other schedules. 
 
 ### Full fusing of same-shaped iteration spaces
-First, consider the simplest case, where we fuse schedules whose iteration spaces have identical shapes. The fused schedule `schedule` gets a new dimension, called the *fusing dimension*, which did not exist in the original schedules. By default, the fusing dimension is the first dimension in the fused schedule and its size equals the number of schedules that were fused. The first slice along the fusing dimension contains a copy of `schedule0`, the second slice contains a copy `schedule1`, and so on. Since the fusing dimension is the first dimension, the fused schedule is logically equivalent to fully executing `schedule0`, followed by `schedule1`, and so on. To interleave the original schedules, we apply additional transformations to the fused schedule.
+Initially, consider the simplest case where we fuse schedules with identical shapes of iteration spaces. This fusing assigns a new dimension called *fusing dimension* to the fused schedule `schedule` that does not exist in the original schedules. By default, the fusing dimension is the first dimension in the fused schedule, having a size equal to the number of fused schedules. The slices along the fusing dimension contain a copy of `schedule0`, `schedule1`. The first slice along the fusing dimension contains a copy of `schedule0`, the second slice contains a copy of `schedule1`, and so on. Since the fusing dimension is the first dimension, the fused schedule is logically equivalent to fully executing `schedule0`, followed by `schedule1`, and so on. We apply additional transformations to the fused schedule to interleave the original schedules.
 
-As a concrete example, imagine that we want to shift and then scale each of the elements of a matrix, or in other words, perform the equivalent of the Python code:
+Consider a scenario where we want first to shift and then scale each element of a matrix. In other words, we want to perform the equivalent of the below Python code where all three matrices are 16 by 16: 
 ```python
 C = (C + A) * B
 ```
-where all three matrices are 16 by 16.
 
-One way to do this without fusing is to simply write:
+One way of doing this without fusing is to write: 
 ```python
 A = acc.Array(role=acc.Array.Role.INPUT, shape=(16, 16))
 B = acc.Array(role=acc.Array.Role.INPUT, shape=(16, 16))

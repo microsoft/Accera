@@ -1,33 +1,73 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //  Copyright (c) Microsoft Corporation. All rights reserved.
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
+//  Authors: Kern Handa
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "AcceraDialectCppPrinter.h"
 
+#include "AMDGPU.h"
+#include "NVGPU.h"
+#include "ir/include/value/ValueDialect.h"
+
 #include <ir/include/IRUtil.h>
 #include <ir/include/argo/Utils.h>
+#include <ir/include/nest/LoopNestOps.h>
+
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/Interfaces/CallInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include "AMDGPU.h"
-#include "NVGPU.h"
+#include <llvm/ADT/TypeSwitch.h>
 
 using namespace mlir::argo;
+
+namespace vir = accera::ir::value;
 
 namespace mlir
 {
 namespace cpp_printer
 {
+    LogicalResult AcceraDialectCppPrinter::printOp(vir::CallOp callOp)
+    {
+        auto callInterface = dyn_cast<CallOpInterface>(callOp.getOperation());
+        auto callee = callInterface.resolveCallable();
+        if (!callee) return callOp->emitError("Cannot find callee function");
 
-    static bool isMFMAComputeOp(Operation* op)
-    {
-        return llvm::isa<accera::ir::value::MFMAComputeOp>(op);
+        (void)printer->printDeclarationForOpResult(callOp);
+        if (callOp->getNumResults() > 0)
+            os << " = ";
+
+        os << callOp.getCallee() << "(";
+        RETURN_IF_FAILED(printer->printOperationOperands(callOp));
+        os << ")";
+
+        return success();
     }
-    LogicalResult AcceraDialectCppPrinter::printMFMAComputeOp(Operation* op)
+
+    LogicalResult AcceraDialectCppPrinter::printOp(vir::ReturnOp returnOp)
     {
-        accera::ir::value::MFMAComputeOp mfmaOp = mlir::dyn_cast_or_null<accera::ir::value::MFMAComputeOp>(op);
+        os << "return";
+
+        if (auto numOperands = returnOp.getNumOperands(); numOperands == 0)
+        {
+            // Nothing to do
+        }
+        else if (numOperands == 1)
+        {
+            os << " " << state.nameState.getName(returnOp.getOperand(0));
+        }
+        else
+        {
+            return returnOp.emitOpError() << "<<Returning tuple is not supported yet>>";
+        }
+
+        return success();
+    }
+
+    LogicalResult AcceraDialectCppPrinter::printOp(vir::MFMAComputeOp mfmaOp)
+    {
         assert(mfmaOp);
         auto accumInputTy = mfmaOp.opC().getType();
         auto accumOutputTy = mfmaOp.res().getType();
@@ -60,10 +100,17 @@ namespace cpp_printer
         bool* /*skipped*/,
         bool* consumed)
     {
-        *consumed = true;
-        if (isMFMAComputeOp(op))
-            return printMFMAComputeOp(op);
-        *consumed = false;
+        auto handler = [&, this](auto op_) {
+            printOp(op_);
+            *consumed = true;
+        };
+
+        TypeSwitch<Operation*>(op)
+            .Case<vir::MFMAComputeOp>(handler)
+            .Case<vir::CallOp>(handler)
+            .Case<vir::ReturnOp>(handler)
+            .Default([&](Operation*) { *consumed = false; });
+
         return success();
     }
 
@@ -169,7 +216,6 @@ namespace cpp_printer
     LogicalResult AcceraDialectCppPrinter::printEpilogue()
     {
         // TODO: add a cmdline option to skip generating host launch func
-        RETURN_IF_FAILED(printHostLaunchFunc());
         return success();
     }
 

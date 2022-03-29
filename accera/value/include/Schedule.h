@@ -153,7 +153,7 @@ namespace value
         /// <param name="gpuOptions"> The target GPU options </param>
         /// <param name="execRuntime"> The target execution runtime </param>
         /// <returns> The execution plan </returns>
-        GPUPlan CreateGPUPlan(targets::GPU gpuOptions, ExecutionRuntime execRuntime = ExecutionRuntime::Default);
+        GPUPlan CreateGPUPlan(targets::GPU gpuOptions, ExecutionRuntime execRuntime = ExecutionRuntime::DEFAULT);
 
         void dump();
 

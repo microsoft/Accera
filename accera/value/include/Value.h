@@ -42,6 +42,7 @@ namespace value
                 std::vector<int32_t>,
                 std::vector<int64_t>,
                 std::vector<index_t>,
+                std::vector<float16_t>,
                 std::vector<float>,
                 std::vector<double>>;
 
@@ -66,6 +67,7 @@ namespace value
         template <typename T>
         inline static constexpr bool IsAcceptableDataType = std::is_same_v<std::decay_t<T>, T> &&
                                                             (std::is_arithmetic_v<T> ||
+                                                             std::is_same_v<std::decay_t<T>, float16_t> ||
                                                              std::is_same_v<std::decay_t<T>, index_t> ||
                                                              std::is_same_v<std::decay_t<T>, Boolean>);
 
@@ -327,6 +329,9 @@ namespace value
 
         /// <summary> Returns true if the instance's type is a floating point type </summary>
         bool IsFloatingPoint() const;
+
+        /// <summary> Returns true if the instance's type is a 16-bit float </summary>
+        bool IsFloat16() const;
 
         /// <summary> Returns true if the instance's type is a 32-bit float </summary>
         bool IsFloat32() const;

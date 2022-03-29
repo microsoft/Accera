@@ -4,8 +4,8 @@
 //  Authors:  Kern Handa
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#ifndef ACCERA_rcv_ATTRS
-#define ACCERA_rcv_ATTRS
+#ifndef ACCERA_accv_ATTRS
+#define ACCERA_accv_ATTRS
 
 include "ir/include/Common.td"
 
@@ -16,12 +16,23 @@ def ExecutionTargetAttr : I64EnumAttr<"ExecutionTarget", "target for function", 
     let cppNamespace = "::accera::ir::value";
 }
 
-def ExecutionRuntimeDefault : StrEnumAttrCase<"Default">;
-def ExecutionRuntimeVulkan : StrEnumAttrCase<"Vulkan">;
-def ExecutionRuntimeRocm : StrEnumAttrCase<"Rocm">;
+def ExecutionRuntimeNone : StrEnumAttrCase<"NONE">;
 def ExecutionRuntimeCUDA : StrEnumAttrCase<"CUDA">;
+def ExecutionRuntimeRocm : StrEnumAttrCase<"ROCM">;
+def ExecutionRuntimeVulkan : StrEnumAttrCase<"VULKAN">;
+def ExecutionRuntimeOpenMP : StrEnumAttrCase<"OPENMP">;
+def ExecutionRuntimeDefault : StrEnumAttrCase<"DEFAULT">;
 
-def ExecutionRuntimeAttr : StrEnumAttr<"ExecutionRuntime", "execution runtime for function", [ExecutionRuntimeDefault, ExecutionRuntimeVulkan, ExecutionRuntimeRocm, ExecutionRuntimeCUDA]> {
+
+def ExecutionRuntimeAttr : StrEnumAttr<"ExecutionRuntime", "execution runtime for function",
+    [
+        ExecutionRuntimeNone,
+        ExecutionRuntimeCUDA,
+        ExecutionRuntimeRocm,
+        ExecutionRuntimeVulkan,
+        ExecutionRuntimeOpenMP,
+        ExecutionRuntimeDefault
+    ]> {
     let cppNamespace = "::accera::ir::value";
     let genSpecializedAttr = 1;
 }
@@ -51,18 +62,18 @@ def MemoryAllocTypeAttr : I64EnumAttr<
 def MEMORY_SPACE_NONE : I64EnumAttrCase<"None", 0>;
 def MEMORY_SPACE_GLOBAL : I64EnumAttrCase<"Global", 1>;
 def MEMORY_SPACE_SHARED : I64EnumAttrCase<"Shared", 3>;
-def MEMORY_SPACE_LOCAL : I64EnumAttrCase<"Local", 5>;
+def MEMORY_SPACE_PRIVATE : I64EnumAttrCase<"Private", 5>;
 
 def MemorySpaceAttr : I64EnumAttr<
         "MemorySpace",
         "Describes the memory space in which an allocation resides.",
-        [ MEMORY_SPACE_NONE, MEMORY_SPACE_GLOBAL, MEMORY_SPACE_SHARED, MEMORY_SPACE_LOCAL]> {
+        [ MEMORY_SPACE_NONE, MEMORY_SPACE_GLOBAL, MEMORY_SPACE_SHARED, MEMORY_SPACE_PRIVATE]> {
     let cppNamespace = "::accera::ir::value";
 }
 
 def BARRIER_SCOPE_BLOCK : StrEnumAttrCase<"Block", 0>;
-def BARRIER_SCOPE_WARP : StrEnumAttrCase<"Warp", 1>; 
-def BARRIER_SCOPE_THREADFENCE : StrEnumAttrCase<"Threadfence", 2>; 
+def BARRIER_SCOPE_WARP : StrEnumAttrCase<"Warp", 1>;
+def BARRIER_SCOPE_THREADFENCE : StrEnumAttrCase<"Threadfence", 2>;
 
 def BarrierScopeAttr : StrEnumAttr<
         "BarrierScope",
@@ -71,4 +82,4 @@ def BarrierScopeAttr : StrEnumAttr<
     let cppNamespace = "::accera::ir::value";
     let genSpecializedAttr = 1;
 }
-#endif // ACCERA_rcv_ATTRS
+#endif // ACCERA_accv_ATTRS

@@ -21,19 +21,19 @@ include "ir/include/value/ValueAttrs.td"
 //   * The parent dialect of the operation.
 //   * The mnemonic for the operation, or the name without the dialect prefix.
 //   * A list of traits for the operation.
-class rcln_Op<string mnemonic, list<OpTrait> traits = []> :
+class accln_Op<string mnemonic, list<OpTrait> traits = []> :
     Op<LoopNest_Dialect, mnemonic, traits>;
 
 //
 // SymbolicIndexOp
 //
-def rcln_SymbolicIndexOp : rcln_Op<"sym_index", [NoSideEffect, ConstantLike]> {
+def accln_SymbolicIndexOp : accln_Op<"sym_index", [NoSideEffect, ConstantLike]> {
   let summary = "symbolic loop index";
   let description = [{
     The "accln.sym_index" builtin operation creates a symbolic "placeholder" index for a loop.
   }];
 
-  let arguments = (ins rcln_IndexAttr:$index);
+  let arguments = (ins accln_IndexAttr:$index);
   let results = (outs Index:$result);
 
   let builders = [
@@ -59,7 +59,7 @@ def rcln_SymbolicIndexOp : rcln_Op<"sym_index", [NoSideEffect, ConstantLike]> {
 //
 // ScheduleOp
 //
-def rcln_ScheduleOp : rcln_Op<"schedule",
+def accln_ScheduleOp : accln_Op<"schedule",
        [SingleBlockImplicitTerminator<"TerminatorOp">]> {
   let summary = "loopnest scheduling operation";
   let description = [{
@@ -169,7 +169,7 @@ def rcln_ScheduleOp : rcln_Op<"schedule",
 //
 // NestOp
 //
-def rcln_NestOp : rcln_Op<"nest",[SingleBlockImplicitTerminator<"TerminatorOp">, SymbolTable]> {
+def accln_NestOp : accln_Op<"nest",[SingleBlockImplicitTerminator<"TerminatorOp">, SymbolTable]> {
   let summary = "nest operation";
   let description = [{
     The "accln.nest" operation produces a loop nest. Takes a variadic number of values indicating the upper bound for the loops.
@@ -177,7 +177,7 @@ def rcln_NestOp : rcln_Op<"nest",[SingleBlockImplicitTerminator<"TerminatorOp">,
     The "accln.nest" operation has a single region indicating the code at the middle of the loop nest.
   }];
 
-  let arguments = (ins SymbolRefArrayAttr:$kernels, rcln_IterationDomainAttr:$domain, OptionalAttr<ExecutionTargetAttr>:$exec_target, Variadic<AnyType>:$rangeOperands);
+  let arguments = (ins SymbolRefArrayAttr:$kernels, accln_IterationDomainAttr:$domain, OptionalAttr<ExecutionTargetAttr>:$exec_target, Variadic<AnyType>:$rangeOperands);
   let results = (outs);
   let regions = (region SizedRegion<1>:$body);
 
@@ -219,14 +219,14 @@ def rcln_NestOp : rcln_Op<"nest",[SingleBlockImplicitTerminator<"TerminatorOp">,
 //
 // ScheduledLoopOp
 //
-def rcln_ScheduledLoopOp : rcln_Op<"scheduled_loop",
+def accln_ScheduledLoopOp : accln_Op<"scheduled_loop",
   [SingleBlockImplicitTerminator<"TerminatorOp">]> {
   let summary = "Represents a scheduled loop and separates prologue, body, and epilogue regions";
   let description = [{
     The "accln.ScheduledLoopOp" operation represents a scheduled loop level and separates prolgoue, body, and epilogue regions
   }];
 
-  let arguments = (ins I64Attr:$begin, I64Attr:$end, I64Attr:$step, rcln_IndexAttr:$index, Index:$symbolicIndex, ArrayAttr:$subdomainSize, ArrayAttr:$subdomainIndexOrder);
+  let arguments = (ins I64Attr:$begin, I64Attr:$end, I64Attr:$step, accln_IndexAttr:$index, Index:$symbolicIndex, ArrayAttr:$subdomainSize, ArrayAttr:$subdomainIndexOrder);
   let regions = (region AnyRegion:$prologue, AnyRegion:$body, AnyRegion:$epilogue);
 
   let printer = [{ return ::print(p, *this); }];
@@ -311,7 +311,7 @@ def rcln_ScheduledLoopOp : rcln_Op<"scheduled_loop",
 // Then add the kernel to the nest (via n.addKernel(kernel)), which moves %n to the current point and adds an invoke call
 
 // TODO: add CallableOpInterface, FunctionLike ?
-def rcln_KernelOp : rcln_Op<"kernel",
+def accln_KernelOp : accln_Op<"kernel",
        [SingleBlockImplicitTerminator<"TerminatorOp">, Symbol]> {
   let summary = "kernel operation";
   let description = [{
@@ -342,7 +342,7 @@ def rcln_KernelOp : rcln_Op<"kernel",
     std::vector<SymbolicIndexOp> getIndices();
 
     // FunctionLike trait needs access to the functions below.
-    // friend class OpTrait::FunctionLike<rcln_KernelOp>;
+    // friend class OpTrait::FunctionLike<accln_KernelOp>;
 
     // Hooks for the input/output type enumeration in FunctionLike trait
     // unsigned getNumFuncArguments() { return getType().getNumInputs(); }
@@ -364,7 +364,7 @@ def rcln_KernelOp : rcln_Op<"kernel",
 //
 // ScheduledKernelOp
 //
-def rcln_ScheduledKernelOp : rcln_Op<"scheduled_kernel", [Symbol]> {
+def accln_ScheduledKernelOp : accln_Op<"scheduled_kernel", [Symbol]> {
   let summary = "scheduled kernel operation";
   let description = [{
     The "loopnest.scheduled_kernel" operation associates a predicate with a kernel.
@@ -401,7 +401,7 @@ def rcln_ScheduledKernelOp : rcln_Op<"scheduled_kernel", [Symbol]> {
 // InvokeKernelOp
 //
 
-def rcln_InvokeKernelOp : rcln_Op<"invoke_kernel", []> {
+def accln_InvokeKernelOp : accln_Op<"invoke_kernel", []> {
   let summary = "Invoke a kernel";
   let description = [{}];
   let arguments = (ins FlatSymbolRefAttr:$kernel);
@@ -423,8 +423,8 @@ def rcln_InvokeKernelOp : rcln_Op<"invoke_kernel", []> {
 // DimSizeOp
 //
 
-def rcln_DimSizeOp : rcln_Op<"dim_size",
-    [DeclareOpInterfaceMethods<rcln_EmitTimeSizeOpInterface>]> {
+def accln_DimSizeOp : accln_Op<"dim_size",
+    [DeclareOpInterfaceMethods<accln_EmitTimeSizeOpInterface>]> {
   let summary = "Evaluate the given dimension range in the current subdomain";
   let description = [{
     The "accln.dim_size" op lowers to the constant value of the size of the requested subdomain dimension at the point it is inserted
@@ -438,7 +438,7 @@ def rcln_DimSizeOp : rcln_Op<"dim_size",
     static StringRef getIndexAttrName();
   }];
 
-  let arguments = (ins rcln_IndexAttr:$dimensionIndex);
+  let arguments = (ins accln_IndexAttr:$dimensionIndex);
   let results = (outs Index:$size);
 }
 
@@ -446,12 +446,12 @@ def rcln_DimSizeOp : rcln_Op<"dim_size",
 // Kernel predicates
 //
 
-class rcln_KernelPredicateOp<string mnemonic, list<OpTrait> traits = []> : rcln_Op<!interleave([mnemonic, "pred"], "_"), !listconcat(traits, [IsolatedFromAbove, NoSideEffect])> {
+class accln_KernelPredicateOp<string mnemonic, list<OpTrait> traits = []> : accln_Op<!interleave([mnemonic, "pred"], "_"), !listconcat(traits, [IsolatedFromAbove, NoSideEffect])> {
   let results = (outs I1:$result);
 }
 
-def rcln_NullPredicateOp : rcln_KernelPredicateOp<"null",
-  [DeclareOpInterfaceMethods<rcln_KernelPredicateOpInterface>]> {
+def accln_NullPredicateOp : accln_KernelPredicateOp<"null",
+  [DeclareOpInterfaceMethods<accln_KernelPredicateOpInterface>]> {
   let summary = "";
   let description = [{ blah }];
   let arguments = (ins);
@@ -464,8 +464,8 @@ def rcln_NullPredicateOp : rcln_KernelPredicateOp<"null",
   let verifier = [{ return ::verify(*this); }];
 }
 
-def rcln_ConstantPredicateOp : rcln_KernelPredicateOp<"const",
-  [DeclareOpInterfaceMethods<rcln_KernelPredicateOpInterface>]> {
+def accln_ConstantPredicateOp : accln_KernelPredicateOp<"const",
+  [DeclareOpInterfaceMethods<accln_KernelPredicateOpInterface>]> {
   let arguments = (ins BoolAttr:$value);
   let builders = [
     OpBuilder<(ins "BoolAttr":$value), [{
@@ -475,9 +475,9 @@ def rcln_ConstantPredicateOp : rcln_KernelPredicateOp<"const",
   let verifier = [{ return ::verify(*this); }];
 }
 
-def rcln_FragmentTypePredicateOp : rcln_KernelPredicateOp<"frag",
-  [DeclareOpInterfaceMethods<rcln_KernelPredicateOpInterface>]> {
-  let arguments = (ins rcln_FragmentTypeAttr:$fragment, rcln_IndexAttr:$index, I64ArrayAttr:$indexValues);
+def accln_FragmentTypePredicateOp : accln_KernelPredicateOp<"frag",
+  [DeclareOpInterfaceMethods<accln_KernelPredicateOpInterface>]> {
+  let arguments = (ins accln_FragmentTypeAttr:$fragment, accln_IndexAttr:$index, I64ArrayAttr:$indexValues);
   let builders = [
     OpBuilder<(ins
     "IntegerAttr":$fragment,
@@ -517,10 +517,10 @@ def rcln_FragmentTypePredicateOp : rcln_KernelPredicateOp<"frag",
   }];
 }
 
-def rcln_ProloguePredicateOp : rcln_KernelPredicateOp<"prologue",
-  [DeclareOpInterfaceMethods<rcln_EvaluatablePredicateOpInterface>]
+def accln_ProloguePredicateOp : accln_KernelPredicateOp<"prologue",
+  [DeclareOpInterfaceMethods<accln_EvaluatablePredicateOpInterface>]
   > {
-  let arguments = (ins rcln_IndexAttr:$index);
+  let arguments = (ins accln_IndexAttr:$index);
   let builders = [
     OpBuilder<(ins "Index":$index), [{
       build($_builder, $_state, $_builder.getI1Type(), IndexAttr::get(index, $_builder.getContext()));
@@ -532,10 +532,10 @@ def rcln_ProloguePredicateOp : rcln_KernelPredicateOp<"prologue",
   let verifier = [{ return ::verify(*this); }];
 }
 
-def rcln_EpiloguePredicateOp : rcln_KernelPredicateOp<"epilogue",
-  [DeclareOpInterfaceMethods<rcln_EvaluatablePredicateOpInterface>]
+def accln_EpiloguePredicateOp : accln_KernelPredicateOp<"epilogue",
+  [DeclareOpInterfaceMethods<accln_EvaluatablePredicateOpInterface>]
   > {
-  let arguments = (ins rcln_IndexAttr:$index);
+  let arguments = (ins accln_IndexAttr:$index);
   let builders = [
     OpBuilder<(ins "Index":$index), [{
       build($_builder, $_state, $_builder.getI1Type(), IndexAttr::get(index, $_builder.getContext()));
@@ -547,9 +547,9 @@ def rcln_EpiloguePredicateOp : rcln_KernelPredicateOp<"epilogue",
   let verifier = [{ return ::verify(*this); }];
 }
 
-def rcln_PlacementPredicateOp : rcln_KernelPredicateOp<"place",
-  [DeclareOpInterfaceMethods<rcln_KernelPredicateOpInterface>]> {
-  let arguments = (ins rcln_PlacementPredicateAttr:$placement, rcln_IndexAttr:$index);
+def accln_PlacementPredicateOp : accln_KernelPredicateOp<"place",
+  [DeclareOpInterfaceMethods<accln_KernelPredicateOpInterface>]> {
+  let arguments = (ins accln_PlacementPredicateAttr:$placement, accln_IndexAttr:$index);
   let builders = [
     OpBuilder<(ins "IntegerAttr":$placement, "Index":$index), [{
       auto placementAttr = placement.cast<PlacementTypeAttr>();
@@ -563,10 +563,10 @@ def rcln_PlacementPredicateOp : rcln_KernelPredicateOp<"place",
   let verifier = [{ return ::verify(*this); }];
 }
 
-def rcln_IndexDefinedPredicateOp : rcln_KernelPredicateOp<"indexdef",
-  [DeclareOpInterfaceMethods<rcln_EvaluatablePredicateOpInterface>,
-   DeclareOpInterfaceMethods<rcln_KernelPredicateOpInterface>]> {
-  let arguments = (ins rcln_IndexAttr:$index);
+def accln_IndexDefinedPredicateOp : accln_KernelPredicateOp<"indexdef",
+  [DeclareOpInterfaceMethods<accln_EvaluatablePredicateOpInterface>,
+   DeclareOpInterfaceMethods<accln_KernelPredicateOpInterface>]> {
+  let arguments = (ins accln_IndexAttr:$index);
   let builders = [
     OpBuilder<(ins "Index":$index), [{
       build($_builder, $_state, $_builder.getI1Type(), IndexAttr::get(index, $_builder.getContext()));
@@ -578,8 +578,8 @@ def rcln_IndexDefinedPredicateOp : rcln_KernelPredicateOp<"indexdef",
   let verifier = [{ return ::verify(*this); }];
 }
 
-def rcln_ConjunctionPredicateOp : rcln_KernelPredicateOp<"conj",
-  [DeclareOpInterfaceMethods<rcln_KernelPredicateOpInterface>]> {
+def accln_ConjunctionPredicateOp : accln_KernelPredicateOp<"conj",
+  [DeclareOpInterfaceMethods<accln_KernelPredicateOpInterface>]> {
   let arguments = (ins Variadic<AnyType>:$values);
   let builders = [
     OpBuilder<(ins "ValueRange":$values), [{
@@ -600,8 +600,8 @@ def rcln_ConjunctionPredicateOp : rcln_KernelPredicateOp<"conj",
   let verifier = [{ return ::verify(*this); }];
 }
 
-def rcln_DisjunctionPredicateOp : rcln_KernelPredicateOp<"disj",
-  [DeclareOpInterfaceMethods<rcln_KernelPredicateOpInterface>]> {
+def accln_DisjunctionPredicateOp : accln_KernelPredicateOp<"disj",
+  [DeclareOpInterfaceMethods<accln_KernelPredicateOpInterface>]> {
   let arguments = (ins Variadic<AnyType>:$values);
   let builders = [
     OpBuilder<(ins "ValueRange":$values), [{
@@ -625,7 +625,7 @@ def rcln_DisjunctionPredicateOp : rcln_KernelPredicateOp<"disj",
 //
 // PrintOp
 //
-def rcln_PrintOp : rcln_Op<"print"> {
+def accln_PrintOp : accln_Op<"print"> {
   let summary = "print operation";
   let description = [{
     The "print" builtin operation prints a given input tensor, and produces
@@ -650,7 +650,7 @@ def rcln_PrintOp : rcln_Op<"print"> {
 //
 // TerminatorOp
 //
-def rcln_TerminatorOp : rcln_Op<"terminator", [Terminator]> {
+def accln_TerminatorOp : accln_Op<"terminator", [Terminator]> {
   let summary = "cf terminator operation";
   let description = [{
     "accln.terminator" is a special terminator operation for blocks inside
@@ -673,7 +673,7 @@ def rcln_TerminatorOp : rcln_Op<"terminator", [Terminator]> {
 //
 // ExecPlanOp
 //
-def rcln_ExecPlanOp : rcln_Op<"exec_plan", [ParentOneOf<["NestOp", "ScheduleOp"]>]> {
+def accln_ExecPlanOp : accln_Op<"exec_plan", [ParentOneOf<["NestOp", "ScheduleOp"]>]> {
 let summary = "loopnest execution plan operation";
 let description = [{
 The "accln.exec_plan" operation describes the execution plan for a loop nest.

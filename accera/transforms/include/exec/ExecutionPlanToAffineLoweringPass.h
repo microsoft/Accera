@@ -33,6 +33,9 @@ void populateExecutionPlanParallelizePatterns(mlir::OwningRewritePatternList& pa
 void populateExecutionPlanScaleHoistingPatterns(mlir::OwningRewritePatternList& patterns);
 void populateOutOfBoundsAccessHandlingPatterns(mlir::OwningRewritePatternList& patterns);
 void populateConvergeLoadStoresPatterns(mlir::OwningRewritePatternList& patterns);
+void populateExecutionPlanThriftyCachePatterns(mlir::OwningRewritePatternList& patterns);
+void populateExecutionPlanDelayedMappingPatterns(mlir::OwningRewritePatternList& patterns);
+void populateExecutionPlanLoopUnswitchingPatterns(mlir::OwningRewritePatternList& patterns);
 
 std::unique_ptr<mlir::Pass> createExecutionPlanMakeCachePass();
 std::unique_ptr<mlir::Pass> createExecutionPlanCopyReducePass();

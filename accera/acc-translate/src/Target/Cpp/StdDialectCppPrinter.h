@@ -6,10 +6,7 @@
 
 #ifndef STD_DIALECT_CPP_PRINTER_H_
 #define STD_DIALECT_CPP_PRINTER_H_
-
-// #include "CppPrinter.h"
-// #include "mlir/Dialect/StandardOps/IR/Ops.h"
-
+ 
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>

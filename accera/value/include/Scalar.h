@@ -139,6 +139,8 @@ namespace value
             return Scalar(static_cast<int64_t>(t));
         case ValueType::Index:
             return Scalar(static_cast<index_t>(t));
+        case ValueType::Float16:
+            return Scalar(float16_t{static_cast<float16_t::underlying_type>(t)});
         case ValueType::Float:
             return Scalar(static_cast<float>(t));
         case ValueType::Double:

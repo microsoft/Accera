@@ -3,12 +3,17 @@
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#ifndef LOOPNEST_TO_VALUE
-#define LOOPNEST_TO_VALUE
+#pragma once
 
-include "ir/include/nest/LoopNestOps.td"
-include "ir/include/value/ValueOps.td"
+#include <memory>
 
-def : Pat<(accln_PrintOp $input, $to_stderr), (accv_PrintOp $input, $to_stderr)>;
+// fwd decls
+namespace mlir
+{
+class Pass;
+} // namespace mlir
 
-#endif // LOOPNEST_TO_VALUE
+namespace accera::transforms::value
+{
+std::unique_ptr<mlir::Pass> createBarrierOptPass();
+} // namespace accera::transforms::value

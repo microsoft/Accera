@@ -499,18 +499,18 @@ namespace loopnest
         {
             if (constRange.NumIterations() < (int64_t)*val)
             {
-                loop->setAttr("rcv_unrolled", builder.getUnitAttr());
+                loop->setAttr("accv_unrolled", builder.getUnitAttr());
             }
         }
 
         if (auto val = GetUnrollAndJamFactor(loopIndex))
         {
-            loop->setAttr("rcv_unroll_jam", builder.getI64IntegerAttr((int64_t)*val));
+            loop->setAttr("accv_unroll_jam", builder.getI64IntegerAttr((int64_t)*val));
         }
 
         if (IsSaturated(loopIndex))
         {
-            loop->setAttr("rcv_saturated", builder.getUnitAttr());
+            loop->setAttr("accv_saturated", builder.getUnitAttr());
         }
 
         auto execPlan = GetScheduleOp().getOrCreateExecPlan();
@@ -528,7 +528,7 @@ namespace loopnest
                     auto indexAttr = val.dyn_cast<IndexAttr>();
                     if (loopIndex.GetId() == indexAttr.getValue().GetId())
                     {
-                        loop->setAttr("rcv_gpu_map", builder.getStringAttr(key.str()));
+                        loop->setAttr("accv_gpu_map", builder.getStringAttr(key.str()));
                     }
                 }
             }

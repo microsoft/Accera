@@ -37,8 +37,9 @@ namespace value
                 MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int16, ValueType::Boolean, ValueType::Int8);
                 MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int32, ValueType::Boolean, ValueType::Int8, ValueType::Int16);
                 MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int64, ValueType::Boolean, ValueType::Int8, ValueType::Int16, ValueType::Int32);
-                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Float, ValueType::Boolean, ValueType::Int8, ValueType::Int16, ValueType::Int32);
-                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Double, ValueType::Boolean, ValueType::Int8, ValueType::Int16, ValueType::Int32, ValueType::Int64, ValueType::Float);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Float16, ValueType::Boolean, ValueType::Int8, ValueType::Int16);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Float, ValueType::Boolean, ValueType::Int8, ValueType::Int16, ValueType::Int32, ValueType::Float16);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Double, ValueType::Boolean, ValueType::Int8, ValueType::Int16, ValueType::Int32, ValueType::Int64, ValueType::Float16, ValueType::Float);
 
             default:
                 return false;

@@ -205,7 +205,7 @@ namespace loopnest
         if (_indices.count(index) == 0)
             throw accera::utilities::InputException(accera::utilities::InputExceptionErrors::invalidArgument, "Splitting an unknown index");
         if (!IsLoopIndex(index))
-            throw accera::utilities::InputException(accera::utilities::InputExceptionErrors::invalidArgument, "Can't split an already-transformed index");
+            throw accera::utilities::InputException(accera::utilities::InputExceptionErrors::invalidArgument, "Cannot split an already-transformed index");
 
         auto parentRange = _indices[index].range;
         auto parentIncrement = parentRange.Increment();

@@ -177,7 +177,7 @@ void LoopNestOptPass::runOnOperation()
     auto func = getOperation();
 
     func.walk([&](AffineForOp op) {
-        if (op->getAttrOfType<UnitAttr>("rcv_unrolled"))
+        if (op->getAttrOfType<UnitAttr>("accv_unrolled"))
         {
             auto tripCount = getConstantTripCount(op);
             if (tripCount && *tripCount >= 1)

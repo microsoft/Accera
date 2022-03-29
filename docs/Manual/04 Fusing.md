@@ -118,7 +118,7 @@ for i in range(0, 16, 4):
 ```
 
 ### Constraint 1: the fusing dimension is executed sequentially
-The fusing dimension has a special constraint, which does not apply to other dimensions. Specifically, the fusing dimension cannot be parallelized or vectorized (parallelization and vectorization are presented in [Section 7](<07%20Plans%20-%20Vectorization%20and%20Parallelization.md>) ) and it must be executed sequentially. This constraint enables the safety guarantee discussed below.
+The fusing dimension has a special constraint, which does not apply to other dimensions. Specifically, the fusing dimension cannot be parallelized, vectorized, or tensorized (see [Section 7](<07%20Plans%20-%20Vectorization%20and%20Parallelization.md>) ) and it must be executed sequentially. This constraint enables the safety guarantee discussed below.
 
 ### Safety
 The fused schedule (before applying any subsequent transformations) is always logically equivalent to executing the original schedules one-by-one. However, is it safe? Recall that a schedule is considered safe if its underlying logic is guaranteed not to change, regardless of how we transform it. The safety of a fully fused schedule depends on the circumstances:

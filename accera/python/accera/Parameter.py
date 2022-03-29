@@ -4,11 +4,12 @@
 ####################################################################################################
 
 from typing import List
-
+from varname import varname
 
 class DelayedParameter:
-    def __init__(self):
+    def __init__(self, name=None):
         self._value = None
+        self._name = name
 
     def get_value(self):
         return self._value
@@ -20,7 +21,9 @@ class DelayedParameter:
 def create_parameters(count: int):
     if count < 1:
         raise ValueError("Invalid parameters count")
-    return (tuple([DelayedParameter() for i in range(count)]) if count > 1 else DelayedParameter())
+    names = varname(multi_vars=True)
+    return (tuple([DelayedParameter(name) for name in names])
+            if count > 1 else DelayedParameter(names[0]))
 
 
 def get_parameters_from_grid(parameter_grid: dict) -> List[dict]:

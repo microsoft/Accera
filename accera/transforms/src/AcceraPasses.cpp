@@ -152,6 +152,7 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
 
     valueFuncOpPM.addPass(createCanonicalizerPass());
     valueFuncOpPM.addPass(loopnest::createLoopNestToValueFuncPass({ { options.dumpIntraPassIR.getValue(), options.basename + "LoopNestToValueFuncPass_Subpasses" }, options.printLoops.getValue(), options.printVecOpDetails.getValue() }));
+    valueFuncOpPM.addPass(value::createBarrierOptPass());
 
     pmAdaptor.addPass(value::createValueFuncToTargetPass());
     pmAdaptor.addPass(createSymbolDCEPass());
@@ -163,14 +164,21 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     funcOpPM.addPass(createLowerAffinePass());
     funcOpPM.addPass(createConvertSCFToOpenMPPass());
 
+    // Or perhaps we should put the barrier optimization here
+
     pmAdaptor.addPass(value::createValueToStdPass(options.enableProfile));
+    pmAdaptor.addPass(value::createRangeValueOptimizePass());
     pmAdaptor.addPass(createCanonicalizerPass());
     pmAdaptor.addPass(createCSEPass());
 
     pmAdaptor.addPass(createGpuKernelOutliningPass());
-    pmAdaptor.addPass(createAcceraToGPUPass(execRuntime));
+    auto gpuPass = createAcceraToGPUPass(execRuntime);
+    if (gpuPass)
+    {
+        pmAdaptor.addPass(std::move(gpuPass));
+    }
 
-    if (execRuntime == accera::value::ExecutionRuntime::Vulkan)
+    if (execRuntime == accera::value::ExecutionRuntime::VULKAN)
     {
         OpPassManager& spirvModulePM = pm.nest<spirv::ModuleOp>();
         spirvModulePM.addPass(spirv::createLowerABIAttributesPass());
@@ -185,13 +193,12 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
         gpuModulePM.addPass(createStripDebugInfoPass());
         if (options.gpuOnly) return;
     }
-    pmAdaptor.addPass(createCanonicalizerPass());
 
     funcOpPM.addPass(createConvertVectorToSCFPass(
         VectorTransferToSCFOptions{} /*.setLowerPermutationMaps(true) .setLowerTensors(true).setUnroll(true) */));
     pmAdaptor.addPass(createLowerToCFGPass());
 
-    if (execRuntime != accera::value::ExecutionRuntime::Vulkan)
+    if (execRuntime != accera::value::ExecutionRuntime::VULKAN)
     {
         PassManagerAdaptor gpuModulePM(pm.nest<gpu::GPUModuleOp>(), options.dumpPasses.getValue(), options.basename + "_rocm_module");
         gpuModulePM.addPass(createLowerGpuOpsToROCDLOpsPass(kDeriveIndexBitwidthFromDataLayout));
@@ -212,7 +219,7 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     pmAdaptor.addPass(LLVM::createLegalizeForExportPass());
     pmAdaptor.addPass(value::createFunctionPointerResolutionPass());
 
-    if (execRuntime == accera::value::ExecutionRuntime::Vulkan)
+    if (execRuntime == accera::value::ExecutionRuntime::VULKAN)
     {
         pmAdaptor.addPass(vulkan::createConvertVulkanLaunchFuncToVulkanCallsWithTimingPass({ false }));
         pmAdaptor.addPass(createGpuToLLVMConversionPass());

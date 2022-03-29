@@ -11,7 +11,7 @@ include "mlir/IR/OpBase.td"
 //
 // Mapping operation interface 
 //
-def rcln_InjectableMappingOpInterface : OpInterface<"InjectableMapping"> {
+def accln_InjectableMappingOpInterface : OpInterface<"InjectableMapping"> {
   let description = [{
     Interface for mapping ops to be injected into a loopnest schedule
   }];

@@ -57,7 +57,7 @@ AA = plan.cache(A, max_elements=1024)
 ```
 
 
-## __Not yet implemented:__ Thrifty caching
+## Thrifty caching
 By default, Accera caching strategies are *thrifty* in the sense that the data is physically copied into an allocated cache only if the cached data somehow differs from the original active block. Therefore, if the original active block is already in the correct memory layout and resides contiguous in memory. Accera skips the caching steps and uses the original array instead. Note that a physical copy is created on a GPU if the cache is supposed to be allocated a different type of memory than the original array (e.g., the array is in global memory, but the cache is supposed to be in shared memory).
 
 For example, assume that `A` is a two-dimensional array and its active block at the chosen level is always one of its rows. If `A` is row-major, the rows are already stored contiguously. Additionally, the data in the active block and the data to be copied to cache are identical: both are contiguous and share the same memory layout. In this case, there is no benefit in using cache over the original array. The thrifty caching strategy will skip the caching steps and use the original array instead.
@@ -88,11 +88,58 @@ For example,
 AA = plan.cache(A, level=2, trigger_level=4)
 ```
 
-## __Not yet implemented:__ Mapping caches to specific types of memory
-Some target platforms have different types of memory that can hold Accera caches. In the case of a GPU target, caches can be located in *global or shared memory*. Following Python code can be used to specify the location of a cache:
+## Mapping caches to specific types of memory
+Some target platforms have different types of memory that can hold Accera caches. In the case of a GPU target, caches can be located in *global or shared memory*. To explicitly choose the location of the cache, we write:
 ```python
-AA = plan.cache(A, level=4, location=v100.MemoryType.SHARED)
+AA = plan.cache(A, level=4, location=v100.MemorySpace.SHARED)
 ```
 
+## Double buffering
+Caches can double-buffer data by loading the next active block's cache data into a temporary buffer during the current active block's usage and then moving that data into the cache buffer after the current active block is done being used. If the cache trigger level is the highest level in the loopnest then this does nothing as it is dependent on having another loop outside of the cache trigger loop. In shared memory caches on GPU this temporary buffer will automatically be allocated in private memory. Since the next iteration's data is loaded into a temporary buffer while the current iteration's data is in the cache buffer, any overlap in these active blocks would result in a write coherency issue similar to what occurs with Multicaching. Because of this, `double_buffer` may only be specified on an `INPUT` or `CONST` array as Accera does not perform multicache write coherence.
+```python
+AA = plan.cache(A, level=3, double_buffer=True)
+```
+
+Full schedule with equivalent pseudo-code:
+```python
+...
+M, N, K = 1024, 1024, 1024
+m_tile, n_tile, k_tile = 32, 64, 128
+nest = Nest((M, N, K))
+i, j, k = nest.get_indices()
+@nest.iteration_logic
+def _():
+    C[i,j] += A[i,k] * B[k,j]
+schedule = nest.create_schedule()
+schedule.tile((i, j, k), (m_tile, n_tile, k_tile))
+schedule.reorder(i, j, k, ii, jj, kk)
+
+plan = schedule.create_plan()
+plan.cache(A, index=ii, double_buffer=True)
+...
+```
+equivalent to:
+```python
+for i in range(0, M, m_tile):
+    for j in range(0, N, n_tile):
+        for ii_cache in range(0, m_tile):
+            for kk_cache in range(0, k_tile):
+                cache_A[ii_cache, kk_cache] = A[i+ii_cache, kk_cache]
+        for k in range(0, K-k_tile, k_tile): # Note: this loop doesn't run for the final K tile
+            for ii_cache in range(0, m_tile):
+                for kk_cache in range(0, k_tile):
+                    temp_A[ii_cache, kk_cache] = A[i+ii_cache, (k + k_tile) + kk_cache]
+            for ii in range(0, m_tile):
+                for jj in range(0, n_tile):
+                    for kk in range(0, k_tile):
+                        C[i+ii, j+jj] += cache_A[ii, kk] * B[k+kk, j+jj]
+            for ii_cache in range(0, m_tile):
+                for kk_cache in range(0, k_tile):
+                    cache_A[ii_cache, kk_cache] = temp_A[ii_cache, kk_cache]
+        for ii in range(0, m_tile):
+            for jj in range(0, n_tile):
+                for kk in range(0, k_tile):
+                    C[i+ii, j+jj] += cache_A[ii, kk] * B[k+kk, j+jj]
+```
 
 <div style="page-break-after: always;"></div>

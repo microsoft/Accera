@@ -8,6 +8,7 @@
 #define CPP_PRINTER_H_
 
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -117,13 +118,19 @@ namespace cpp_printer
         llvm::BumpPtrAllocator nameAllocator;
     };
 
+    // This is a bitmask flag because right now, the printer goes through the module as a whole and "discovers" the runtimes
+    // used within the module. This isn't the best system. Eventually, we should move to a system where it can be queried the runtimes
+    // that are enabled for the current function. Until we move to that design, however, we remain subscribed to the current paradigm.
     enum class Runtime
     {
-        None = 0,
+        NONE = 0,
         CUDA = 1 << 0,
+        ROCM = 1 << 1,
+        VULKAN = 1 << 2,
+        OPENMP = 1 << 3,
+        DEFAULT = 1 << 4,
 
-        LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ CUDA)
-        // TODO: add OpenMP? ROCM?
+        LLVM_MARK_AS_BITMASK_ENUM(/* LargestValue = */ DEFAULT)
     };
 
     /// Holding the states for the printer such as SSA names, type alias, etc
@@ -166,7 +173,7 @@ namespace cpp_printer
         llvm::SmallPtrSet<mlir::Operation*, 4> intrinsicDecls;
 
         // TODO: add more state kinds
-        Runtime runtimesDetected = Runtime::None;
+        Runtime runtimesDetected = Runtime::NONE;
     };
 
     /// Print the given MLIR into C++ code. Formatting is not a concern
@@ -485,6 +492,20 @@ namespace cpp_printer
     LogicalResult interleaveCommaWithError(const Container& c, raw_ostream& os, UnaryFunctor each_fn)
     {
         return interleaveWithError(c.begin(), c.end(), each_fn, [&]() { os << ", "; });
+    }
+
+    [[maybe_unused]] static bool isConstantScalarOp(Operation* op)
+    {
+        if (isa<mlir::IndexCastOp>(op))
+        {
+            return true;
+        }
+        else if (auto constantOp = dyn_cast<mlir::ConstantOp>(op))
+        {
+            auto resTy = constantOp.value().getType();
+            return resTy.isIntOrFloat() || resTy.isIndex();
+        }
+        return false;
     }
 
 } // namespace cpp_printer

@@ -514,7 +514,7 @@ module @optimized_matmul attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:3
                     affine.store %269, %2[((%267 - %arg3) floordiv 16) mod 16, (%144 - %arg4) mod 6, (((%267 - %arg3) mod 16) floordiv 8) mod 2] : memref<16x6x2xvector<8xf32>>
                   } {begin = 0 : i64, end = 0 : i64, index = #accln<"index{i_i_i,12}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 16, 1]}
                 } {begin = 0 : i64, end = 4 : i64, index = #accln<"index{k_i_i,10}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 16, 1]}
-              } {begin = 0 : i64, end = 0 : i64, index = #accln<"index{i_i_o,11}">, rcv_unrolled, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 16, 4]}
+              } {begin = 0 : i64, end = 0 : i64, index = #accln<"index{i_i_o,11}">, accv_unrolled, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [0, 16, 4]}
               affine.for %arg7 = 0 to 4 {
                 %4 = affine.apply affine_map<(d0, d1) -> (d0 + d1)>(%arg3, %arg5)
                 %5 = affine.apply affine_map<(d0, d1) -> (d0 + d1)>(%arg6, %arg7)

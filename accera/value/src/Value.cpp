@@ -294,8 +294,10 @@ namespace value
 
     bool Value::IsFloatingPoint() const
     {
-        return (_type.first == ValueType::Float || _type.first == ValueType::Double);
+        return (_type.first == ValueType::Float16 || _type.first == ValueType::Float || _type.first == ValueType::Double);
     }
+
+    bool Value::IsFloat16() const { return _type.first == ValueType::Float16; }
 
     bool Value::IsFloat32() const { return _type.first == ValueType::Float; }
 

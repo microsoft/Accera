@@ -317,21 +317,27 @@ namespace value
 
         Value LogicalOperation(ValueLogicalOperation op, Value source1, Value source2);
 
-        /// <summary> Performs matrix multiply accumulate operation D = A.B + C.
+        /// <summary> Performs matrix multiply load operation.
         /// There are restrictions on the input types and sizes. </summary>
-        /// <param name="dest"> The result destination matrix </param>
-        /// <param name="A"> The input A matrix </param>
-        /// <param name="B"> The input B matrix </param>
-        /// <param name="C"> The input C matrix </param>
-        void MFMA(Matrix& dest, Matrix A, Matrix B, Matrix C);
+        /// <param name="source"> The input memref </param>
+        /// <param name="shape"> The shape of the load </param>
+        /// <param name="operand"> The kind of the mfma matrix </param>
+        Matrix MFMALoad(Value source, const std::vector<int64_t> & shape, const std::string & operand);
+
+        /// <summary> Performs matrix multiply store operation.
+        /// There are restrictions on the source type. </summary>
+        /// <param name="source"> The input mfma matrix </param>
+        /// <param name="target"> The target memref </param>
+        void MFMAStore(Matrix source, Value target);
 
         /// <summary> Performs matrix multiply accumulate compute operation D = A.B + C.
+        /// This operation assumes that A, B, C, and D have been loaded using the MFMALoad operation.
         /// There are restrictions on the input types and sizes. </summary>
-        /// <param name="A"> The input A matrix </param>
-        /// <param name="B"> The input B matrix </param>
-        /// <param name="C"> The input C matrix </param>
-        /// <returns> An instance of Matrix pointing to the result </returns>
-        // Matrix MFMACompute(Matrix A, Matrix B, Matrix C);
+        /// <param name="A"> The input A mfma matrix </param>
+        /// <param name="B"> The input B mfma matrix </param>
+        /// <param name="C"> The input C mfma matrix </param>
+        /// <returns> The result destination mfma matrix </returns>
+        Matrix MFMACompute(Matrix A, Matrix B, Matrix C); 
 
         Scalar Max(Vector input);
 
@@ -461,7 +467,11 @@ namespace value
 
         virtual Value LogicalOperationImpl(ValueLogicalOperation op, Value source1, Value source2) = 0;
 
-        virtual void MFMAImpl(Matrix& dest, Matrix A, Matrix B, Matrix C) = 0;
+        virtual Matrix MFMALoadImpl(Value source, const std::vector<int64_t> & shape, const std::string & operand) = 0;
+
+        virtual void MFMAStoreImpl(Matrix source, Value target) = 0;
+
+        virtual Matrix MFMAComputeImpl(Matrix A, Matrix B, Matrix C) = 0;
 
         virtual Scalar MaxImpl(Vector input) = 0;
 
@@ -768,7 +778,9 @@ namespace value
 
     void ForRanges(std::vector<Scalar> range_ends, std::function<void(std::vector<Scalar>)> fn);
 
-    void MFMA(Matrix& dest, Matrix A, Matrix B, Matrix C);
+    Matrix MFMALoad(Value source, const std::vector<int64_t> & shape, const std::string & operand);
+    void MFMAStore(Matrix source, Value target);
+    Matrix MFMACompute(Matrix A, Matrix B, Matrix C); 
 
     /// <summary> Runs the provided function, in parallel if possible </summary>
     /// <typeparam name="Tys..."> The types that represent the captured values. Must be `Value` or types that provide a member

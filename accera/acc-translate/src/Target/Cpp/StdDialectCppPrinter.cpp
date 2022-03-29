@@ -148,7 +148,21 @@ namespace cpp_printer
 
     LogicalResult StdDialectCppPrinter::printConstantOp(ConstantOp constOp)
     {
-        state.nameState.addConstantValue(constOp.getResult(), constOp.getValue());
+        if (isConstantScalarOp(constOp))
+        {
+            state.nameState.addConstantValue(constOp.getResult(), constOp.getValue());
+        }
+        else
+        {
+            RETURN_IF_FAILED(printer->printType(constOp.getType()));
+            os << " "
+               << state.nameState.getOrCreateName(constOp.getResult(),
+                                                  SSANameState::SSANameKind::Constant);
+            // Now print out the constant value
+            os << " = ";
+            if (failed(printer->printAttribute(constOp.getValue())))
+                return constOp.emitOpError("<<unable to print constant value>>");
+        }
         return success();
     }
 

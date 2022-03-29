@@ -221,15 +221,33 @@ namespace value
         return LogicalOperationImpl(op, source1, source2);
     }
 
-    void EmitterContext::MFMA(Matrix& dest, Matrix A, Matrix B, Matrix C)
+    Matrix EmitterContext::MFMALoad(Value source, const std::vector<int64_t>& shape, const std::string& operand)
+    {
+        if (operand != "AOp" && operand != "BOp" && operand != "COp")
+        {
+            throw InputException(InputExceptionErrors::invalidArgument);
+        }
+        return MFMALoadImpl(source, shape, operand);
+    }
+
+    void EmitterContext::MFMAStore(Matrix source, Value target)
+    {
+        if (source.GetType() != target.GetBaseType())
+        {
+            throw InputException(InputExceptionErrors::invalidArgument);
+        }
+        MFMAStoreImpl(source, target);
+    }
+
+    Matrix EmitterContext::MFMACompute(Matrix A, Matrix B, Matrix C)
     {
 
-        if (A.GetType() != B.GetType() || dest.GetType() != C.GetType())
+        if (A.GetType() != B.GetType())
         {
             throw InputException(InputExceptionErrors::invalidArgument);
         }
 
-        return MFMAImpl(dest, A, B, C);
+        return MFMAComputeImpl(A, B, C);
     }
 
     Scalar EmitterContext::Cast(Scalar value, ValueType type)
@@ -465,9 +483,19 @@ namespace value
         }
     }
 
-    void MFMA(Matrix& dest, Matrix A, Matrix B, Matrix C)
+    Matrix MFMALoad(Value source, const std::vector<int64_t>& shape, const std::string& operand)
     {
-        return GetContext().MFMA(dest, A, B, C);
+        return GetContext().MFMALoad(source, shape, operand);
+    }
+
+    void MFMAStore(Matrix source, Value target)
+    {
+        GetContext().MFMAStore(source, target);
+    }
+
+    Matrix MFMACompute(Matrix A, Matrix B, Matrix C)
+    {
+        return GetContext().MFMACompute(A, B, C);
     }
 
     void DebugBreak()

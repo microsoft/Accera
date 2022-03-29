@@ -4,9 +4,10 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "exec/ExecutionPlanOps.h"
-#include "exec/ExecutionPlanDialect.cpp.inc"
+
 #include "IRUtil.h"
 #include "exec/ExecutionPlanAttributes.h"
+#include "exec/ExecutionPlanDialect.cpp.inc"
 #include "exec/ExecutionPlanEnums.cpp.inc"
 #include "nest/Index.h"
 #include "nest/LoopNestAttributes.h"
@@ -839,7 +840,7 @@ namespace executionPlan
         case MemorySpace::Shared:
             memoryLocation = gpu::GPUDialect::getWorkgroupAddressSpace();
             break;
-        case MemorySpace::Local:
+        case MemorySpace::Private:
             memoryLocation = gpu::GPUDialect::getPrivateAddressSpace();
             break;
         }
@@ -925,8 +926,8 @@ namespace executionPlan
         case MemorySpace::Shared:
             memoryLocation = (int)value::MemorySpace::Shared;
             break;
-        case MemorySpace::Local:
-            memoryLocation = (int)value::MemorySpace::Local;
+        case MemorySpace::Private:
+            memoryLocation = (int)value::MemorySpace::Private;
             break;
         }
 
@@ -969,13 +970,14 @@ namespace executionPlan
                             mlir::MemRefType cacheType,
                             accera::ir::value::MemorySpace memorylocation)
     {
-        build(builder,
-              result,
-              cacheType,
-              memorylocation,
-              mlir::AffineMap::getMultiDimIdentityMap(cacheType.getRank(), builder.getContext()),
-              std::vector<Index>{},
-              std::vector<Index>{});
+        build(
+            builder,
+            result,
+            cacheType,
+            memorylocation,
+            mlir::AffineMap::getMultiDimIdentityMap(cacheType.getRank(), builder.getContext()),
+            std::vector<Index>{},
+            std::vector<Index>{});
     }
 
     void MakeCacheOp::build(OpBuilder& builder,
@@ -988,6 +990,7 @@ namespace executionPlan
     {
         auto offsetAccessIndexAttrs = util::ConvertIndexVectorToArrayAttr(offsetAccessIndices, builder.getContext());
         auto multiCacheAccessIndexAttrs = util::ConvertIndexVectorToArrayAttr(multiCacheAccessIndices, builder.getContext());
+
         build(builder,
               result,
               cacheType,
@@ -1007,18 +1010,19 @@ namespace executionPlan
         return result;
     }
 
-    mlir::AffineValueMap MakeCacheOp::insertCachePosition(mlir::Operation* where, const std::vector<mlir::Value>& baseArrayIndices)
+    mlir::AffineValueMap MakeCacheOp::insertCachePosition(mlir::Operation* where, const std::vector<mlir::Value>& baseArrayIndices, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopnestIndices)
     {
-        return insertCachePosition(where->getBlock(), baseArrayIndices);
+        return insertCachePosition(where->getBlock(), baseArrayIndices, unrealizedLoopnestIndices);
     }
 
-    mlir::AffineValueMap MakeCacheOp::insertCachePosition(mlir::Block* where, const std::vector<mlir::Value>& baseArrayIndices)
+    mlir::AffineValueMap MakeCacheOp::insertCachePosition(mlir::Block* where, const std::vector<mlir::Value>& baseArrayIndices, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopnestIndices)
     {
+        // The unrealizedLoopnestIndices contain indices for a loopnest that hasn't been fully constructed yet
         std::vector<loopnest::Index> cacheMultiCacheIndices = util::ConvertArrayAttrToIndexVector(multiCacheAccessIndices());
         std::vector<loopnest::Index> cacheOffsetAccessIndices = util::ConvertArrayAttrToIndexVector(offsetAccessIndices());
 
-        std::vector<mlir::Value> multiCacheIVs = util::GetCurrentIndexIVs(cacheMultiCacheIndices, where);
-        std::vector<mlir::Value> offsetAccessIVs = util::GetCurrentIndexIVs(cacheOffsetAccessIndices, where);
+        std::vector<mlir::Value> multiCacheIVs = util::GetCurrentIndexIVs(cacheMultiCacheIndices, where, unrealizedLoopnestIndices);
+        std::vector<mlir::Value> offsetAccessIVs = util::GetCurrentIndexIVs(cacheOffsetAccessIndices, where, unrealizedLoopnestIndices);
 
         mlir::OpBuilder builder = mlir::OpBuilder::atBlockBegin(where);
 
@@ -1032,6 +1036,7 @@ namespace executionPlan
         return insertCachePosition(multiCacheIterationCounters, offsetAccessIVs, baseArrayIndices);
     }
 
+    // Note : this doesn't always work after canonicalization potentially removes operands
     template <typename OpType>
     std::vector<mlir::Value> GetBaseArrayLoadStorePosition(OpType op, const mlir::ArrayAttr& multiCacheAccessIndices, const mlir::ArrayAttr& offsetAccessIndices)
     {
@@ -1214,7 +1219,9 @@ namespace executionPlan
                                          ValueRange ubOperands,
                                          mlir::ArrayAttr lbMaps,
                                          mlir::ArrayAttr ubMaps,
-                                         AffineMap activeBlockToCacheMap)
+                                         AffineMap activeBlockToCacheMap,
+                                         StringRef activeBlockTag,
+                                         bool thrifty)
     {
         build(builder,
               result,
@@ -1225,7 +1232,9 @@ namespace executionPlan
               lbMaps,
               ubMaps,
               activeBlockToCacheMap,
-              llvm::None); // scaleValues
+              llvm::None, // scaleValues
+              activeBlockTag,
+              thrifty);
     }
 
     //
@@ -1332,7 +1341,10 @@ namespace executionPlan
                                    int64_t id,
                                    int64_t cacheHierarchyLevel,
                                    bool activeBlockCache,
-                                   bool dimReorderCache)
+                                   bool dimReorderCache,
+                                   bool thrifty,
+                                   bool doubleBufferCache,
+                                   accera::ir::value::MemorySpace doubleBufferMemorySpace)
     {
         auto cacheRegionRelevantIndexRangeAttrs = util::VectorToArrayAttr<IndexRange, IndexRangeAttr>(
             cacheAccessContext.cacheRegionRelevantScheduleIndexRanges,
@@ -1368,6 +1380,15 @@ namespace executionPlan
         if (dimReorderCache)
         {
             result.addAttribute("dimReorderCache", builder.getUnitAttr());
+        }
+        if (thrifty)
+        {
+            result.addAttribute("thrifty", builder.getUnitAttr());
+        }
+        if (doubleBufferCache)
+        {
+            result.addAttribute("doubleBufferCache", builder.getUnitAttr());
+            result.addAttribute("doubleBufferMemorySpace", value::MemorySpaceAttr::get(builder.getContext(), doubleBufferMemorySpace));
         }
         result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({ 1 /* fromValue */, 1 /* toValue */, 1 /* baseInput */, static_cast<int32_t>(cacheAccessContext.fullRelevantScheduleIndices.size()), static_cast<int32_t>(cacheAccessContext.externalRelevantScheduleIndices.size()) }));
     }
@@ -1438,7 +1459,10 @@ namespace executionPlan
                                              loopnest::Index innermostLoopNestIndex,
                                              int64_t id,
                                              int64_t cacheHierarchyLevel,
-                                             bool dimReorderCache)
+                                             bool dimReorderCache,
+                                             bool thrifty,
+                                             bool doubleBufferCache,
+                                             accera::ir::value::MemorySpace doubleBufferMemorySpace)
     {
         result.addTypes(builder.getIndexType());
         result.addOperands(input);
@@ -1452,6 +1476,15 @@ namespace executionPlan
         if (dimReorderCache)
         {
             result.addAttribute("dimReorderCache", builder.getUnitAttr());
+        }
+        if (thrifty)
+        {
+            result.addAttribute("thrifty", builder.getUnitAttr());
+        }
+        if (doubleBufferCache)
+        {
+            result.addAttribute("doubleBufferCache", builder.getUnitAttr());
+            result.addAttribute("doubleBufferMemorySpace", value::MemorySpaceAttr::get(builder.getContext(), doubleBufferMemorySpace));
         }
     }
 
@@ -1492,6 +1525,31 @@ namespace executionPlan
         return op;
     }
 
+    //
+    // DelayedMappingRegionOp
+    //
+    void DelayedMappingRegionOp::build(mlir::OpBuilder& builder,
+                                       mlir::OperationState& result,
+                                       mlir::Value from,
+                                       mlir::Value to)
+    {
+        result.addOperands({ from, to });
+        mlir::Region* region = result.addRegion();
+        mlir::Block* bodyBlock = new mlir::Block;
+        region->getBlocks().push_back(bodyBlock);
+        ensureTerminator(*region, builder, result.location);
+    }
+
+    DelayedMappingRegionOp MakeDelayedMappingRegion(mlir::OpBuilder& builder, mlir::Value from, mlir::Value to, std::function<void(mlir::OpBuilder&)> body)
+    {
+        auto loc = from.getLoc();
+        auto mappingRegionOp = builder.create<DelayedMappingRegionOp>(loc, from, to);
+        auto bodyBuilder = mappingRegionOp.getBodyBuilder();
+        body(bodyBuilder);
+
+        return mappingRegionOp;
+    }
+
     // Parse an instance of an attribute registered to the execution plan dialect.
     mlir::Attribute ExecutionPlanDialect::parseAttribute(mlir::DialectAsmParser& parser, mlir::Type type) const
     {
@@ -1507,6 +1565,10 @@ namespace executionPlan
         else if (keyword == "parallelizationinfo")
         {
             return parseParallelizationInfo(parser);
+        }
+        else if (keyword == "tensorizationinfo")
+        {
+            return parseTensorizationInfo(parser);
         }
         else if (keyword == "inplaceunrollinfo")
         {

@@ -134,7 +134,7 @@ namespace executionPlan
 
         ValueType getValue() const;
 
-        static llvm::StringRef getKeyName() { return "rcxp_vectorizationInfo"; }
+        static llvm::StringRef getKeyName() { return "accxp_vectorizationInfo"; }
     };
 
     class ParallelizationInfoAttr
@@ -148,7 +148,7 @@ namespace executionPlan
 
         ValueType getValue() const;
 
-        static llvm::StringRef getKeyName() { return "rcxp_parallelizationInfo"; }
+        static llvm::StringRef getKeyName() { return "accxp_parallelizationInfo"; }
     };
 
     class TensorizationInfoAttr
@@ -162,7 +162,7 @@ namespace executionPlan
 
         ValueType getValue() const;
 
-        static llvm::StringRef getKeyName() { return "rcxp_tensorizationInfo"; }
+        static llvm::StringRef getKeyName() { return "accxp_tensorizationInfo"; }
     };
 
     class InPlaceUnrollInfoAttr
@@ -176,7 +176,7 @@ namespace executionPlan
 
         ValueType getValue() const;
 
-        static llvm::StringRef getKeyName() { return "rcxp_inPlaceUnrollInfo"; }
+        static llvm::StringRef getKeyName() { return "accxp_inPlaceUnrollInfo"; }
     };
 
     //

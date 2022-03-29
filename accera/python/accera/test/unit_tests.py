@@ -24,6 +24,7 @@ class ModuleScope:
     """Ensures that the global Package module is restored when using
     private APIs to set and clear the active module
     """
+
     def __init__(self, module):
         self.module = module
 
@@ -39,6 +40,7 @@ class ModuleScope:
 
 
 class ContainerTypesTests(unittest.TestCase):
+
     def test_valor(self) -> None:
         from accera import ScalarType
         from accera._lang_python import _MemoryLayout
@@ -83,7 +85,8 @@ class ContainerTypesTests(unittest.TestCase):
             self.assertEqual(s, val)
 
         # test scalar creation from value with no layout
-        for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.float32, ScalarType.float64]:
+        for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.float16, ScalarType.float32,
+                  ScalarType.float64]:
             x = _Valor(t, _MemoryLayout())
             s = Scalar(x)
             self.assertIsNotNone(s)
@@ -101,6 +104,7 @@ class ContainerTypesTests(unittest.TestCase):
 
 
 class PackagingTypesTests(unittest.TestCase):
+
     def test_compiler_options(self) -> None:
         from accera import CompilerOptions, _GetTargetDeviceFromName
 
@@ -380,6 +384,7 @@ class PackagingTypesTests(unittest.TestCase):
 
 
 class ExecutionPlanTypesTests(unittest.TestCase):
+
     def test_gpu_config(self) -> None:
         from accera._lang_python._lang import _GPU, _Dim3
         gpu_config = _GPU(grid=_Dim3(x=8, y=16, z=1), block=_Dim3(16, 32, 2))
@@ -394,6 +399,7 @@ class ExecutionPlanTypesTests(unittest.TestCase):
 
 
 class LogicTypesTests(unittest.TestCase):
+
     def test_if_context(self) -> None:
         from accera._lang_python._lang import _If, Scalar
 
@@ -434,6 +440,7 @@ class LogicTypesTests(unittest.TestCase):
         i, j = nest.get_indices()
 
         def test_fn():
+
             def if_block():
                 A[i, j] = 42
 
@@ -447,6 +454,7 @@ class LogicTypesTests(unittest.TestCase):
 
 
 class TargetsTest(unittest.TestCase):
+
     def test_equivalence_check(self) -> None:
         from accera import Target
         t1 = Target()

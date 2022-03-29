@@ -177,4 +177,6 @@ CacheAccessContext MakeCacheAccessContext(
     mlir::Value cache,
     CacheInfo& cacheInfo);
 
+DelayedMappingRegionOp MakeDelayedMappingRegion(mlir::OpBuilder& builder, mlir::Value from, mlir::Value to, std::function<void(mlir::OpBuilder&)> body);
+
 } // namespace accera::ir::executionPlan

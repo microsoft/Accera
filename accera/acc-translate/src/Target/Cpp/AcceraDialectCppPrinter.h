@@ -32,7 +32,9 @@ namespace cpp_printer
 
         std::string getName() override { return "Accera"; }
 
-        LogicalResult printMFMAComputeOp(Operation* op);
+        LogicalResult printOp(accera::ir::value::MFMAComputeOp op);
+        LogicalResult printOp(accera::ir::value::CallOp op);
+        LogicalResult printOp(accera::ir::value::ReturnOp op);
 
         LogicalResult printDialectOperation(Operation* op, bool* skipped, bool* consumed) override;
 

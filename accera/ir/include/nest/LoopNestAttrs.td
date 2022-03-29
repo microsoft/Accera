@@ -25,7 +25,7 @@ def FRAGMENT_ALL : I64EnumAttrCase<"all", 3>;
 def FRAGMENT_SELECT : I64EnumAttrCase<"select", 4>;
 def FRAGMENT_RANGE : I64EnumAttrCase<"range", 5>;
 
-def rcln_FragmentTypeAttr : I64EnumAttr<
+def accln_FragmentTypeAttr : I64EnumAttr<
   "FragmentType", "An attribute containing a Fragment enum",
   [FRAGMENT_FIRST, FRAGMENT_LAST, FRAGMENT_END_BOUNDARY, FRAGMENT_ALL, FRAGMENT_SELECT, FRAGMENT_RANGE]> {
   let cppNamespace = "::accera::ir::loopnest";
@@ -34,7 +34,7 @@ def rcln_FragmentTypeAttr : I64EnumAttr<
 def PLACEMENT_BEFORE : I64EnumAttrCase<"before", 0>;
 def PLACEMENT_AFTER : I64EnumAttrCase<"after", 1>;
 
-def rcln_PlacementPredicateAttr : I64EnumAttr<
+def accln_PlacementPredicateAttr : I64EnumAttr<
   "PlacementType", "An attribute containing a Placement enum",
   [PLACEMENT_BEFORE, PLACEMENT_AFTER]> {
   let cppNamespace = "::accera::ir::loopnest";
@@ -44,13 +44,13 @@ def POSITION_PROLOGUE : I64EnumAttrCase<"prologue", 0>;
 def POSITION_BODY : I64EnumAttrCase<"body", 1>;
 def POSITION_EPILOGUE : I64EnumAttrCase<"epilogue", 2>;
 
-def rcln_PositionAttr : I64EnumAttr<
+def accln_PositionAttr : I64EnumAttr<
   "Position", "An attribute containing a Placement enum",
   [POSITION_PROLOGUE, POSITION_BODY, POSITION_EPILOGUE]> {
   let cppNamespace = "::accera::ir::loopnest";
 }
 
-def rcln_IndexAttr : DialectAttr<
+def accln_IndexAttr : DialectAttr<
     LoopNest_Dialect,
     CPred<"$_self.isa<IndexAttr>()">,
     "Symbolic index attribute"> {
@@ -60,7 +60,7 @@ def rcln_IndexAttr : DialectAttr<
   let constBuilderCall = "$0";
 }
 
-def rcln_IndexRangeAttr : DialectAttr<
+def accln_IndexRangeAttr : DialectAttr<
     LoopNest_Dialect,
     CPred<"$_self.isa<IndexRangeAttr>()">,
     "Index range attribute"> {
@@ -70,7 +70,7 @@ def rcln_IndexRangeAttr : DialectAttr<
   let constBuilderCall = "$0";
 }
 
-def rcln_RangeAttr : DialectAttr<
+def accln_RangeAttr : DialectAttr<
     LoopNest_Dialect,
     CPred<"$_self.isa<RangeAttr>()">,
     "Range attribute"> {
@@ -80,7 +80,7 @@ def rcln_RangeAttr : DialectAttr<
   let constBuilderCall = "$0";
 }
 
-def rcln_IterationDomainAttr : DialectAttr<
+def accln_IterationDomainAttr : DialectAttr<
     LoopNest_Dialect,
     CPred<"$_self.isa<IterationDomainAttr>()">,
     "IterationDomain attribute"> {
@@ -90,7 +90,7 @@ def rcln_IterationDomainAttr : DialectAttr<
   let constBuilderCall = "$0";
 }
 
-def rcln_SplitIndexAttr : DialectAttr<
+def accln_SplitIndexAttr : DialectAttr<
     LoopNest_Dialect,
     CPred<"$_self.isa<SplitIndexAttr>()">,
     "Split index attribute"> {
@@ -100,7 +100,7 @@ def rcln_SplitIndexAttr : DialectAttr<
   let constBuilderCall = "$0";
 }
 
-def rcln_TransformedDomainAttr : DialectAttr<
+def accln_TransformedDomainAttr : DialectAttr<
     LoopNest_Dialect,
     CPred<"$_self.isa<TransformedDomainAttr>()">,
     "TransformedDomain attribute"> {
@@ -110,7 +110,7 @@ def rcln_TransformedDomainAttr : DialectAttr<
   let constBuilderCall = "$0";
 }
 
-def rcln_OperandIndexAttr : DialectAttr<
+def accln_OperandIndexAttr : DialectAttr<
     LoopNest_Dialect,
     CPred<"$_self.isa<OperandIndexAttr>()">,
     "Attribute referencing an operand of an op"> {

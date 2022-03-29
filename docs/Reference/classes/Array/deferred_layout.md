@@ -3,14 +3,14 @@
 
 # Accera v1.2.1 Reference
 
-## `accera.Array.deferred_layout(layout)`
+## `accera.Array.deferred_layout(cache)`
 Specifies the layout for a `Array.Role.CONST` array based on a `Cache`. For more details, see [Deferred layout of constant arrays](<../../../Manual/08%20Deferred%20Layout%20of%20Constant%20Arrays.md>)
 
 ## Arguments
 
 argument | description | type/default
 --- | --- | ---
-`layout` | The layout to set. | `accera.Array.Layout`
+`cache` | The cache that defines the layout to set. | `accera.Cache`
 
 ## Examples
 

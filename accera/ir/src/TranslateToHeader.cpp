@@ -84,6 +84,12 @@ namespace ir
             os << "//\n\n";
             os << "#include <stdint.h>\n\n";
 
+            // for float16_t
+            os << "#if !defined(ACCERA_FLOAT)\n";
+            os << "#define ACCERA_FLOAT 1\n";
+            os << "typedef uint16_t float16_t;\n";
+            os << "#endif // !defined(ACCERA_FLOAT)\n";
+
             os << "#if defined(__cplusplus)\n";
             os << "extern \"C\"\n";
             os << "{\n";
@@ -284,6 +290,10 @@ namespace ir
             else if (t.isa<mlir::IntegerType>())
             {
                 WriteIntegerType(os, t);
+            }
+            else if (t.isF16())
+            {
+                os << "float16_t";
             }
             else if (t.isF32())
             {

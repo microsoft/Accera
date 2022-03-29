@@ -7,6 +7,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Debug.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/AffineExprVisitor.h>
@@ -28,6 +29,10 @@
 #include "VectorDialectCppPrinter.h"
 
 using namespace llvm;
+
+namespace ir = accera::ir;
+namespace utilir = accera::ir::util;
+namespace vir = accera::ir::value;
 
 namespace mlir
 {
@@ -460,19 +465,7 @@ namespace cpp_printer
     {
         RETURN_IF_FAILED(checkMemRefType(memRefType));
         RETURN_IF_FAILED(printType(memRefType.getElementType()));
-        auto rank = memRefType.getRank();
-        if (rank <= 1)
-        {
-            os << " *" << arrayName;
-            return success();
-        }
-
-        auto shape = memRefType.getShape();
-        os << " (*" << arrayName << ")";
-        for (auto d : shape.drop_front())
-        {
-            os << "[" << d << "]";
-        }
+        os << " *" << arrayName;
         return success();
     }
 
@@ -571,17 +564,29 @@ namespace cpp_printer
     LogicalResult CppPrinter::printMemRefLoadOrStore(bool isLoad, Value memref, MemRefType memRefType, Operation::operand_range indices, Value targetOrSrc)
     {
         auto rank = memRefType.getRank();
+        auto srcTargetsIsVectorTy = targetOrSrc.getType().isa<VectorType>();
+        std::string vectorTypeName = "";
+        if (srcTargetsIsVectorTy)
+        {
+            SmallString<128> nameStr("");
+            llvm::raw_svector_ostream strm(nameStr);
+            CppPrinter cppPrinter(strm);
+            (void)cppPrinter.printType(targetOrSrc.getType());
+            vectorTypeName = strm.str().str();
+        }
+        auto memrefAccessPrefix = srcTargetsIsVectorTy ? std::string("*((") + vectorTypeName + "*)(&(" : std::string("");
+        auto memrefAccessSuffix = srcTargetsIsVectorTy ? ")))" : "";
         if (rank == 0)
         {
             if (isLoad)
             {
                 RETURN_IF_FAILED(printDeclarationForValue(targetOrSrc));
                 os << " = ";
-                os << "*" << state.nameState.getName(memref);
+                os << memrefAccessPrefix << state.nameState.getName(memref) << memrefAccessSuffix;
             }
             else
             {
-                os << "*" << state.nameState.getName(memref);
+                os << memrefAccessPrefix << state.nameState.getName(memref) << memrefAccessSuffix;
                 os << " = ";
                 RETURN_IF_FAILED(printDeclarationForValue(targetOrSrc));
             }
@@ -650,11 +655,11 @@ namespace cpp_printer
             if (isLoad)
             {
                 RETURN_IF_FAILED(printDeclarationForValue(targetOrSrc));
-                os << " = " << state.nameState.getName(memref) << offsetStr;
+                os << " = " << memrefAccessPrefix << state.nameState.getName(memref) << offsetStr << memrefAccessSuffix;
             }
             else
             {
-                os << state.nameState.getName(memref) << offsetStr;
+                os << memrefAccessPrefix << state.nameState.getName(memref) << offsetStr << memrefAccessSuffix;
                 os << " = " << state.nameState.getName(targetOrSrc);
             }
         }
@@ -665,11 +670,15 @@ namespace cpp_printer
             {
                 RETURN_IF_FAILED(printDeclarationForValue(targetOrSrc));
                 os << " = ";
+                os << memrefAccessPrefix;
                 RETURN_IF_FAILED(printMemRefAccess(memref, memRefType, offsetVarName));
+                os << memrefAccessSuffix;
             }
             else
             {
+                os << memrefAccessPrefix;
                 RETURN_IF_FAILED(printMemRefAccess(memref, memRefType, offsetVarName));
+                os << memrefAccessSuffix;
                 os << " = " << state.nameState.getName(targetOrSrc);
             }
         }
@@ -820,6 +829,19 @@ namespace cpp_printer
     LogicalResult CppPrinter::printFunctionDeclaration(FuncOp funcOp,
                                                        bool trailingSemiColon)
     {
+        if (funcOp->hasAttr(ir::HeaderDeclAttrName) && funcOp->hasAttr(ir::RawPointerAPIAttrName))
+        {
+            os << "extern \"C\" ";
+        }
+
+        if (auto execRuntime = utilir::ResolveExecutionRuntime(funcOp, /* exact */ true);
+            execRuntime &&
+            (execRuntime == vir::ExecutionRuntime::ROCM) &&
+            utilir::ResolveExecutionTarget(funcOp, /* exact */ true) == vir::ExecutionTarget::CPU)
+        {
+            os << "__host__ ";
+        }
+
         if (failed(printTypes(funcOp.getType().getResults())))
         {
             return funcOp.emitOpError() << "<<Unable to print return type>>";
@@ -999,12 +1021,11 @@ namespace cpp_printer
             return success();
         }
 
-        if (isa<ConstantOp>(op) || isa<IndexCastOp>(op))
+        if (isConstantScalarOp(op))
         {
             *skipped = true;
         }
-
-        if (!isa<ConstantOp>(op) && !isa<IndexCastOp>(op) && op->getNumRegions() == 0)
+        else if (op->getNumRegions() == 0)
         {
             os << "/*" << *op << "*/\n";
         }
@@ -1031,6 +1052,7 @@ namespace cpp_printer
     void CppPrinter::registerAllDialectPrinters()
     {
         [[maybe_unused]] static bool init_once = [&]() {
+            registerDialectPrinter<AcceraDialectCppPrinter>();
             registerDialectPrinter<AffineDialectCppPrinter>();
             registerDialectPrinter<GpuDialectCppPrinter>();
             registerDialectPrinter<RocDLDialectCppPrinter>();

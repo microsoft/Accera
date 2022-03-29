@@ -84,6 +84,7 @@ class Array:
                 ScalarType.int16: "int16",
                 ScalarType.int32: "int32",
                 ScalarType.int64: "int64",
+                ScalarType.float16: "float16",
                 ScalarType.float32: "float32",
                 ScalarType.float64: "float64",
             # TODO: more types
@@ -218,6 +219,16 @@ class Array:
         context.function_args = tuple(args_list)
 
     def _replay_delayed_calls(self):
+        '''
+        This method is called once per adding function, so it can be called multiple times when  
+        multiple functions get added. In order for the functions to be added correctly, we need to make sure all 
+        the residual states are cleared between different method calls.
+
+        For example, in Schedule class, we identify that Schedule._index_map can have residual states, so we need to reset self._index_map
+        before we replay the delayed methods.
+
+        If there is no residual state between different method calls, no need to reset.
+        '''
         for delayed_call in self._delayed_calls:
             params = self._delayed_calls[delayed_call]
             if isinstance(params, Tuple):

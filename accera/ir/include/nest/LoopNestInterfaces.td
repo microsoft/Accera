@@ -8,7 +8,7 @@
 
 include "mlir/IR/OpBase.td"
 
-def rcln_EvaluatablePredicateOpInterface : OpInterface<"EvaluatablePredicateOpInterface"> {
+def accln_EvaluatablePredicateOpInterface : OpInterface<"EvaluatablePredicateOpInterface"> {
   let description = [{
     Evaluatable predicate at emit-time
   }];
@@ -23,7 +23,7 @@ def rcln_EvaluatablePredicateOpInterface : OpInterface<"EvaluatablePredicateOpIn
   ];
 }
 
-def rcln_KernelPredicateOpInterface : OpInterface<"KernelPredicateOpInterface"> {
+def accln_KernelPredicateOpInterface : OpInterface<"KernelPredicateOpInterface"> {
   let description = [{
     Predicate determining if a Kernel should be run
   }];
@@ -45,7 +45,7 @@ def rcln_KernelPredicateOpInterface : OpInterface<"KernelPredicateOpInterface"> 
 
 // TODO : this interface can't surface the size because the op needs to be lowered first, rename it something related to
 //        what it does rather than how it will be used
-def rcln_EmitTimeSizeOpInterface : OpInterface<"EmitTimeSize"> {
+def accln_EmitTimeSizeOpInterface : OpInterface<"EmitTimeSize"> {
   let description = [{
     Evaluatable size at conversion-time
   }];

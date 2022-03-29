@@ -4,16 +4,17 @@
 //  Authors:  Kern Handa
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#ifndef ACCERA_rcv_OPS
-#define ACCERA_rcv_OPS
+#ifndef ACCERA_accv_OPS
+#define ACCERA_accv_OPS
 
 include "ir/include/value/ValueBase.td"
 
 include "ir/include/value/ValueAttrs.td"
 
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.td"
 
-def rcv_ValueLambdaOp : rcv_Op<"lambda", [
+def accv_ValueLambdaOp : accv_Op<"lambda", [
     SymbolTable,
     Symbol,
     FunctionLike,
@@ -53,7 +54,7 @@ def rcv_ValueLambdaOp : rcv_Op<"lambda", [
   }];
 }
 
-def rcv_ValueModuleOp : rcv_Op<"module", [
+def accv_ValueModuleOp : accv_Op<"module", [
     IsolatedFromAbove,
     SymbolTable,
     Symbol,
@@ -79,12 +80,12 @@ def rcv_ValueModuleOp : rcv_Op<"module", [
   }];
 }
 
-def rcv_ModuleTerminatorOp : rcv_Op<"module_terminator", [Terminator, HasParent<"ValueModuleOp">]> {
+def accv_ModuleTerminatorOp : accv_Op<"module_terminator", [Terminator, HasParent<"ValueModuleOp">]> {
   let summary = "A pseudo op that marks the end of a gpu.module.";
   let description = [{}];
 }
 
-def rcv_PrintOp : rcv_Op<"print"> {
+def accv_PrintOp : accv_Op<"print"> {
   let summary = "print operation";
   let description = [{
     The `accv.print` operation prints a given input tensor, and produces
@@ -93,12 +94,12 @@ def rcv_PrintOp : rcv_Op<"print"> {
 
   // The print operation takes an input tensor to print.
   let arguments = (ins
-    AnyTypeOf<[AnyMemRef, AnyTensor, rc_NumericType]>:$input,
+    AnyTypeOf<[AnyMemRef, AnyTensor, acc_NumericType]>:$input,
     UnitAttr:$to_stderr
   );
 }
 
-def rcv_PrintFOp : rcv_Op<"printf"> {
+def accv_PrintFOp : accv_Op<"printf"> {
   let summary = "printf operation";
   let description = [{
     The `printf` builtin operation prints a scalar value and returns no results.
@@ -117,7 +118,7 @@ def rcv_PrintFOp : rcv_Op<"printf"> {
   ];
 }
 
-def rcv_GlobalOp : rcv_Op<"global", [IsolatedFromAbove, Symbol]> {
+def accv_GlobalOp : accv_Op<"global", [IsolatedFromAbove, Symbol]> {
   let arguments = (ins
     TypeAttrBase<"MemRefType", "MemRef">:$type,
     UnitAttr:$constant,
@@ -145,7 +146,7 @@ def rcv_GlobalOp : rcv_Op<"global", [IsolatedFromAbove, Symbol]> {
   }];
 }
 
-def rcv_ReferenceGlobalOp : rcv_Op<"ref_global"> {
+def accv_ReferenceGlobalOp : accv_Op<"ref_global"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name);
   let results = (outs AnyStaticShapeMemRef);
 
@@ -170,7 +171,7 @@ def rcv_ReferenceGlobalOp : rcv_Op<"ref_global"> {
   }];
 }
 
-def rcv_AllocOp : rcv_Op<"alloc"> {
+def accv_AllocOp : accv_Op<"alloc"> {
   let summary = "Memory allocation operation";
   let description = [{
     The `accv.alloc` operation allocates a region of memory, as specified by its
@@ -224,7 +225,7 @@ def rcv_AllocOp : rcv_Op<"alloc"> {
 }
 
 
-def rcv_BitcastOp : rcv_Op<"bitcast_op",
+def accv_BitcastOp : accv_Op<"bitcast_op",
   [NoSideEffect]> {
     let summary = "bitcast operation";
     let description = [{
@@ -232,21 +233,21 @@ def rcv_BitcastOp : rcv_Op<"bitcast_op",
     }];
 
     let arguments = (ins
-      rc_ScalarOrVectorNumericType:$input
+      acc_ScalarOrVectorNumericType:$input
     );
-    let results = (outs rc_ScalarOrVectorNumericType:$result);
+    let results = (outs acc_ScalarOrVectorNumericType:$result);
 }
 
 
-def rcv_UNARY_OP_NOT : I64EnumAttrCase<"NOT", 0>;
+def accv_UNARY_OP_NOT : I64EnumAttrCase<"NOT", 0>;
 
-def rcv_UnaryOpPredicateAttr : I64EnumAttr<
+def accv_UnaryOpPredicateAttr : I64EnumAttr<
   "UnaryOpPredicate", "",
-  [rcv_UNARY_OP_NOT]> {
+  [accv_UNARY_OP_NOT]> {
   let cppNamespace = "::accera::ir::value";
 }
 
-def rcv_UnaryOp : rcv_Op<"unary_op",
+def accv_UnaryOp : accv_Op<"unary_op",
   [NoSideEffect]> {
     let summary = "unary operation";
     let description = [{
@@ -255,10 +256,10 @@ def rcv_UnaryOp : rcv_Op<"unary_op",
     }];
 
     let arguments = (ins
-      rcv_UnaryOpPredicateAttr:$predicate,
-      rc_NumericType:$input
+      accv_UnaryOpPredicateAttr:$predicate,
+      acc_NumericType:$input
     );
-    let results = (outs rc_NumericType:$result);
+    let results = (outs acc_NumericType:$result);
 
     let builders = [OpBuilder<(ins "UnaryOpPredicate":$predicate, "Value":$input), [{
         ::buildUnaryOp($_builder, $_state, predicate, input);
@@ -274,22 +275,22 @@ def rcv_UnaryOp : rcv_Op<"unary_op",
     }];
 }
 
-def rcv_BINARY_OP_ADD : I64EnumAttrCase<"ADD", 0>;
-def rcv_BINARY_OP_SUB : I64EnumAttrCase<"SUB", 1>;
-def rcv_BINARY_OP_MUL : I64EnumAttrCase<"MUL", 2>;
-def rcv_BINARY_OP_DIV : I64EnumAttrCase<"DIV", 3>;
-def rcv_BINARY_OP_MOD : I64EnumAttrCase<"MOD", 4>;
-def rcv_BINARY_OP_AND : I64EnumAttrCase<"LOGICAL_AND", 5>;
-def rcv_BINARY_OP_OR : I64EnumAttrCase<"LOGICAL_OR", 6>;
+def accv_BINARY_OP_ADD : I64EnumAttrCase<"ADD", 0>;
+def accv_BINARY_OP_SUB : I64EnumAttrCase<"SUB", 1>;
+def accv_BINARY_OP_MUL : I64EnumAttrCase<"MUL", 2>;
+def accv_BINARY_OP_DIV : I64EnumAttrCase<"DIV", 3>;
+def accv_BINARY_OP_MOD : I64EnumAttrCase<"MOD", 4>;
+def accv_BINARY_OP_AND : I64EnumAttrCase<"LOGICAL_AND", 5>;
+def accv_BINARY_OP_OR : I64EnumAttrCase<"LOGICAL_OR", 6>;
 
-def rcv_BinaryOpPredicateAttr : I64EnumAttr<
+def accv_BinaryOpPredicateAttr : I64EnumAttr<
   "BinaryOpPredicate", "",
-  [rcv_BINARY_OP_ADD, rcv_BINARY_OP_SUB, rcv_BINARY_OP_MUL, rcv_BINARY_OP_DIV, rcv_BINARY_OP_MOD,
-  rcv_BINARY_OP_AND, rcv_BINARY_OP_OR]> {
+  [accv_BINARY_OP_ADD, accv_BINARY_OP_SUB, accv_BINARY_OP_MUL, accv_BINARY_OP_DIV, accv_BINARY_OP_MOD,
+  accv_BINARY_OP_AND, accv_BINARY_OP_OR]> {
   let cppNamespace = "::accera::ir::value";
 }
 
-def rcv_BinOp : rcv_Op<"bin_op",
+def accv_BinOp : accv_Op<"bin_op",
   [NoSideEffect]> {
     let summary = "binary operation";
     let description = [{
@@ -298,11 +299,11 @@ def rcv_BinOp : rcv_Op<"bin_op",
     }];
 
     let arguments = (ins
-      rcv_BinaryOpPredicateAttr:$predicate,
-      rc_ScalarOrVectorNumericType:$lhs,
-      rc_ScalarOrVectorNumericType:$rhs
+      accv_BinaryOpPredicateAttr:$predicate,
+      acc_ScalarOrVectorNumericType:$lhs,
+      acc_ScalarOrVectorNumericType:$rhs
     );
-    let results = (outs rc_ScalarOrVectorNumericType:$result);
+    let results = (outs acc_ScalarOrVectorNumericType:$result);
 
     let builders = [OpBuilder<(ins "BinaryOpPredicate":$predicate, "Value":$lhs, "Value":$rhs), [{
         ::buildBinOp($_builder, $_state, predicate, lhs, rhs);
@@ -320,20 +321,20 @@ def rcv_BinOp : rcv_Op<"bin_op",
     }];
 }
 
-def rcv_CMP_P_EQ : I64EnumAttrCase<"EQ", 0>;
-def rcv_CMP_P_NE : I64EnumAttrCase<"NE", 1>;
-def rcv_CMP_P_LT : I64EnumAttrCase<"LT", 2>;
-def rcv_CMP_P_LE : I64EnumAttrCase<"LE", 3>;
-def rcv_CMP_P_GT : I64EnumAttrCase<"GT", 4>;
-def rcv_CMP_P_GE : I64EnumAttrCase<"GE", 5>;
+def accv_CMP_P_EQ : I64EnumAttrCase<"EQ", 0>;
+def accv_CMP_P_NE : I64EnumAttrCase<"NE", 1>;
+def accv_CMP_P_LT : I64EnumAttrCase<"LT", 2>;
+def accv_CMP_P_LE : I64EnumAttrCase<"LE", 3>;
+def accv_CMP_P_GT : I64EnumAttrCase<"GT", 4>;
+def accv_CMP_P_GE : I64EnumAttrCase<"GE", 5>;
 
-def rcv_CmpOpPredicateAttr : I64EnumAttr<
+def accv_CmpOpPredicateAttr : I64EnumAttr<
     "CmpOpPredicate", "",
-    [rcv_CMP_P_EQ, rcv_CMP_P_NE, rcv_CMP_P_LT, rcv_CMP_P_LE, rcv_CMP_P_GT, rcv_CMP_P_GE]> {
+    [accv_CMP_P_EQ, accv_CMP_P_NE, accv_CMP_P_LT, accv_CMP_P_LE, accv_CMP_P_GT, accv_CMP_P_GE]> {
   let cppNamespace = "::accera::ir::value";
 }
 
-def rcv_CmpOp : rcv_Op<"cmp",
+def accv_CmpOp : accv_Op<"cmp",
     [NoSideEffect]> {
   let summary = "comparison operation";
   let description = [{
@@ -344,11 +345,11 @@ def rcv_CmpOp : rcv_Op<"cmp",
   }];
 
   let arguments = (ins
-      rcv_CmpOpPredicateAttr:$predicate,
-      rc_ScalarOrVectorNumericType:$lhs,
-      rc_ScalarOrVectorNumericType:$rhs
+      accv_CmpOpPredicateAttr:$predicate,
+      acc_ScalarOrVectorNumericType:$lhs,
+      acc_ScalarOrVectorNumericType:$rhs
   );
-  let results = (outs rc_ScalarOrVectorBoolType:$result);
+  let results = (outs acc_ScalarOrVectorBoolType:$result);
 
   let builders = [OpBuilder<(ins "CmpOpPredicate":$predicate, "Value":$lhs, "Value":$rhs), [{
       ::buildCmpOp($_builder, $_state, predicate, lhs, rhs);
@@ -364,7 +365,7 @@ def rcv_CmpOp : rcv_Op<"cmp",
   }];
 }
 
-def rcv_CopyOp : rcv_Op<"copy"> {
+def accv_CopyOp : accv_Op<"copy"> {
   let description = [{
     Copies the data in the input view into the output view.
 
@@ -405,7 +406,7 @@ def rcv_CopyOp : rcv_Op<"copy"> {
   let hasCanonicalizer = 1;
 }
 
-def rcv_IfOp : rcv_Op<"if",
+def accv_IfOp : accv_Op<"if",
       [SingleBlockImplicitTerminator<"YieldOp">]> {
   let summary = "if-then-else operation";
   let description = [{
@@ -449,7 +450,7 @@ def rcv_IfOp : rcv_Op<"if",
        }
     ```
   }];
-  let arguments = (ins rc_Scalarlike<rc_BoolType>:$condition);
+  let arguments = (ins acc_Scalarlike<acc_BoolType>:$condition);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$thenRegion, AnyRegion:$elseRegion);
 
@@ -472,7 +473,7 @@ def rcv_IfOp : rcv_Op<"if",
   }];
 }
 
-def rcv_LoadOp : rcv_Op<"load",
+def accv_LoadOp : accv_Op<"load",
     [AllElementTypesMatch<["memref", "result"]>]> {
   let summary = "load operation";
   let description = [{
@@ -489,8 +490,8 @@ def rcv_LoadOp : rcv_Op<"load",
 
   let arguments = (ins
     AnyTypeOf<[AnyMemRef,AnyStaticShapeTensor]>:$memref,
-    Variadic<rc_Indexlike>:$indices);
-  let results = (outs rc_NumericType:$result);
+    Variadic<acc_Indexlike>:$indices);
+  let results = (outs acc_NumericType:$result);
 
   let builders = [OpBuilder<(ins "Value":$data, CArg<"ValueRange", "{}">:$indices), [{
       auto shapedType = data.getType().cast<ShapedType>();
@@ -510,7 +511,7 @@ def rcv_LoadOp : rcv_Op<"load",
   }];
 }
 
-def rcv_GetElementOp : rcv_Op<"get_element", [NoSideEffect]> {
+def accv_GetElementOp : accv_Op<"get_element", [NoSideEffect]> {
   let summary = "load element from memref or tensor";
   let description =[{
     Returns the element at index 0 of a Scalar sized MemRef or Tensor
@@ -536,7 +537,7 @@ def rcv_GetElementOp : rcv_Op<"get_element", [NoSideEffect]> {
   let hasCanonicalizer = 1;
 }
 
-def rcv_LaunchFuncOp : rcv_Op<"launch_func", [CallOpInterface]> {
+def accv_LaunchFuncOp : accv_Op<"launch_func", [CallOpInterface]> {
   let summary = "call operation for multi-target func ops";
   let description = [{}];
 
@@ -584,7 +585,7 @@ def rcv_LaunchFuncOp : rcv_Op<"launch_func", [CallOpInterface]> {
   }];
 }
 
-def rcv_CallOp : rcv_Op<"call", [CallOpInterface]> {
+def accv_CallOp : accv_Op<"call", [CallOpInterface]> {
   let summary = "call operation";
   let description = [{
     The `accv.call` operation represents a direct call to a function that is within
@@ -636,7 +637,7 @@ def rcv_CallOp : rcv_Op<"call", [CallOpInterface]> {
   }];
 }
 
-def rcv_MemRefCastOp : rcv_Op<"memref_cast", [SameOperandsAndResultShape]> {
+def accv_MemRefCastOp : accv_Op<"memref_cast", [SameOperandsAndResultShape]> {
   let summary = "memref element casting operation";
   let description = [{
     The `accv.memref_cast` operation converts the elements in a memref to another
@@ -660,7 +661,7 @@ def rcv_MemRefCastOp : rcv_Op<"memref_cast", [SameOperandsAndResultShape]> {
   }];
 }
 
-def rcv_OffsetOp : rcv_Op<"offset", [NoSideEffect]> {
+def accv_OffsetOp : accv_Op<"offset", [NoSideEffect]> {
   let summary = "memref offset operation";
   let description = [{
     The `accv.offset` operation converts a memref type to another memref type
@@ -675,7 +676,7 @@ def rcv_OffsetOp : rcv_Op<"offset", [NoSideEffect]> {
 
   let arguments = (ins
     AnyMemRef:$source,
-    Variadic<rc_Indexlike>:$offsets
+    Variadic<acc_Indexlike>:$offsets
   );
   let results = (outs AnyMemRef);
 
@@ -706,7 +707,7 @@ def rcv_OffsetOp : rcv_Op<"offset", [NoSideEffect]> {
   }];
 }
 
-def rcv_ViewOp : rcv_Op<"view", [NoSideEffect]> {
+def accv_ViewOp : accv_Op<"view", [NoSideEffect]> {
   let summary = "memref view operation";
   let description = [{
     The `accv.view` operation converts a memref type to another memref type
@@ -753,7 +754,7 @@ def rcv_ViewOp : rcv_Op<"view", [NoSideEffect]> {
   }];
 }
 
-def rcv_SliceOp : rcv_Op<"slice", [NoSideEffect]> {
+def accv_SliceOp : accv_Op<"slice", [NoSideEffect]> {
   let summary = "memref slice operation";
   let description = [{
     The `accv.slice` operation converts a memref type to another memref type
@@ -769,7 +770,7 @@ def rcv_SliceOp : rcv_Op<"slice", [NoSideEffect]> {
   let arguments = (ins
     AnyMemRef:$source,
     ArrayAttr:$sliceDimensions,
-    Variadic<rc_Indexlike>:$offsets
+    Variadic<acc_Indexlike>:$offsets
   );
   let results = (outs AnyMemRef:$result);
 
@@ -805,7 +806,7 @@ def rcv_SliceOp : rcv_Op<"slice", [NoSideEffect]> {
   let hasCanonicalizer = 1;
 }
 
-def rcv_MergeDimOp : rcv_Op<"merge_dim", [NoSideEffect]> {
+def accv_MergeDimOp : accv_Op<"merge_dim", [NoSideEffect]> {
   let summary = "memref merge dimensions operation";
   let description = [{
     The `accv.merge_dim` operation converts a memref type to another memref type
@@ -831,7 +832,7 @@ def rcv_MergeDimOp : rcv_Op<"merge_dim", [NoSideEffect]> {
   }];
 }
 
-def rcv_SplitDimOp : rcv_Op<"split_dim", [NoSideEffect]> {
+def accv_SplitDimOp : accv_Op<"split_dim", [NoSideEffect]> {
   let summary = "memref split dimension operation";
   let description = [{
     The `accv.split_dim` operation converts a memref type to another memref type
@@ -857,7 +858,7 @@ def rcv_SplitDimOp : rcv_Op<"split_dim", [NoSideEffect]> {
   }];
 }
 
-def rcv_StoreOp : rcv_Op<"store",
+def accv_StoreOp : accv_Op<"store",
     [AllElementTypesMatch<["memref", "value"]>]> {
   let summary = "store operation";
   let description = [{
@@ -875,9 +876,9 @@ def rcv_StoreOp : rcv_Op<"store",
   }];
 
   let arguments = (ins
-                   rc_NumericType:$value,
+                   acc_NumericType:$value,
                    AnyMemRef:$memref,
-                   Variadic<rc_Indexlike>:$indices);
+                   Variadic<acc_Indexlike>:$indices);
 
   let builders = [OpBuilder<(ins "Value":$valueToStore, "Value":$memref), [{
       $_state.addOperands(valueToStore);
@@ -899,14 +900,14 @@ def rcv_StoreOp : rcv_Op<"store",
   }];
 }
 
-def rcv_StoreToMemRefOp : rcv_Op<"store_to_memref", [NoSideEffect]> {
+def accv_StoreToMemRefOp : accv_Op<"store_to_memref", [NoSideEffect]> {
   let summary = "store element in memref";
   let description =[{
     Stores the element at index 0 of a Scalar sizes MemRef
   }];
 
   let arguments = (ins AnyType:$value);
-  let results = (outs rc_MemRefWithShape<[1]>:$result);
+  let results = (outs acc_MemRefWithShape<[1]>:$result);
 
   let builders = [OpBuilder<(ins "Value":$value), [{
       auto elementType = value.getType();
@@ -915,14 +916,14 @@ def rcv_StoreToMemRefOp : rcv_Op<"store_to_memref", [NoSideEffect]> {
   }]>];
 }
 
-def rcv_UnsafeOffsetOp : rcv_Op<"unsafe_offset"> {
+def accv_UnsafeOffsetOp : accv_Op<"unsafe_offset"> {
   let summary = "";
   let description = "";
-  let arguments = (ins AnyMemRef:$input, rc_Indexlike:$offset);
+  let arguments = (ins AnyMemRef:$input, acc_Indexlike:$offset);
   let results = (outs AnyMemRef:$result);
 }
 
-def rcv_ReshapeOp : rcv_Op<"reshape"> {
+def accv_ReshapeOp : accv_Op<"reshape"> {
   let summary = "";
   let description = "";
   let arguments = (ins AnyMemRef:$source);
@@ -939,7 +940,7 @@ def rcv_ReshapeOp : rcv_Op<"reshape"> {
   }];
 }
 
-def rcv_ReorderOp : rcv_Op<"reorder"> {
+def accv_ReorderOp : accv_Op<"reorder"> {
   let summary = "";
   let description = "";
   let arguments = (ins
@@ -966,7 +967,7 @@ def rcv_ReorderOp : rcv_Op<"reorder"> {
   }];
 }
 
-def rcv_YieldOp : rcv_Op<"yield", [Terminator]> {
+def accv_YieldOp : accv_Op<"yield", [Terminator]> {
   let summary = "loop yield and termination operation";
   let description = [{
     The `accv.yield` op yields an SSA value from a loop dialect op region and
@@ -987,7 +988,7 @@ def rcv_YieldOp : rcv_Op<"yield", [Terminator]> {
   ];
 }
 
-def rcv_EarlyReturnOp : rcv_Op<"early_return", [MemRefsNormalizable,]> {
+def accv_EarlyReturnOp : accv_Op<"early_return", [MemRefsNormalizable,]> {
   let summary = "early return operation";
   let description = [{}];
 
@@ -999,7 +1000,7 @@ def rcv_EarlyReturnOp : rcv_Op<"early_return", [MemRefsNormalizable,]> {
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
 }
 
-def rcv_ReturnOp : rcv_Op<"return", [
+def accv_ReturnOp : accv_Op<"return", [
         NoSideEffect, MemRefsNormalizable, ReturnLike, Terminator]> {
   let summary = "return operation";
   let description = [{}];
@@ -1013,7 +1014,7 @@ def rcv_ReturnOp : rcv_Op<"return", [
 }
 
 // Note: only works on vectors (1-D memrefs) currently
-def rcv_ReduceOp : rcv_Op<"reduce",
+def accv_ReduceOp : accv_Op<"reduce",
       [SingleBlockImplicitTerminator<"YieldOp">]> {
   let summary = "Reduction operation";
   let description = "";
@@ -1044,7 +1045,7 @@ def rcv_ReduceOp : rcv_Op<"reduce",
 }
 
 // Note: only works on vectors (1-D memrefs) currently
-def rcv_MapReduceOp : rcv_Op<"map_reduce",
+def accv_MapReduceOp : accv_Op<"map_reduce",
       [SingleBlockImplicitTerminator<"YieldOp">]> {
   let summary = "Map-reduce operation";
   let description = "";
@@ -1088,27 +1089,27 @@ def rcv_MapReduceOp : rcv_Op<"map_reduce",
   }];
 }
 
-def rcv_ReduceMaxOp : rcv_Op<"reduce_max"> {
+def accv_ReduceMaxOp : accv_Op<"reduce_max"> {
   let summary = "";
   let description = "";
   let arguments = (ins AnyMemRef:$input);
   let results = (outs AnyType:$result);
 }
 
-def rcv_ReduceSumOp : rcv_Op<"reduce_sum"> {
+def accv_ReduceSumOp : accv_Op<"reduce_sum"> {
   let summary = "";
   let description = "";
   let arguments = (ins AnyMemRef:$input);
   let results = (outs AnyType:$result);
 }
 
-def rcv_BarrierOp : rcv_Op<"barrier"> {
+def accv_BarrierOp : accv_Op<"barrier"> {
   let summary = "Block synchronization primitive.";
   let hasCanonicalizer = 1;
   let arguments = (ins BarrierScopeAttr:$scope);
 }
 
-def rcv_GetTimeOp : rcv_Op<"gettime"> {
+def accv_GetTimeOp : accv_Op<"gettime"> {
   let summary = "Get current clock time";
   let results = (outs AnyFloat:$result);
   let builders = [
@@ -1117,98 +1118,235 @@ def rcv_GetTimeOp : rcv_Op<"gettime"> {
     }]>];
 }
 
-def rcv_EnterProfileRegionOp : rcv_Op<"enter_profile"> {
+def accv_EnterProfileRegionOp : accv_Op<"enter_profile"> {
   let summary = "Enter a profile region";
   let arguments = (ins StrAttr:$regionName);
 }
 
-def rcv_ExitProfileRegionOp : rcv_Op<"exit_profile"> {
+def accv_ExitProfileRegionOp : accv_Op<"exit_profile"> {
   let summary = "Exit a profile region";
   let arguments = (ins StrAttr:$regionName);
 }
 
-def rcv_PrintProfileResultsOp : rcv_Op<"print_profile"> {
+def accv_PrintProfileResultsOp : accv_Op<"print_profile"> {
   let summary = "Print out a summary of the profile counters";
 }
 
 
 // matrix-fuse-multiply-add
 
-// Predicate to check if type is rcv::MMAMatrixType.
+// Predicate to check if type is accv::MMAMatrixType.
 def IsMMFAMatrixTypePred : CPred<"$_self.isa<accera::ir::value::MFMAMatrixType>()">;
 
-def rcv_MFMAMatrix : DialectType<Value_Dialect,
+def accv_MFMAMatrix : DialectType<Value_Dialect,
                                         IsMMFAMatrixTypePred,
                                         "MFMAMatrix type">;
 class MFMAMatrixOf<list<Type> allowedTypes> :
   ContainerType<AnyTypeOf<allowedTypes>, IsMMFAMatrixTypePred,
   "$_self.cast<::accera::ir::value::MFMAMatrixType>().getElementType()",
-  "rcv.mfma_matrix", "::accera::ir::value::MFMAMatrixType">;
+  "accv.mfma_matrix", "::accera::ir::value::MFMAMatrixType">;
 
-def rcv_MFMAComputeOp: rcv_Op<"mfma_compute", [NoSideEffect, AllTypesMatch<["opC", "res"]>]> {
+def accv_MFMAComputeOp: accv_Op<"mfma_compute", [NoSideEffect, AllTypesMatch<["opC", "res"]>]> {
   let summary = "MFMA Compute";
   let description = [{
-    The `rcv.mfma_compute` op is an abstraction of TensorCore ops (currently GPU centric).
+    The `accv.mfma_compute` op is an abstraction of TensorCore ops (currently GPU centric).
   }];
 
-  let arguments = (ins Arg<MFMAMatrixOf<[F16, F32]>>:$opA,
+  let arguments = (ins
+                  Arg<MFMAMatrixOf<[F16, F32]>>:$opA,
                   Arg<MFMAMatrixOf<[F16, F32]>>:$opB,
                   Arg<MFMAMatrixOf<[F16, F32]>>:$opC);
 
-  let results = (outs rcv_MFMAMatrix:$res);
+  let results = (outs accv_MFMAMatrix:$res);
 
   let assemblyFormat = [{
-    $opA`,` $opB`,` $opC attr-dict `:` type($opA)`,` type($opB) `->` type($res)
+    $opA `,` $opB`,` $opC attr-dict `:` type($opA) `,` type($opB) `,` type($opC) `->` type($res)
   }];
 
+  let verifier = [{ return ::verify(*this); }];
+}
+
+
+def accv_MFMAConstantOp : accv_Op<"mfma_constant_matrix",
+  [
+    NoSideEffect,
+    TypesMatchWith<"value type matches element type of mfma_matrix",
+                    "result", "value",
+                    "$_self.cast<MFMAMatrixType>().getElementType()">
+  ]>{
+
+  let summary = "creates a constant MFMA matrix";
+
+  let description = [{
+    The `accv.mfma_constant_matrix` creates a constant MFMA matrix that can be subsequently
+    using within an accv.mfma_compute operation.
+
+    This operation takes a constant as its operand. The op returns a `!accv.mfma_matrix`.
+  }];
+
+  let arguments = (ins
+    AnyTypeOf<[I8, F16, F32]>:$value
+  );
+
+  let results = (outs accv_MFMAMatrix:$result);
+
+  code extraClassDeclaration = [{  
+    MFMAMatrixType getMFMAMatrixType() {
+      return result().getType().template cast<MFMAMatrixType>();
+    }
+    ArrayRef<int64_t> getMFMAMatrixShape() {
+      return getMFMAMatrixType().getShape();
+    }
+  }];
+
+  let assemblyFormat = [{
+    $value attr-dict `:` type($value) `->` type($result)
+  }]; 
   let verifier = [{ return ::verify(*this); }];
 }
 
 // load and store submatrix
 
-def rcv_MFMALoadMatrixOp : rcv_Op<"mfma_load_matrix", [MemoryEffects<[MemRead]>]>{
+def accv_MFMALoadOp : accv_Op<"mfma_load_matrix",
+  [
+    MemoryEffects<[MemRead]>,
+    DeclareOpInterfaceMethods<AffineReadOpInterface>,
+    DeclareOpInterfaceMethods<AffineMapAccessInterface>
+  ]>{
 
   let summary = "matrix load";
 
   let description = [{
-    The `rcv.mfma_load_matrix` operation loads a sub-matrix to be used by the rcv.mfma_compute operation.
+    The `accv.mfma_load_matrix` operation loads a sub-matrix to be used by the accv.mfma_compute operation.
 
     This operation takes a memref as its first operand: it is the source matrix
-    from which data is to be loaded. The op returns a `!rcv.mfma_matrix`.
+    from which data is to be loaded. The op returns a `!accv.mfma_matrix`.
   }];
 
-  let arguments = (ins Arg<MemRefOf<[F16, F32]>, "", [MemRead]>:$srcMemref);
+  let arguments = (ins
+    Arg<MemRefRankOf<[F16, F32], [2]>, "", [MemRead]>:$memref,
+    Variadic<acc_Indexlike>:$indices,
+    OptionalAttr<AffineMapAttr>:$map
+  );
 
-  let results = (outs rcv_MFMAMatrix:$res);
+  let results = (outs accv_MFMAMatrix:$result);
+
+  let builders = [
+    OpBuilder<(ins "Type":$resultType, "Value":$memref, "AffineMap":$map, "ValueRange":$mapOperands), [{
+        assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
+        $_state.addOperands(memref);
+        $_state.addOperands(mapOperands);
+        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
+        $_state.addTypes(resultType);
+    }]>,
+    OpBuilder<(ins "Type":$resultType, "Value":$memref, "ValueRange":$indices), [{
+        auto memrefType = memref.getType().cast<MemRefType>();
+        int64_t rank = memrefType.getRank();
+        // Create identity map for memrefs with at least one dimension or () -> ()
+        // for zero-dimensional memrefs.
+        auto map =
+            rank ? $_builder.getMultiDimIdentityMap(rank) : $_builder.getEmptyAffineMap();
+        return build($_builder, $_state, resultType, memref, map, indices);
+    }]>
+  ];
+
+  code extraClassDeclaration = [{  
+    MFMAMatrixType getMFMAMatrixType() {
+      return result().getType().template cast<MFMAMatrixType>();
+    }
+    ArrayRef<int64_t> getMFMAMatrixShape() {
+      return getMFMAMatrixType().getShape();
+    }
+    
+    /// Returns the operand index of the memref.
+    unsigned getMemRefOperandIndex() { return 0; }
+
+    void setMemRef(Value value) { setOperand(getMemRefOperandIndex(), value); }
+
+    /// Returns the affine map used to index the memref for this operation.
+    AffineMapAttr getAffineMapAttr() {
+      return (*this)->getAttr(getMapAttrName()).cast<AffineMapAttr>();
+    }
+
+    static StringRef getMapAttrName() { return "map"; }
+  }];
 
   let assemblyFormat = [{
-    $srcMemref attr-dict `:` type($srcMemref) `->` type($res)
-  }];
-
+    $memref `[` $indices `]` attr-dict `:` type($memref) `[` type($indices) `]` `->` type($result)
+  }]; 
   let verifier = [{ return ::verify(*this); }];
 }
 
-def rcv_MFMAStoreMatrixOp : rcv_Op<"subgroup_mma_store_matrix",
-    [MemoryEffects<[MemWrite]>]>{
+def accv_MFMAStoreOp : accv_Op<"mfma_store_matrix", [
+    MemoryEffects<[MemWrite]>,
+    DeclareOpInterfaceMethods<AffineWriteOpInterface>,
+    DeclareOpInterfaceMethods<AffineMapAccessInterface>
+  ]>{
 
   let summary = "matrix store";
 
   let description = [{
-    The `rcv.mfma_load_matrix` operation loads a sub-matrix.
+    The `accv.mfma_store_matrix` operation stores an mfma matrix into a matrix.
 
-    This operation takes a `rcv.mfma_matrix` and a memref as operands.
-    `!rcv.mma_matrix` is the source value containing the data to be stored into the
+    This operation takes a `accv.mfma_matrix` and a memref as operands.
+    `!accv.mfma_matrix` is the source value containing the data to be stored into the
     destination memref which can be in global or shared memory.
   }];
 
-  let arguments = (ins Arg<MFMAMatrixOf<[F16, F32]>>:$src,
-                  Arg<MemRefOf<[F16, F32]>, "",[MemWrite]>:$dstMemref);
+  let arguments = (ins 
+        Arg<MFMAMatrixOf<[F16, F32]>>:$value,
+        Arg<MemRefRankOf<[F16, F32], [2]>, "",[MemWrite]>:$memref,              
+        Variadic<acc_Indexlike>:$indices,
+        OptionalAttr<AffineMapAttr>:$map);
+
+  let builders = [
+    OpBuilder<(ins "Value":$value, "Value":$memref, "AffineMap":$map, "ValueRange":$mapOperands), [{
+        assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
+        $_state.addOperands(value);
+        $_state.addOperands(memref);
+        $_state.addOperands(mapOperands);
+        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
+    }]>,
+    OpBuilder<(ins "Value":$value, "Value":$memref, "ValueRange":$indices), [{
+        auto memrefType = memref.getType().cast<MemRefType>();
+        int64_t rank = memrefType.getRank();
+        // Create identity map for memrefs with at least one dimension or () -> ()
+        // for zero-dimensional memrefs.
+        auto map =
+            rank ? $_builder.getMultiDimIdentityMap(rank) : $_builder.getEmptyAffineMap();
+        return build($_builder, $_state, value, memref, map, indices);
+    }]>
+  ];
+
+  code extraClassDeclaration = [{ 
+    MFMAMatrixType getMFMAMatrixType() {
+      return value().getType().template cast<MFMAMatrixType>();
+    }
+    ArrayRef<int64_t> getMFMAMatrixShape() {
+      return getMFMAMatrixType().getShape();
+    }
+    
+    /// Returns the operand index of the value to be stored.
+    unsigned getStoredValOperandIndex() { return 0; }
+
+    /// Returns the operand index of the memref.
+    unsigned getMemRefOperandIndex() { return 1; }
+
+    void setMemRef(Value value) { setOperand(getMemRefOperandIndex(), value); }
+
+    /// Returns the affine map used to index the memref for this operation.
+    AffineMapAttr getAffineMapAttr() {
+      return (*this)->getAttr(getMapAttrName()).cast<AffineMapAttr>();
+    }
+
+    static StringRef getMapAttrName() { return "map"; }
+  }];
 
   let assemblyFormat = [{
-    $src`,` $dstMemref attr-dict `:` type($src)`,` type($dstMemref)
+    $value`,` $memref `[` $indices `]` attr-dict `:` type($value)`,` type($memref) `[` type($indices) `]`
   }];
 
   let verifier = [{ return ::verify(*this); }];
 }
 
-#endif // ACCERA_rcv_OPS
+#endif // ACCERA_accv_OPS

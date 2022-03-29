@@ -253,56 +253,6 @@ std::optional<mlir::Operation*> VectorizeConstantOp(mlir::PatternRewriter& rewri
     return constVec;
 }
 
-template <typename MemoryOp>
-mlir::AffineMap GetMemRefIndexToMemoryLocationMap(mlir::MLIRContext* context, MemoryOp op)
-{
-    assert(op.memref().getType().template isa<mlir::MemRefType>());
-    auto memRefType = op.memref().getType().template cast<mlir::MemRefType>();
-    std::vector<mlir::AffineMap> memRefMaps = memRefType.getAffineMaps().vec();
-    if (memRefMaps.empty())
-    {
-        auto stridedLayout = mlir::makeCanonicalStridedLayoutExpr(memRefType.getShape(), context);
-        memRefMaps.push_back(mlir::AffineMap::get(memRefType.getRank(), 0, stridedLayout));
-    }
-    mlir::AffineMap accessMapComposition = memRefMaps.front();
-    for (size_t mapIdx = 1; mapIdx < memRefMaps.size(); ++mapIdx)
-    {
-        accessMapComposition = memRefMaps[mapIdx].compose(accessMapComposition);
-    }
-    assert(accessMapComposition.getNumResults() == 1);
-    return accessMapComposition;
-}
-
-template <typename AffineMemoryOp>
-mlir::AffineMap GetAffineOpIndexToMemoryLocationMap(mlir::MLIRContext* context, AffineMemoryOp op)
-{
-    auto composedMemRefMap = GetMemRefIndexToMemoryLocationMap(context, op);
-    mlir::AffineMap affineOpMap = op.getAffineMapAttr().getValue();
-    mlir::AffineMap accessMapComposition = composedMemRefMap.compose(affineOpMap);
-    assert(accessMapComposition.getNumResults() == 1);
-    return accessMapComposition;
-}
-
-mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::AffineStoreOp op)
-{
-    return GetAffineOpIndexToMemoryLocationMap(context, op);
-}
-
-mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::AffineLoadOp op)
-{
-    return GetAffineOpIndexToMemoryLocationMap(context, op);
-}
-
-mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::memref::StoreOp op)
-{
-    return GetMemRefIndexToMemoryLocationMap(context, op);
-}
-
-mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::memref::LoadOp op)
-{
-    return GetMemRefIndexToMemoryLocationMap(context, op);
-}
-
 template <typename OpType>
 bool IsUnrolledAccessSequential(mlir::PatternRewriter& rewriter,
                                 OpType op,
@@ -319,7 +269,7 @@ bool IsUnrolledAccessSequential(mlir::PatternRewriter& rewriter,
     }
 
     // Check if the temporary clones are all accessing sequential memory
-    auto accessMapComposition = GetIndexToMemoryLocationMap(rewriter.getContext(), op);
+    auto accessMapComposition = ir::util::GetIndexToMemoryLocationMap(rewriter.getContext(), op);
 
     if (accessMapComposition.getNumSymbols() > 0)
     {

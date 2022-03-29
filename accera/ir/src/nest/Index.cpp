@@ -10,7 +10,7 @@ namespace accera::ir
 {
 namespace loopnest
 {
-    Index Index::none = Index("", -1);
+    Index Index::none = Index("", Index::DefaultID);
 
     Index::Index(const std::string& name) :
         Index(name, Index::GetNextId())

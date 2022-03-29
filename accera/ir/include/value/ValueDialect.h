@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -38,7 +39,10 @@ using llvm::StringRef;
 using llvm::iterator_range;
 
 using mlir::AffineMap;
+using mlir::AffineMapAccessInterface;
 using mlir::AffineMapAttr;
+using mlir::AffineReadOpInterface;
+using mlir::AffineWriteOpInterface;
 using mlir::ArrayAttr;
 using mlir::Attribute;
 using mlir::Block;

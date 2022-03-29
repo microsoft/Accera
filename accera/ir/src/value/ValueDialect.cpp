@@ -500,6 +500,10 @@ bool MFMAMatrixType::isValidElementType(Type elementType)
     return elementType.isF16() || elementType.isF32();
 }
 
+int64_t MFMAMatrixType::getLeadingDim() const {
+    return getShape().back();
+}
+
 LogicalResult
 MFMAMatrixType::verify(llvm::function_ref<InFlightDiagnostic()> emitError,
                        ArrayRef<int64_t> shape,
@@ -509,9 +513,6 @@ MFMAMatrixType::verify(llvm::function_ref<InFlightDiagnostic()> emitError,
     if (!operand.equals("AOp") && !operand.equals("BOp") &&
         !operand.equals("COp"))
         return emitError() << "operand expected to be one of AOp, BOp or COp";
-
-    if (shape.size() != 2)
-        return emitError() << "MFMAMatrixType must have exactly two dimensions";
 
     if (!MFMAMatrixType::isValidElementType(elementType))
         return emitError() << "MFMAMatrixType elements must be F16 or F32";
@@ -537,7 +538,7 @@ static LogicalResult verify(MFMAComputeOp op)
     };
     SmallVector<MFMAMatrixType, 3> opTypes;
 
-    auto populateOpInfo = [&opTypes, &op]() {
+    auto populateOpInfo = [&opTypes, &op]() { 
         opTypes.push_back(op.opA().getType().cast<MFMAMatrixType>());
         opTypes.push_back(op.opB().getType().cast<MFMAMatrixType>());
         opTypes.push_back(op.opC().getType().cast<MFMAMatrixType>());
@@ -554,25 +555,37 @@ static LogicalResult verify(MFMAComputeOp op)
     bShape = opTypes[B].getShape();
     cShape = opTypes[C].getShape();
 
-    if (aShape[1] != bShape[0] || aShape[0] != cShape[0] ||
+    if (aShape[1] != bShape[0] ||
+        aShape[0] != cShape[0] ||
         bShape[1] != cShape[1])
         return op.emitError("operand shapes do not satisfy matmul constraints");
 
     return success();
 }
 
-static LogicalResult verify(MFMALoadMatrixOp op)
+static LogicalResult verify(MFMAConstantOp op)
 {
-    auto srcType = op.srcMemref().getType();
-    auto resType = op.res().getType();
-    auto resMatrixType = resType.cast<MFMAMatrixType>();
+    auto value = op.value();
+    auto valueType = value.getType();
+    auto resMatrixType = op.getMFMAMatrixType();
     auto operand = resMatrixType.getOperand();
-    auto srcMemrefType = srcType.cast<MemRefType>();
-    auto srcMemSpace = srcMemrefType.getMemorySpaceAsInt();
 
-    if (!srcMemrefType.getAffineMaps().empty() &&
-        !srcMemrefType.getAffineMaps().front().isIdentity())
-        return op.emitError("expected identity layout map for source memref");
+    if (!operand.equals("AOp") && !operand.equals("BOp") &&
+        !operand.equals("COp"))
+        return op.emitError("only AOp, BOp and COp can be constant filled");
+
+    if (valueType != resMatrixType.getElementType())
+        return op.emitError("value type must match matrix element type");
+
+    return success();
+}
+
+static LogicalResult verify(MFMALoadOp op)
+{
+    auto srcType = op.getMemRefType(); 
+    auto resMatrixType = op.getMFMAMatrixType();
+    auto operand = resMatrixType.getOperand();
+    auto srcMemSpace = srcType.getMemorySpaceAsInt();
 
     if (srcMemSpace != kGenericMemorySpace && srcMemSpace != kSharedMemorySpace &&
         srcMemSpace != kGlobalMemorySpace)
@@ -587,17 +600,12 @@ static LogicalResult verify(MFMALoadMatrixOp op)
     return success();
 }
 
-static LogicalResult verify(MFMAStoreMatrixOp op)
+static LogicalResult verify(MFMAStoreOp op)
 {
-    auto srcType = op.src().getType();
-    auto dstType = op.dstMemref().getType();
-    auto srcMatrixType = srcType.cast<MFMAMatrixType>();
-    auto dstMemrefType = dstType.cast<MemRefType>();
+    auto srcMatrixType = op.getMFMAMatrixType();
+    auto dstMemrefType = op.getMemRefType();
     auto dstMemSpace = dstMemrefType.getMemorySpaceAsInt();
-    if (!dstMemrefType.getAffineMaps().empty() &&
-        !dstMemrefType.getAffineMaps().front().isIdentity())
-        return op.emitError("expected identity layout map for destination memref");
-
+    
     if (dstMemSpace != kGenericMemorySpace && dstMemSpace != kSharedMemorySpace &&
         dstMemSpace != kGlobalMemorySpace)
         return op.emitError(

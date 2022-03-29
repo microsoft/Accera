@@ -23,31 +23,40 @@ class Cache:
     layout: Union[Array.Layout, Tuple[int]] = None
     max_elements: int = None
     thrifty: bool = False
+    double_buffer: bool = False
+    double_buffer_location: _MemorySpace = _MemorySpace.NONE
     offset: int = 0
     native_cache: Any = None
     location: _MemorySpace = _MemorySpace.NONE
     indexing: CacheIndexing = CacheIndexing.GLOBAL_TO_PHYSICAL
     allocation: _CacheAllocation = _CacheAllocation.AUTO
 
+    @property
     def target_shape(self):
         if isinstance(self.target, Cache):
-            return self.target.target_shape()
+            return self.target.target_shape
         else:
             return self.target.shape
+    @property
+    def target_role(self):
+        if isinstance(self.target, Cache):
+            return self.target.target_role
+        else:
+            return self.target.role
 
     @property
     def memory_map(self):
         if isinstance(self.layout, tuple):
             from .Layout import MemoryMapLayout
 
-            mmap_layout = MemoryMapLayout(self.layout, self.target_shape(), self.offset)
+            mmap_layout = MemoryMapLayout(self.layout, self.target_shape, self.offset)
             return _MemoryAffineCoefficients(mmap_layout.coefficients, mmap_layout.offset)
         return None
 
     @property
     def dimension_permutation(self):
         if isinstance(self.layout, Array.Layout) and self.layout is not Array.Layout.DEFERRED:
-            first_major = list(range(len(self.target_shape())))
+            first_major = list(range(len(self.target_shape)))
             dim_orders = {
                 Array.Layout.FIRST_MAJOR: first_major,
                 Array.Layout.LAST_MAJOR: list(reversed(first_major)),
@@ -68,6 +77,8 @@ class DelayedCache(Cache):
         self.layout = cache.layout
         self.max_elements = cache.max_elements
         self.thrifty = cache.thrifty
+        self.double_buffer = cache.double_buffer
+        self.double_buffer_location = cache.double_buffer_location
         self.offset = cache.offset
         self.native_cache = cache.native_cache
         self.location = cache.location

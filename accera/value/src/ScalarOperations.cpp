@@ -137,6 +137,8 @@ namespace value
     {
         switch (s.GetType())
         {
+        case ValueType::Float16:
+            [[fallthrough]];
         case ValueType::Float:
             [[fallthrough]];
         case ValueType::Double:

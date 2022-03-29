@@ -7,14 +7,14 @@
 ####################################################################################################
 #
 # Gets the following variables:
-# 
+#
 # LLVM_SETUP_VARIANT: An optional environment variable or CMake define
 # that specifies the LLVM build source:
 #   LLVM_SETUP_VARIANT="Default" - uses vcpkg to acquire LLVM
 #                                  Pre-requisite: `vcpkg install accera-llvm` or
 #                                  `vcpkg install accera-llvm:x64-windows`
 #
-#   LLVM_SETUP_VARIANT="Conan"   - uses Conan to acquire LLVM 
+#   LLVM_SETUP_VARIANT="Conan"   - uses Conan to acquire LLVM
 #                                  (for internal use only)
 #
 # Sets the following variables:
@@ -34,10 +34,10 @@
 # Include guard so we don't try to find or download LLVM more than once
 include_guard()
 
-if(DEFINED ENV{LLVM_SETUP_VARIANT})
-  set(LLVM_SETUP_VARIANT $ENV{LLVM_SETUP_VARIANT} )
-endif()
 set(LLVM_SETUP_VARIANT "Default" CACHE STRING "Source for LLVM binaries")
+if(DEFINED ENV{LLVM_SETUP_VARIANT})
+  set(LLVM_SETUP_VARIANT $ENV{LLVM_SETUP_VARIANT} CACHE STRING "" FORCE)
+endif()
 
 message(STATUS "Using LLVMSetup${LLVM_SETUP_VARIANT}.cmake")
 

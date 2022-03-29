@@ -12,7 +12,14 @@ import pathlib
 import shutil
 import numpy as np
 from enum import Enum
-from typing import Callable
+from typing import Callable, List
+
+try:
+    import cuda, pynvrtc
+except:
+    CUDA_AVAILABLE = False
+else:
+    CUDA_AVAILABLE = True
 
 DEV_MODE = False
 if "@CMAKE_INSTALL_PREFIX@"[1:-1] != "CMAKE_INSTALL_PREFIX":
@@ -38,12 +45,14 @@ class FailedReason(Enum):
     NOT_IN_PY = "Not yet implemented (python)"
     UNKNOWN = "Unknown failure"
     BUG = "Bug"
+    INVALID = "Invalid"
 
 
 def expectedFailure(reason: FailedReason, msg: str) -> Callable:
     "Extends the unittest.expectedFailure decorator to print failure details"
 
     def _decorator(func):
+
         @unittest.expectedFailure
         def _wrapper(x):
             print(f"\n{reason.value}: {msg}")
@@ -561,19 +570,13 @@ class SmokeTest(unittest.TestCase):
 
         const_matrix_shape = (K, N)
         data = np.random.random(const_matrix_shape).astype(np.float32)
-        const_matrix = Array(role=Array.Role.CONST,
-                             element_type=ScalarType.float32,
-                             data=data)
+        const_matrix = Array(role=Array.Role.CONST, element_type=ScalarType.float32, data=data)
 
         # Matmul function
 
-        matmul_input_matrix = Array(role=Array.Role.INPUT,
-                                    element_type=ScalarType.float32,
-                                    shape=(M, K))
+        matmul_input_matrix = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
 
-        matmul_output_matrix = Array(role=Array.Role.INPUT_OUTPUT,
-                                     element_type=ScalarType.float32,
-                                     shape=(M, N))
+        matmul_output_matrix = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         matmul_nest = Nest(shape=(M, N, K))
         i, j, k = matmul_nest.get_indices()
@@ -587,16 +590,11 @@ class SmokeTest(unittest.TestCase):
 
         package.add(matmul_plan, args=(matmul_input_matrix, matmul_output_matrix), base_name="matmul_fn")
 
-
         # Elementwise add function
 
-        ew_add_input_matrix = Array(role=Array.Role.INPUT,
-                                    element_type=ScalarType.float32,
-                                    shape=(K, N))
+        ew_add_input_matrix = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
 
-        ew_add_output_matrix = Array(role=Array.Role.INPUT_OUTPUT,
-                                     element_type=ScalarType.float32,
-                                     shape=(K, N))
+        ew_add_output_matrix = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(K, N))
 
         ew_add_nest = Nest(shape=(K, N))
         x, y = ew_add_nest.get_indices()
@@ -613,7 +611,6 @@ class SmokeTest(unittest.TestCase):
         package_name = "const_matrix_shared_between_functions"
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
-
 
     def test_gpu_matmul(self) -> None:
         import math
@@ -656,6 +653,7 @@ class SmokeTest(unittest.TestCase):
 
         @nest.iteration_logic
         def _():
+
             def if_block():
                 C[i, j] += A[i, k] * B[k, j]
 
@@ -1095,8 +1093,7 @@ class SmokeTest(unittest.TestCase):
         subArrayNumRows = 2
         subArrayNumCols = 3
 
-        Input = Array(role=Array.Role.INPUT_OUTPUT,
-                      element_type=ScalarType.float32, shape=(N, N))
+        Input = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
 
         # Zero out a sub array of size [2, 3]:
         # xxxxx
@@ -1116,15 +1113,14 @@ class SmokeTest(unittest.TestCase):
         schedule = out_nest.create_schedule()
 
         package = Package()
-        function = package.add(schedule, args=(Input,), base_name="strided_sub_array")
+        function = package.add(schedule, args=(Input, ), base_name="strided_sub_array")
 
         package_name = "test_strided_sub_array"
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT,
-                          mode=self.PACKAGE_MODE, output_dir=output_dir)
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
             # correctness check
             Data = np.random.random([N, N]).astype(np.float32)
@@ -1135,7 +1131,7 @@ class SmokeTest(unittest.TestCase):
             DataStrided[3, 1] = 0.0
             DataStrided[3, 2] = 0.0
             DataStrided[3, 3] = 0.0
-            v.check_correctness(function.name, before=(Data,), after=(DataStrided,))
+            v.check_correctness(function.name, before=(Data, ), after=(DataStrided, ))
 
     def test_padded_nchwc_conv2d_manual_cache(self) -> None:
         input_channels = 64
@@ -1431,6 +1427,50 @@ class SmokeTest(unittest.TestCase):
             C_ref = C_test + A_test @ B_test
 
             v.check_correctness(function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref))
+
+    def _verify_convolution_function(
+        self, function: "accera.Function", package: Package, package_name: str, buffer_padding: List[int],
+        conv_padding: List[int], stride: List[int]
+    ) -> None:
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        row_stride, column_stride = stride
+        channel_padding, row_padding, column_padding = conv_padding
+        channel_buffer_padding, row_buffer_padding, column_buffer_padding = buffer_padding
+
+        # correctness check
+        def naive_convolution_ref(input, kernel, output):
+            input_channels, input_rows, input_columns = input.shape
+            out_filters, output_rows, output_columns = output.shape
+            _, _, kernel_rows, kernel_columns = kernel.shape
+            output_ref = output.copy()
+            for out_f in range(out_filters):
+                for out_r in range(output_rows - 2 * row_buffer_padding):
+                    for out_c in range(output_columns - 2 * column_buffer_padding):
+                        for in_ch in range(input_channels):
+                            for k_r in range(kernel_rows):
+                                for k_c in range(kernel_columns):
+                                    in_r = out_r * row_stride + k_r - row_padding
+                                    in_c = out_c * column_stride + k_c - column_padding
+                                    output_ref[out_f, out_r + row_buffer_padding, out_c + column_buffer_padding] += \
+                                        input[in_ch, in_r + row_buffer_padding, in_c + column_buffer_padding] * \
+                                        kernel[out_f, in_ch, k_r, k_c]
+            return output_ref
+
+        # unpadded_Input_test, unpadded_Kernel_test, unpadded_Output_test = (np.random.random(p.shape).astype(np.float32) for p in function.args)
+
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+            Input_test, Kernel_test, Output_test = (np.random.random(p.shape).astype(np.float32) for p in function.args)
+            Output_ref = naive_convolution_ref(Input_test, Kernel_test, Output_test)
+
+            v.check_correctness(
+                function.name,
+                before=(Input_test, Kernel_test, Output_test),
+                after=(Input_test, Kernel_test, Output_ref)
+            )
 
     def _multicache_matmul_common(self, M, N, K, name_suffix, jjj_split=16) -> None:
         import accera as acc
@@ -2061,7 +2101,7 @@ class SmokeTest(unittest.TestCase):
         ii = schedule.split(i, block_x)
         schedule.reorder(i, ii)
 
-        target = Target(category=Target.Category.GPU)
+        target = Target(category=Target.Category.GPU, runtime=Target.Runtime.CUDA)
         plan = schedule.create_plan(target)
         plan.bind((i, ii), grid=(target.GridUnit.BLOCK_X, target.GridUnit.THREAD_X))
 
@@ -2072,13 +2112,20 @@ class SmokeTest(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu"]) as v:
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
             package.build(
                 name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
                 mode=Package.Mode.RELEASE,
                 output_dir=output_dir
             )
+
+            if CUDA_AVAILABLE:
+                before = [np.random.rand(*p.shape).astype(np.float32) for p in function.args]
+                after = [before[0], before[1]] + [before[0] + before[1]]
+
+                v.check_correctness(function.name, before=before, after=after)
 
     def test_cuda_module_output(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -2102,6 +2149,7 @@ class SmokeTest(unittest.TestCase):
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile((i, j), (block_x, block_y))
+        schedule.reorder(i, j, ii, jj)
 
         target = Target(Target.Model.NVIDIA_V100)
         plan = schedule.create_plan(target=target)
@@ -2118,17 +2166,23 @@ class SmokeTest(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu"]) as v:
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
             package.build(
                 name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
                 mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
                 output_dir=output_dir
             )
 
+            if CUDA_AVAILABLE:
+                Input_test, Output_test = (np.random.uniform(-1, 1, p.shape).astype(np.float32) for p in function.args)
+                Input_ref = Output_ref = Input_test
+
+                v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_ref, Output_ref))
+
     def test_rocm_module_output(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
-        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
         from accera._lang_python._lang import _MemorySpace
 
         # Define our vector sizes
@@ -2171,6 +2225,1837 @@ class SmokeTest(unittest.TestCase):
                 format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
                 mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
                 output_dir=output_dir
+            )
+
+    def test_rocm_tensorize_single_block_single_warp_output(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        M = 16
+        N = M
+        K = M
+        outer_tile_x = 16
+        outer_tile_y = outer_tile_x
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj = schedule.tile((i, j), (outer_tile_x, outer_tile_y))
+        iii, jjj, kk = schedule.tile((ii, jj, k), (2, 2, 16))
+
+        schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+        )
+        plan.tensorize(indices=(iii, jjj, kk))
+
+        test_name = "test_rocm_tensorize_single_block_single_warp_output"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir
+            )
+
+    def test_rocm_tensorize_single_block_multi_warp_output(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        M = 64
+        N = M
+        K = M
+        outer_tile_x = 64
+        outer_tile_y = outer_tile_x
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj = schedule.tile((i, j), (outer_tile_x, outer_tile_y))
+        iii, jjj, kk = schedule.tile((ii, jj, k), (2, 2, 16))
+
+        schedule.reorder((i, j, k, ii, jj, iii, jjj, kk))
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+        )
+        plan.tensorize(indices=(iii, jjj, kk))
+
+        test_name = "test_rocm_tensorize_single_block_multi_warp_output"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir
+            )
+
+    def test_rocm_tensorize_multi_block_multi_warp_output(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        M = 1024
+        N = M
+        K = M
+        outer_tile_x = 64
+        outer_tile_y = outer_tile_x
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj = schedule.tile((i, j), (outer_tile_x, outer_tile_y))
+        iii, jjj, kk = schedule.tile((ii, jj, k), (2, 2, 16))
+
+        schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+        )
+        plan.tensorize(indices=(iii, jjj, kk))
+
+        test_name = "test_rocm_tensorize_multi_block_multi_warp_output"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir
+            )
+
+    @expectedFailure(FailedReason.INVALID, "the hardware does not support the requested tensorcore shape")
+    def test_rocm_tensorize_invalid_shape_output(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        M = 256
+        N = M
+        K = M
+        block_x = 64
+        block_y = block_x
+        tile_size = 64
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj = schedule.tile((i, j), (block_x, block_y))
+        iii, jjj, kk = schedule.tile((ii, jj, k), (tile_size, tile_size, tile_size))
+
+        schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+        )
+        plan.tensorize(indices=(iii, jjj, kk))
+
+        test_name = "test_rocm_tensorize_invalid_shape_output"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir
+            )
+
+    def test_gpu_cache_simple(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
+        from accera._lang_python._lang import _MemorySpace
+
+        M = 1024
+        N = 1024
+        K = 1024
+        block_x = 16
+        block_y = block_x
+        k_tile_size = 32
+
+        m_tile_size = block_x
+        n_tile_size = block_y
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile((i, j, k), (m_tile_size, n_tile_size, k_tile_size))
+        schedule.reorder(i, j, k, ii, jj, kk)
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+        )
+        plan.cache(A, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(B, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
+
+        test_name = "test_gpu_cache_simple"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir,
+                _quiet=False
+            )
+
+    def test_gpu_cache_double_buffering(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
+        from accera._lang_python._lang import _MemorySpace
+
+        M = 2560
+        N = 1536
+        K = 2048
+        block_x = 16
+        block_y = block_x
+        k_tile_size = 32
+
+        m_tile_size = block_x
+        n_tile_size = block_y
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile((i, j, k), (m_tile_size, n_tile_size, k_tile_size))
+        schedule.reorder(i, j, k, ii, jj, kk)
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+        )
+        plan.cache(A, index=ii, double_buffer=True, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(B, index=ii, double_buffer=True, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
+
+        test_name = "test_gpu_cache_double_buffering"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir,
+                _quiet=False
+            )
+
+    def test_gpu_cache_double_buffering_trigger_index(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
+        from accera._lang_python._lang import _MemorySpace
+
+        M = 2560
+        N = 1536
+        K = 2048
+        block_x = 16
+        block_y = block_x
+        k_outer_tile_size = 512
+        k_inner_tile_size = 32
+
+        m_tile_size = block_x
+        n_tile_size = block_y
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile((i, j, k), (m_tile_size, n_tile_size, k_outer_tile_size))
+        kkk = schedule.split(kk, k_inner_tile_size)
+        schedule.reorder(i, j, k, kk, ii, jj, kkk)
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+        )
+        plan.cache(
+            A,
+            index=ii,
+            trigger_index=kk,
+            double_buffer=True,
+            location=_MemorySpace.SHARED,
+            layout=Array.Layout.FIRST_MAJOR
+        )
+        plan.cache(
+            B,
+            index=ii,
+            trigger_index=kk,
+            double_buffer=True,
+            location=_MemorySpace.SHARED,
+            layout=Array.Layout.FIRST_MAJOR
+        )
+
+        test_name = "test_gpu_cache_double_buffering_trigger_index"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir,
+                _quiet=False
+            )
+
+    def test_gpu_cache_double_buffering_mem_space(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
+        from accera._lang_python._lang import _MemorySpace
+
+        M = 2560
+        N = 1536
+        K = 2048
+        block_x = 16
+        block_y = block_x
+        k_tile_size = 32
+
+        m_tile_size = block_x
+        n_tile_size = block_y
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile((i, j, k), (m_tile_size, n_tile_size, k_tile_size))
+        schedule.reorder(i, j, k, ii, jj, kk)
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+        )
+        plan.cache(
+            A, index=ii, double_buffer=True, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
+        )    # Double buffer should be in private mem
+        plan.cache(
+            B,
+            index=ii,
+            double_buffer=True,
+            location=_MemorySpace.SHARED,
+            double_buffer_location=_MemorySpace.SHARED,
+            layout=Array.Layout.FIRST_MAJOR
+        )
+
+        test_name = "test_gpu_cache_double_buffering_mem_space"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir,
+                _quiet=False
+            )
+
+    def test_cpu_cache_double_buffering_trigger_index(self) -> None:
+        from accera import Array, Nest, Package, ScalarType
+
+        M = 1024
+        N = 1024
+        K = 1024
+        m_tile_size = 16
+        n_tile_size = 16
+        k_outer_tile_size = 256
+        k_inner_tile_size = 32
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile((i, j, k), (m_tile_size, n_tile_size, k_outer_tile_size))
+        kkk = schedule.split(kk, k_inner_tile_size)
+        schedule.reorder(i, j, k, kk, ii, jj, kkk)
+
+        plan = schedule.create_plan()
+        plan.cache(A, index=ii, trigger_index=kk, double_buffer=True, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(B, index=ii, trigger_index=kk, double_buffer=True, layout=Array.Layout.FIRST_MAJOR)
+
+        test_name = "test_cpu_cache_double_buffering_trigger_index"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        self._verify_matrix_multiplication_function(function, package, test_name)
+
+    def test_gpu_barrier_opt(self):
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera._lang_python._lang import Allocate, _MemorySpace, Array as NativeArray
+        from accera._lang_python._lang._gpu import Barrier
+        from accera._lang_python import _MemoryLayout
+
+        N = 256
+        block_x = 16
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
+
+        nest = Nest(shape=(N, ))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            # Performs excessive barriers.
+            shA = NativeArray(
+                Allocate(
+                    type=ScalarType.float32, layout=_MemoryLayout([block_x]).set_memory_space(_MemorySpace.SHARED)
+                )
+            )
+            shB = NativeArray(
+                Allocate(
+                    type=ScalarType.float32, layout=_MemoryLayout([block_x]).set_memory_space(_MemorySpace.SHARED)
+                )
+            )
+            Barrier()
+            shA[i] = A[i]
+            Barrier()
+            Barrier()
+            shA[i] = B[i]
+            Barrier()    # Only this is needed.
+            C[i] = shA[i] + shB[i]
+            Barrier()
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, block_x)
+        schedule.reorder(i, ii)
+
+        target = Target(category=Target.Category.GPU, runtime=Target.Runtime.ROCM)
+        plan = schedule.create_plan(target)
+        plan.bind((i, ii), grid=(target.GridUnit.BLOCK_X, target.GridUnit.THREAD_X))
+
+        test_name = "test_gpu_barrier_opt"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+
+    def test_rocm_gemm_tiled_output(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        M = 16
+        N = M
+        K = M
+        block_x = 16
+        block_y = block_x
+        tile_size = 16
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+        ii, jj = schedule.tile((i, j), (block_x, block_y))
+        iii, jjj, kk = schedule.tile((ii, jj, k), (tile_size, tile_size, tile_size))
+
+        schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+        )
+
+        test_name = "test_rocm_gemm_tiled_output"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        # We expect the output to have a block dim = [1,1,1] and grid dim = [1,1,1]
+        # there will be an inner 16x16x16 loop that performs the actual computation.
+        # i.e. the computation is performed by a single block and which contains a single thread
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir
+            )
+
+    # Thrifty caching
+    # Note: these tests will only verify that the thrify caching cases compile and compute the correct result,
+    #       however they will not validate when a cache buffer is successfully elided due to the delayed lowering
+    #       model we have. Currently the only way to verify this is manual IR inspection following the LoopNestToValuFunc
+    #       lowering pass
+
+    def test_thrifty_caching_simple_input_cache(self) -> None:
+        import accera as acc
+
+        package = Package()
+
+        M = 32
+        N = 32
+        K = 32
+
+        A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+        B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+        C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+        nest = acc.Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii = schedule.split(i, 4)
+        jj = schedule.split(j, 16)
+        kk = schedule.split(k, 32)
+
+        order = [i, j, k, ii, jj, kk]
+        schedule.reorder(order)
+
+        plan = schedule.create_plan()
+
+        # This cache should get elided because at ii the active block is of shape 4x32, which is a contiguous subarray of the 32x32 base array A
+        AA = plan.cache(A, index=ii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+        # This cache should not get elided because at k the active block is of shape 32x16, which is a discontiguous subarray of the 32x32 base array B
+        BB = plan.cache(B, index=k, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+        function = package.add(plan, args=(A, B, C), base_name=f"test_thrifty_caching_simple_input_cache")
+
+        self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_simple_input_cache")
+
+    def test_thrifty_caching_simple_output_cache_elide(self) -> None:
+        import accera as acc
+
+        package = Package()
+
+        M = 32
+        N = 32
+        K = 32
+
+        A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+        B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+        C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+        nest = acc.Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii = schedule.split(i, 4)
+        jj = schedule.split(j, 32)
+        kk = schedule.split(k, 8)
+
+        order = [i, j, k, ii, jj, kk]
+        schedule.reorder(order)
+
+        plan = schedule.create_plan()
+
+        # This cache should get elided because at ii the active block has the shape 4x32, which is a contiguous subarray of the 32x32 base array C
+        CC = plan.cache(C, index=ii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+        function = package.add(plan, args=(A, B, C), base_name=f"test_thrifty_caching_simple_output_cache_elide")
+
+        self._verify_matrix_multiplication_function(
+            function, package, f"test_thrifty_caching_simple_output_cache_elide"
+        )
+
+    # Note: The following thrifty cache tests are commented out as they increase the runtime of the smoke_test by too much
+    # TODO : move these to a new exhaustive test suite that isn't run as part of the buddy build
+
+    # def test_thrifty_caching_simple_output_cache_no_elide(self) -> None:
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K))
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N))
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N))
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     jj = schedule.split(j, 8)
+    #     kk = schedule.split(k, 32)
+
+    #     order = [i, j, k, ii, jj, kk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # This cache should not get elided because at ii the active block is of shape 4x8, which is a discontiguous subarray of the base array C
+    #     CC = plan.cache(C, index=ii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     function = package.add(plan,
+    #                            args=(A,B,C),
+    #                            base_name=f"test_thrifty_caching_simple_output_cache_no_elide")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_simple_output_cache_no_elide")
+
+    # def test_thrifty_caching_transpose_input_no_elide(self) -> None:
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     jj = schedule.split(j, 8)
+    #     kk = schedule.split(k, 32)
+
+    #     order = [i, j, k, ii, jj, kk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # Note that at index ii, the active block is of shape 4x32 and is a contiguous sub-buffer of the base array A,
+    #     # however the cache stride is different between elements so it should not get elided
+    #     AA = plan.cache(A, index=ii, thrifty=True, layout=acc.Array.Layout.LAST_MAJOR)
+
+    #     function = package.add(plan,
+    #                            args=(A,B,C),
+    #                            base_name=f"test_thrifty_caching_transpose_input_no_elide")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_transpose_input_no_elide")
+
+    # def test_thrifty_caching_transpose_input_elide(self) -> None:
+    #     # This case transposes the shape of the input cache, however the schedule and cache are constructed such that the active
+    #     # block is a 1-D slice that is contiguous in the base array
+
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 1)
+    #     jj = schedule.split(j, 8)
+    #     kk = schedule.split(k, 32)
+
+    #     order = [i, j, k, ii, jj, kk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # Note that at index ii, the active block is of shape 1x32 and is a contiguous sub-buffer of the base array A,
+    #     # and even though the cache transposes the active block, it still has a stride of 1 between the elements as
+    #     # so it should get elided
+    #     AA = plan.cache(A, index=ii, thrifty=True, layout=acc.Array.Layout.LAST_MAJOR)
+
+    #     function = package.add(plan,
+    #                            args=(A,B,C),
+    #                            base_name=f"test_thrifty_caching_transpose_input_elide")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_transpose_input_elide")
+
+    # def test_thrifty_caching_with_trigger_index_elide(self) -> None:
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 16)
+    #     iii = schedule.split(ii, 4)
+    #     jj = schedule.split(j, 8)
+    #     kk = schedule.split(k, 32)
+
+    #     order = [i, k, ii, j, iii, jj, kk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # This cache should get elided because at ii the active block is of shape 4x32, which is a contiguous subarray of the 32x32 base array A
+    #     # and the successive 4x32 active blocks within the 16x32 region covered at index ii are sequential contiguous subarrays of the 32x32 base array A
+    #     # Note: index j between ii and iii in the order should have no effect on this
+    #     AA = plan.cache(A, index=iii, trigger_index=ii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     function = package.add(plan,
+    #                            args=(A,B,C),
+    #                            base_name=f"test_thrifty_caching_with_trigger_index_elide")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_with_trigger_index_elide")
+
+    # def test_thrifty_caching_convolution_duplication_no_elide(self) -> None:
+    #     # A cache with a trigger index can result in input element duplication if the successive active blocks overlap.
+    #     # When the active blocks overlap, the resulting multi-cache with duplication is certainly not a strict
+    #     # subbuffer of the original base array, and therefore the cache should not get elided
+
+    #     # Caching the input array in a Conv2D operation produces duplication as long as the
+    #     # kernel rows and/or kernel columns loops are inside of the cache region in the loopnest
+
+    #     input_channels = 32
+    #     base_input_shape = (input_channels, 14, 14)
+    #     buffer_padding = (0, 1, 1)
+    #     conv_padding = (0, 1, 1)
+    #     stride = (2, 2)
+    #     kernel_shape = (3, 3)
+    #     output_filters = 32
+
+    #     import math
+    #     unpadded_output_rows = math.floor(
+    #         ((base_input_shape[1] + (2 * conv_padding[1]) - (kernel_shape[0] - 1) - 1) / stride[0]) + 1)
+    #     unpadded_output_columns = math.floor(
+    #         ((base_input_shape[2] + (2 * conv_padding[2]) - (kernel_shape[1] - 1) - 1) / stride[1]) + 1)
+    #     base_output_shape = (output_filters, unpadded_output_rows, unpadded_output_columns)
+
+    #     # Pad the buffers so we don't need to deal with conditionals at the edges in this test
+    #     padded_input_shape = [base_input_shape[i] + 2*buffer_padding[i]
+    #                           for i in range(len(base_input_shape))]
+    #     padded_output_shape = [base_output_shape[i] + 2*buffer_padding[i]
+    #                            for i in range(len(base_output_shape))]
+
+    #     weights_shape = (output_filters, input_channels, kernel_shape[0], kernel_shape[1])
+
+    #     Input = Array(role=Array.Role.INPUT,
+    #                   element_type=ScalarType.float32, shape=padded_input_shape)
+    #     Kernel = Array(role=Array.Role.INPUT,
+    #                    element_type=ScalarType.float32, shape=weights_shape)
+    #     Output = Array(role=Array.Role.INPUT_OUTPUT,
+    #                    element_type=ScalarType.float32, shape=padded_output_shape)
+
+    #     nest = Nest(shape=(output_filters,
+    #                        input_channels,
+    #                        unpadded_output_rows,
+    #                        unpadded_output_columns,
+    #                        kernel_shape[0],
+    #                        kernel_shape[1]))
+
+    #     out_f, in_ch, out_r, out_c, k_r, k_c = nest.get_indices()
+
+    #     row_stride, column_stride = stride
+    #     channel_padding, row_padding, column_padding = conv_padding
+    #     channel_buffer_padding, row_buffer_padding, column_buffer_padding = buffer_padding
+    #     # Define the iteration logic
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         in_r = out_r * row_stride - row_padding + k_r
+    #         in_c = out_c * column_stride - column_padding + k_c
+    #         Output[out_f, out_r + row_buffer_padding, out_c + column_buffer_padding] += \
+    #             Input[in_ch, in_r + row_buffer_padding, in_c + column_buffer_padding] * \
+    #             Kernel[out_f, in_ch, k_r, k_c]
+
+    #     schedule = nest.create_schedule()
+
+    #     # We don't need to reorder as the kernel row and kernel column loops are already inside
+    #     # of the tensor shape loops in the nest
+
+    #     plan = schedule.create_plan()
+
+    #     # Cache input array at a level that will produce duplication
+    #     # This thrifty cache should not be elided as it is duplicating input elements
+    #     # so it has an inconsistent stride between the base input and the cache
+    #     # The active cache here should be a 3x3 subarray in the rows/columns dimension of the input
+    #     # and the trigger level should cause duplication between the column sections as there is overlap
+    #     plan.cache(Input, trigger_index=out_c, index=k_r, thrifty=True, layout=Array.Layout.FIRST_MAJOR)
+
+    #     package = Package()
+    #     function = package.add(plan, args=(
+    #         Input, Kernel, Output), base_name="test_thrifty_caching_convolution_duplication_no_elide")
+
+    #     package_name = "test_thrifty_caching_convolution_duplication_no_elide"
+
+    #     self._verify_convolution_function(function, package, package_name, buffer_padding, conv_padding, stride)
+
+    # def test_thrifty_caching_convolution_no_duplication_elide(self) -> None:
+    #     # This test creates a convolution loopnest but with the kernel row and kernel column loops
+    #     # outside of the input cache region, so there is no element duplication and the cache is a subbuffer
+    #     # of the input, so the thrifty cache can be elided
+
+    #     input_channels = 32
+    #     base_input_shape = (input_channels, 14, 14)
+    #     buffer_padding = (0, 1, 1)
+    #     conv_padding = (0, 1, 1)
+    #     stride = (2, 2)
+    #     kernel_shape = (3, 3)
+    #     output_filters = 32
+
+    #     import math
+    #     unpadded_output_rows = math.floor(
+    #         ((base_input_shape[1] + (2 * conv_padding[1]) - (kernel_shape[0] - 1) - 1) / stride[0]) + 1)
+    #     unpadded_output_columns = math.floor(
+    #         ((base_input_shape[2] + (2 * conv_padding[2]) - (kernel_shape[1] - 1) - 1) / stride[1]) + 1)
+    #     base_output_shape = (
+    #         output_filters, unpadded_output_rows, unpadded_output_columns)
+
+    #     # Pad the buffers so we don't need to deal with conditionals at the edges in this test
+    #     padded_input_shape = [base_input_shape[i] + 2*buffer_padding[i]
+    #                           for i in range(len(base_input_shape))]
+    #     padded_output_shape = [base_output_shape[i] + 2*buffer_padding[i]
+    #                            for i in range(len(base_output_shape))]
+
+    #     weights_shape = (output_filters, input_channels, kernel_shape[0], kernel_shape[1])
+
+    #     Input = Array(role=Array.Role.INPUT,
+    #                   element_type=ScalarType.float32, shape=padded_input_shape)
+    #     Kernel = Array(role=Array.Role.INPUT,
+    #                    element_type=ScalarType.float32, shape=weights_shape)
+    #     Output = Array(role=Array.Role.INPUT_OUTPUT,
+    #                    element_type=ScalarType.float32, shape=padded_output_shape)
+
+    #     nest = Nest(shape=(output_filters,
+    #                        input_channels,
+    #                        unpadded_output_rows,
+    #                        unpadded_output_columns,
+    #                        kernel_shape[0],
+    #                        kernel_shape[1]))
+
+    #     out_f, in_ch, out_r, out_c, k_r, k_c = nest.get_indices()
+
+    #     row_stride, column_stride = stride
+    #     channel_padding, row_padding, column_padding = conv_padding
+    #     channel_buffer_padding, row_buffer_padding, column_buffer_padding = buffer_padding
+    #     # Define the iteration logic
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         in_r = out_r * row_stride - row_padding + k_r
+    #         in_c = out_c * column_stride - column_padding + k_c
+    #         Output[out_f, out_r + row_buffer_padding, out_c + column_buffer_padding] += \
+    #             Input[in_ch, in_r + row_buffer_padding, in_c + column_buffer_padding] * \
+    #             Kernel[out_f, in_ch, k_r, k_c]
+
+    #     schedule = nest.create_schedule()
+
+    #     # Reorder the schedule to put the kernel row and kernel column loops outside the
+    #     # row, and column loops
+    #     schedule.reorder(out_f, in_ch, k_r, k_c, out_r, out_c)
+
+    #     plan = schedule.create_plan()
+
+    #     # This thrifty cache should be elided as it is a strict subbuffer of the original input array
+    #     plan.cache(Input, index=out_c, thrifty=True, layout=Array.Layout.FIRST_MAJOR)
+
+    #     package = Package()
+    #     function = package.add(plan, args=(
+    #         Input, Kernel, Output), base_name="test_thrifty_caching_convolution_no_duplication_elide")
+
+    #     package_name = "test_thrifty_caching_convolution_no_duplication_elide"
+
+    #     self._verify_convolution_function(function, package, package_name, buffer_padding, conv_padding, stride)
+
+    # def test_thrifty_caching_convolution_no_duplication_no_elide_padding(self) -> None:
+    #     # This test creates a convolution loopnest but with the kernel row and kernel column loops
+    #     # outside of the input cache region, so there is no element duplication and the cache is a subbuffer
+    #     # of the input, but the cached region doesn't include the padding in the input buffer, so the cache
+    #     # should not be elided
+
+    #     input_channels = 32
+    #     base_input_shape = (input_channels, 14, 14)
+    #     buffer_padding = (0, 1, 1)
+    #     conv_padding = (0, 1, 1)
+    #     stride = (2, 2)
+    #     kernel_shape = (3, 3)
+    #     output_filters = 32
+
+    #     import math
+    #     unpadded_output_rows = math.floor(
+    #         ((base_input_shape[1] + (2 * conv_padding[1]) - (kernel_shape[0] - 1) - 1) / stride[0]) + 1)
+    #     unpadded_output_columns = math.floor(
+    #         ((base_input_shape[2] + (2 * conv_padding[2]) - (kernel_shape[1] - 1) - 1) / stride[1]) + 1)
+    #     base_output_shape = (
+    #         output_filters, unpadded_output_rows, unpadded_output_columns)
+
+    #     # Pad the buffers so we don't need to deal with conditionals at the edges in this test
+    #     padded_input_shape = [base_input_shape[i] + 2*buffer_padding[i]
+    #                           for i in range(len(base_input_shape))]
+    #     padded_output_shape = [base_output_shape[i] + 2*buffer_padding[i]
+    #                            for i in range(len(base_output_shape))]
+
+    #     weights_shape = (output_filters, input_channels, kernel_shape[0], kernel_shape[1])
+
+    #     Input = Array(role=Array.Role.INPUT,
+    #                   element_type=ScalarType.float32, shape=padded_input_shape)
+    #     Kernel = Array(role=Array.Role.INPUT,
+    #                    element_type=ScalarType.float32, shape=weights_shape)
+    #     Output = Array(role=Array.Role.INPUT_OUTPUT,
+    #                    element_type=ScalarType.float32, shape=padded_output_shape)
+
+    #     nest = Nest(shape=(output_filters,
+    #                        input_channels,
+    #                        unpadded_output_rows,
+    #                        unpadded_output_columns,
+    #                        kernel_shape[0],
+    #                        kernel_shape[1]))
+
+    #     out_f, in_ch, out_r, out_c, k_r, k_c = nest.get_indices()
+
+    #     row_stride, column_stride = stride
+    #     channel_padding, row_padding, column_padding = conv_padding
+    #     channel_buffer_padding, row_buffer_padding, column_buffer_padding = buffer_padding
+    #     # Define the iteration logic
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         in_r = out_r * row_stride - row_padding + k_r
+    #         in_c = out_c * column_stride - column_padding + k_c
+    #         Output[out_f, out_r + row_buffer_padding, out_c + column_buffer_padding] += \
+    #             Input[in_ch, in_r + row_buffer_padding, in_c + column_buffer_padding] * \
+    #             Kernel[out_f, in_ch, k_r, k_c]
+
+    #     schedule = nest.create_schedule()
+
+    #     # Reorder the schedule to put the kernel row and kernel column loops outside the
+    #     # row, and column loops
+    #     schedule.reorder(out_f, in_ch, k_r, k_c, out_r, out_c)
+
+    #     plan = schedule.create_plan()
+
+    #     # This thrifty cache should be elided as it is a strict subbuffer of the original input array
+    #     plan.cache(Input, index=out_r, thrifty=True, layout=Array.Layout.FIRST_MAJOR)
+
+    #     package = Package()
+    #     function = package.add(plan, args=(
+    #         Input, Kernel, Output), base_name="test_thrifty_caching_convolution_no_duplication_no_elide_padding")
+
+    #     package_name = "test_thrifty_caching_convolution_no_duplication_no_elide_padding"
+
+    #     self._verify_convolution_function(function, package, package_name, buffer_padding, conv_padding, stride)
+
+    # def test_thrifty_caching_max_elements_elide(self) -> None:
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     kk = schedule.split(k, 32)
+    #     kkk = schedule.split(kk, 8)
+
+    #     order = [i, k, j, kk, ii, kkk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # This cache should get elided because with a budget of 4*32 the cache level will be
+    #     # at index kk, where the active block is of shape 4x32, which is a contiguous subarray of the 32x32 base array A
+    #     AA = plan.cache(A, max_elements=4*32, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     function = package.add(plan,
+    #                            args=(A,B,C),
+    #                            base_name=f"test_thrifty_caching_max_elements_elide")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_max_elements_elide")
+
+    # def test_thrifty_caching_max_elements_no_elide(self) -> None:
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     kk = schedule.split(k, 32)
+    #     kkk = schedule.split(kk, 8)
+
+    #     order = [i, k, j, kk, ii, kkk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # This cache should not get elided because with a budget of (4*32 - 1) the cache level will be
+    #     # at index ii, where the active block is of shape 4x32, which is not a contiguous subarray of the 32x32 base array A
+    #     AA = plan.cache(A, max_elements=(4*32 - 1), thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     function = package.add(plan,
+    #                            args=(A,B,C),
+    #                            base_name=f"test_thrifty_caching_max_elements_no_elide")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_max_elements_no_elide")
+
+    # def test_thrifty_caching_coefficient_layout_elide(self) -> None:
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     kk = schedule.split(k, 32)
+    #     kkk = schedule.split(kk, 8)
+
+    #     order = [i, k, j, kk, ii, kkk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # This cache should get elided because with a cache level of kk, the active block is of shape 4x32, which is a contiguous subarray of the 32x32 base array A
+    #     # and the cache layout is a coefficient-specified layout which is equivalent to FIRST_MAJOR for this case
+    #     AA = plan.cache(A, index=kk, thrifty=True, layout=(32, 1))
+
+    #     function = package.add(plan,
+    #                            args=(A,B,C),
+    #                            base_name=f"test_thrifty_caching_coefficient_layout_elide")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_coefficient_layout_elide")
+
+    # @expectedFailure(FailedReason.BUG, "Coefficient caches with gaps don't create sufficiently large buffers")
+    # def test_thrifty_caching_coefficient_layout_no_elide_gaps(self) -> None:
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     kk = schedule.split(k, 32)
+    #     kkk = schedule.split(kk, 8)
+
+    #     order = [i, k, j, kk, ii, kkk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # This cache should get not elided because with a cache level of kk, the active block is of shape 4x32, which is a contiguous subarray of the 32x32 base array A
+    #     # but the cache layout is a coefficient-specified layout which is almost equivalent to FIRST_MAJOR for this case but has
+    #     # 2 additional empty elements between rows
+    #     AA = plan.cache(A, index=kk, thrifty=True, layout=(32 + 2, 1))
+
+    #     function = package.add(plan,
+    #                            args=(A,B,C),
+    #                            base_name=f"test_thrifty_caching_coefficient_layout_no_elide_gaps")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_coefficient_layout_no_elide_gaps")
+
+    # def test_thrifty_caching_different_memory_space_no_elide(self) -> None:
+    #     import accera as acc
+
+    #     # TODO : update once MemorySpace is better surfaced
+    #     from accera._lang_python._lang import _MemorySpace
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     kk = schedule.split(k, 32)
+
+    #     order = [i, j, k, ii, kk]
+    #     schedule.reorder(order)
+
+    #     target = acc.Target(category=acc.Target.Category.GPU, runtime=acc.Target.Runtime.ROCM)
+    #     plan = schedule.create_plan(target)
+
+    #     # With a cache level of ii, the active block is 4x32 and is a contiguous subarray of the base array A, however
+    #     # the cache should not get elided because it resides in a different memory space from the base array
+    #     AA = plan.cache(A, index=ii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR, location=_MemorySpace.SHARED)
+
+    #     # Shared -> PRIVATE move so this should not get elided even though with a cache index of kk it is a sinlge contiguous row
+    #     # copy from the outer cache
+    #     AAA = plan.cache(AA, index=kk, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR, location=_MemorySpace.PRIVATE)
+
+    #     function = package.add(plan,
+    #                            args=(A,B,C),
+    #                            base_name=f"test_thrifty_caching_different_memory_space_no_elide")
+
+    #     package_name = f"test_thrifty_caching_different_memory_space_no_elide"
+    #     output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+    #     shutil.rmtree(output_dir, ignore_errors=True)
+
+    #     gpu_package_format = Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE
+    #     with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+    #         package.build(name=package_name, format=gpu_package_format, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+    # def test_thrifty_caching_multiple_memory_spaces_elide(self) -> None:
+    #     import accera as acc
+
+    #     # TODO : update once MemorySpace is better surfaced
+    #     from accera._lang_python._lang import _MemorySpace
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     kk = schedule.split(k, 32)
+
+    #     order = [i, j, k, ii, kk]
+    #     schedule.reorder(order)
+
+    #     target = acc.Target(category=acc.Target.Category.GPU, runtime=acc.Target.Runtime.ROCM)
+    #     plan = schedule.create_plan(target)
+
+    #     # With a cache level of ii, the active block is 4x32 and is a contiguous subarray of the base array A, however
+    #     # the cache should not get elided because it resides in a different memory space from the base array
+    #     AA = plan.cache(A, index=ii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR, location=_MemorySpace.SHARED)
+
+    #     # This cache is a contigous subarray of the outer cache and it is in the same memory space, so it should get elided
+    #     AAA = plan.cache(AA, index=kk, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR, location=_MemorySpace.SHARED)
+
+    #     function = package.add(plan,
+    #                            args=(A,B,C),
+    #                            base_name=f"test_thrifty_caching_multiple_memory_spaces_elide")
+
+    #     package_name = f"test_thrifty_caching_multiple_memory_spaces_elide"
+    #     output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+    #     shutil.rmtree(output_dir, ignore_errors=True)
+
+    #     gpu_package_format = Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE
+    #     with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+    #         package.build(name=package_name, format=gpu_package_format, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+
+    # def test_thrifty_caching_hierarchical_elide_outer(self) -> None:
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     kk = schedule.split(k, 8)
+
+    #     order = [i, j, k, ii, kk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # With a cache level of k, the active block is 4x32 and is a contiguous subarray of the base array A,
+    #     # so it should get elided
+    #     AA = plan.cache(A, index=k, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     # With a cache level of ii, the active block is 4x8 inside a cache of size 4x32, so the cache should not get elided
+    #     AAA = plan.cache(AA, index=ii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     function = package.add(plan,
+    #                            args=(A, B, C),
+    #                            base_name=f"test_thrifty_caching_hierarchical_elide_outer")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_hierarchical_elide_outer")
+
+    # def test_thrifty_caching_hierarchical_elide_inner(self) -> None:
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     kk = schedule.split(k, 8)
+
+    #     order = [i, j, k, ii, kk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # With a cache level of ii, the active block is 4x8 and is not a contiguous subarray of the base array A,
+    #     # so it should not get elided
+    #     AA = plan.cache(A, index=ii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     # With a cache level of kk, the active block is 1x8 inside a cache of size 4x8, so it is a contiguous subarray
+    #     # of the cache AA so this inner cache should get elided
+    #     AAA = plan.cache(AA, index=kk, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     function = package.add(plan,
+    #                            args=(A, B, C),
+    #                            base_name=f"test_thrifty_caching_hierarchical_elide_inner")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_hierarchical_elide_inner")
+
+    # def test_thrifty_caching_hierarchical_elide_middle(self) -> None:
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 32
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 8)
+    #     iii = schedule.split(ii, 2)
+    #     kk = schedule.split(k, 16)
+    #     kkk = schedule.split(kk, 4)
+
+    #     order = [i, j, k, ii, kk, iii, kkk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # With a cache level of ii, the active block is 8x16 and is not a contiguous subarray of the base array A,
+    #     # so it should not get elided
+    #     AA = plan.cache(A, index=ii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     # With a cache level of kk, the active block is 2x16 inside a cache of size 8x16, so it is a contiguous subarray
+    #     # of the cache array AA so this cache should get elided
+    #     AAA = plan.cache(AA, index=kk, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     # With a cache level of iii, the active block is 2x4 inside a cache of size 2x16, or really 8x16 after the middle cache is elided.
+    #     # In either case this is a discontiguous subarray so this cache should not get elided
+    #     AAAA = plan.cache(AAA, index=iii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     function = package.add(plan,
+    #                            args=(A, B, C),
+    #                            base_name=f"test_thrifty_caching_hierarchical_elide_middle")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_hierarchical_elide_middle")
+
+    # def test_thrifty_caching_elide_boundary_no_elide_main(self) -> None:
+    #     # This case creates a loopnest where in a boundary condition the cached segment is a strict subarray of the base array
+    #     # but the main section of the loop is not, so the boundary section of the cache should is elided, but the main
+    #     # section is not
+
+    #     import accera as acc
+
+    #     package = Package()
+
+    #     M = 33 # 33 so that M % i_split_size = 1 and a boundary condition is created
+    #     N = 32
+    #     K = 32
+
+    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     nest = acc.Nest(shape=(M, N, K))
+    #     i, j, k = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         C[i, j] += A[i, k] * B[k, j]
+
+    #     schedule = nest.create_schedule()
+
+    #     ii = schedule.split(i, 4)
+    #     kk = schedule.split(k, 8)
+
+    #     order = [i, j, k, ii, kk]
+    #     schedule.reorder(order)
+
+    #     plan = schedule.create_plan()
+
+    #     # With a cache level of k, the active block is 4x8 in the main part of the loopnest and is a discontiguous subarray of the base array A,
+    #     # so it should not get elided,
+    #     # However in the boundary condition on ii created because (M % i_split_size) = (33 % 4) = 1, the active block is 1x8, which is a contiguous
+    #     # subarray of the base array A, so the boundary cache should get elided
+    #     AA = plan.cache(A, index=ii, thrifty=True, layout=acc.Array.Layout.FIRST_MAJOR)
+
+    #     function = package.add(plan,
+    #                            args=(A, B, C),
+    #                            base_name=f"test_thrifty_caching_elide_boundary_no_elide_main")
+
+    #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_elide_boundary_no_elide_main")
+
+    def test_rocm_cache_tensorize(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        M = 1024
+        N = 1024
+        K = 1024
+        outer_tile_x = 64
+        outer_tile_y = outer_tile_x
+        outer_tile_k = 64
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
+        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+
+        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+        )
+        plan.tensorize(indices=(iii, jjj, kkk))
+        plan.cache(
+            A, index=ii, double_buffer=False, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
+        )
+        plan.cache(
+            B, index=ii, double_buffer=False, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
+        )
+
+        test_name = "test_rocm_cache_tensorize"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir,
+                _quiet=False
+            )
+
+    def test_rocm_cache_double_buffering_tensorize(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        M = 1024
+        N = 1024
+        K = 1024
+        outer_tile_x = 64
+        outer_tile_y = outer_tile_x
+        outer_tile_k = 64
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
+        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+
+        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            (i, j, ii, jj),
+            grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+        )
+        plan.tensorize(indices=(iii, jjj, kkk))
+        plan.cache(A, index=ii, double_buffer=True, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(B, index=ii, double_buffer=True, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
+
+        test_name = "test_rocm_cache_double_buffering_tensorize"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir,
+                _quiet=False
+            )
+
+    def test_fill_fp16(self):
+        from accera import Array, Nest, Package, ScalarType
+        from accera import _cast
+
+        # Define our vector sizes
+        N = 2**16
+
+        Out = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float16, shape=(N, ))
+
+        nest = Nest(shape=(N, ))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            Out[i] = _cast(2, ScalarType.float16)
+
+        schedule = nest.create_schedule()
+        plan = schedule.create_plan()
+
+        package = Package()
+        package_name = "test_fill_fp16"
+        function = package.add(plan, args=(Out, ), base_name=package_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+            def fill_fp16():
+                return 2 * np.ones(N).astype(np.float16)
+
+            Output_test = np.random.random(N).astype(np.float16)
+            Output_ref = fill_fp16()
+
+            v.check_correctness(function.name, before=(Output_test, ), after=(Output_ref, ))
+
+    def test_abs_fp16(self):
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera import abs
+
+        # Define our vector sizes
+        N = 16
+
+        In = Array(role=Array.Role.INPUT, element_type=ScalarType.float16, shape=(N, ))
+        Out = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float16, shape=(N, ))
+
+        nest = Nest(shape=(N, ))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            Out[i] = abs(In[i])
+
+        schedule = nest.create_schedule()
+        plan = schedule.create_plan()
+
+        package = Package()
+        package_name = "test_add_scalar_fp16"
+        function = package.add(plan, args=(In, Out), base_name=package_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+            def abs_fp16(a):
+                return np.abs(a)
+
+            Input_test, Output_test = (np.random.uniform(-1, 1, p.shape).astype(np.float16) for p in function.args)
+            Output_ref = abs_fp16(Input_test)
+
+            v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_test, Output_ref))
+
+    def test_vec_add_fp16(self):
+        from accera import Array, Nest, Package, ScalarType
+
+        # Define our vector sizes
+        N = 2**16
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float16, shape=(N, ))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float16, shape=(N, ))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float16, shape=(N, ))
+
+        nest = Nest(shape=(N, ))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i] = A[i] + B[i]
+
+        schedule = nest.create_schedule()
+        plan = schedule.create_plan()
+
+        package = Package()
+        package_name = "test_vec_add_fp16"
+        function = package.add(plan, args=(A, B, C), base_name=package_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+            def vecadd_ref(a, b):
+                return a + b
+
+            Input0_test, Input1_test, Output_test = (
+                np.random.random(p.shape).astype(np.float16) for p in function.args
+            )
+            Output_ref = vecadd_ref(Input0_test, Input1_test)
+
+            v.check_correctness(
+                function.name,
+                before=(Input0_test, Input1_test, Output_test),
+                after=(Input0_test, Input1_test, Output_ref)
             )
 
 

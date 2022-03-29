@@ -110,6 +110,9 @@ void PrintMatrix(std::string indent, Matrix e)
             case ValueType::Int64:
                 std::cout << s.Get<int64_t>();
                 break;
+            case ValueType::Float16:
+                std::cout << s.Get<float16_t>();
+                break;
             case ValueType::Float:
                 std::cout << s.Get<float>();
                 break;
@@ -148,7 +151,7 @@ Scalar EqualEpsilon(Scalar x, Scalar y, double epsilon)
 #endif // 0
         result = 1;
     }).Else([&] {
-        if (auto type = x.GetType(); type == ValueType::Float || type == ValueType::Double)
+        if (auto type = x.GetType(); type == ValueType::Float16 || type == ValueType::Float || type == ValueType::Double)
         {
             auto tolerance = Cast<Scalar>(epsilon, type);
             If((x - y) <= tolerance, [&] {

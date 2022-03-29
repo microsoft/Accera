@@ -104,13 +104,13 @@ struct ValueFuncToTargetPass : public tr::ValueFuncToTargetBase<ValueFuncToTarge
         }
 
         module.walk([&](AffineForOp op) {
-            if (op->getAttrOfType<UnitAttr>("rcv_unrolled"))
+            if (op->getAttrOfType<UnitAttr>("accv_unrolled"))
             {
                 auto tripCount = mlir::getConstantTripCount(op);
                 if (tripCount && *tripCount >= 1)
                     (void)mlir::loopUnrollFull(op);
             }
-            else if (auto jammed = op->getAttrOfType<IntegerAttr>("rcv_unroll_jam"))
+            else if (auto jammed = op->getAttrOfType<IntegerAttr>("accv_unroll_jam"))
             {
                 (void)mlir::loopUnrollJamByFactor(op, (uint64_t)jammed.getInt());
             }

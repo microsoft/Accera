@@ -61,9 +61,12 @@ namespace value
               const std::optional<ScalarIndex>& triggerIndex,
               const std::optional<int64_t>& maxElements,
               const MemoryAffineCoefficients& memoryCoefficients,
+              bool thrifty,
+              bool doubleBufferCache = false,
               CacheIndexing mapping = CacheIndexing::GlobalToPhysical,
               CacheAllocation allocation = CacheAllocation::Automatic,
               MemorySpace memorySpace = MemorySpace::None,
+              MemorySpace doubleBufferMemorySpace = MemorySpace::None,
               ExecutionTarget execTarget = targets::CPU{});
 
         Cache(accera::ir::loopnest::ScheduleOp schedule,
@@ -72,9 +75,12 @@ namespace value
               const std::optional<ScalarIndex>& triggerIndex,
               const std::optional<int64_t>& maxElements,
               const DimensionOrder& dimOrder,
+              bool thrifty,
+              bool doubleBufferCache = false,
               CacheIndexing mapping = CacheIndexing::GlobalToPhysical,
               CacheAllocation allocation = CacheAllocation::Automatic,
               MemorySpace memorySpace = MemorySpace::None,
+              MemorySpace doubleBufferMemorySpace = MemorySpace::None,
               ExecutionTarget execTarget = targets::CPU{});
 
         // Runtime-Init caching version

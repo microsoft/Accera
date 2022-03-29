@@ -107,6 +107,27 @@ Additionally, Accera can perform vectorized load and store operations to/from ve
 
 To vectorize dimension `i`, the number of active elements that corresponds to dimension `i` must exactly match the vector instruction width of the target processor. For example, if the target processor has vector instructions that operate on either 4 or 8 floating-point elements at once, then the number of active elements can either be 4 or 8. Additionally, those active elements must occupy adjacent memory locations (they cannot be spread out).
 
+## `tensorize`
+
+Some hardware also have specialized instructions for performing matrix multiplications. These instructions operate on certain matrix dimensions with specific data types. The tensorization instructions take tiles of the `A`, `B`, and `C` matrices and compute the `C = A * B + C` operation. 
+
+The `tensorize` operation takes 3 indices:
+
+```python
+plan.tensorize(indices=(i,j,k))
+```
+
+Tensorization is limited and is only valid on loop structures of the form 
+
+```python
+for i in range(M):
+    for k in range(N):
+        for j in range(K):
+            C[i, j] += A[i, k] * B[k, j]
+```
+
+Where there is `MxNxK` tensorization hardware support using the `A`, `B`, and `C` element data types.
+
 ## Convenience syntax: `kernelize`
 The `kernelize` instruction is a convenience syntax that does not provide any unique functionality. Specifically, `kernelize` is equivalent to a sequence of `unroll` instructions, followed by an optional `vectorize` instruction.
 

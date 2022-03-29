@@ -256,7 +256,7 @@ namespace utilities
         None = 0,
         Global = 1,
         Shared = 3,
-        Local = 5,
+        Private = 5,
     };
 
     /// <summary> A class representing layout of a block of data in memory where the block can also
@@ -343,6 +343,8 @@ namespace utilities
         /// <param name="order"> The ordering of the logical dimensions in memory (e.g., [0, 1] for
         ///     the canonical row-major ordering of 2D arrays, and [1, 0] for column-major. </param>
         MemoryLayout(const MemoryShape& size, const MemoryShape& extent, const MemoryShape& offset, const DimensionOrder& order);
+
+        MemoryLayout(const MemoryShape& size, const MemoryShape& extent, const MemoryShape& offset, const MemoryShape& increment);
 
         /// <summary> Returns the number of dimensions in this memory layout </summary>
         ///
@@ -559,7 +561,6 @@ namespace utilities
         std::string ToString() const;
 
     private:
-        MemoryLayout(const MemoryShape& size, const MemoryShape& extent, const MemoryShape& offset, const MemoryShape& increment);
         MemoryLayout(const MemoryShape& size, const MemoryShape& extent, const MemoryShape& offset, const MemoryShape& increment, const DimensionOrder& order);
         void BoundsCheckDimensionIndex(size_t index) const;
         size_t GetDataOffset() const; // offset for entry {0,0,0...}

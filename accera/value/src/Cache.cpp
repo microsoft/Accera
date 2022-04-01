@@ -194,7 +194,8 @@ namespace value
                                                                              false, // dimReorderCache
                                                                              false, // thrifty
                                                                              false, // doubleBufferCache
-                                                                             ir::value::MemorySpace::None); // doubleBufferMemorySpace
+                                                                             ir::value::MemorySpace::None, // doubleBufferMemorySpace
+                                                                             VectorizationInfo{});
             [[maybe_unused]] auto endOp = builder.create<EndCacheRegionOp>(loc, regionOp);
             _scheduleOp.injectMapping(regionOp);
         }
@@ -214,6 +215,7 @@ namespace value
                              const std::variant<MemoryAffineCoefficients, DimensionOrder>& cacheMapping,
                              bool thrifty,
                              bool doubleBufferCache,
+                             const std::optional<VectorizationInformation>& vecInfo,
                              CacheIndexing mapping,
                              CacheAllocation allocation,
                              MemorySpace dslMemorySpace,
@@ -228,6 +230,12 @@ namespace value
             auto doubleBufferMemorySpace = *ir::value::symbolizeMemorySpace((uint64_t)dslDoubleBufferMemorySpace);
 
             _cacheInfo = MakeManualCacheInfo(builder, _baseMlirValueInput, allocation, schedule, keySliceIndex, triggerIndex, maxElements, cacheMapping, memorySpace);
+
+            VectorizationInfo vectorizationInfo;
+            if (vecInfo.has_value())
+            {
+                vectorizationInfo = vecInfo.value();
+            }
 
             if (allocation == CacheAllocation::Automatic)
             {
@@ -264,7 +272,8 @@ namespace value
                                                                                                      _cacheInfo.dimReorderCache,
                                                                                                      thrifty,
                                                                                                      doubleBufferCache,
-                                                                                                     doubleBufferMemorySpace);
+                                                                                                     doubleBufferMemorySpace,
+                                                                                                     vectorizationInfo);
                 cacheRegionOp = regionOp;
             }
             else
@@ -281,7 +290,8 @@ namespace value
                                                                                  _cacheInfo.dimReorderCache,
                                                                                  thrifty,
                                                                                  doubleBufferCache,
-                                                                                 doubleBufferMemorySpace);
+                                                                                 doubleBufferMemorySpace,
+                                                                                 vectorizationInfo);
                 cacheRegionOp = regionOp;
             }
             auto regionHandle = cacheRegionOp->getResult(0);
@@ -779,6 +789,7 @@ namespace value
                  const MemoryAffineCoefficients& memoryMap,
                  bool thrifty,
                  bool doubleBufferCache,
+                 const std::optional<VectorizationInformation>& vectorizationInfo,
                  CacheIndexing mapping,
                  CacheAllocation allocation,
                  MemorySpace memorySpace,
@@ -805,6 +816,7 @@ namespace value
                                                            memoryMap,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           vectorizationInfo,
                                                            mapping,
                                                            allocation,
                                                            memorySpace,
@@ -821,6 +833,7 @@ namespace value
                                                            memoryMap,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           vectorizationInfo,
                                                            mapping,
                                                            allocation,
                                                            memorySpace,
@@ -837,6 +850,7 @@ namespace value
                  const DimensionOrder& dimOrder,
                  bool thrifty,
                  bool doubleBufferCache,
+                 const std::optional<VectorizationInformation>& vectorizationInfo,
                  CacheIndexing mapping,
                  CacheAllocation allocation,
                  MemorySpace memorySpace,
@@ -864,6 +878,7 @@ namespace value
                                                            dimOrder,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           vectorizationInfo,
                                                            mapping,
                                                            allocation,
                                                            memorySpace,
@@ -880,6 +895,7 @@ namespace value
                                                            dimOrder,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           vectorizationInfo,
                                                            mapping,
                                                            allocation,
                                                            memorySpace,

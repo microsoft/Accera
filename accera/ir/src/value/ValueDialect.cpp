@@ -536,28 +536,22 @@ static LogicalResult verify(MFMAComputeOp op)
         B,
         C
     };
-    SmallVector<MFMAMatrixType, 3> opTypes;
-
-    auto populateOpInfo = [&opTypes, &op]() { 
-        opTypes.push_back(op.opA().getType().cast<MFMAMatrixType>());
-        opTypes.push_back(op.opB().getType().cast<MFMAMatrixType>());
-        opTypes.push_back(op.opC().getType().cast<MFMAMatrixType>());
+    SmallVector<MFMAMatrixType, 3> opTypes{
+        op.opA().getType().cast<MFMAMatrixType>(),
+        op.opB().getType().cast<MFMAMatrixType>(),
+        op.opC().getType().cast<MFMAMatrixType>()
     };
-    populateOpInfo();
 
     if (!opTypes[A].getOperand().equals("AOp") ||
         !opTypes[B].getOperand().equals("BOp") ||
         !opTypes[C].getOperand().equals("COp"))
         return op.emitError("operands must be in the order AOp, BOp, COp");
 
-    ArrayRef<int64_t> aShape, bShape, cShape;
-    aShape = opTypes[A].getShape();
-    bShape = opTypes[B].getShape();
-    cShape = opTypes[C].getShape();
+    auto aShape = opTypes[A].getShape();
+    auto bShape = opTypes[B].getShape();
+    auto cShape = opTypes[C].getShape();
 
-    if (aShape[1] != bShape[0] ||
-        aShape[0] != cShape[0] ||
-        bShape[1] != cShape[1])
+    if (aShape != bShape || aShape != cShape)
         return op.emitError("operand shapes do not satisfy matmul constraints");
 
     return success();

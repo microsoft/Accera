@@ -911,6 +911,10 @@ namespace cpp_printer
 
     LogicalResult CppPrinter::printGlobalOp(memref::GlobalOp globalOp)
     {
+        if (globalOp.sym_visibilityAttr() == StringAttr::get(globalOp->getContext(), "nested"))
+        {
+            return success();
+        }
         if (!globalOp.constant())
         {
             os << "<<only constant global supported>>;\n";

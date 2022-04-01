@@ -27,6 +27,7 @@ class Cache:
     double_buffer_location: _MemorySpace = _MemorySpace.NONE
     offset: int = 0
     native_cache: Any = None
+    vectorize: bool = False
     location: _MemorySpace = _MemorySpace.NONE
     indexing: CacheIndexing = CacheIndexing.GLOBAL_TO_PHYSICAL
     allocation: _CacheAllocation = _CacheAllocation.AUTO
@@ -68,6 +69,7 @@ class Cache:
 @dataclass
 class DelayedCache(Cache):
     completed: bool = False
+    enqueue_command: bool = True
 
     def complete(self, cache: Cache):
         self.index = cache.index
@@ -81,6 +83,7 @@ class DelayedCache(Cache):
         self.double_buffer_location = cache.double_buffer_location
         self.offset = cache.offset
         self.native_cache = cache.native_cache
+        self.vectorize = cache.vectorize
         self.location = cache.location
         self.indexing = cache.indexing
         self.allocation = cache.allocation

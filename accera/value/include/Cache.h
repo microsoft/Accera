@@ -9,8 +9,10 @@
 #include "FunctionDeclaration.h"
 #include "Index.h"
 #include "IterationDomain.h"
+#include "Plan.h"
 #include "Range.h"
 #include "Scalar.h"
+#include "VectorizationInformation.h"
 
 #include <ir/include/exec/ExecutionPlanEnums.h>
 #include <ir/include/value/ValueEnums.h>
@@ -63,6 +65,7 @@ namespace value
               const MemoryAffineCoefficients& memoryCoefficients,
               bool thrifty,
               bool doubleBufferCache = false,
+              const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt,
               CacheIndexing mapping = CacheIndexing::GlobalToPhysical,
               CacheAllocation allocation = CacheAllocation::Automatic,
               MemorySpace memorySpace = MemorySpace::None,
@@ -77,6 +80,7 @@ namespace value
               const DimensionOrder& dimOrder,
               bool thrifty,
               bool doubleBufferCache = false,
+              const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt,
               CacheIndexing mapping = CacheIndexing::GlobalToPhysical,
               CacheAllocation allocation = CacheAllocation::Automatic,
               MemorySpace memorySpace = MemorySpace::None,

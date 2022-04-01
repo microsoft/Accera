@@ -122,8 +122,8 @@ def accxp_MakeCacheOp : accxp_Op<"make_cache"> {
     mlir::AffineValueMap insertCachePosition(const std::vector<mlir::Value>& multiCacheIndexIterationCounters, const std::vector<mlir::Value>& offsetAccessIVs, const std::vector<mlir::Value>& baseArrayIndices);
     mlir::AffineValueMap insertCachePosition(mlir::Operation* where, const std::vector<mlir::Value>& baseArrayIndices, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices);
     mlir::AffineValueMap insertCachePosition(mlir::Block* where, const std::vector<mlir::Value>& baseArrayIndices, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices);
-    std::vector<mlir::Value> getBaseArrayPosition(mlir::AffineLoadOp loadOp);
-    std::vector<mlir::Value> getBaseArrayPosition(mlir::AffineStoreOp storeOp);
+    std::vector<mlir::Value> getBaseArrayPosition(mlir::AffineReadOpInterface loadOp);
+    std::vector<mlir::Value> getBaseArrayPosition(mlir::AffineWriteOpInterface storeOp);
   }];
 }
 
@@ -185,7 +185,8 @@ def accxp_ActiveBlockCacheCopyOp : accxp_Op<"active_block_cache_copy", [AttrSize
                         UnitAttr:$toCache,
                         StrAttr:$activeBlockTag,
                         UnitAttr:$thrifty,
-                        UnitAttr:$skipBarriers); // TODO : remove this once barrier analysis hoists barriers out of loops
+                        UnitAttr:$skipBarriers, // TODO : remove this once barrier analysis hoists barriers out of loops
+                        OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
 }
 
 //
@@ -211,7 +212,8 @@ def accxp_MultiCacheCopyOp : accxp_Op<"multi_cache_copy"> {
                         AffineMapAttr:$activeBlockToCacheMap,
                         StrAttr:$activeBlockTag,
                         UnitAttr:$thrifty,
-                        UnitAttr:$toCache);
+                        UnitAttr:$toCache,
+                        OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
 }
 
 //
@@ -286,7 +288,8 @@ def accxp_ActiveBlockCacheReduceOp : accxp_Op<"active_block_cache_reduce", [Attr
                         AffineMapAttr:$activeBlockToCacheMap,
                         Variadic<AnyType>:$scaleValues,
                         StrAttr:$activeBlockTag,
-                        UnitAttr:$thrifty);
+                        UnitAttr:$thrifty,
+                        OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
 
   let builders = [
     OpBuilder<(ins
@@ -298,7 +301,8 @@ def accxp_ActiveBlockCacheReduceOp : accxp_Op<"active_block_cache_reduce", [Attr
       "mlir::ArrayAttr":$ubMaps,
       "mlir::AffineMap":$activeBlockToCacheMap,
       "StringRef":$activeBlockTag,
-      "bool":$thrifty
+      "bool":$thrifty,
+      "const VectorizationInfo&":$vectorizationInfo
     )>];
 }
 
@@ -391,7 +395,8 @@ def accxp_BeginCacheRegionOp : accxp_Op<"begin_cache_region",
                         UnitAttr:$dimReorderCache,
                         UnitAttr:$thrifty,
                         UnitAttr:$doubleBufferCache,
-                        OptionalAttr<MemorySpaceAttr>:$doubleBufferMemorySpace);
+                        OptionalAttr<MemorySpaceAttr>:$doubleBufferMemorySpace,
+                        OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
 
   let results = (outs Index:$resultId);
 
@@ -409,7 +414,8 @@ def accxp_BeginCacheRegionOp : accxp_Op<"begin_cache_region",
       "bool":$dimReorderCache,
       "bool":$thrifty,
       "bool":$doubleBufferCache,
-      "MemorySpace":$doubleBufferMemorySpace)>
+      "MemorySpace":$doubleBufferMemorySpace,
+      "const VectorizationInfo&":$vectorizationInfo)>
   ];
 
   let extraClassDeclaration = [{
@@ -458,7 +464,8 @@ def accxp_BeginMaxElementCacheRegionOp : accxp_Op<"begin_max_element_cache_regio
                         UnitAttr:$dimReorderCache,
                         UnitAttr:$thrifty,
                         UnitAttr:$doubleBufferCache,
-                        OptionalAttr<MemorySpaceAttr>:$doubleBufferMemorySpace);
+                        OptionalAttr<MemorySpaceAttr>:$doubleBufferMemorySpace,
+                        OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
 
   let results = (outs Index:$resultId);
 
@@ -476,7 +483,8 @@ def accxp_BeginMaxElementCacheRegionOp : accxp_Op<"begin_max_element_cache_regio
       "bool":$dimReorderCache,
       "bool":$thrifty,
       "bool":$doubleBufferCache,
-      "MemorySpace":$doubleBufferMemorySpace)>
+      "MemorySpace":$doubleBufferMemorySpace,
+      "const VectorizationInfo&":$vectorizationInfo)>
   ];
 }
 

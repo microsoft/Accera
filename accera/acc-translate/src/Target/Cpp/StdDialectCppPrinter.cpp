@@ -10,6 +10,7 @@
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/Support/LogicalResult.h>
 
 namespace mlir
@@ -348,6 +349,21 @@ namespace cpp_printer
     {
         auto globalName = getGlobalOp.name();
         auto result = getGlobalOp.getResult();
+        
+        auto symTableOp = mlir::SymbolTable::getNearestSymbolTable(getGlobalOp);
+        auto globalOp = dyn_cast<memref::GlobalOp>(mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, globalName));
+
+        // if the global was nested, then create the instance of the global here
+        if (globalOp && globalOp.sym_visibilityAttr() == StringAttr::get(getGlobalOp->getContext(), "nested")) {
+            MemRefType memrefType = globalOp.type().dyn_cast<MemRefType>(); 
+
+            if (memrefType.getMemorySpaceAsInt() == gpu::GPUDialect::getWorkgroupAddressSpace())
+                os << printer->sharedAttrIfCuda();
+
+            auto varName = state.nameState.getOrCreateName(
+                result, SSANameState::SSANameKind::Variable);
+            return printer->printArrayDeclaration(memrefType, varName); 
+        }
 
         os << "auto";
         os << " ";

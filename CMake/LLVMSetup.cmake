@@ -78,13 +78,9 @@ if(NOT LLVM_CUSTOM_PATH)
 endif(NOT LLVM_CUSTOM_PATH)
 
 find_program(LLC_EXECUTABLE llc HINTS ${LLVM_TOOLS_BINARY_DIR})
-if(NOT LLC_EXECUTABLE)
-  message(ERROR "LLVM not found, please check that LLVM is installed.")
-  return()
-endif()
-
 find_program(OPT_EXECUTABLE opt HINTS ${LLVM_TOOLS_BINARY_DIR})
-if(NOT OPT_EXECUTABLE)
+
+if((NOT OPT_EXECUTABLE) OR (NOT LLC_EXECUTABLE))
   message(ERROR "LLVM not found, please check that LLVM is installed.")
   return()
 endif()
@@ -100,3 +96,4 @@ if(NOT MLIR_TRANSLATE_EXECUTABLE)
 endif()
 
 find_program(LLVM_SYMBOLIZER llvm-symbolizer HINTS ${LLVM_TOOLS_BINARY_DIR})
+find_program(FILECHECK FileCheck HINTS ${LLVM_TOOLS_BINARY_DIR})

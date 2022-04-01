@@ -17,6 +17,7 @@ class BuildConfig:
     cxx_compiler = r"@CMAKE_CXX_COMPILER@"
     llvm_symbolizer = r"@LLVM_SYMBOLIZER@"
     llvm_custom_path = r"@LLVM_CUSTOM_PATH@"
+    llvm_filecheck = r"@FILECHECK@"
     use_libcxx = r"@USE_LIBCXX@"
     config_in_build_path = @CONFIG_IN_BUILT_PATH@
     additional_cmake_init_args = r'@ADDITIONAL_CMAKE_INIT_ARGS@'

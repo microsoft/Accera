@@ -21,6 +21,7 @@ argument | description | type
 `location` | The type of memory used to store the cache. | `MemorySpace`
 `double_buffer` | Whether to make this cache a double-buffering cache. Only valid on INPUT and CONST arrays. | `bool`
 `double_buffer_location` | Which memory space to put the double buffer temp array in. Requires that double_buffer is set to True. Defaults to `AUTO`. | `MemorySpace` or `AUTO`
+`vectorize` | Whether to vectorize the cache operations. Defaults to `AUTO`, which will behave like `vectorize=True` if the loopnest has any vectorized loop via `plan.vectorize(index)` or `vectorize=False` if the loopnest has no vectorized loops. | `bool`
 
 
 `AUTO` will configure the double buffering location based on the following:

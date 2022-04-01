@@ -7,8 +7,6 @@
 #pragma once
 
 #include "Array.h"
-
-#include "Array.h"
 #include "Scalar.h"
 
 namespace accera

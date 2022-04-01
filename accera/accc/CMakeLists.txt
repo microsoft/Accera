@@ -97,24 +97,29 @@ foreach(build_file ${configure_build_files})
     set(cmake_configured_build_files ${cmake_configured_build_files} ${ROOT_BIN_DIR}/${ACCC_TEMPLATE_DIR_NAME}/${build_file})
 endforeach()
 
+set(llvm_executables
+    ${LLC_EXECUTABLE}
+    ${OPT_EXECUTABLE}
+    ${MLIR_TRANSLATE_EXECUTABLE}
+)
+
 #
 # Install accc scripts and CMakeLists templates
 #
-
 file(INSTALL
-        ${LLC_EXECUTABLE} ${OPT_EXECUTABLE} ${MLIR_TRANSLATE_EXECUTABLE}
+        ${llvm_executables}
     DESTINATION
         ${CMAKE_BINARY_DIR}/bin
     USE_SOURCE_PERMISSIONS
     )
 foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
     install(
-            PROGRAMS ${LLC_EXECUTABLE} ${OPT_EXECUTABLE} ${MLIR_TRANSLATE_EXECUTABLE}
+            PROGRAMS ${llvm_executables}
             CONFIGURATIONS ${CONFIG}
             TYPE BIN
     )
     install(
-            PROGRAMS ${LLC_EXECUTABLE} ${OPT_EXECUTABLE} ${MLIR_TRANSLATE_EXECUTABLE}
+            PROGRAMS ${llvm_executables}
             COMPONENT accera-llvm
             CONFIGURATIONS ${CONFIG}
             DESTINATION "accera/bin"
@@ -126,7 +131,7 @@ foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
 endforeach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
 
 install(
-        PROGRAMS ${LLC_EXECUTABLE} ${OPT_EXECUTABLE} ${MLIR_TRANSLATE_EXECUTABLE}
+        PROGRAMS ${llvm_executables}
         COMPONENT accera-llvm
         DESTINATION "accera/bin"
 )
@@ -145,6 +150,6 @@ install(FILES ${cmake_configured_build_files}
         DESTINATION "accera/bin"
 )
 
-install(PROGRAMS ${deployed_scripts} ${LLC_EXECUTABLE} ${OPT_EXECUTABLE} ${MLIR_TRANSLATE_EXECUTABLE} TYPE BIN)
+install(PROGRAMS ${deployed_scripts} ${llvm_executables} TYPE BIN)
 install(FILES ${deployed_files} TYPE BIN)
 install(FILES ${cmake_configured_build_files} DESTINATION bin/${ACCC_TEMPLATE_DIR_NAME})

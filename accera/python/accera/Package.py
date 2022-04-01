@@ -221,7 +221,7 @@ class Package:
         for delayed_param, value in parameters.items():
             delayed_param.set_value(value)
             param_value_dict[delayed_param._name] = value if isinstance(value, int) else str(value)
-        auxiliary_metadata['accera'] = param_value_dict
+        auxiliary_metadata['accera'] = {'parameters': param_value_dict}
 
         def validate_target(target: Target):
             # can't use set because targets are mutable (therefore unhashable)
@@ -549,7 +549,7 @@ class Package:
                         # TODO: Remove this when the header is emitted as part of the compilation
                         gpu_source = proj.module_file_sets[0].translated_source_filepath
                         gpu_device_func = fn_name + "__gpu__"
-                        with open(gpu_source) as gpu_source_f:
+                        with open(gpu_source) as gpu_source_f: 
                             s = re.search(gpu_device_func + _R_GPU_LAUNCH, gpu_source_f.read())
                             if not s:
                                 raise RuntimeError("Couldn't parse emitted source code")

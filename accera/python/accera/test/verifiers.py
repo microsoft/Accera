@@ -13,8 +13,6 @@ import shutil
 import unittest
 from copy import deepcopy
 from typing import List
-from ..utilities import run_command
-from ..build_config import BuildConfig
 
 
 class CorrectnessChecker():
@@ -60,6 +58,9 @@ class FileChecker():
         self.directives.append(f"CHECK-NOT: {pattern}")
 
     def run(self, quiet=True):
+        from ..utilities import run_command
+        from ..build_config import BuildConfig
+
         match_filename = f"{self.file_path}.filecheck"
         with open(match_filename, "w") as f:
             for d in self.directives:

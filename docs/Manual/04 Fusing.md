@@ -169,19 +169,19 @@ f, i, j, k, l, m = schedule.get_indices()
 The first dimension is the fusing dimensions `f` with size 2. Next comes the fused dimensions `i` and `j`, followed by the unfused dimensions `k` and `l` from `schedule0` and `m` from `schedule1`. The slice (0, \*, \*, \*, \*, 0) contains a copy of `schedule0`, the slice (1, \*, \*, 0, 0, \*) contains a copy of `schedule1`, and the rest of `schedule` is padded with empty elements. Note that full fusing is a special case of partial fusing, where `s` is the larger of the dimensions of `schedule0` and `schedule1`.
 
 ### Constraint 2: the fusing dimension always precedes unfused dimensions
-Partial fusing introduces a second constraint on the fusing dimension. Namely, the fusing dimension must precede all of the unfused dimensions in the dimension order. This constraint also applies to dimensions that are derived from the fusing dimension and from the unfused dimensions via splitting.
+Another constraint introduced by partial fusing restricts that the fusing dimension must precede all of the unfused dimensions in its dimension order. This constraint applies to dimensions derived from the fusing dimension and the unfused dimensions via splitting.
 
 ### Safety
-The safety guarantees for partial-fusing are a natural extension of the guarantees for full fusing. Accera guarantees that the order of the fused schedules is preserved *for each value of the fused dimensions*, regardless of how the fused schedule is transformed. In other words, for each concrete value of the fused dimensions, all the corresponding work in `schedule0` (across all of its unfused dimensions) is performed before any of the corresponding work in `schedule1` (across all of its unfused dimensions), and this holds no matter how we transform the fused schedule. When fusing, the programmer needs to consider whether this property implies safety - we will show how this can be done in each of the examples below.
+The safety guarantees for partial fusing are a natural extension of the guarantees for full fusing. *For each value of the fused dimensions*, Accera preserves the fused schedules' order regardless of how the fused schedule is transformed. In other words, for each concrete value of fused dimensions, all the corresponding work in `schedule0` (across all of its unfused dimensions) is performed before the corresponding work in `schedule1` (across all of its unfused dimensions). This remains true no matter how we transform the fused schedule. While fusing, the programmer needs to consider if this property implies safety. The below examples shows how this can be done. 
 
 ### Partial fusing example: fully-connected neural layer with activation
-Consider applying an element-wise operation, such as the ReLU function from the field of AI, to the result of a matrix-matrix multiplication. In the language of neural networks, this is called a fully connected layer with a ReLU activation. The function `relu(x)` is simply `max(x,0)`.
+Consider applying an element-wise operation, such as the ReLU function of AI, to the result of a matrix-matrix multiplication. This is called a fully connected layer with a ReLU activation in the language of neural networks. The function `relu(x)` is simply `max(x,0)`.
 
-Specifically, imagine that we have an element-wise operator `relu` and we want to implement the equivalent of the Python code:
+Imagine that we have an element-wise operator `relu`, and we want to implement the equivalent Python code:
 ```python
 C = relu(C + A @ B)
 ```
-where `A` has a shape of (16, 11), `B` has a shape of (11, 10), and `C` has a shape of (16, 10). We define two nests, one for `C += A @ B` and the other for `C = relu(C)`, and obtain their corresponding default schedules:
+Here, `A` has a shape of (16, 11), `B` has a shape of (11, 10), and `C` has a shape of (16, 10). Let’s now define two nests, one for `C += A @ B` and the other for `C = relu(C)`, and obtain their corresponding default schedules:
 ```python
 # Create nest0 and schedule0
 nest0 = acc.Nest(shape=(16, 10, 11))
@@ -203,16 +203,16 @@ def _():
 
 schedule1 = nest1.create_schedule()
 ```
-In both `schedule0` and `schedule1`, the first dimension corresponds to the rows of `C` and the second dimension corresponds to the columns of `C`. In addition, `schedule0` has a third dimension that `schedule1` does not have. Therefore, we fuse the first two dimensions of the iteration spaces and leave the third dimension of `schedule0` unfused.
+In `schedule0` and `schedule1`, the first dimension represents the rows of `C` and the second dimension represents the columns of `C`. Additionally, `schedule0` has a third dimension that `schedule1` does not have. Therefore, we fuse the first two dimensions of the iteration spaces and leave the third dimension of `schedule0` unfused.
 ```python
 schedule = acc.fuse((schedule0, schedule1), partial=2)
 f, i, j, k0 = schedule.get_indices()
 ```
-The fused iteration space `schedule` has a shape of (2, 16, 10, 11), its slice (0, \*, \*, \*) contains a copy of `schedule0`, its slice (1, \*, \*, 0) contains a copy of `schedule1`, and the rest of its elements are filled with padding. Note that the code above overwrites the index `k0`: originally, `k0` was an index of `schedule0`, but now it is the corresponding unfused index in `schedule`. This is a stylistic choice and we could have chosen a different name.
+The fused iteration space `schedule` has a shape of (2, 16, 10, 11). Its slice (0, \*, \*, \*) contains a copy of `schedule0`, the slice (1, \*, \*, 0) contains a copy of `schedule1`, and the rest of its elements are padded. Note that the code above overwrites the index `k0`, which initially was an index of `schedule0`. However, now it corresponds to the unfused index in `schedule`. Note that this is a stylistic choice, and we could have chosen a different name.
 
-Is `schedule` safe? Recall that Accera guarantees that for each value of `i` and `j`, the corresponding work in `schedule0` (which is `C[i,j] += A[i,k0] * B[k0,j]` for all values of `k0`) is executed before the corresponding work in `schedule1` (which is `C[i,j] = max(C[i,j], 0)`), and this holds regardless of how the fused schedule is transformed. Since these are the only operations that touch `C[i,j]` and the `ReLU` operation is always executed last, this confirms that `schedule` is safe, and from this point forward we can focus all of our attention on optimizing performance without worrying about correctness.
+Is `schedule` safe? Recall that for each value of `i` and `j`, Accera guarantees that the corresponding work in `schedule0` (`C[i,j] += A[i,k0] * B[k0,j]` for all values of `k0`) is executed before the corresponding work in `schedule1` (`C[i,j] = max(C[i,j], 0)`), and this holds regardless of how the fused schedule is transformed. Since these are the only operations that touch `C[i,j]` and the `ReLU` operation is always executed last, this warrants that `schedule` is safe. Therefore, we can focus all of our attention on optimizing performance without worrying about correctness from this point onwards.
 
-Executing `schedule` as-is is equivalent to executing `schedule0` in its entirety and then executing `schedule1`. If we want to interleave the two schedules and perform `relu` immediately after calculating each element of the matrix product, we reorder the dimensions such that `i` and `j` preceded `f`:
+Executing `schedule` as-is is equivalent to executing `schedule0` in its entirety, followed by executing `schedule1`. Suppose we want to interleave the two schedules and perform `relu` immediately after calculating each element of the matrix product. In that case, we reorder the dimensions such that `i` and `j` preceded `f`:
 ```python
 schedule.reorder(i, j, f, k0)
 ```
@@ -229,11 +229,11 @@ for i in range(16):
 ```
 
 ### Partial fusing example: multiplying three matrices
-Consider fusing two matrix-matrix multiplications, to get matrix-matrix-matrix multiplication. Specifically, say that our goal is to calculate the equivalent of the Python code:
+Consider fusing two matrix-matrix multiplications to get matrix-matrix-matrix multiplication. Specifically, say that our goal is to calculate the equivalent of the following Python code:
 ```python
 E += A @ B @ D
 ```
-where `A` is of shape (16, 11), `B` is of shape (11, 10), `D` is of shape (10, 7), and `E` is of shape (16, 7).
+Where `A` has a shape (16, 11), `B` (11, 10), `D` (10, 7), and `E` (16, 7).
 
 We start by defining the arrays. In addition to `A`, `B`, `D`, and `E`, we define a temporary array `C` to store the intermediate result of `A@B`.
 ```python
@@ -243,7 +243,7 @@ C = acc.Array(role=acc.Array.Role.TEMP, shape=(16, 10))
 D = acc.Array(role=acc.Array.Role.INPUT, shape=(10, 7))
 E = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(16, 7))
 ```
-Note that `C` is declared with a role of `TEMP`. Recall that temporary arrays are mutable and initialized with zeros. Moreover, temporary arrays are logical objects, which may not actually exist in memory during the entire computation.
+Note that `C` has the role of `TEMP`. Temporary arrays are mutable and initialized with zeros. Moreover, these arrays are logical objects that may not exist in memory during the entire computation.
 
 Next, define a simple nest to compute `C += A @ B` and another simple nest to compute `E += C @ D`.
 ```python
@@ -267,15 +267,15 @@ def _():
 
 schedule1 = nest1.create_schedule()
 ```
-The temporary array `C` is used to store the output of `schedule0`, and is then used again as one of the inputs of `schedule1`. Dimensions `i0` and `j0` correspond to the rows and columns of `C` in `schedule0`. Dimensions `i1` and `k1` correspond to the rows and columns of `C` in `schedule1`. Therefore, we fuse `i0` with `i1` and `j0` with `k1`. To do this, we need to correctly line-up the dimensions of the two iteration spaces and perform partial fusing.
+The temporary array `C` stores the output of `schedule0`, which is then used as one of the inputs of `schedule1`. Dimensions `i0` and `j0` correspond to the rows and columns of `C` in `schedule0`. Similarly, dimensions `i1` and `k1` correspond to the rows and columns of `C` in `schedule1`. Therefore, we fuse `i0` with `i1` and `j0` with `k1`. We need to correctly line up the dimensions of the two iteration spaces and perform partial fusing.
 ```python
 schedule1.reorder(i1, k1, j1)
 schedule = acc.fuse((schedule0, schedule1), partial=2)
 f, i, j, k0, j1 = schedule.get_indices()
 ```
-The fused iteration space has a shape of (2, 16, 10, 11, 7): `f` is the fusing dimension, `i` is the result of fusing `i0` and `i1`, `j` is the result of fusing `j0` and `k1`, `k0` is the unfused dimension from `schedule0`, and `j1` is the unfused dimension from `schedule1`. The slice (0, \*, \*, \*, 0) contains a copy of `schedule0` and the slice (1, \*, \*, 0, \*) contains a copy of `schedule1`. The rest of the iteration space is padded with empty elements.
+The fused iteration space has a shape of (2, 16, 10, 11, 7). `f` is the fusing dimension, `i` is the result of fusing `i0` and `i1`, `j` is the result of fusing `j0` and `k1`, `k0` is the unfused dimension from `schedule0`, and `j1` is the unfused dimension from `schedule1`. The slice (0, \*, \*, \*, 0) contains a copy of `schedule0` and the slice (1, \*, \*, 0, \*) contains a copy of `schedule1`. The rest of the iteration space is padded with empty elements.
 
-Is `schedule` safe? Again, recall that Accera guarantees that for each value of `i` and `j`, all of the corresponding work in `schedule0` (which is `C[i, j] += A[i, k0] * B[k0, j]` for all values of `k0`) is executed before any of the corresponding work from `schedule1` (which is `E[i, j1] += C[i, j] * D[j, j1]` for all values of `j1`). In other words, each element of `C` is fully computed before it is used. This confirms that `schedule` is safe.
+Is `schedule` safe? Again, recall that for each value of `i` and `j`, Accera guarantees that all of the corresponding work in `schedule0` (`C[i, j] += A[i, k0] * B[k0, j]` for all values of `k0`) is executed before any of the corresponding work in `schedule1` (`E[i, j1] += C[i, j] * D[j, j1]` for all values of `j1`). In other words, each element of `C` is entirely computed before it is used, thereby confirming that the `schedule` is safe.
 
 Initially, the fused schedule is equivalent to the following Python code:
 ```python
@@ -291,7 +291,7 @@ for i in range(0, 16):
             E[i, j1] += C[i, j] * D[j, j1]
 ```
 
-We can now manipulate the fused schedule in various ways. For example, we can do all the work to create one element of `C` and then immediately do all the work that uses that element, before moving on to the next element.
+We can now manipulate the fused schedule in various ways. For example, we can do all the work to create one element of `C` and then immediately do all the work that uses this element before moving on to the next element.
 ```python
 schedule.reorder(i, j, f, k0, j1)
 ```
@@ -307,14 +307,14 @@ for i in range(0, 16):
             E[i, j1] += C[i, j] * D[j, j1]
 ```
 
-The advantage of this schedule is that only one element of `C` is active at any time in the computation. Accera can reuse the same memory location to store the active element of `C`, instead of storing all of `C` in physical memory,
+The advantage of this schedule is that only one element of `C` is active at a time in the computation. Accera can reuse the same memory location to store the active element of `C` instead of storing all of `C` in physical memory.
 
-Similarly, we can compute a 4&times;2 block of `C`, do all the work that uses that block, and then move on to the next block:
+Similarly, we can compute a 4&times;2 block of `C`. Do all the work that uses this block and then move on to the next block:
 ```python
 ii, jj = schedule.tile((i, j), (4, 2))
 schedule.reorder(i, j, f, ii, jj, k0, j1)
 ```
-This schedule is equivalent to the following:
+This schedule is equivalent to the following Python code:
 ```python
 for i in range(0, 16, 4):
     for j in range(0, 10, 2):

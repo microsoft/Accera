@@ -38,11 +38,11 @@ def _():
 
 schedule_simple = nest_simple.create_schedule()
 ```
-Note that each iteration in `schedule_simple` executes simultaneously on all three arrays. However, there can be a case where concurrent operation on these arrays creates unbridled pressure on the computer’s cache, resulting in lower performance. In such a case, simultaneous operation on two arrays instead of three has a computational advantage.
+Note that each iteration in `schedule_simple` executes simultaneously on all three arrays. However, there can be a case where concurrent operation on these arrays creates excessive pressure on the computer’s memory cache, resulting in lower performance. In such a case, simultaneous operation on two arrays instead of three has a computational advantage.
 
-Therefore, we first compute `C += A` and then compute `C *= B`.  Better yet, we may want to compute `C` in 4&times;4 blocks, i.e., first computing `C[0:4, 0:4] += A[0:4, 0:4]`; followed by computing `C[0:4, 0:4] *= B[0:4, 0:4]`; then moving on to the next block and computing `C[4:8, 0:4] += A[4:8, 0:4]`, and so on. In this respect, Fusing offers remarkable flexibility to explore all of these different execution possibilities. 
+Therefore, we may first want to compute `C += A` and then compute `C *= B`.  Better yet, we may want to compute `C` in 4&times;4 blocks. We first computing `C[0:4, 0:4] += A[0:4, 0:4]`. Subsequently, we compute `C[0:4, 0:4] *= B[0:4, 0:4]`. Finally, we move on to the next block and compute `C[4:8, 0:4] += A[4:8, 0:4]`, and so on. This way, fusing offers remarkable flexibility to explore all of these different execution possibilities. 
 
-First, we define two separate nests, one for the `C += A` logic and the other one for the `C *= B` logic, and get their corresponding default schedules: 
+First, we define two separate nests, one for the `C += A` logic and one for the `C *= B` logic, and get their corresponding default schedules: 
 ```python
 # Create nest0 and schedule0
 nest0 = acc.Nest(shape=(16, 16))
@@ -71,7 +71,7 @@ Before fusing, both `schedule0` and `schedule1` have a shape (16, 16). Now, let�
 schedule = acc.fuse(schedule0, schedule1)
 f, i, j = schedule.get_indices()
 ```
-Fusing creates a new fused schedule `schedule` with a shape (2, 16, 16), keeping the shapes of `schedule0` and `schedule1` intact. The first dimension in `schedule` is the so-called fusing dimension `f`. Its slice (0, \*, \*) contains a copy of `schedule0`, and its slice (1, \*, \*) contains a copy of `schedule1`.
+Fusing creates a new fused schedule `schedule` with a shape (2, 16, 16). It does not change `schedule0` and `schedule1`. The first dimension in `schedule` is the so-called fusing dimension `f`. Its slice (0, \*, \*) contains a copy of `schedule0`, and its slice (1, \*, \*) contains a copy of `schedule1`.
 
 In loop form, `schedule` is now equivalent to the following Python code:
 ```python
@@ -98,7 +98,7 @@ for i in range(16):
         C[i, j] *= B[i, j]
 ```
 
-Recall that we discussed computing the output block-by-block: first computing `C[0:4, 0:4] += A[0:4, 0:4]`, then computing `C[0:4, 0:4] *= B[0:4, 0:4]`, and so on. This can be achieved with the following sequence of transofrations:
+Recall that we discussed computing the output block-by-block: first computing `C[0:4, 0:4] += A[0:4, 0:4]`, then computing `C[0:4, 0:4] *= B[0:4, 0:4]`, and so on. This can be achieved with the following sequence of transformations:
 ```python
 ii, jj = schedule.tile((i, j), (4, 4))
 schedule.reorder(i, j, f, ii, jj)
@@ -120,12 +120,12 @@ for i in range(0, 16, 4):
 The fusing dimension comes with certain constraints that are discussed from the `safety` perspective with examples. 
 
 ### Constraint 1: the fusing dimension is executed sequentially
-Unlike other dimensions that allow parallelization and vectorization (parallelization and vectorization are presented in [Section 7](<07%20Plans%20-%20Vectorization%20and%20Parallelization.md>) ), the fusing dimension can neither be parallelized nor vectorized. It has an inherent execution constraint and must be executed sequentially. However, this sequential execution constraint allows the safety guarantee discussed below.   
+Unlike other dimensions that allow parallelization, vectorization, or tensorization (see [Section 7](<07%20Plans%20-%20Vectorization%20and%20Parallelization.md>) ), none of these operations can be applied to the fusing dimension. The fusing dimension must be executed sequentially. This constraint enables the safety guarantee discussed below.   
 
 ### Safety
-Before applying any subsequent transformations, the fused schedule is always logically equal to executing the original schedules sequentially. However, is it safe? Recall that a schedule is considered safe if the underlying logic is guaranteed to be unchanged regardless of the applied transformation. Nonetheless, the safety of the fused schedule depends on the circumstances under which it is transformed. Consider the below discussed cases to understand how the safety of a fully fused schedule works: 
+Before applying any subsequent transformations, the fused schedule is always logically equal to executing the original schedules sequentially. However, is it safe? Recall that a schedule is considered safe if the underlying logic is guaranteed to be unchanged regardless of the applied transformation. The safety of a fused schedule depends on circumstances that may break logic equivalence: 
 
-Accera guarantees the preservation of the fused schedules *for each value of the fused dimensions*, regardless of how the fused schedule is transformed. For example, in the example above, the fused dimensions are `i` and `j`. Therefore, for any concrete value of `i` and `j`, the corresponding operation from `schedule0` is guaranteed to execute before the corresponding operation from `schedule1`, regardless of how the fused schedule is transformed. More specifically, for each `i` and `j`, the operation `C[i, j] += A[i, j]` is guaranteed to execute before the operation `C[i, j] *= B[i, j]`, no matter how we transform the fused schedule. Since those are the only operations that interact with `C[i,j]`, the Accera guarantee is sufficient, and we can claim that the fused schedule is safe. With this assurance, the programmer can apply any sequence of transformations without worrying about the correctness of the resulting implementation.
+Accera preserves the order of the fused schedules *for each value of the fused dimensions*, regardless of how the fused schedule is transformed. For example, in the example above, the fused dimensions are `i` and `j`. Therefore, for any concrete value of `i` and `j`, the corresponding operation from `schedule0` is guaranteed to execute before the corresponding operation from `schedule1`, regardless of how the fused schedule is transformed. More specifically, for each `i` and `j`, the operation `C[i, j] += A[i, j]` is guaranteed to execute before the operation `C[i, j] *= B[i, j]`, no matter how we transform the fused schedule. Since those are the only operations that interact with `C[i,j]`, the Accera guarantee is sufficient, and we can claim that the fused schedule is safe. With this assurance, the programmer can apply any sequence of transformations without worrying about the correctness of the resulting implementation.
 
 However, not every fusing operation creates a safe schedule. For example, consider a scenario where we fused `schedule0` and `schedule1` differently:
 ```python
@@ -135,7 +135,7 @@ schedule1.reorder(j1, i1)
 schedule_t = acc.fuse(schedule0, schedule1)
 f, a, b = schedule_t.get_indices()
 ```
-In this unusual example, `i0` and `j1` are fused and named `a`. Similarly,`i1` and `j0` are fused and named `b`. As mentioned above, Accera guarantees that, for each value of `a` and `b`, the operation `C[a, b] += A[a, b]` is executed before `C[b, a] *= B[b, a]`. The fusing operation itself preserves the logical equivalence. However, the underlying logic is changed if we transform the fused schedule as follow: 
+In this unnatural example, `i0` and `j1` are fused and named `a`. Similarly,`i1` and `j0` are fused and named `b`. As mentioned above, Accera guarantees that, for each value of `a` and `b`, the operation `C[a, b] += A[a, b]` is executed before `C[b, a] *= B[b, a]`. The fusing operation itself preserves the logical equivalence. However, the underlying logic is changed if we transform the fused schedule as follow: 
 ```python
 schedule_t.reorder(a, b, f)
 ```
@@ -152,21 +152,21 @@ The above code sets `C[1,0]` to `C[1,0] * B[1,0] + A[1,0]`, whereas the original
 If the iterations spaces have different shapes, Accera matches their shapes by padding them appropriately with empty cells.
 
 ## Partial fusing
-Instead of fusing all the dimensions, most of the time, we only need to fuse some of the dimensions, leaving the rest unfused. To fuse the first *s* dimensions, we use the syntax:
+Instead of fusing all the dimensions, we may want to fuse a subset of dimensions, leaving the rest unfused. To fuse the first *s* dimensions, we use the syntax:
 ```python
 # Fuse the first s dimensions of three schedules
 schedule = acc.fuse((schedule0, schedule1, ...), partial=s)
 ```
-The sequence of the dimensions in the fused schedule is as follows: first the fusing dimension `f`, then the fused dimensions *s*, followed by the unfused dimensions of `schedule0`, `schedule1`, and so on.
+The order of the dimensions in the fused schedule is as follows: first the fusing dimension `f`, then the fused dimensions *s*, followed by the unfused dimensions of `schedule0`, `schedule1`, and so on.
 
 We can easily calculate the number of dimensions in the fused schedule. For example, if we fuse the first *s* dimensions of a *d0*-dimensional space `schedule0` and a *d1*-dimensional space `schedule1`, the fused iteration space will have *s* fused dimensions, *d0 + d1 - 2s* unfused dimensions, and the special fusing dimension `f`, for a total of *d0 + d1 - s + 1* dimensions.
 
-As established earlier, the `fuse` operation uses padding to ensure that the fused iteration space is not imbalanced in any direction. For example, consider that we partially fuse the first 2 dimensions of `schedule0`, which is 4-dimensional, and `schedule1`, which is 3-dimensional:
+The `fuse` operation uses padding to ensure that the fused iteration space is not jagged in any direction. For example, consider that we partially fuse the first 2 dimensions of `schedule0`, which is 4-dimensional, and `schedule1`, which is 3-dimensional:
 ```python
 schedule = acc.fuse((schedule0, schedule1), partial=2)
 f, i, j, k, l, m = schedule.get_indices()
 ```
-The first dimension is the fusing dimensions `f` with size 2. Next comes the fused dimensions `i` and `j`, followed by the unfused dimensions `k` and `l` from `schedule0` and `m` from `schedule1`. The slice (0, \*, \*, \*, \*, 0) contains a copy of `schedule0`, the slice (1, \*, \*, 0, 0, \*) contains a copy of `schedule1`, and the rest of `schedule` is padded with empty elements. Note that full fusing is a special case of partial fusing, where `s` is the larger of the dimensions of `schedule0` and `schedule1`.
+The first dimension is the fusing dimensions `f` of size 2. Next comes the fused dimensions `i` and `j`, followed by the unfused dimensions `k` and `l` from `schedule0` and `m` from `schedule1`. The slice (0, \*, \*, \*, \*, 0) contains a copy of `schedule0`, the slice (1, \*, \*, 0, 0, \*) contains a copy of `schedule1`, and the rest of `schedule` is padded with empty elements. Note that full fusing is a special case of partial fusing, where `s` is the larger of the dimensions of `schedule0` and `schedule1`.
 
 ### Constraint 2: the fusing dimension always precedes unfused dimensions
 Another constraint introduced by partial fusing restricts that the fusing dimension must precede all of the unfused dimensions in its dimension order. This constraint applies to dimensions derived from the fusing dimension and the unfused dimensions via splitting.

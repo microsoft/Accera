@@ -1,4 +1,4 @@
-]: # (Project: Accera)
+[//]: # (Project: Accera)
 [//]: # (Version: v1.2.1)
 
 # Introduction

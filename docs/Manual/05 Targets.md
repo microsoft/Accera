@@ -1,8 +1,8 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: v1.2.3)
 
 # Section 5: Targets
-Accera is a cross compiler, which means that it can generate executable code for different target platforms. A target is described using the `Target` class. Accera already supports many different targets, for example: 
+Accera is a cross compiler, which means that it can generate executable code for different target platforms. A target is described using the `Target` class. Accera already supports many different targets, for example:
 ```python
 import accera as acc
 
@@ -27,7 +27,10 @@ We may tile the iteration space for GPU targets based on input shapes and availa
 # find block_x and block_y in powers of two, such that block_x*block_y=v100.default_block_size.
 block_x = pow(2, math.log2(v100.default_block_size)//2)
 block_y = v100.default_block_size // block_x
-ii, jj = schedule.tile((i,j), shape=(block_x, block_y))
+ii, jj = schedule.tile({
+    i: block_x,
+    j: block_y
+})
 ```
 
 <div style="page-break-after: always;"></div>

@@ -43,7 +43,12 @@ target = acc.Target(category=acc.Target.Category.GPU, runtime=acc.Target.Runtime
 plan = schedule.create_plan(target)
 
 # Bind dimensions to a grid of execution units
-plan.bind((i, j, ii, jj), grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y))
+plan.bind({
+    i: target.GridUnit.BLOCK_X,
+    j: target.GridUnit.BLOCK_Y,
+    ii: target.GridUnit.THREAD_X,
+    jj: target.GridUnit.THREAD_Y
+})
 
 # Create a package and add a function to the package based on the plan
 package = acc.Package()

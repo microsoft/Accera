@@ -97,13 +97,16 @@ private:
 
 mlir::Type ToMLIRType(mlir::OpBuilder& builder, ValueType type)
 {
-
     switch (type)
     {
+    // Signed ints are treated as "signless" (i.e. represented without a sign).
+    // Unsigned ints are treated as "non-signless" (i.e. represented with a sign)
+    // Non-signless ints must to be converted to signless ints (preserving their
+    // underlying values) before calling standard / arithmetic ops
     case ValueType::Boolean:
         return builder.getIntegerType(1);
-    case ValueType::Byte:
-        return builder.getIntegerType(8, false);
+    case ValueType::Byte: // = Uint8
+        return builder.getIntegerType(8, /*isSigned=*/false);
     case ValueType::Int8:
         return builder.getIntegerType(8);
     case ValueType::Int16:
@@ -112,6 +115,12 @@ mlir::Type ToMLIRType(mlir::OpBuilder& builder, ValueType type)
         return builder.getIntegerType(32);
     case ValueType::Int64:
         return builder.getIntegerType(64);
+    case ValueType::Uint16:
+        return builder.getIntegerType(16, /*isSigned=*/false);
+    case ValueType::Uint32:
+        return builder.getIntegerType(32, /*isSigned=*/false);
+    case ValueType::Uint64:
+        return builder.getIntegerType(64, /*isSigned=*/false);
     case ValueType::Index:
         return builder.getIndexType();
     case ValueType::Float16:
@@ -1277,6 +1286,11 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
                 else if constexpr (std::is_integral_v<ElementType> || std::is_same_v<ElementType, Boolean>)
                 {
                     auto elem = static_cast<int64_t>(data[0]);
+                    if (std::is_unsigned_v<ElementType>)
+                    {
+                        // ConstantIntOp only can only have signless integer type
+                        mlirElemTy = accera::ir::util::ToSignlessMLIRType(b, mlirElemTy);
+                    }
                     op = b.create<mlir::ConstantIntOp>(loc, elem, mlirElemTy);
                 }
                 else if constexpr (std::is_floating_point_v<ElementType>)
@@ -1903,7 +1917,7 @@ Matrix MLIRContext::MFMAComputeImpl(Matrix A, Matrix B, Matrix C)
     return Matrix(Value(emittable, C.GetValue().GetLayout()));
 }
 
-Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool srcSigned)
+Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)
 {
     auto& builder = _impl->builder;
     mlir::Value mlirValue = ResolveMLIRScalar(builder, ToMLIRValue(builder, value));
@@ -1911,133 +1925,98 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool srcSigned)
     auto loc = mlirValue.getLoc();
     auto fromType = mlirValue.getType();
     auto toType = ToMLIRType(builder, type);
+
     if (fromType == toType)
     {
         return Wrap(mlirValue);
     }
 
-    if (auto fromIntType = fromType.dyn_cast<mlir::IntegerType>(); fromIntType && !fromIntType.isUnsigned()) // signed or signless integer
-    {
-        if (auto toIntType = toType.dyn_cast<mlir::IntegerType>())
-        {
-            // int->int
-            if (fromIntType.getWidth() > toIntType.getWidth())
-            {
-                return Wrap(builder.create<mlir::TruncateIOp>(loc, mlirValue, toType));
-            }
-            else
-            {
-                if (toIntType.isUnsigned())
-                {
-                    return Wrap(builder.create<mlir::ZeroExtendIOp>(loc, mlirValue, toType));
-                }
-                else
-                {
-                    if (srcSigned)
+    return mlir::TypeSwitch<mlir::Type, Scalar>(fromType)
+        .Case([&](mlir::IntegerType fromIntType) {
+            auto signlessMlirValue = accera::ir::util::ToSignlessMLIRValue(builder, mlirValue);
+
+            return mlir::TypeSwitch<mlir::Type, Scalar>(toType)
+                .Case([&](mlir::IntegerType toIntType) {
+                    auto toIntTypeSignless = accera::ir::util::ToSignlessMLIRType(builder, toIntType);
+                    if (fromIntType.getWidth() == toIntType.getWidth())
                     {
-                        return Wrap(builder.create<mlir::SignExtendIOp>(loc, mlirValue, toType));
+                        return Wrap(signlessMlirValue);
+                    }
+                    else if (fromIntType.getWidth() > toIntType.getWidth())
+                    {
+                        return Wrap(builder.create<mlir::TruncateIOp>(loc, signlessMlirValue, toIntTypeSignless));
+                    }
+                    else if (doSignedCast || !fromIntType.isUnsigned())
+                    {
+                        return Wrap(builder.create<mlir::SignExtendIOp>(loc, signlessMlirValue, toIntTypeSignless));
                     }
                     else
                     {
-                        return Wrap(builder.create<mlir::ZeroExtendIOp>(loc, mlirValue, toType));
+                        Wrap(builder.create<mlir::ZeroExtendIOp>(loc, signlessMlirValue, toIntTypeSignless));
                     }
-                }
-            }
-        }
-        else if (auto toIndexType = toType.dyn_cast<mlir::IndexType>())
-        {
-            // int->index
-            return Wrap(builder.create<mlir::IndexCastOp>(loc, mlirValue, toType));
-        }
-        else if (auto toFloatType = toType.dyn_cast<mlir::FloatType>())
-        {
-            // int->fp
-            return Wrap(builder.create<mlir::SIToFPOp>(loc, mlirValue, toType));
-        }
+                })
+                .Case([&](mlir::IndexType) {
+                    return Wrap(builder.create<mlir::IndexCastOp>(loc, signlessMlirValue, toType));
+                })
+                .Case([&](mlir::FloatType) {
+                    return fromIntType.isUnsigned() ? Wrap(builder.create<mlir::UIToFPOp>(loc, signlessMlirValue, toType)) :
+                        Wrap(builder.create<mlir::SIToFPOp>(loc, signlessMlirValue, toType));
+                })
+                .Default([&](mlir::Type) {
+                    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+                    llvm_unreachable("unexpected");
+                    return Scalar();
+                });
+        })
+        .Case([&](mlir::IndexType) {
+            return mlir::TypeSwitch<mlir::Type, Scalar>(toType)
+                .Case([&](mlir::IntegerType toIntType) {
+                    auto toIntTypeSignless = accera::ir::util::ToSignlessMLIRType(builder, toIntType);
+                    return Wrap(builder.create<mlir::IndexCastOp>(loc, mlirValue, toIntTypeSignless));
+                })
+                .Case([&](mlir::FloatType) {
+                    auto int64Value = builder.create<mlir::IndexCastOp>(loc, mlirValue, builder.getI64Type()); // index->int64
+                    return Wrap(builder.create<mlir::SIToFPOp>(loc, int64Value, toType)); // int64->fp
+                })
+                .Default([&](mlir::Type) {
+                    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+                    llvm_unreachable("unexpected");
+                    return Scalar();
+                });
+        })
+        .Case([&](mlir::FloatType fromFloatType) {
+            return mlir::TypeSwitch<mlir::Type, Scalar>(toType)
+                .Case([&](mlir::IntegerType toIntType) {
+                    auto toIntTypeSignless = accera::ir::util::ToSignlessMLIRType(builder, toIntType);
+                    return toIntType.isUnsigned() ? Wrap(builder.create<mlir::FPToUIOp>(loc, mlirValue, toIntTypeSignless)) :
+                        Wrap(builder.create<mlir::FPToSIOp>(loc, mlirValue, toIntTypeSignless));
+                })
+                .Case([&](mlir::FloatType toFloatType) {
+                    return fromFloatType.getWidth() > toFloatType.getWidth() ? Wrap(builder.create<mlir::FPTruncOp>(loc, mlirValue, toType)) :
+                        Wrap(builder.create<mlir::FPExtOp>(loc, mlirValue, toType));
+                })
+                .Default([&](mlir::Type) {
+                    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+                    llvm_unreachable("unexpected");
+                    return Scalar();
+                });
 
-        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-    }
-    else if (fromIntType) // explicitly unsigned
-    {
-        if (auto toIntType = toType.dyn_cast<mlir::IntegerType>())
-        {
-            // int->int
-            if (fromIntType.getWidth() > toIntType.getWidth())
-            {
-                return Wrap(builder.create<mlir::TruncateIOp>(loc, mlirValue, toType));
-            }
-            else
-            {
-                return Wrap(builder.create<mlir::ZeroExtendIOp>(loc, mlirValue, toType));
-            }
-        }
-        else if (auto toIndexType = toType.dyn_cast<mlir::IndexType>())
-        {
-            // MLIR forbids casting unsigned ints to index
-            // TODO: first cast to a signless int
-            // int->index
-            return Wrap(builder.create<mlir::IndexCastOp>(loc, mlirValue, toType));
-        }
-        else if (auto toFloatType = toType.dyn_cast<mlir::FloatType>())
-        {
-            // int->fp
-            return Wrap(builder.create<mlir::UIToFPOp>(loc, mlirValue, toType));
-        }
-
-        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-    }
-    else if (auto fromIndexType = fromType.dyn_cast<mlir::IndexType>())
-    {
-        if (auto toIntType = toType.dyn_cast<mlir::IntegerType>())
-        {
-            // index->int
-            return Wrap(builder.create<mlir::IndexCastOp>(loc, mlirValue, toType));
-        }
-        else if (auto toFloatType = toType.dyn_cast<mlir::FloatType>())
-        {
-            // index->int64
-            auto intValue = builder.create<mlir::IndexCastOp>(loc, mlirValue, builder.getI64Type());
-
-            // int64->fp
-            return Wrap(builder.create<mlir::SIToFPOp>(loc, intValue, toType));
-        }
-
-        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-    }
-    else if (auto fromFloatType = fromType.dyn_cast<mlir::FloatType>())
-    {
-        if (auto toIntType = toType.dyn_cast<mlir::IntegerType>())
-        {
-            // float->int
-            return Wrap(builder.create<mlir::FPToSIOp>(loc, mlirValue, toType));
-        }
-        else if (auto toFloatType = toType.dyn_cast<mlir::FloatType>())
-        {
-            // float->float
-            if (fromFloatType.getWidth() > toFloatType.getWidth())
-            {
-                return Wrap(builder.create<mlir::FPTruncOp>(loc, mlirValue, toType));
-            }
-            else
-            {
-                return Wrap(builder.create<mlir::FPExtOp>(loc, mlirValue, toType));
-            }
-        }
-
-        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-    }
-
-    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+        })
+        .Default([&](mlir::Type) {
+            throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+            llvm_unreachable("unexpected");
+            return Scalar();
+        });
 }
 
 Scalar MLIRContext::CastImpl(Scalar value, ValueType type)
 {
-    return CastImpl(value, type, true);
+    return CastImpl(value, type, /*doSignedCast=*/true);
 }
 
 Scalar MLIRContext::UnsignedCastImpl(Scalar value, ValueType type)
 {
-    return CastImpl(value, type, false);
+    return CastImpl(value, type, /*doSignedCast=*/false);
 }
 
 Scalar MLIRContext::BitcastImpl(Scalar value, ValueType type)
@@ -2755,6 +2734,12 @@ ValueType MLIRTypeToValueType(mlir::Type ty)
                     return ValueType::Boolean;
                 case 8:
                     return ValueType::Byte;
+                case 16:
+                    return ValueType::Uint16;
+                case 32:
+                    return ValueType::Uint32;
+                case 64:
+                    return ValueType::Uint64;
                 default:
                     return ValueType::Undefined;
                 }

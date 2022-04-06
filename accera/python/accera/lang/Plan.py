@@ -15,7 +15,7 @@ from .Cache import Cache, DelayedCache
 from .Function import Function
 from .LoopIndex import LoopIndex
 from .NativeLoopNestContext import NativeLoopNestContext
-from ..Targets import Target
+from ..Targets import GridUnits, Target
 from ..Platforms import LibraryDependency
 from ..Constants import AUTO
 
@@ -145,7 +145,7 @@ class Plan:
         if self._target.category != Target.Category.GPU:
             raise ValueError("tensorization currently only supported on GPU targets")
 
-        indices = [indices] if isinstance(indices, LoopIndex) else list(indices) 
+        indices = [indices] if isinstance(indices, LoopIndex) else list(indices)
 
         if len(indices) != 3:
             raise ValueError("tensorization requires three input indices")
@@ -162,25 +162,25 @@ class Plan:
         self._commands.append(partial(self._tensorize, indices))
 
     def _tensorize(self, indices, context: NativeLoopNestContext):
-        from .._lang_python import ScalarType 
+        from .._lang_python import ScalarType
 
         tensorize_dims = []
-        for index in list(map(self._sched._resolve_index, indices)): 
+        for index in list(map(self._sched._resolve_index, indices)):
             index_map = self._sched._index_map
-            inners = index_map[index].inners 
+            inners = index_map[index].inners
             if len(inners) != 0:
                 raise ValueError("The tensorization index cannot be split")
             start, stop, step = self._sched.get_index_range(index)
             if start != 0:
                 raise ValueError("The tensorization index must start at 0")
             if step != 1:
-                raise ValueError("The tensorization index stride must be contiguous") 
-            tensorize_dims.append(stop) 
+                raise ValueError("The tensorization index stride must be contiguous")
+            tensorize_dims.append(stop)
         if not self._target.tensor_core.supports(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=tensorize_dims) and \
             not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=tensorize_dims):
-            raise ValueError("The target does not support the given tensorization dimensions with shape=", tensorize_dims) 
+            raise ValueError("The target does not support the given tensorization dimensions with shape=", tensorize_dims)
 
-        idxs = [context.mapping[id(index)] for index in indices] 
+        idxs = [context.mapping[id(index)] for index in indices]
 
         context.plan.tensorize(indices=idxs, dims=tensorize_dims)
 
@@ -505,27 +505,25 @@ class Plan:
         target = context.mapping[id(target)]
         context.plan.emit_runtime_init_packing(target, packing_func_name, packed_buf_size_func_name, indexing)
 
-    def bind(self, indices: Tuple[LoopIndex], grid: Tuple):
+    # TODO: Support parameters
+    def bind(self, mapping: Mapping[LoopIndex, GridUnits]):
         """Binds iteration space dimensions to GPU execution units
 
         Args:
-            indices: Sequence of indices to bind
-            grid: Sequence of GPU thread or block identifiers, in the same order as indices
+            mapping: Mapping of indices to GPU thread or block identifiers
         """
 
-        assert len(indices) == len(grid)
-
         if self._target is not None and self._target.category == Target.Category.GPU:
-            self._commands.append(partial(self._bind, indices, grid))
+            self._commands.append(partial(self._bind, mapping))
 
-            for index, proc in zip(indices, grid):
+            for index, proc in mapping.items():
                 self._bindings[proc] = index
 
         else:
             raise ValueError("Only supported on plans with GPU targets")
 
-    def _bind(self, indices, grid, context: NativeLoopNestContext):
-        for index, proc in zip(indices, grid):
+    def _bind(self, mapping: Mapping[LoopIndex, GridUnits], context: NativeLoopNestContext):
+        for index, proc in mapping.items():
             index = context.mapping[id(index)]
             context.plan.map_index_to_processor(index, proc.value)
 
@@ -648,8 +646,8 @@ class Plan:
 
     def _replay_delayed_calls(self):
         '''
-        This method is called once per adding function, so it can be called multiple times when  
-        multiple functions get added. In order for the functions to be added correctly, we need to make sure all 
+        This method is called once per adding function, so it can be called multiple times when
+        multiple functions get added. In order for the functions to be added correctly, we need to make sure all
         the residual states are cleared between different method calls.
 
         For example, in Schedule class, we identify that Schedule._index_map can have residual states, so we need to reset self._index_map

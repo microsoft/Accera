@@ -25,7 +25,8 @@ set(CMAKE_TOOLCHAIN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/external/vcpkg/scripts/buil
 
 project(ACCERA CXX)
 
-file(STRINGS "VERSION" ACCERA_VERSION)
+include(GetGitVersion)
+get_git_version(ACCERA_VERSION)
 message(STATUS "Accera version ${ACCERA_VERSION}")
 
 option(ACCERA_BUILD_DOCS "Build documentation" OFF)

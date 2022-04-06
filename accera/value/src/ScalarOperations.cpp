@@ -32,7 +32,7 @@ namespace value
 
                 auto& builder = ::accera::value::GetMLIRContext().GetOpBuilder();
                 auto loc = builder.getUnknownLoc();
-                Operation* op = builder.create<Op>(loc, UnwrapScalar(args)...);
+                Operation* op = builder.create<Op>(loc, accera::ir::util::ToSignlessMLIRValue(builder, UnwrapScalar(args))...); // args must be signless
                 assert(op->getNumResults() == 1 && "Op must have a single return value");
                 value = Wrap(op->getResult(0));
             }

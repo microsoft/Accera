@@ -21,6 +21,7 @@ add_subdirectory(transforms)
 add_subdirectory(utilities)
 add_subdirectory(value)
 add_subdirectory(vulkanRuntime)
+add_subdirectory(export)
 
 add_custom_target(accera)
 add_dependencies(

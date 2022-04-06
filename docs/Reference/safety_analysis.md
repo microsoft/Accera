@@ -1,5 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: v1.2.3)
+
+# Accera v1.2.3 Reference
 
 # Safety Analysis
 
@@ -40,7 +42,10 @@ f, i, j, k0, k1 = schedule.get_indices()
 ```
 Next, say that we transform `schedule` by tiling dimensions `j` and `k0` and reordering the dimensions as follows:
 ```python
-jj, kk0 = schedule.tile((j, k0), (4, 4))
+jj, kk0 = schedule.tile({
+    j: 4,
+    k0: 4
+})
 schedule.reorder(j, i, f, k0, k1, kk0, jj)
 ```
 Dimensions `i`, `j`, and `jj` are fused dimensions, while `k0`, `kk0`, and `k1` are unfused dimensions. Note that the fusing dimension `f` precedes all of the unfused dimensions, so the condition of the theorem is satisfied. Next, choose concrete values for the fused dimensions, say, `i=4`, `j=3`, and `jj=2`. The work from `schedule0` that corresponds to these values is contained in the slice (3, 4, 0, *, *, *, *), and the work from `schedule1` that corresponds to these values is contained in the slice (3, 4, 1, *, *, *, *). The former slice lexicographically precedes the latter and is therefore executed first.

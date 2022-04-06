@@ -615,10 +615,14 @@ namespace cpp_printer
         llvm::SmallVector<llvm::StringRef, 2> system_header_files = { "math.h",
                                                                       "stdint.h" };
 
+        // TODO: Another instance of information leaking across boundaries. Seems that each source file should have
+        // an "operation mode" and that determines the contents of preamble to the source body
+        if (state.hasRuntime(Runtime::ROCM)) os << "#if !defined(__HIP_PLATFORM_AMD__)\n";
         for (auto& headerFile : system_header_files)
         {
             os << "#include <" << headerFile << ">\n";
         }
+        if (state.hasRuntime(Runtime::ROCM)) os << "#endif // !defined(__HIP_PLATFORM_AMD__)\n";
 
         os << "\n";
 
@@ -627,7 +631,18 @@ namespace cpp_printer
 
     LogicalResult StdDialectCppPrinter::printPrologue()
     {
-        if (!state.hasRuntime(Runtime::CUDA))
+        if (state.hasRuntime(Runtime::ROCM))
+        {
+            os << R"STD(
+
+#ifndef __forceinline__
+#define __forceinline__ __inline__ __attribute__((always_inline))
+#endif // __forceinline__
+
+)STD";
+
+        }
+        else if (!state.hasRuntime(Runtime::CUDA))
         {
             os << R"STD(
 

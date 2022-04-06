@@ -40,7 +40,7 @@ namespace value
         std::unique_ptr<LocationGuardImpl> _impl;
     };
 
-    void CheckAllClose(Array actual, Array desired, Scalar tolerance);
+    void CheckAllClose(Array actual, Array desired, float tolerance);
 
 } // namespace value
 

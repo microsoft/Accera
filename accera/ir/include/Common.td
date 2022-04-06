@@ -79,7 +79,7 @@ class acc_ContainerWithNumElements<int length> :
         acc_TensorWithNumElements<length>.description>;
 
 def acc_NumericType :
-    Type<Or<[AnySignlessInteger.predicate, AnyFloat.predicate, Index.predicate]>, "Arithmetic type">;
+    Type<Or<[AnyInteger.predicate, AnyFloat.predicate, Index.predicate]>, "Arithmetic type">;
 
 def acc_ScalarOrVectorNumericType :
     AnyTypeOf<[acc_NumericType, VectorOf<[acc_NumericType]>]>;

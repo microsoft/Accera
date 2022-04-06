@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: v1.2.3)
 
-# Accera v1.2.1 Reference
+# Accera v1.2.3 Reference
 ## `accera.ScalarType`
 
 type | description
@@ -14,7 +14,9 @@ type | description
 `accera.ScalarType.int16` | 16-bit signed integer
 `accera.ScalarType.int32` | 32-bit signed integer
 `accera.ScalarType.int64` | 64-bit signed integer
-
-TODO: unsigned integer types (uint8/16/32/64)
+`accera.ScalarType.uint8` | 8-bit unsigned integer
+`accera.ScalarType.uint16` | 16-bit unsigned integer
+`accera.ScalarType.uint32` | 32-bit unsigned integer
+`accera.ScalarType.uint64` | 64-bit unsigned integer
 
 <div style="page-break-after: always;"></div>

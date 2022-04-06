@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: v1.2.3)
 
 # Section 6: Plans - Caching
 In the previous sections, we defined the logic and then scheduled its iterations. Now, let's move on to completing the implementation with target-specific options.
@@ -32,7 +32,7 @@ Just like we can specify a key-slice using a dimension, we can also refer to the
 ## Caches
 An Accera cache is a local copy of an active block. A cache is contiguous in memory and its memory layout may differ from the layout of the original array. The loop nest iterations operate on the cache elements instead of the original array elements.
 
-The contents of the active block are copied into the cache at the start of the corresponding key-slice. If the array is mutable (namely, an input/output array or a temporary array), the cache contents are copied back into the original array at the end of the key-slice. 
+The contents of the active block are copied into the cache at the start of the corresponding key-slice. If the array is mutable (namely, an input/output array or a temporary array), the cache contents are copied back into the original array at the end of the key-slice.
 
 ### Caching by level
 To define a cache for a given array, all we need is to specify the desired level.For example:
@@ -45,13 +45,13 @@ AA = plan.cache(A, level=2, layout=acc.Array.Layout.FIRST_MAJOR)
 ```
 
 ### Caching by dimension
-As mentioned above, we can specify an active block using a dimension. We use this to define a cache as follows: 
+As mentioned above, we can specify an active block using a dimension. We use this to define a cache as follows:
 ```python
 AA = plan.cache(A, index=j)
 ```
 
 ### Caching by element budget
-Note that the current active blocks of an array are nested, and their sizes are monotonic (nondecreasing) in their level. Therefore, we can also select the largest active block that does not exceed a certain number of elements: 
+Note that the current active blocks of an array are nested, and their sizes are monotonic (nondecreasing) in their level. Therefore, we can also select the largest active block that does not exceed a certain number of elements:
 ```python
 AA = plan.cache(A, max_elements=1024)
 ```
@@ -62,10 +62,10 @@ By default, Accera caching strategies are *thrifty* in the sense that the data i
 
 For example, assume that `A` is a two-dimensional array and its active block at the chosen level is always one of its rows. If `A` is row-major, the rows are already stored contiguously. Additionally, the data in the active block and the data to be copied to cache are identical: both are contiguous and share the same memory layout. In this case, there is no benefit in using cache over the original array. The thrifty caching strategy will skip the caching steps and use the original array instead.
 
-On the other hand, if `A` is column-major, its rows are not stored contiguously. In this case, copying the active row into a contiguous temporary location could be computationally advantageous. Therefore, the thrifty caching strategy would create the cache and populate it with the data. 
+On the other hand, if `A` is column-major, its rows are not stored contiguously. In this case, copying the active row into a contiguous temporary location could be computationally advantageous. Therefore, the thrifty caching strategy would create the cache and populate it with the data.
 
 
-Thrifty caching can be turned off using the optional argument `thrifty=False`. If turned off, a physical copy is always created. 
+Thrifty caching can be turned off using the optional argument `thrifty=False`. If turned off, a physical copy is always created.
 
 [comment]: # (MISSING:)
 [comment]: # (* A concept of disjoint active blocks. This is critical for temp arrays and the question of which part of the array do we actually store in RAM)
@@ -111,7 +111,11 @@ i, j, k = nest.get_indices()
 def _():
     C[i,j] += A[i,k] * B[k,j]
 schedule = nest.create_schedule()
-schedule.tile((i, j, k), (m_tile, n_tile, k_tile))
+schedule.tile({
+    i: m_tile,
+    j: n_tile,
+    k: k_tile
+})
 schedule.reorder(i, j, k, ii, jj, kk)
 
 plan = schedule.create_plan()

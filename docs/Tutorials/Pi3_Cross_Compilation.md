@@ -1,3 +1,6 @@
+[//]: # (Project: Accera)
+[//]: # (Version: v1.2.3)
+
 # Cross Compiling for the Raspberry Pi 3
 
 By the end of this tutorial, you will learn how to:

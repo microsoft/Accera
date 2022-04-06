@@ -802,35 +802,37 @@ std::tuple<NestOp, ScheduleOp, ExecPlanOp> CreateCacheLoopnestHelper(
 
         auto vecInfo = *vectorizationInfoOpt;
 
-        // Vectorize the innermost loop
-        SetVectorizationInfo(cacheNestSchedule, cacheNestScheduleOrder.back(), vecInfo);
-
-        // Apply in-place unrolling / per-op unrolling to the loops outside of it subject to a vectorization budget based on the size and number of vector registers
         int64_t elementsPerVector = vecInfo.vectorBytes / elementByteWidth;
         int64_t budget = vecInfo.vectorUnitCount * elementsPerVector;
 
-        // reduce the budget based on how large the innermost vectorized loop is
-        auto innermostLoopRange = loopnestInfo.fullySplitRanges.back();
-
-        // If the budget is greater than the number of iterations of the innermost loop
-        // then we can vectorize more loops in the nest
-        if (budget > innermostLoopRange.NumIterations())
+        if (budget > 0)
         {
-            // Determine how much of the nest can be vectorized and set the vectorization info on those loops
-            budget /= innermostLoopRange.NumIterations();
-            int numVectorizedLoops = 1;
-            for (size_t loopCounter = 1; loopCounter < loopnestInfo.fullySplitRanges.size(); ++loopCounter)
+            // Vectorize the innermost loop then apply in-place unrolling / per-op unrolling to the loops outside of it subject to the vectorization budget based on the size and number of vector registers
+            SetVectorizationInfo(cacheNestSchedule, cacheNestScheduleOrder.back(), vecInfo);
+
+            // reduce the budget based on how large the innermost vectorized loop is
+            auto innermostLoopRange = loopnestInfo.fullySplitRanges.back();
+
+            // If the budget is greater than the number of iterations of the innermost loop
+            // then we can vectorize more loops in the nest
+            if (budget > innermostLoopRange.NumIterations())
             {
-                size_t loopIdx = loopnestInfo.fullySplitRanges.size() - loopCounter - 1; // Vectorize loops from the innermost to the outermost as long as we still have vector registers to work with
-                auto loopRange = loopnestInfo.fullySplitRanges[loopIdx];
-                auto loopUnrollFactor = std::min(budget, loopRange.NumIterations());
-                InPlaceUnrollInfo inPlaceUnrollInfo{ loopUnrollFactor };
-                numVectorizedLoops++;
-                SetInPlaceUnrollInfo(cacheNestSchedule, cacheNestScheduleOrder[loopIdx], inPlaceUnrollInfo);
-                budget /= loopUnrollFactor;
-                if (budget <= 1) // if there is only 1 in-place op unroll left in the budget then we're done vectorizing
+                // Determine how much of the nest can be vectorized and set the vectorization info on those loops
+                budget /= innermostLoopRange.NumIterations();
+                int numVectorizedLoops = 1;
+                for (size_t loopCounter = 1; loopCounter < loopnestInfo.fullySplitRanges.size(); ++loopCounter)
                 {
-                    break;
+                    size_t loopIdx = loopnestInfo.fullySplitRanges.size() - loopCounter - 1; // Vectorize loops from the innermost to the outermost as long as we still have vector registers to work with
+                    auto loopRange = loopnestInfo.fullySplitRanges[loopIdx];
+                    auto loopUnrollFactor = std::min(budget, loopRange.NumIterations());
+                    InPlaceUnrollInfo inPlaceUnrollInfo{ loopUnrollFactor };
+                    numVectorizedLoops++;
+                    SetInPlaceUnrollInfo(cacheNestSchedule, cacheNestScheduleOrder[loopIdx], inPlaceUnrollInfo);
+                    budget /= loopUnrollFactor;
+                    if (budget <= 1) // if there is only 1 in-place op unroll left in the budget then we're done vectorizing
+                    {
+                        break;
+                    }
                 }
             }
         }
@@ -4928,9 +4930,10 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                                                                       rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.lbMaps),
                                                                       rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.ubMaps),
                                                                       multiCacheInfo.activeBlockToCacheMap,
+                                                                      llvm::None, // scaleValues
                                                                       activeBlockTag,
                                                                       beginCacheRegionOp.thrifty(),
-                                                                      GetCacheOpVectorizationInfoOrDefault(beginCacheRegionOp));
+                                                                      beginCacheRegionOp.vectorizationInfoAttr());
                         }
                         else
                         {

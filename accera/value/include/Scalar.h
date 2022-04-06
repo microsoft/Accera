@@ -137,6 +137,12 @@ namespace value
             return Scalar(static_cast<int32_t>(t));
         case ValueType::Int64:
             return Scalar(static_cast<int64_t>(t));
+        case ValueType::Uint16:
+            return Scalar(static_cast<uint16_t>(t));
+        case ValueType::Uint32:
+            return Scalar(static_cast<uint32_t>(t));
+        case ValueType::Uint64:
+            return Scalar(static_cast<uint64_t>(t));
         case ValueType::Index:
             return Scalar(static_cast<index_t>(t));
         case ValueType::Float16:

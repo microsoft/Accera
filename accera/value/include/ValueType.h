@@ -45,6 +45,12 @@ namespace value
         Int32,
         /// <summary> 8 byte signed integer </summary>
         Int64,
+        /// <summary> 2 byte unsigned integer </summary>
+        Uint16,
+        /// <summary> 4 byte unsigned integer </summary>
+        Uint32,
+        /// <summary> 8 byte unsigned integer </summary>
+        Uint64,
         /// <summary> 2 byte floating point </summary>
         Float16,
         /// <summary> 4 byte floating point </summary>
@@ -118,6 +124,18 @@ namespace value
         else if constexpr (std::is_same_v<T, int64_t>)
         {
             return ValueType::Int64;
+        }
+        else if constexpr (std::is_same_v<T, uint16_t>)
+        {
+            return ValueType::Uint16;
+        }
+        else if constexpr (std::is_same_v<T, uint32_t>)
+        {
+            return ValueType::Uint32;
+        }
+        else if constexpr (std::is_same_v<T, uint64_t>)
+        {
+            return ValueType::Uint64;
         }
         else if constexpr (std::is_same_v<T, index_t>)
         {

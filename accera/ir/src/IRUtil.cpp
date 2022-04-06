@@ -859,5 +859,29 @@ namespace util
             rewriter.eraseOp(&op);
         }
     }
+
+    mlir::Type ToSignlessMLIRType(mlir::OpBuilder& builder, mlir::Type type)
+    {
+        if (type.isIntOrFloat())
+        {
+            if (auto width = type.getIntOrFloatBitWidth(); type.isInteger(width))
+            {
+                return builder.getIntegerType(width);
+            }
+        }
+        return type; // pass-through, no signless change
+    }
+
+    mlir::Value ToSignlessMLIRValue(mlir::OpBuilder& builder, mlir::Value value)
+    {
+        auto type = value.getType();
+        if (auto signlessType = ToSignlessMLIRType(builder, type); signlessType != type)
+        {
+            // Cast from signed to signless
+            // cf. mlir/lib/Conversion/TosaToLinalg/TosaToLinalg.cpp
+            return builder.create<mlir::UnrealizedConversionCastOp>(value.getLoc(), signlessType, value).getResult(0);
+        }
+        return value; // pass-through, no signless change
+    }
 } // namespace util
 } // namespace accera::ir

@@ -110,6 +110,15 @@ void PrintMatrix(std::string indent, Matrix e)
             case ValueType::Int64:
                 std::cout << s.Get<int64_t>();
                 break;
+            case ValueType::Uint16:
+                std::cout << s.Get<uint16_t>();
+                break;
+            case ValueType::Uint32:
+                std::cout << s.Get<uint32_t>();
+                break;
+            case ValueType::Uint64:
+                std::cout << s.Get<uint64_t>();
+                break;
             case ValueType::Float16:
                 std::cout << s.Get<float16_t>();
                 break;

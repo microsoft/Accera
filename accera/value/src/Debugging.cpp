@@ -47,30 +47,29 @@ namespace value
     // Compares two arrays by checking whether they are equal up to the specified tolerance
     // Outputs mismatches to stderr
     // Inspired by numpy.testing.assert_allclose
-    void CheckAllClose(Array actual, Array desired, Scalar tolerance)
+    void CheckAllClose(Array actual, Array desired, float tolerance)
     {
         using namespace std::string_literals;
 
         ThrowIfNot(actual.Shape() == desired.Shape());
-
-        auto elementType = actual.GetType();
-        auto diff = MakeArray(actual.Shape(), elementType, "diff");
+        auto atol = Scalar(tolerance);
+        auto diff = MakeArray(actual.Shape(), ValueType::Float, "diff");
 
         // BUGBUG: Scalar binary ops pointer deferencing error, using Arrays as a workaround
-        auto maxAbsoluteDiff = MakeArray(MemoryShape{ 1 }, elementType, "maxAbsoluteDiff");
+        auto maxAbsoluteDiff = MakeArray(MemoryShape{ 1 }, diff.GetType(), "maxAbsoluteDiff");
         auto count = MakeArray(MemoryShape{ 1 }, ValueType::Int32, "count");
 
-        auto atol = Cast(tolerance, elementType);
-        auto zero = Cast(Scalar(0.0f), elementType);
-        auto max = Cast(Scalar(std::numeric_limits<float>::max()), elementType);
-        auto zeroCount = Cast(Scalar(0.0f), count.GetType());
-        auto oneCount = Cast(Scalar(1.0f), count.GetType());
+        auto zero = Scalar(0.0f);
+        auto max = Scalar(std::numeric_limits<float>::max());
+        auto zeroCount = Cast(Scalar(0), count.GetType());
+        auto oneCount = Cast(Scalar(1), count.GetType());
         auto total = Cast(Scalar(actual.Size()), count.GetType());
 
         Nest nest(actual.Shape());
         auto indices = nest.GetIndices();
         nest.Set([&]() {
-            diff(indices) = Clamp(Abs(actual(indices) - desired(indices)), zero, max); // over/underflow
+            diff(indices) = Cast(actual(indices) - desired(indices), diff.GetType());
+            diff(indices) = Clamp(Abs(diff(indices)), zero, max); // over/underflow
             maxAbsoluteDiff(0) = Select(maxAbsoluteDiff(0) >= diff(indices), maxAbsoluteDiff(0), diff(indices));
             count(0) += Select(diff(indices) <= atol, zeroCount, oneCount);
         });

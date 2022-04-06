@@ -1,4 +1,5 @@
 [//]: # (Project: Accera)
+[//]: # (Version: v1.2.3)
 
 # Install from PyPI
 The quickest way to get up and running is to install the pre-built Python packages:

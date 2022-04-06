@@ -7,7 +7,9 @@
 #ifndef GPU_DIALECT_CPP_PRINTER_H_
 #define GPU_DIALECT_CPP_PRINTER_H_
 
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include "CppPrinter.h"
 
@@ -52,8 +54,10 @@ namespace cpp_printer
 
         LogicalResult printGpuFPVectorType(VectorType vecType, StringRef vecVar);
 
+        LogicalResult printGPUIndexType();
+
     private:
-        gpu::GPUModuleOp _gpuModuleOp;
+        llvm::SmallVector<gpu::GPUModuleOp> _gpuModuleOps;
     };
 
 } // namespace cpp_printer

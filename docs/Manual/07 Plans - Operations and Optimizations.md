@@ -1,8 +1,8 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: v1.2.3)
 
-# Section 7: Plans - Vectorization and Parallelization
-The plan includes operations and optimizations that control instruction pipelining, vectorized SIMD instructions, and parallelization.
+# Section 7: Plans - Operations and Optimizations
+We can control target-specific operations and optimizations using a plan. Examples include instruction pipelining, applying SIMD vector instructions, and so on.
 
 ## `unroll`
 By default, each dimension of the iteration space is implemented as a for-loop. The `unroll` instruction marks a dimension for *unrolling* rather than looping. Imagine the following nest that multiplies the entries of an array by a constant:
@@ -47,9 +47,9 @@ for j in range(5):
 And, of course, we can also unroll both dimensions, removing for-loops completely.
 
 ## `vectorize`
-Modern target platforms support SIMD vector instructions. These instructions perform the same operation on an entire vector of elements, all at once. By default, each dimension of an iteration space becomes a for-loop. The `vectorize` instruction instead labels a dimension for vectorized execution, rather than for-looping.  
+Modern target platforms support SIMD vector instructions. These instructions perform the same operation on an entire vector of elements, all at once. By default, each dimension of an iteration space becomes a for-loop. The `vectorize` instruction instead labels a dimension for vectorized execution, rather than for-looping.
 
-For example, assume that a host supports 256-bit vector instructions, indicating that its vector instructions operate on eight floating-point elements at once. Also, consider that we already have arrays `A`, `B`, and `C`, and we write the following code: 
+For example, assume that a host supports 256-bit vector instructions, indicating that its vector instructions operate on eight floating-point elements at once. Also, consider that we already have arrays `A`, `B`, and `C`, and we write the following code:
 ```python
 nest = acc.Nest(shape=(64,))
 i = nest.get_indices()
@@ -103,13 +103,13 @@ Different targets support different vector instructions having different vector 
 | `s0 = max(v0 + v1)` | `for i in range(vector_size):` <br>&emsp; `s0 = max(v0[i] + v1[i], s0)` | int8/16/32/64, float32 |
 | `s0 = max(v0 - v1)` | `for i in range(vector_size):` <br>&emsp; `s0 = max(v0[i] - v1[i], s0)` | int8/16/32/64, float32 |
 
-Additionally, Accera can perform vectorized load and store operations to/from vector registers and memory if the memory locations are contiguous. 
+Additionally, Accera can perform vectorized load and store operations to/from vector registers and memory if the memory locations are contiguous.
 
 To vectorize dimension `i`, the number of active elements that corresponds to dimension `i` must exactly match the vector instruction width of the target processor. For example, if the target processor has vector instructions that operate on either 4 or 8 floating-point elements at once, then the number of active elements can either be 4 or 8. Additionally, those active elements must occupy adjacent memory locations (they cannot be spread out).
 
 ## `tensorize`
 
-Some hardware also have specialized instructions for performing matrix multiplications. These instructions operate on certain matrix dimensions with specific data types. The tensorization instructions take tiles of the `A`, `B`, and `C` matrices and compute the `C = A * B + C` operation. 
+Some hardware also have specialized instructions for performing matrix multiplications. These instructions operate on certain matrix dimensions with specific data types. The tensorization instructions take tiles of the `A`, `B`, and `C` matrices and compute the `C = A * B + C` operation.
 
 The `tensorize` operation takes 3 indices:
 
@@ -117,7 +117,7 @@ The `tensorize` operation takes 3 indices:
 plan.tensorize(indices=(i,j,k))
 ```
 
-Tensorization is limited and is only valid on loop structures of the form 
+Tensorization is limited and is only valid on loop structures of the form
 
 ```python
 for i in range(M):
@@ -222,7 +222,12 @@ Some target platforms, such as GPUs, are specifically designed to execute nested
 For example,
 ```python
 v100 = acc.Target("Tesla V100")
-plan.bind(indices=(i, j, k), grid=(v100.GridUnit.BLOCK_X, v100.GridUnit.THREAD_X, v100.GridUnit.THREAD_Y))
+plan.bind(mapping={
+        i: v100.GridUnit.BLOCK_X,
+        j: v100.GridUnit.THREAD_X,
+        k: v100.GridUnit.THREAD_Y
+    }
+)
 ```
 
 

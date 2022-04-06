@@ -79,15 +79,21 @@ class Array:
             shape = self._data.shape    # infer shape from data
             self._shape = shape
 
+            # For some reason ScalarType.__entries does not resolve correctly at this point
+            # so we need this mapping instead of using ScalarType.__entries[str(numpy.dtype)]
             type_map = {
+                ScalarType.bool: "bool",
                 ScalarType.int8: "int8",
                 ScalarType.int16: "int16",
                 ScalarType.int32: "int32",
                 ScalarType.int64: "int64",
+                ScalarType.uint8: "uint8",
+                ScalarType.uint16: "uint16",
+                ScalarType.uint32: "uint32",
+                ScalarType.uint64: "uint64",
                 ScalarType.float16: "float16",
                 ScalarType.float32: "float32",
                 ScalarType.float64: "float64",
-            # TODO: more types
             }
             dtype_map = {y: x
                          for x, y in type_map.items()}

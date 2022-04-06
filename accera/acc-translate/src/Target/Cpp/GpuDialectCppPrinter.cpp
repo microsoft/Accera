@@ -6,10 +6,14 @@
 
 #include "GpuDialectCppPrinter.h"
 #include <llvm/ADT/None.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <functional>
 
 #include <ir/include/IRUtil.h>
 
@@ -87,7 +91,10 @@ namespace cpp_printer
         const std::string varPrefix = std::string("gridDim_") + gridDimOp.dimension().str() + "_";
         auto idx = state.nameState.getOrCreateName(
             gridDimOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
-        os << "const unsigned int " << idx << " = ";
+        RETURN_IF_FAILED(printGPUIndexType());
+
+        os << " " << idx << " = ";
+
         if (auto c = getGridDim(gridDimOp, gridDimOp.dimension()); c)
         {
             os << c.getValue();
@@ -109,7 +116,10 @@ namespace cpp_printer
         const std::string varPrefix = std::string("blockDim_") + blockDimOp.dimension().str() + "_";
         auto idx = state.nameState.getOrCreateName(
             blockDimOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
-        os << "const unsigned int " << idx << " = ";
+        RETURN_IF_FAILED(printGPUIndexType());
+
+        os << " " << idx << " = ";
+
         if (auto c = getBlockDim(blockDimOp, blockDimOp.dimension()); c)
         {
             os << c.getValue();
@@ -131,7 +141,10 @@ namespace cpp_printer
         const std::string varPrefix = std::string("blockIdx_") + bidOp.dimension().str() + "_";
         auto idx = state.nameState.getOrCreateName(
             bidOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
-        os << "const unsigned int " << idx << " = ";
+        RETURN_IF_FAILED(printGPUIndexType());
+
+        os << " " << idx << " = ";
+
         if (auto c = getGridDim(bidOp, bidOp.dimension()); c)
         {
             os << "(blockIdx." << bidOp.dimension() << "%" << c.getValue() << ")";
@@ -154,7 +167,10 @@ namespace cpp_printer
         const std::string varPrefix = std::string("threadIdx_") + tidOp.dimension().str() + "_";
         auto idx = state.nameState.getOrCreateName(
             tidOp.getResult(), SSANameState::SSANameKind::Variable, varPrefix);
-        os << "const unsigned int " << idx << " = ";
+        RETURN_IF_FAILED(printGPUIndexType());
+
+        os << " " << idx << " = ";
+
         if (auto c = getBlockDim(tidOp, tidOp.dimension()); c)
         {
             os << "(threadIdx." << tidOp.dimension() << "%" << c.getValue() << ")";
@@ -254,17 +270,39 @@ namespace cpp_printer
 
             if (!potentialGpuOps.empty())
             {
-                if (llvm::hasSingleElement(potentialGpuOps))
-                {
-                    state.setRuntime(Runtime::CUDA); // TODO: detect from the module
+                llvm::errs() << "GPU module detected, enabling CUDA runtime\n";
+                _gpuModuleOps = llvm::to_vector<4>(potentialGpuOps);
+            }
+        }
 
-                    llvm::errs() << "GPU module detected, enabling CUDA runtime\n";
-                    _gpuModuleOp = *potentialGpuOps.begin();
-                }
-                else
-                {
-                    return op->emitError("Multiple GPU modules are not currently supported");
-                }
+        for (auto gpuOp : _gpuModuleOps)
+        {
+            auto execRuntime = accera::ir::util::ResolveExecutionRuntime(gpuOp);
+            if (!execRuntime)
+            {
+                llvm::errs() << "Device functions must specify a runtime\n";
+                return failure();
+            }
+            switch (*execRuntime)
+            {
+            case vir::ExecutionRuntime::ROCM:
+                state.setRuntime(Runtime::ROCM);
+                // TODO: Make ROCM not a subset of CUDA
+                [[fallthrough]]; // and also
+            case vir::ExecutionRuntime::CUDA:
+                state.setRuntime(Runtime::CUDA);
+                break;
+            case vir::ExecutionRuntime::NONE:
+                [[fallthrough]];
+            case vir::ExecutionRuntime::OPENMP:
+                [[fallthrough]];
+            case vir::ExecutionRuntime::VULKAN:
+                [[fallthrough]];
+            case vir::ExecutionRuntime::DEFAULT:
+                [[fallthrough]];
+            default:
+                llvm::errs() << "Device functions runtime is unsupported\n";
+                return failure();
             }
         }
 
@@ -278,8 +316,6 @@ namespace cpp_printer
             os << R"CUDA(
 
 #if defined(__HIP_PLATFORM_AMD__)
-#include <hip/hip_runtime.h>
-#include <hip/hip_fp16.h>
 using vhalf = __fp16;
 using vfloatx2_t = float __attribute__((ext_vector_type(2)));
 using vfloatx4_t = float __attribute__((ext_vector_type(4)));
@@ -378,16 +414,7 @@ using vhalfx16_t = vhalf __attribute__((ext_vector_type(16)));
 
     LogicalResult GpuDialectCppPrinter::printOp(gpu::GPUModuleOp gpuModuleOp)
     {
-        assert(gpuModuleOp == _gpuModuleOp);
-
-#if 0
-        for (auto funcOp : gpuModuleOp.getOps<GPUFuncOp>())
-        {
-            // TODO: We should probably not be printing the functions directly
-            // like this, but instead handing control back to the printer
-            RETURN_IF_FAILED(printOp(funcOp));
-        }
-#endif // 0
+        assert(llvm::is_contained(_gpuModuleOps, gpuModuleOp));
 
         for (Operation& op : gpuModuleOp.getOps())
         {
@@ -469,15 +496,22 @@ using vhalfx16_t = vhalf __attribute__((ext_vector_type(16)));
     {
         if (state.hasRuntime(Runtime::CUDA))
         {
-            assert(_gpuModuleOp);
-
-            for (auto funcOp : _gpuModuleOp.getOps<gpu::GPUFuncOp>())
+            for (auto gpuModuleOp : _gpuModuleOps)
             {
-                RETURN_IF_FAILED(printFunctionDeclaration(funcOp, /* trailingSemiColon */ true));
+                for (auto funcOp : gpuModuleOp.getOps<gpu::GPUFuncOp>())
+                {
+                    RETURN_IF_FAILED(printFunctionDeclaration(funcOp, /* trailingSemiColon */ true));
+                }
             }
         }
 
         return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printGPUIndexType()
+    {
+        os << "const ";
+        return printer->printIndexType();
     }
 
 } // namespace cpp_printer

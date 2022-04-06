@@ -1,3 +1,6 @@
+[//]: # (Project: Accera)
+[//]: # (Version: v1.2.3)
+
 ## Hello MatMul GPU
 
 In this tutorial you will learn how to implement a simple Matrix Multiplication (MatMul) function for execution on a GPU. We will use the Accera's Domain Specific Language (DSL) to produce a [HAT](https://github.com/microsoft/hat) package containing the MatMul function that can be called from the host to launch the MatMul function on the GPU.
@@ -102,7 +105,12 @@ plan = schedule.create_plan(target)
 
 Bind dimensions of the schedule to execution units on the GPU. Use the outer dimensions _i_, _j_ to be the block indices _x_,_y_ in the grid, and the _ii_ and _jj_ dimensions to be the thread indices _x_,_y_ in the block:
 ```python
-plan.bind((i, j, ii, jj), grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y))
+plan.bind({
+    i: target.GridUnit.BLOCK_X,
+    j: target.GridUnit.BLOCK_Y,
+    ii: target.GridUnit.THREAD_X,
+    jj: target.GridUnit.THREAD_Y
+})
 ```
 
 Use the plan to add a callable function named `hello_matmul_gpu` to a HAT package.

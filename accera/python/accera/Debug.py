@@ -44,7 +44,7 @@ def add_check_allclose(package: Package, array: Array, atol: float = 1e-5, targe
 
     @nest.iteration_logic
     def _():
-        CheckAllClose(actual, desired, Scalar(atol))
+        CheckAllClose(actual, desired, atol)
 
     plan = nest.create_plan(target)
 

@@ -306,7 +306,10 @@ class SmokeTest(unittest.TestCase):
         f, i, j, k, l = schedule.get_indices()
         schedule.reorder(i, j, f, k, l)
 
-        ii, jj = schedule.tile((i, j), (4, 4))
+        ii, jj = schedule.tile({
+            i: 4,
+            j: 4
+        })
         schedule.reorder(i, j, f, ii, jj, k, l)
 
         plan = schedule.create_plan()
@@ -622,7 +625,7 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
-    def test_gpu_matmul(self) -> None:
+    def _make_vulkan_gpu_matmul_plan(self, M, N, K):
         import math
         from accera import Target
         from accera._lang_python._lang import _If, as_index
@@ -635,10 +638,6 @@ class SmokeTest(unittest.TestCase):
 
         def round_up(number, multiple):
             return math.ceil(number / multiple) * multiple
-
-        M = 128
-        N = 256
-        K = 256
 
         block_x, block_y = get_clamped_block_dimensions(M, N)
         grid_x, grid_y = compute_grid_dimensions(M, N, block_x, block_y)
@@ -678,20 +677,58 @@ class SmokeTest(unittest.TestCase):
         target = Target(category=Target.Category.GPU, runtime=Target.Runtime.VULKAN)
         plan = schedule.create_plan(target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
 
+        return plan, (A, B, C)
+
+    def test_vulkan_gpu_matmul(self) -> None:
+
+        M = 128
+        N = 256
+        K = 256
+
+        plan, args = self._make_vulkan_gpu_matmul_plan(M, N, K)
+
         package = Package()
-        package.add(plan, args=(A, B, C), base_name="hello_matmul_gpu")
+        package.add(plan, args=args, base_name="test_vulkan_gpu_matmul")
+
+        format = self.PACKAGE_FORMAT if "VULKAN_SDK" in os.environ else Package.Format.HAT_STATIC
+        with verifiers.VerifyPackage(self, "test_vulkan_gpu_matmul", TEST_PACKAGE_DIR):
+            package.build(
+                name="test_vulkan_gpu_matmul", format=format, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR
+            )
+
+    @expectedFailure(FailedReason.BUG, "More than 1 Nest function cannot be added to the same GPU package for Vulkan")
+    def test_two_vulkan_gpu_matmul(self) -> None:
+
+        package = Package()
+
+        M = 128
+        N = 256
+        K = 256
+        plan, args = self._make_vulkan_gpu_matmul_plan(M, N, K)
+        package.add(plan, args=args, base_name=f"test_two_vulkan_gpu_matmul_{M}_{N}_{K}")
+
+        M = 256
+        N = 256
+        K = 256
+        plan, args = self._make_vulkan_gpu_matmul_plan(M, N, K)
+        package.add(plan, args=args, base_name=f"test_two_vulkan_gpu_matmul_{M}_{N}_{K}")
 
         # BUGBUG: More than 1 Nest function cannot be added to the same GPU package (function names are now unique)
         #   17_SPIRVUpdateVCE.mlir:134:2: error: should only contain one 'spv.module' op
         #   spv.module @__spv__NestFunction_0_module Logical GLSL450 requires #spv.vce<v1.0, [Shader], [SPV_KHR_storage_buffer_storage_class]> {
-        # package.add(plan, args=(A, B, C), base_name="hello_matmul_gpu")
         format = self.PACKAGE_FORMAT if "VULKAN_SDK" in os.environ else Package.Format.HAT_STATIC
-        with verifiers.VerifyPackage(self, "hello_matmul_gpu", TEST_PACKAGE_DIR):
-            package.build(name="hello_matmul_gpu", format=format, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
+        with verifiers.VerifyPackage(self, "test_two_vulkan_gpu_matmul", TEST_PACKAGE_DIR):
+            package.build(
+                name="test_two_vulkan_gpu_matmul", format=format, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR
+            )
 
     @expectedFailure(FailedReason.NOT_IN_CORE, "function that contains multiple nests")
     def test_int8_matmul(self) -> None:
@@ -877,8 +914,14 @@ class SmokeTest(unittest.TestCase):
 
         # TODO: support parameters
         # m, n = acc.create_parameters(2)
-        # ii, jj = schedule.tile((i,j), (m,n))
-        ii, jj = schedule.tile((i, j), (16, 32))
+        # ii, jj = schedule.tile({
+        #     i: m,
+        #     j: n
+        # })
+        ii, jj = schedule.tile({
+            i: 16,
+            j: 32
+        })
         schedule.reorder(i, j, f, jj, k0, j1, ii)
 
         plan = schedule.create_plan()
@@ -941,8 +984,14 @@ class SmokeTest(unittest.TestCase):
 
         # TODO: support parameters
         # m, s = acc.create_parameters(2)
-        # ii, jj1 = schedule.tile((i, j1), (m, s))
-        ii, jj1 = schedule.tile((i, j1), (64, 8))
+        # ii, jj1 = schedule.tile({
+        #     i: m,
+        #     j1: s
+        # })
+        ii, jj1 = schedule.tile({
+            i: 64,
+            j1: 8
+        })
         schedule.reorder(i, j, f, j1, ii, k0, jj0, kk1, jj1)
 
         plan = schedule.create_plan()
@@ -1007,8 +1056,14 @@ class SmokeTest(unittest.TestCase):
 
         # TODO: support parameters
         # m, t = acc.create_parameters(2)
-        # ii, kk0 = schedule.tile((i, k0), (m, t))
-        ii, kk0 = schedule.tile((i, k0), (64, 8))
+        # ii, kk0 = schedule.tile({
+        #     i: m,
+        #     k0: t
+        # })
+        ii, kk0 = schedule.tile({
+            i: 64,
+            k0: 8
+        })
         schedule.reorder(i, j, f, ii, jj0, k0, kk0, j1, kk1)
 
         plan = schedule.create_plan()
@@ -2080,7 +2135,10 @@ class SmokeTest(unittest.TestCase):
 
         target = Target(category=Target.Category.GPU, runtime=Target.Runtime.VULKAN)
         plan = schedule.create_plan(target)
-        plan.bind((i, ii), grid=(target.GridUnit.BLOCK_X, target.GridUnit.THREAD_X))
+        plan.bind(mapping={
+            i: target.GridUnit.BLOCK_X,
+            ii: target.GridUnit.THREAD_X,
+        })
 
         test_name = "test_gpu_vec_add"
         package = Package()
@@ -2121,7 +2179,10 @@ class SmokeTest(unittest.TestCase):
 
         target = Target(category=Target.Category.GPU, runtime=Target.Runtime.CUDA)
         plan = schedule.create_plan(target)
-        plan.bind((i, ii), grid=(target.GridUnit.BLOCK_X, target.GridUnit.THREAD_X))
+        plan.bind(mapping={
+            i: target.GridUnit.BLOCK_X,
+            ii: target.GridUnit.THREAD_X,
+        })
 
         test_name = "test_gpu_vec_add"
         package = Package()
@@ -2145,14 +2206,9 @@ class SmokeTest(unittest.TestCase):
 
                 v.check_correctness(function.name, before=before, after=after)
 
-    def test_cuda_module_output(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
+    def _add_cuda_copy_kernel(self, package, N, block_x, block_y, target, basename="cuda_copy_kernel"):
+        from accera import Array, Nest, ScalarType
         from accera._lang_python._lang import _MemorySpace
-
-        # Define our vector sizes
-        N = 2048
-        block_x = 16
-        block_y = block_x
 
         In = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
         Out = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
@@ -2166,20 +2222,36 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj = schedule.tile((i, j), (block_x, block_y))
+        ii, jj = schedule.tile({
+            i: block_x,
+            j: block_y
+        })
         schedule.reorder(i, j, ii, jj)
 
-        target = Target(Target.Model.NVIDIA_V100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.cache(In, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.LAST_MAJOR)
+        function = package.add(plan, args=(In, Out), base_name=f"{basename}_{N}_{block_x}_{block_y}")
+        return function
 
+    def test_cuda_module_output(self) -> None:
+        from accera import Package, Target
+
+        N = 2048
+        block_x = 16
+        block_y = block_x
+
+        target = Target(Target.Model.NVIDIA_V100)
         test_name = "test_cuda_module_output"
         package = Package()
-        function = package.add(plan, args=(In, Out), base_name=test_name)
+        function = self._add_cuda_copy_kernel(package, N, block_x, block_y, target, test_name)
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
@@ -2199,14 +2271,42 @@ class SmokeTest(unittest.TestCase):
 
                 v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_ref, Output_ref))
 
-    def test_rocm_module_output(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera._lang_python._lang import _MemorySpace
+    def test_cuda_multiple_funcs(self) -> None:
+        from accera import Package, Target
 
-        # Define our vector sizes
-        N = 32
+        Ns = [1024, 2048]
         block_x = 16
         block_y = block_x
+
+        target = Target(Target.Model.NVIDIA_V100)
+        test_name = "test_cuda_multiple_funcs"
+        package = Package()
+        fs = [self._add_cuda_copy_kernel(package, n, block_x, block_y, target, test_name) for n in Ns]
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir
+            )
+
+            if CUDA_AVAILABLE:
+                for function in fs:
+                    Input_test, Output_test = (
+                        np.random.uniform(-1, 1, p.shape).astype(np.float32) for p in function.args
+                    )
+                    Input_ref = Output_ref = Input_test
+
+                    v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_ref, Output_ref))
+
+    def _add_rocm_copy_kernel(self, package, N, block_x, block_y, target, basename="rocm_copy_kernel"):
+        from accera import Array, Nest, ScalarType
+        from accera._lang_python._lang import _MemorySpace
 
         In = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
         Out = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
@@ -2220,18 +2320,36 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj = schedule.tile((i, j), (block_x, block_y))
-        target = Target(Target.Model.AMD_MI100)
+        ii, jj = schedule.tile({
+            i: block_x,
+            j: block_y
+        })
+
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.cache(In, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.LAST_MAJOR)
+        function = package.add(plan, args=(In, Out), base_name=f"{basename}_{N}_{block_x}_{block_y}")
+        return function
 
+    def test_rocm_module_output(self) -> None:
+        from accera import Package, Target
+
+        # Define our vector sizes
+        N = 32
+        block_x = 16
+        block_y = block_x
+
+        target = Target(Target.Model.AMD_MI100)
         test_name = "test_rocm_module_output"
         package = Package()
-        function = package.add(plan, args=(In, Out), base_name=test_name)
+        function = self._add_rocm_copy_kernel(package, N, block_x, block_y, target, test_name)
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
@@ -2250,6 +2368,39 @@ class SmokeTest(unittest.TestCase):
                 after = [before[0], before[0]]
 
                 v.check_correctness(function.name, before=before, after=after)
+
+    def test_rocm_multiple_funcs(self) -> None:
+        from accera import Package, Target
+
+        Ns = [1024, 2048]
+        block_x = 16
+        block_y = block_x
+
+        target = Target(Target.Model.AMD_MI100)
+        test_name = "test_rocm_multiple_funcs"
+        package = Package()
+        fs = [self._add_rocm_copy_kernel(package, n, block_x, block_y, target, test_name) for n in Ns]
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir
+            )
+
+            if ROCM_AVAILABLE:
+                for function in fs:
+                    Input_test, Output_test = (
+                        np.random.uniform(-1, 1, p.shape).astype(np.float32) for p in function.args
+                    )
+                    Input_ref = Output_ref = Input_test
+
+                    v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_ref, Output_ref))
 
     def test_rocm_tensorize_single_block_single_warp_output(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -2273,16 +2424,27 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj = schedule.tile((i, j), (outer_tile_x, outer_tile_y))
-        iii, jjj, kk = schedule.tile((ii, jj, k), (2, 2, 16))
+        ii, jj = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y
+        })
+        iii, jjj, kk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            k: 16
+        })
 
         schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+            mapping={
+                i: target.GridUnit.BLOCK_Y,
+                j: target.GridUnit.BLOCK_X,
+                ii: target.GridUnit.THREAD_Y,
+                jj: target.GridUnit.THREAD_X
+            }
         )
         plan.tensorize(indices=(iii, jjj, kk))
 
@@ -2330,16 +2492,27 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj = schedule.tile((i, j), (outer_tile_x, outer_tile_y))
-        iii, jjj, kk = schedule.tile((ii, jj, k), (2, 2, 16))
+        ii, jj = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y
+        })
+        iii, jjj, kk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            k: 16
+        })
 
         schedule.reorder((i, j, k, ii, jj, iii, jjj, kk))
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+            mapping={
+                i: target.GridUnit.BLOCK_Y,
+                j: target.GridUnit.BLOCK_X,
+                ii: target.GridUnit.THREAD_Y,
+                jj: target.GridUnit.THREAD_X
+            }
         )
         plan.tensorize(indices=(iii, jjj, kk))
 
@@ -2387,16 +2560,27 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj = schedule.tile((i, j), (outer_tile_x, outer_tile_y))
-        iii, jjj, kk = schedule.tile((ii, jj, k), (2, 2, 16))
+        ii, jj = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y
+        })
+        iii, jjj, kk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            k: 16
+        })
 
         schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+            mapping={
+                i: target.GridUnit.BLOCK_Y,
+                j: target.GridUnit.BLOCK_X,
+                ii: target.GridUnit.THREAD_Y,
+                jj: target.GridUnit.THREAD_X
+            }
         )
         plan.tensorize(indices=(iii, jjj, kk))
 
@@ -2440,16 +2624,27 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj = schedule.tile((i, j), (block_x, block_y))
-        iii, jjj, kk = schedule.tile((ii, jj, k), (tile_size, tile_size, tile_size))
+        ii, jj = schedule.tile({
+            i: block_x,
+            j: block_y
+        })
+        iii, jjj, kk = schedule.tile({
+            ii: tile_size,
+            jj: tile_size,
+            k: tile_size
+        })
 
         schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.tensorize(indices=(iii, jjj, kk))
 
@@ -2508,14 +2703,22 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (m_tile_size, n_tile_size, k_tile_size))
+        ii, jj, kk = schedule.tile({
+            i: m_tile_size,
+            j: n_tile_size,
+            k: k_tile_size
+        })
         schedule.reorder(i, j, k, ii, jj, kk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.cache(A, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
         plan.cache(B, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
@@ -2576,14 +2779,22 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (m_tile_size, n_tile_size, k_tile_size))
+        ii, jj, kk = schedule.tile({
+            i: m_tile_size,
+            j: n_tile_size,
+            k: k_tile_size
+        })
         schedule.reorder(i, j, k, ii, jj, kk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.cache(A, index=ii, double_buffer=True, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
         plan.cache(B, index=ii, double_buffer=True, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
@@ -2645,15 +2856,23 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (m_tile_size, n_tile_size, k_outer_tile_size))
+        ii, jj, kk = schedule.tile({
+            i: m_tile_size,
+            j: n_tile_size,
+            k: k_outer_tile_size
+        })
         kkk = schedule.split(kk, k_inner_tile_size)
         schedule.reorder(i, j, k, kk, ii, jj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.cache(
             A,
@@ -2728,14 +2947,22 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (m_tile_size, n_tile_size, k_tile_size))
+        ii, jj, kk = schedule.tile({
+            i: m_tile_size,
+            j: n_tile_size,
+            k: k_tile_size
+        })
         schedule.reorder(i, j, k, ii, jj, kk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.cache(
             A, index=ii, double_buffer=True, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
@@ -2801,7 +3028,11 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (m_tile_size, n_tile_size, k_outer_tile_size))
+        ii, jj, kk = schedule.tile({
+            i: m_tile_size,
+            j: n_tile_size,
+            k: k_outer_tile_size
+        })
         kkk = schedule.split(kk, k_inner_tile_size)
         schedule.reorder(i, j, k, kk, ii, jj, kkk)
 
@@ -2859,7 +3090,10 @@ class SmokeTest(unittest.TestCase):
 
         target = Target(category=Target.Category.GPU, runtime=Target.Runtime.ROCM)
         plan = schedule.create_plan(target)
-        plan.bind((i, ii), grid=(target.GridUnit.BLOCK_X, target.GridUnit.THREAD_X))
+        plan.bind(mapping={
+            i: target.GridUnit.BLOCK_X,
+            ii: target.GridUnit.THREAD_X,
+        })
 
         test_name = "test_gpu_barrier_opt"
         package = Package()
@@ -2904,16 +3138,27 @@ class SmokeTest(unittest.TestCase):
             C[i, j] += A[i, k] * B[k, j]
 
         schedule = nest.create_schedule()
-        ii, jj = schedule.tile((i, j), (block_x, block_y))
-        iii, jjj, kk = schedule.tile((ii, jj, k), (tile_size, tile_size, tile_size))
+        ii, jj = schedule.tile({
+            i: block_x,
+            j: block_y
+        })
+        iii, jjj, kk = schedule.tile({
+            ii: tile_size,
+            jj: tile_size,
+            k: tile_size
+        })
 
         schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
 
         test_name = "test_rocm_gemm_tiled_output"
@@ -2946,7 +3191,7 @@ class SmokeTest(unittest.TestCase):
             checker.check_label(
                 'extern "C" __global__  __launch_bounds__(1) void test_rocm_gemm_tiled_output_{{.+}}__gpu__(float *arg0, float *arg1, float *arg2'
             )
-            checker.check_count("for (int64_t idx{{[0-9]}} = 0; idx{{[0-9]}} < 16; idx{{[0-9]}} += 1) {", 3)
+            checker.check_count("for (uint32_t idx{{[0-9]}} = 0; idx{{[0-9]}} < 16; idx{{[0-9]}} += 1) {", 3)
             checker.run()
 
             if ROCM_AVAILABLE:
@@ -3966,13 +4211,13 @@ class SmokeTest(unittest.TestCase):
         # Cache input and output arrays
 
         # This cache should not be vectorized
-        plan.cache(A, index=ii, vectorize=False, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(A, index=ii, vectorize=True, layout=Array.Layout.FIRST_MAJOR)
 
         # This cache should be vectorized because a loop in the nest is being vectorized and vectorize is set to AUTO
         plan.cache(B, index=kk, trigger_index=jj, vectorize=AUTO, layout=Array.Layout.FIRST_MAJOR)
 
         # This cache should be vectorized
-        plan.cache(C, index=ii, vectorize=True, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(C, index=ii, vectorize=False, layout=Array.Layout.FIRST_MAJOR)
 
         # Vectorize the innermost loop in the nest
         plan.vectorize(jjjj)
@@ -4010,16 +4255,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.tensorize(indices=(iii, jjj, kkk))
         plan.cache(
@@ -4074,16 +4331,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.tensorize(indices=(iii, jjj, kkk))
         plan.cache(
@@ -4148,16 +4417,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
 
         test_name = "test_rocm_non_square"
@@ -4205,16 +4486,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+            mapping={
+                i: target.GridUnit.BLOCK_Y,
+                j: target.GridUnit.BLOCK_X,
+                ii: target.GridUnit.THREAD_Y,
+                jj: target.GridUnit.THREAD_X
+            }
         )
 
         test_name = "test_rocm_non_square_coalesced"
@@ -4262,16 +4555,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.tensorize(indices=(iii, jjj, kkk))
 
@@ -4320,16 +4625,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.cache(
             A, index=ii, double_buffer=False, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
@@ -4383,16 +4700,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.cache(
             A,
@@ -4456,16 +4785,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.tensorize(indices=(iii, jjj, kkk))
         plan.cache(
@@ -4530,16 +4871,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.tensorize(indices=(iii, jjj, kkk))
         plan.cache(
@@ -4606,16 +4959,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+            mapping={
+                i: target.GridUnit.BLOCK_Y,
+                j: target.GridUnit.BLOCK_X,
+                ii: target.GridUnit.THREAD_Y,
+                jj: target.GridUnit.THREAD_X
+            }
         )
         plan.tensorize(indices=(iii, jjj, kkk))
         plan.cache(
@@ -4682,16 +5047,29 @@ class SmokeTest(unittest.TestCase):
 
     #     schedule = nest.create_schedule()
 
-    #     bb, ii, jj, kk = schedule.tile((b, i, j, k), (outer_tile_b, outer_tile_x, outer_tile_y, outer_tile_k))
-    #     iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+    #     bb, ii, jj, kk = schedule.tile({
+    #         b: outer_tile_b,
+    #         i: outer_tile_x,
+    #         j: outer_tile_y,
+    #         k: outer_tile_k
+    #     })
+    #     iii, jjj, kkk = schedule.tile({
+    #         ii: 2,
+    #         jj: 2,
+    #         kk: 16
+    #     })
 
     #     schedule.reorder(i, j, k, ii, jj, b, kk, bb, iii, jjj, kkk)
 
     #     target = Target(Target.Model.AMD_MI100)
     #     plan = schedule.create_plan(target=target)
     #     plan.bind(
-    #         (i, j, ii, jj),
-    #         grid=(target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_X)
+    #         mapping={
+    #             i: target.GridUnit.BLOCK_Y,
+    #             j: target.GridUnit.BLOCK_X,
+    #             ii: target.GridUnit.THREAD_Y,
+    #             jj: target.GridUnit.THREAD_X
+    #         }
     #     )
     #     plan.tensorize(indices=(iii, jjj, kkk))
     #     plan.cache(
@@ -4757,16 +5135,28 @@ class SmokeTest(unittest.TestCase):
 
     #     schedule = nest.create_schedule()
 
-    #     ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-    #     iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+    #     ii, jj, kk = schedule.tile({
+    #         i: outer_tile_x,
+    #         j: outer_tile_y,
+    #         k: outer_tile_k
+    #     })
+    #     iii, jjj, kkk = schedule.tile({
+    #         ii: 2,
+    #         jj: 2,
+    #         kk: 16
+    #     })
 
     #     schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
     #     target = Target(Target.Model.AMD_MI100)
     #     plan = schedule.create_plan(target=target)
     #     plan.bind(
-    #         (i, j, ii, jj),
-    #         grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+    #         mapping={
+    #             i: target.GridUnit.BLOCK_X,
+    #             j: target.GridUnit.BLOCK_Y,
+    #             ii: target.GridUnit.THREAD_X,
+    #             jj: target.GridUnit.THREAD_Y
+    #         }
     #     )
     #     plan.tensorize(indices=(iii, jjj, kkk))
     #     plan.cache(
@@ -4837,16 +5227,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.tensorize(indices=(iii, jjj, kkk))
         plan.cache(
@@ -4912,16 +5314,28 @@ class SmokeTest(unittest.TestCase):
 
     #     schedule = nest.create_schedule()
 
-    #     ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-    #     iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+    #     ii, jj, kk = schedule.tile({
+    #         i: outer_tile_x,
+    #         j: outer_tile_y,
+    #         k: outer_tile_k
+    #     })
+    #     iii, jjj, kkk = schedule.tile({
+    #         ii: 2,
+    #         jj: 2,
+    #         kk: 16
+    #     })
 
     #     schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
     #     target = Target(Target.Model.AMD_MI100)
     #     plan = schedule.create_plan(target=target)
     #     plan.bind(
-    #         (i, j, ii, jj),
-    #         grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+    #         mapping={
+    #             i: target.GridUnit.BLOCK_X,
+    #             j: target.GridUnit.BLOCK_Y,
+    #             ii: target.GridUnit.THREAD_X,
+    #             jj: target.GridUnit.THREAD_Y
+    #         }
     #     )
     #     plan.tensorize(indices=(iii, jjj, kkk))
     #     plan.cache(
@@ -4992,16 +5406,28 @@ class SmokeTest(unittest.TestCase):
 
     #     schedule = nest.create_schedule()
 
-    #     ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-    #     iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+    #     ii, jj, kk = schedule.tile({
+    #         i: outer_tile_x,
+    #         j: outer_tile_y,
+    #         k: outer_tile_k
+    #     })
+    #     iii, jjj, kkk = schedule.tile({
+    #         ii: 2,
+    #         jj: 2,
+    #         kk: 16
+    #     })
 
     #     schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
     #     target = Target(Target.Model.AMD_MI100)
     #     plan = schedule.create_plan(target=target)
     #     plan.bind(
-    #         (i, j, ii, jj),
-    #         grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+    #         mapping={
+    #             i: target.GridUnit.BLOCK_X,
+    #             j: target.GridUnit.BLOCK_Y,
+    #             ii: target.GridUnit.THREAD_X,
+    #             jj: target.GridUnit.THREAD_Y
+    #         }
     #     )
     #     plan.cache(C, index=iii, location=target.MemorySpace.PRIVATE, layout=Array.Layout.FIRST_MAJOR)
 
@@ -5175,16 +5601,28 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
         )
         plan.tensorize(indices=(iii, jjj, kkk))
 
@@ -5233,17 +5671,27 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj, kk = schedule.tile((i, j, k), (outer_tile_x, outer_tile_y, outer_tile_k))
-        iii, jjj, kkk = schedule.tile((ii, jj, kk), (2, 2, 16))
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
         schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
-        plan.bind(
-            (i, j, ii, jj),
-            grid=(target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y)
-        )
+        plan.bind({
+            i: target.GridUnit.BLOCK_X,
+            j: target.GridUnit.BLOCK_Y,
+            ii: target.GridUnit.THREAD_X,
+            jj: target.GridUnit.THREAD_Y
+        })
         plan.tensorize(indices=(iii, jjj, kkk))
         plan.cache(
             A,

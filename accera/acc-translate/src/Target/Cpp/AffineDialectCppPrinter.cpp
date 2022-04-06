@@ -220,7 +220,7 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult AffineDialectCppPrinter::printPrologue()
+    LogicalResult AffineDialectCppPrinter::printDeclarations()
     {
         // print affine-map funcs in order (i.e. from 0 to the end)
         llvm::SmallVector<std::pair<AffineMap, StringRef>, 0> sortedMapFuncs;

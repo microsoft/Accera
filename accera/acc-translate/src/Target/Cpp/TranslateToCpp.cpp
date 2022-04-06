@@ -21,9 +21,9 @@ using namespace llvm;
 namespace mlir
 {
 
-LogicalResult translateModuleToCpp(Operation* m, raw_ostream& os)
+LogicalResult translateModuleToCpp(Operation* m, raw_ostream& os, int indexBitwidth)
 {
-    cpp_printer::CppPrinter printer(os); 
+    cpp_printer::CppPrinter printer(os, indexBitwidth);
 #if 1
     auto context = m->getContext();
 
@@ -32,13 +32,13 @@ LogicalResult translateModuleToCpp(Operation* m, raw_ostream& os)
     optPM.addPass(memref::createFoldSubViewOpsPass());
     optPM.addPass(createAffineScalarReplacementPass());
     pm.addPass(accera::transforms::value::createRangeValueOptimizePass());
-    pm.addPass(createCSEPass()); 
+    pm.addPass(createCSEPass());
     pm.addPass(createCanonicalizerPass());
 
     if (failed(pm.run(m)))
     {
         return failure();
-    }  
+    }
 #endif
     return printer.process(m);
 }

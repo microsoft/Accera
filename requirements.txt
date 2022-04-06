@@ -7,9 +7,6 @@ pybind11>=2.6.0
 six<=1.14
 conan
 lit
-mkdocs-material
 packaging
-plotly
-kaleido
 hatlib
 varname

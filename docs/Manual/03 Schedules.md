@@ -1,8 +1,8 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: v1.2.3)
 
 # Section 3: Schedules
-We begin with `nest` from [Section 2](<02%20Simple%20Affine%20Loop%20Nests.md>) which captures the logic of matrix-matrix multiplication. We use `nest` to create a `Schedule` that controls the execution order of the nest's iterations. Schedules are target-independent in the sense that the same schedule can be used to emit code for multiple target platforms. 
+We begin with `nest` from [Section 2](<02%20Simple%20Affine%20Loop%20Nests.md>) which captures the logic of matrix-matrix multiplication. We use `nest` to create a `Schedule` that controls the execution order of the nest's iterations. Schedules are target-independent in the sense that the same schedule can be used to emit code for multiple target platforms.
 
 We create a default schedule as follows:
 ```python
@@ -16,7 +16,7 @@ for i in range(16):
         for k in range(11):
             C[i, j] += A[i, k] * B[k, j]
 ```
-In other words, each of the logical pseudo-code loops in `nest` becomes an actual for-loop in the default schedule. 
+In other words, each of the logical pseudo-code loops in `nest` becomes an actual for-loop in the default schedule.
 
 We can now transform this schedule in various ways. However, these transformations do not change the underlying logic defined in `nest` and merely change the order of the loop iterations. We can even generate as many independent schedules as we want by calling `nest.create_schedule()`.
 
@@ -24,7 +24,7 @@ We can now transform this schedule in various ways. However, these transformatio
 In the Accera programming model, a schedule is geometrically interpreted as a multi-dimensional discrete hypercube called the *iteration space* of the nest. The elements of the iteration space represent the individual iterations of the loop nest. Initially, the dimensions of the iteration space correspond to the logical loops defined in `nest`. For example, the default iteration space for the matrix-matrix multiplication nest forms a three-dimensional discrete hypercube, whose shape is (16, 10, 11).
 
 ### How does an iteration space imply an order over the iterations?
-The dimensions of the iteration space are ordered, and this order corresponds to the original order of the logical loops in `nest` by default. In fact, the order over the dimensions induces a lexicographic sequence over the individual elements of the iteration space. 
+The dimensions of the iteration space are ordered, and this order corresponds to the original order of the logical loops in `nest` by default. In fact, the order over the dimensions induces a lexicographic sequence over the individual elements of the iteration space.
 
 This geometric interpretation of schedules helps us visualize how different transformations modify them. While some transformations merely rearrange the elements of the iteration space, others increase its dimensions, and some even pad the space with empty (no-op) elements. The transformed iteration space defines a new lexicographic order over the individual iterations.
 
@@ -39,7 +39,7 @@ Comment: Accera's geometric interpretation of schedules resembles the *iteration
 When we defined `nest`, we used variables such as `i`, `j`, and `k` to name the loops in the loop-nest. When we described the default schedule using equivalent for-loops, `i`, `j`, and `k` became the index variables of those loops. Now, when we represent a schedule as an iteration space, these variables are used as the names of the corresponding iteration space dimensions. From here on, we move seamlessly between these different representations and use the terms *loop*, *index*, and *dimension* interchangeably.
 
 ## Schedule transformations
-Iteration space transformations change the shape of the iteration space, possibly by adding dimensions or padding the space with empty elements. 
+Iteration space transformations change the shape of the iteration space, possibly by adding dimensions or padding the space with empty elements.
 
 The iterations space always retains its rectilinear (hypercube) shape. In some cases, Accera transformations must pad the iteration space with empty elements to avoid reaching a jagged iteration space structure.
 
@@ -63,7 +63,7 @@ for k in range(11):
             C[i, j] += A[i, k] * B[k, j]
 ```
 
-However, some orders are not allowed. Describing these restrictions in full will require concepts that are yet to be introduced. Therefore, we are stating these restrictions here and will discuss them later in the upcoming sections. The restrictions are: 
+However, some orders are not allowed. Describing these restrictions in full will require concepts that are yet to be introduced. Therefore, we are stating these restrictions here and will discuss them later in the upcoming sections. The restrictions are:
 1. The *inner dimension* created by a `split` transformation (see below) must be ordered later than its corresponding *outer dimension*.
 2. The *fusing dimension* created by a `fuse` operation (see [Section 4](<04%20Fusing.md>)) must always precede any *unfused dimensions*.
 
@@ -153,7 +153,7 @@ kk = schedule.split(k, 11) # original size of dimension k was 11
 ```
 After the split, the size of `k` becomes 1 and the size of `kk` is `11`. The new shape of the iteration space is (16, 10, 1, 11). The dimension `k` becomes meaningless and therefore the schedule is basically unchanged.
 
-If the split size exceeds the dimension size, Accera will treat it as if the split size doesn't divide the dimension size. This special case is handled by adding empty elements. For example, 
+If the split size exceeds the dimension size, Accera will treat it as if the split size doesn't divide the dimension size. This special case is handled by adding empty elements. For example,
 ```python
 schedule = nest.create_schedule()
 kk = schedule.split(k, 13)  # original size of dimension k was 11
@@ -166,7 +166,11 @@ Finally, note that `kk = schedule.split(k, 1)` simply adds a meaningless new dim
 The `tile` transformation is a convenience syntax and does not provide any unique functionality. Consider the following code
 ```python
 schedule = nest.create_schedule()
-ii, jj, kk = schedule.tile((i, j, k), (8, 2, 3))
+ii, jj, kk = schedule.tile({
+    i: 8,
+    j: 2,
+    k: 3
+})
 ```
 The `tile` transformation above is shorthand for the following sequence of transformations:
 ```python
@@ -179,7 +183,7 @@ It will result in a sequence of indices that are ordered as:
 ```
 (i, ii, j, jj, k, kk)
 ```
-In other words, the `tile` transformation takes a tuple of indices and a tuple of sizes, splitting each index by the corresponding size. The indices involved in the split are then reordered such that each of the outer indices (parent index) precedes its inner indices (child index). On the other hand, indices that did not participate in the transformation retain their relative positions.
+In other words, the `tile` transformation takes a tuple of indices and a tuple of sizes, splitting each index by the corresponding size. The indices involved in the split are then ordered such that each of the outer indices (parent index) precedes its inner indices (child index). On the other hand, indices that did not participate in the transformation retain their relative positions.
 
 ### `skew`
 ```python

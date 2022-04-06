@@ -1,4 +1,5 @@
 [//]: # (Project: Accera)
+[//]: # (Version: v1.2.3)
 
 ## Installing on Windows
 

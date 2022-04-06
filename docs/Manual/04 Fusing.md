@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: v1.2.3)
 
 # Section 4: Fusing
 With `fuse` operation, multiple schedules can be combined into a single schedule representing the union of the work in the original schedules. These fused schedules can be transformed by any of the transformations presented in [Section 3](<03%20Schedules.md>).
@@ -100,7 +100,10 @@ for i in range(16):
 
 Recall that we discussed computing the output block-by-block: first computing `C[0:4, 0:4] += A[0:4, 0:4]`, then computing `C[0:4, 0:4] *= B[0:4, 0:4]`, and so on. This can be achieved with the following sequence of transformations:
 ```python
-ii, jj = schedule.tile((i, j), (4, 4))
+ii, jj = schedule.tile({
+    i: 4,
+    j: 4
+})
 schedule.reorder(i, j, f, ii, jj)
 ```
 The resulting `schedule` is equivalent to the following Python code:
@@ -311,7 +314,10 @@ The advantage of this schedule is that only one element of `C` is active at any 
 
 Similarly, we can compute a 4&times;2 block of `C`. Do all the work that uses this block and then move on to the next block:
 ```python
-ii, jj = schedule.tile((i, j), (4, 2))
+ii, jj = schedule.tile({
+    i: 4,
+    j: 2
+})
 schedule.reorder(i, j, f, ii, jj, k0, j1)
 ```
 This schedule is equivalent to the following Python code:

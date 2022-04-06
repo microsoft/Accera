@@ -1047,7 +1047,7 @@ namespace executionPlan
         size_t offsetIdxCount = cacheOffsetAccessIndices.size();
 
         auto operands = op.getMapOperands().drop_front(multiCacheIdxCount + offsetIdxCount);
- 
+
         return std::vector<mlir::Value>(operands.begin(), operands.end());
     }
 
@@ -1205,37 +1205,6 @@ namespace executionPlan
               srcContext.accessMaps.relevantIndicesToActiveElementCache,
               srcContext.accessMaps.relevantIndicesToInput,
               llvm::None); // scaleValues
-    }
-
-    //
-    // ActiveBlockCacheReduceOp
-    //
-    void ActiveBlockCacheReduceOp::build(OpBuilder& builder,
-                                         OperationState& result,
-                                         Value array,
-                                         Value cache,
-                                         ValueRange lbOperands,
-                                         ValueRange ubOperands,
-                                         mlir::ArrayAttr lbMaps,
-                                         mlir::ArrayAttr ubMaps,
-                                         AffineMap activeBlockToCacheMap,
-                                         StringRef activeBlockTag,
-                                         bool thrifty,
-                                         const VectorizationInfo& vecInfo)
-    {
-        build(builder,
-              result,
-              array,
-              cache,
-              lbOperands,
-              ubOperands,
-              lbMaps,
-              ubMaps,
-              activeBlockToCacheMap,
-              llvm::None, // scaleValues
-              activeBlockTag,
-              thrifty,
-              VectorizationInfoAttr::get(vecInfo, builder.getContext()));
     }
 
     //

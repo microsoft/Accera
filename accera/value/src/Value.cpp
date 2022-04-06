@@ -273,6 +273,12 @@ namespace value
             [[fallthrough]];
         case ValueType::Int64:
             [[fallthrough]];
+        case ValueType::Uint16:
+            [[fallthrough]];
+        case ValueType::Uint32:
+            [[fallthrough]];
+        case ValueType::Uint64:
+            [[fallthrough]];
         case ValueType::Index:
             return true;
         default:
@@ -282,6 +288,8 @@ namespace value
 
     bool Value::IsBoolean() const { return _type.first == ValueType::Boolean; }
 
+    bool Value::IsByte() const { return _type.first == ValueType::Byte; }
+
     bool Value::IsInt8() const { return _type.first == ValueType::Int8; }
 
     bool Value::IsInt16() const { return _type.first == ValueType::Int16; }
@@ -289,6 +297,12 @@ namespace value
     bool Value::IsInt32() const { return _type.first == ValueType::Int32; }
 
     bool Value::IsInt64() const { return _type.first == ValueType::Int64; }
+
+    bool Value::IsUint16() const { return _type.first == ValueType::Uint16; }
+
+    bool Value::IsUint32() const { return _type.first == ValueType::Uint32; }
+
+    bool Value::IsUint64() const { return _type.first == ValueType::Uint64; }
 
     bool Value::IsIndex() const { return _type.first == ValueType::Index; }
 
@@ -367,7 +381,11 @@ namespace value
             ADD_TO_STRING_ENTRY(ValueType, Int16);
             ADD_TO_STRING_ENTRY(ValueType, Int32);
             ADD_TO_STRING_ENTRY(ValueType, Int64);
+            ADD_TO_STRING_ENTRY(ValueType, Uint16);
+            ADD_TO_STRING_ENTRY(ValueType, Uint32);
+            ADD_TO_STRING_ENTRY(ValueType, Uint64);
             ADD_TO_STRING_ENTRY(ValueType, Index);
+            ADD_TO_STRING_ENTRY(ValueType, Float16);
             ADD_TO_STRING_ENTRY(ValueType, Float);
             ADD_TO_STRING_ENTRY(ValueType, Double);
 
@@ -387,7 +405,11 @@ namespace value
         ADD_FROM_STRING_ENTRY(ValueType, Int16);
         ADD_FROM_STRING_ENTRY(ValueType, Int32);
         ADD_FROM_STRING_ENTRY(ValueType, Int64);
+        ADD_FROM_STRING_ENTRY(ValueType, Uint16);
+        ADD_FROM_STRING_ENTRY(ValueType, Uint32);
+        ADD_FROM_STRING_ENTRY(ValueType, Uint64);
         ADD_FROM_STRING_ENTRY(ValueType, Index);
+        ADD_FROM_STRING_ENTRY(ValueType, Float16);
         ADD_FROM_STRING_ENTRY(ValueType, Float);
         ADD_FROM_STRING_ENTRY(ValueType, Double);
 

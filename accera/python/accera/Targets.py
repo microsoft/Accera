@@ -94,7 +94,24 @@ KNOWN_CPUS = [
     # Xeon High-end desktop processors (Skylake-X)
     ["Intel W-3175X", "Skylake-X",   "Xeon", 3.1, {2: 3.8, 1: 4.3}, 28, 56, [32, 1024, 38.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
 
+    # Xeon desktop processors (Skylake-W)
+    # ref: https://en.wikipedia.org/wiki/List_of_Intel_Skylake-based_Xeon_microprocessors#%22Skylake-W%22_(14_nm)
+    ["Intel W-2102", "Skylake-W", "Xeon", 2.9, 0.0, 4, 4, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2104", "Skylake-W", "Xeon", 3.2, 0.0, 4, 4, [32, 1024, 24.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2123", "Skylake-W", "Xeon", 3.6, 3.9, 4, 8, [32, 1024, 22.00 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2125", "Skylake-W", "Xeon", 4.0, 4.5, 4, 8, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2133", "Skylake-W", "Xeon", 3.6, 3.9, 6, 12, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2135", "Skylake-W", "Xeon", 3.7, 4.5, 6, 12, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2140B","Skylake-W", "Xeon", 3.2, 4.2, 8, 16, [32, 1024, 16.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+
     # TODO: Fill in Mobile, Workstation, Server, Skylake-SP Processors
+
+    # Xeon Skylake-SP
+    # ref: https://en.wikipedia.org/wiki/List_of_Intel_Skylake-based_Xeon_microprocessors
+    ["Intel 4108",  "Skylake", "Xeon Silver", 1.8, 3.0, 8, 16, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 4109T", "Skylake", "Xeon Silver", 2.0, 3.0, 8, 16, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 4110",  "Skylake", "Xeon Silver", 2.1, 3.0, 8, 16, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 4112",  "Skylake", "Xeon Silver", 2.6, 3.0, 4, 8,  [32, 1024, 16.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
 
     # Intel Kaby Lake
     # ref: https://en.wikipedia.org/wiki/Kaby_Lake
@@ -137,6 +154,11 @@ KNOWN_CPUS = [
 
     ["Intel E3-1225 v6", "Kaby Lake", "Xeon", 3.3, {1: 3.7}, 4, 4, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["Intel E3-1220 v6", "Kaby Lake", "Xeon", 3.0, {1: 3.5}, 4, 4, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+
+    # Intel Kaby Lake Refresh
+    # https://en.wikipedia.org/wiki/List_of_Intel_Core_i7_processors
+    ["Intel 8550U", "Kaby Lake R", "Core i7", 1.8, 4.0, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel 8650U", "Kaby Lake R", "Core i7", 1.9, 4.2, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
 
     # TODO: Fill in remaining Kaby Lake data
 
@@ -217,13 +239,13 @@ KNOWN_CPUS = [
     # TODO: Fill in Pentium, Celeron Processors
 
     # Workstation processors
-    ["Intel 1290P", "Comet Lake", "Xeon W", 3.7, {i+1:4.8 for i in range(10)}, 10, 20, [32, 356, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
-    ["Intel 1290",  "Comet Lake", "Xeon W", 3.2, {i+1:4.6 for i in range(10)}, 10, 20, [32, 356, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
-    ["Intel 1290T", "Comet Lake", "Xeon W", 1.9, {i+1:3.8 for i in range(10)}, 10, 20, [32, 356, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
-    ["Intel 1270P", "Comet Lake", "Xeon W", 3.8, {i+1:4.7 for i in range(10)}, 10, 20, [32, 356, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
-    ["Intel 1270",  "Comet Lake", "Xeon W", 3.4, {i+1:4.7 for i in range(10)}, 10, 20, [32, 356, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
-    ["Intel 1250P", "Comet Lake", "Xeon W", 4.1, {i+1:4.5 for i in range(10)}, 10, 20, [32, 356, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
-    ["Intel 1250",  "Comet Lake", "Xeon W", 3.3, {i+1:4.4 for i in range(10)}, 10, 20, [32, 356, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel W-1290P", "Comet Lake", "Xeon W", 3.7, {i+1:4.8 for i in range(10)}, 10, 20, [32, 356, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel W-1290",  "Comet Lake", "Xeon W", 3.2, {i+1:4.6 for i in range(10)}, 10, 20, [32, 356, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel W-1290T", "Comet Lake", "Xeon W", 1.9, {i+1:3.8 for i in range(10)}, 10, 20, [32, 356, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel W-1270P", "Comet Lake", "Xeon W", 3.8, {i+1:4.7 for i in range(10)}, 10, 20, [32, 356, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel W-1270",  "Comet Lake", "Xeon W", 3.4, {i+1:4.7 for i in range(10)}, 10, 20, [32, 356, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel W-1250P", "Comet Lake", "Xeon W", 4.1, {i+1:4.5 for i in range(10)}, 10, 20, [32, 356, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel W-1250",  "Comet Lake", "Xeon W", 3.3, {i+1:4.4 for i in range(10)}, 10, 20, [32, 356, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
 
     # TODO: Fill in remaining Comet Lake data
 
@@ -251,13 +273,13 @@ KNOWN_CPUS = [
     ["Intel 11900",   "Rocket Lake", "Core i9", 2.5, {**{i+1:4.7 for i in range(8)}, **{1: 5.0}, **{2: 5.1}}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
 
     # Workstation processors
-    ["Intel 1350",  "Rocket Lake", "Xeon W", 3.3, {i+1:5.0 for i in range(6)}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel 1350P", "Rocket Lake", "Xeon W", 4.0, {i+1:5.1 for i in range(6)}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel 1370",  "Rocket Lake", "Xeon W", 2.9, {i+1:5.1 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel 1370P", "Rocket Lake", "Xeon W", 3.6, {i+1:5.2 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel 1390",  "Rocket Lake", "Xeon W", 2.8, {i+1:5.2 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel 1390P", "Rocket Lake", "Xeon W", 3.5, {i+1:5.3 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel 1390T", "Rocket Lake", "Xeon W", 1.5, {i+1:4.9 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-1350",  "Rocket Lake", "Xeon W", 3.3, {i+1:5.0 for i in range(6)}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-1350P", "Rocket Lake", "Xeon W", 4.0, {i+1:5.1 for i in range(6)}, 6, 12, [48, 512, 12 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-1370",  "Rocket Lake", "Xeon W", 2.9, {i+1:5.1 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-1370P", "Rocket Lake", "Xeon W", 3.6, {i+1:5.2 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-1390",  "Rocket Lake", "Xeon W", 2.8, {i+1:5.2 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-1390P", "Rocket Lake", "Xeon W", 3.5, {i+1:5.3 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-1390T", "Rocket Lake", "Xeon W", 1.5, {i+1:4.9 for i in range(8)}, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
 
     # Server processors
     ["Intel 2314",  "Rocket Lake", "Xeon E", 2.8, {1: 4.5}, 4, 4, [48, 512, 8 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
@@ -390,6 +412,32 @@ KNOWN_CPUS = [
     ["Intel 8280L", "Cascade Lake", "Xeon Platinum", 2.7, {28: 4.0}, 28, 56, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
     ["Intel 8280M", "Cascade Lake", "Xeon Platinum", 2.7, {28: 4.0}, 28, 56, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
     ["Intel 8284",  "Cascade Lake", "Xeon Platinum", 3.0, {28: 4.0}, 28, 56, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+
+    # Intel Tiger Lake
+    # ref: https://en.wikipedia.org/wiki/Tiger_Lake
+    # Desktop processors
+    ["Intel 11900KB", "Tiger Lake", "Core i9", 3.3, 4.9, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel 11700B",  "Tiger Lake", "Core i7", 3.2, 4.8, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel 11500B",  "Tiger Lake", "Core i5", 3.3, 4.6, 6, 12, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel 11100B",  "Tiger Lake", "Core i3", 3.6, 4.4, 4, 8,  [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+
+    # Mobile processors
+    ["Intel 1195G7",  "Tiger Lake", "Core i7", 2.9, 5.0, 4, 8, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 1185G7",  "Tiger Lake", "Core i7", 3.0, 4.8, 4, 8, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 1165G7",  "Tiger Lake", "Core i7", 2.8, 4.7, 4, 8, [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 1155G7",  "Tiger Lake", "Core i5", 2.5, 4.5, 4, 8,  [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 1145G7",  "Tiger Lake", "Core i5", 2.6, 4.4, 4, 8,  [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 1135G7",  "Tiger Lake", "Core i5", 2.4, 4.2, 4, 8,  [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 1125G7",  "Tiger Lake", "Core i3", 2.0, 3.7, 4, 8,  [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 1115G7",  "Tiger Lake", "Core i3", 3.0, 4.1, 2, 4,  [48, 512, 16 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 7505",    "Tiger Lake", "Pentium Gold", 2.0, 3.5, 2, 4,  [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel 6035",    "Tiger Lake", "Celeron", 1.8, 0.0, 2, 2,  [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+
+    # Intel Haswell
+    # ref: https://en.wikipedia.org/wiki/List_of_Intel_Haswell-based_Xeon_microprocessors
+    ["Intel E5-1650v3",  "Haswell", "Xeon E5", 3.5, 3.8, 6, 12, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel E5-1660v3",  "Haswell", "Xeon E5", 3.0, 3.5, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel E5-1680v3",  "Haswell", "Xeon E5", 3.2, 3.8, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
 
     # AMD Zen
     # ref: https://en.wikipedia.org/wiki/Zen_(first_generation)

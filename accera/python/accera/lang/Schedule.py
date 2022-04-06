@@ -243,11 +243,11 @@ class Schedule:
 
         self._indices = indices
 
-    def tile(self, indices: Tuple[LoopIndex], shape: Tuple[Union[int, DelayedParameter]]) -> Tuple[LoopIndex]:
-        """The `tile` transformation is a convenience syntax that takes a tuple of indices and a tuple of sizes, and splits each index by the corresponding size.
-        The indices involved in the split are then reordered such that all the outer indices precede all of the inner indices.
+    def tile(self, shape=Mapping[LoopIndex, Union[int, DelayedParameter]]) -> Tuple[LoopIndex]:
+        """The `tile` transformation is a convenience syntax that takes a dict of indices and sizes, and splits each index by the corresponding size.
+        The indices involved in the split are then ordered such that all the outer indices precede all of their respective inner indices.
 
-            ii, jj, kk = schedule.tile((i, j, k), (8, 2, 3))
+            ii, jj, kk = schedule.tile({i: 8, j: 2, k: 3})
 
         The tile transformation above is shorthand for the following sequence of transformations:
 
@@ -258,18 +258,12 @@ class Schedule:
             kk = schedule.split(k, 3)
 
         Args:
-            indices: The indices to tile
-            shape: The tile sizes
+            shape: Mapping of indices to tile sizes
         """
-
-        if len(indices) != len(shape):
-            raise ValueError("indices and shape must be the same length")
-
-        indices = list(map(self._resolve_index, indices))
 
         # split for each index and it will automatically place the inner child index after its parent
         # self._indices is updated in-place.
-        split_indices = [self.split(idx, factor) for idx, factor in zip(indices, shape)]
+        split_indices = [self.split(self._resolve_index(idx), factor) for idx, factor in shape.items()]
 
         return split_indices
 
@@ -359,8 +353,8 @@ class Schedule:
     # If this function is updated to return something, fused schedule needs to be updated as well
     def _replay_delayed_calls(self):
         '''
-        This method is called once per adding function, so it can be called multiple times when  
-        multiple functions get added. In order for the functions to be added correctly, we need to make sure all 
+        This method is called once per adding function, so it can be called multiple times when
+        multiple functions get added. In order for the functions to be added correctly, we need to make sure all
         the residual states are cleared between different method calls.
 
         In Schedule class, we identify that Schedule._index_map can have residual states, so we need to reset self._index_map
@@ -443,12 +437,14 @@ class Schedule:
         index_map_copy = {}
         for index, entry in index_map.items():
             inners_copy = [idx for idx in entry.inners]
-            index_map_copy[index] = IndexEntry(entry.stop, entry.start, entry.step, inners_copy, entry.parent, entry.transform)
+            index_map_copy[index] = IndexEntry(
+                entry.stop, entry.start, entry.step, inners_copy, entry.parent, entry.transform
+            )
 
         return index_map_copy
 
-class FusedSchedule(Schedule):
 
+class FusedSchedule(Schedule):
     def __init__(self, schedules: List[Schedule], partial: int = None):
 
         s_indices = [s.get_indices() for s in schedules]

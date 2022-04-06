@@ -41,6 +41,9 @@ namespace value
                 std::vector<int16_t>,
                 std::vector<int32_t>,
                 std::vector<int64_t>,
+                std::vector<uint16_t>,
+                std::vector<uint32_t>,
+                std::vector<uint64_t>,
                 std::vector<index_t>,
                 std::vector<float16_t>,
                 std::vector<float>,
@@ -315,6 +318,9 @@ namespace value
         /// <summary> Returns true if the instance's type is an 8-bit int </summary>
         bool IsInt8() const;
 
+        /// <summary> Returns true if the instance's type is an 8-bit unsigned int </summary>
+        bool IsByte() const;
+
         /// <summary> Returns true if the instance's type is a 16-bit int </summary>
         bool IsInt16() const;
 
@@ -323,6 +329,15 @@ namespace value
 
         /// <summary> Returns true if the instance's type is a 64-bit int </summary>
         bool IsInt64() const;
+
+        /// <summary> Returns true if the instance's type is a 16-bit unsigned int </summary>
+        bool IsUint16() const;
+
+        /// <summary> Returns true if the instance's type is a 32-bit unsigned int </summary>
+        bool IsUint32() const;
+
+        /// <summary> Returns true if the instance's type is a 64-bit unsigned int </summary>
+        bool IsUint64() const;
 
         /// <summary> Returns true if the instance's type is an index </summary>
         bool IsIndex() const;

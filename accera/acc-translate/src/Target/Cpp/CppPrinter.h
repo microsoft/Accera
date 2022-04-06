@@ -174,6 +174,8 @@ namespace cpp_printer
 
         // TODO: add more state kinds
         Runtime runtimesDetected = Runtime::NONE;
+
+        int indexBitwidth = 0;
     };
 
     /// Print the given MLIR into C++ code. Formatting is not a concern
@@ -184,8 +186,11 @@ namespace cpp_printer
     /// the operations from the corresponding dialect.
     struct CppPrinter
     {
-        explicit CppPrinter(llvm::raw_ostream& os_ /* , bool cuda */) :
-            os(os_) /* , state.hasRuntime(Runtime::CUDA)(cuda)  */ {}
+        explicit CppPrinter(llvm::raw_ostream& os_, int indexBitwidth) :
+            os(os_)
+        {
+            getPrinterState().indexBitwidth = indexBitwidth;
+        }
 
         // Begin processing top-level operation
         LogicalResult process(mlir::Operation*);
@@ -227,7 +232,7 @@ namespace cpp_printer
         LogicalResult printType(Type type);
 
         /// Print IndexType
-        LogicalResult printIndexType(IndexType idxType);
+        LogicalResult printIndexType();
 
         /// Print IntegerType. When forceSignedness is true, the signed-ness of
         /// the generated IntegerType will be based on isSigned. Otherwise,

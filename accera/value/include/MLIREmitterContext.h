@@ -171,7 +171,7 @@ namespace value
 
         Matrix MFMAComputeImpl(Matrix A, Matrix B, Matrix C) override;
 
-        Scalar CastImpl(Scalar value, ValueType type, bool srcSigned);
+        Scalar CastImpl(Scalar value, ValueType type, bool doSignedCast);
         Scalar CastImpl(Scalar value, ValueType type) override;
 
         Scalar UnsignedCastImpl(Scalar value, ValueType type) override;

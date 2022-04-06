@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: v1.2.3)
 
 # Section 2: Simple affine loop nests
 This section introduces *loop nests* and their different types that are provided in Accera programming model.
@@ -86,24 +86,20 @@ The iteration logic can include the following operations (assuming `accera` was 
 
 | Operation | Types (Operands must be of same type)  | Description  |
 |----------|----------|--------------|
-| `a = b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Assigns the value of scalar *b* to scalar *a* |
-
-__Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
+| `a = b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Assigns the value of scalar *b* to scalar *a* |
 
 ### Arithmetic operators
 
 | Operation | Types (Operands must be of same type)  | Description  |
 |----------|----------|--------------|
-| `a + b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the sum of scalars *a* and *b* |
-| `a - b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the difference between scalars *a* and *b* |
-| `a * b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the product of scalars *a* and *b* |
-| `a / b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the quotient of scalars *a* and *b*. If the operands are integers, an integer division result is returned |
-| `a ** b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the *b*'th power of scalar *a* |
-| `a // b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the floor of the quotient of scalars *a* and *b* |
-| `a % b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the signed remainder after dividing scalar *a* by scalar *b* |
-| `-a` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the additive inverse of scalar *a* |
-
-__Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
+| `a + b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the sum of scalars *a* and *b* |
+| `a - b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the difference between scalars *a* and *b* |
+| `a * b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the product of scalars *a* and *b* |
+| `a / b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the quotient of scalars *a* and *b*. If the operands are integers, an integer division result is returned |
+| `a ** b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the *b*'th power of scalar *a* |
+| `a // b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the floor of the quotient of scalars *a* and *b* |
+| `a % b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the signed remainder after dividing scalar *a* by scalar *b* |
+| `-a` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the additive inverse of scalar *a* |
 
 Comment: Accera also supports the corresponding compound-assignment operators, such as `a += b`, `a -= b`, etc.
 
@@ -111,47 +107,41 @@ Comment: Accera also supports the corresponding compound-assignment operators, s
 
 | Operation | Types (Operands must be of same type) | Description  |
 |----------|----------|--------------|
-| `a == b` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* equals scalar *b*, else False |
-| `a != b` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is not equal to scalar *b*, else False |
-| `a < b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is strictly smaller than scalar *b*, else False |
-| `a <= b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is smaller than or equal to scalar *b*, else False |
-| `a > b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is strictly greater than scalar *b*, else False |
-| `a >= b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is greater than or equal to scalar *b*, else False |
-
-__Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
+| `a == b` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* equals scalar *b*, else False |
+| `a != b` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is not equal to scalar *b*, else False |
+| `a < b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is strictly smaller than scalar *b*, else False |
+| `a <= b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is smaller than or equal to scalar *b*, else False |
+| `a > b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is strictly greater than scalar *b*, else False |
+| `a >= b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalar *a* is greater than or equal to scalar *b*, else False |
 
 ### Logical operators
 
 | Operation  | Types (Operands must be of same type) | Description  |
 |----------|----------|--------------|
-| `acc.logical_and(a, b)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalars *a* and *b* are non-zero, else False |
-| `acc.logical_or(a, b)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if either scalar *a* or scalar *b* are non-zero, else False |
-| `acc.logical_not(a)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if *a* is zero, else False |
-
-__Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
+| `acc.logical_and(a, b)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if scalars *a* and *b* are non-zero, else False |
+| `acc.logical_or(a, b)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if either scalar *a* or scalar *b* are non-zero, else False |
+| `acc.logical_not(a)` | `acc.ScalarType.bool, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if *a* is zero, else False |
 
 ### Bitwise operators
 
 | Operation  | Types (Operands must be of same type) | Description  |
 |----------|----------|--------------|
-| `a & b` | `acc.ScalarType.int8/16/32/64` | Returns the bitwise AND of the bits in scalars *a* and *b* |
-| `a \| b` | `acc.ScalarType.int8/16/32/64` | Returns the bitwise OR of the bits in scalars *a* and *b* |
-| `a ^ b` | `acc.ScalarType.int8/16/32/64` | Returns the bitwise XOR of the bits in scalars *a* and *b* |
-| `~a` | `acc.ScalarType.int8/16/32/64` | Returns the bitwise inverse of the bits in scalar *a* |
-| `a << b` | `acc.ScalarType.int8/16/32/64` | Returns scalar *a* whose bitwise representation is shifted left by *b* bits |
-| `a >> b` | `acc.ScalarType.int8/16/32/64` | Returns scalar *a* whose bitwise representation is shifted right by *b* bits |
+| `a & b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns the bitwise AND of the bits in scalars *a* and *b* |
+| `a \| b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns the bitwise OR of the bits in scalars *a* and *b* |
+| `a ^ b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns the bitwise XOR of the bits in scalars *a* and *b* |
+| `~a` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns the bitwise inverse of the bits in scalar *a* |
+| `a << b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns scalar *a* whose bitwise representation is shifted left by *b* bits |
+| `a >> b` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns scalar *a* whose bitwise representation is shifted right by *b* bits |
 
 Comment: Accera also supports the corresponding compound-assignment operators, such as `a &= b`, `a |= b`, etc.
-
-__Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
 ### Intrinsics
 
 | Operation  | Types (Operands must be of same type) | Description  |
 |----------|----------|--------------|
 | `acc.abs(a)` | `acc.ScalarType.float16/32/64` | Returns the absolute value of scalar *a* |
-| `acc.max(a, b)` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the larger of the two scalars *a* and *b* |
-| `acc.min(a, b)` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.float16/32/64` | Returns the smaller of the two scalars *a* and *b* |
+| `acc.max(a, b)` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the larger of the two scalars *a* and *b* |
+| `acc.min(a, b)` | `acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the smaller of the two scalars *a* and *b* |
 | `acc.ceil(a)` | `acc.ScalarType.float16/32/64` | Returns the value of scalar *a* rounded up to the nearest integer as an int64 type |
 | `acc.floor(a)` | `acc.ScalarType.float16/32/64` | Returns the value of scalar *a* rounded down to the nearest integer as an int64 type |
 | `acc.sqrt(a)` | `acc.ScalarType.float16/32/64` | Returns the square root of scalar *a* |
@@ -165,8 +155,6 @@ __Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 | `acc.sinh(a)` | `acc.ScalarType.float16/32/64` | Returns the hyperbolic sine of scalar *a*, where *a* is in radians |
 | `acc.cosh(a)` | `acc.ScalarType.float16/32/64` | Returns the hyperbolic cosine of scalar *a*, where *a* is in radians |
 | `acc.tanh(a)` | `acc.ScalarType.float16/32/64` | Returns the hyperbolic tangent of scalar *a*, where *a* is in radians |
-
-__Not yet implemented:__ unsigned types (`acc.ScalarType.uint8/16/32/64`)
 
 ## Accera program stages
 Let’s take a step back to describe the stages of Accera program:

@@ -67,7 +67,7 @@ namespace cpp_printer
         {
             SmallString<128> nameStr("");
             llvm::raw_svector_ostream strm(nameStr);
-            CppPrinter cppPrinter(strm);
+            CppPrinter cppPrinter(strm, -1);
             (void)cppPrinter.printAttribute(constant->second);
             return StringRef(nameStr).copy(nameAllocator);
         }
@@ -292,18 +292,19 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult CppPrinter::printIndexType(IndexType idxType)
+    LogicalResult CppPrinter::printIndexType()
     {
-        int bitCount = getIntTypeBitCount(IndexType::kInternalStorageBitWidth);
+        auto indexBitwidth = getPrinterState().indexBitwidth;
+        int bitCount = getIntTypeBitCount(indexBitwidth);
 
         if (bitCount < 0)
         {
             os << "<<UNSUPPORTED index type width: "
-               << IndexType::kInternalStorageBitWidth << ">>";
+               << indexBitwidth << ">>";
             return failure();
         }
 
-        os << "int" << bitCount << "_t";
+        os << "uint" << bitCount << "_t";
         return success();
     }
 
@@ -512,7 +513,7 @@ namespace cpp_printer
         }
         else if (type.isa<IndexType>())
         {
-            return printIndexType(type.dyn_cast<IndexType>());
+            return printIndexType();
         }
         else if (type.isa<IntegerType>())
         {
@@ -570,7 +571,7 @@ namespace cpp_printer
         {
             SmallString<128> nameStr("");
             llvm::raw_svector_ostream strm(nameStr);
-            CppPrinter cppPrinter(strm);
+            CppPrinter cppPrinter(strm, getPrinterState().indexBitwidth);
             (void)cppPrinter.printType(targetOrSrc.getType());
             vectorTypeName = strm.str().str();
         }
@@ -977,12 +978,12 @@ namespace cpp_printer
 
         for (auto& dialectPrinter : dialectPrinters)
         {
-            RETURN_IF_FAILED(dialectPrinter->printDeclarations());
+            RETURN_IF_FAILED(dialectPrinter->printPrologue());
         }
 
         for (auto& dialectPrinter : dialectPrinters)
         {
-            RETURN_IF_FAILED(dialectPrinter->printPrologue());
+            RETURN_IF_FAILED(dialectPrinter->printDeclarations());
         }
 
         for (Operation& op : moduleOp)
@@ -1019,7 +1020,9 @@ namespace cpp_printer
             bool hasCondition = (iter != state.functionDefConditionalMacro.end());
             if (hasCondition)
                 os << "#ifdef " << iter->second << "\n";
+            if (state.hasRuntime(Runtime::ROCM)) os << "#if !defined(__HIP_DEVICE_COMPILE__)\n";
             RETURN_IF_FAILED(printFuncOp(funcOp));
+            if (state.hasRuntime(Runtime::ROCM)) os << "#endif // !defined(__HIP_DEVICE_COMPILE__)\n";
             if (hasCondition)
                 os << "#endif // " << iter->second << "\n";
             return success();

@@ -898,10 +898,19 @@ LogicalResult BinOpLowering::matchAndRewrite(
 
     auto lhs = op.lhs();
     auto rhs = op.rhs();
+    auto elementType = util::GetElementType(lhs.getType());
+
+    if (elementType.isUnsignedInteger())
+    {
+        // cast unsigned ints to signless
+        auto signlessType = rewriter.getIntegerType(elementType.getIntOrFloatBitWidth());
+        lhs = rewriter.create<UnrealizedConversionCastOp>(loc, signlessType, lhs).getResult(0);
+        rhs = rewriter.create<UnrealizedConversionCastOp>(loc, signlessType, rhs).getResult(0);
+    }
 
     auto result = [&]() -> mlir::Value {
         using accera::ir::value::BinaryOpPredicate;
-        if (auto pred = op.getPredicate(); util::GetElementType(lhs.getType()).isa<FloatType>())
+        if (auto pred = op.getPredicate(); elementType.isa<FloatType>())
         {
             switch (pred)
             {
@@ -927,9 +936,21 @@ LogicalResult BinOpLowering::matchAndRewrite(
             case BinaryOpPredicate::ADD:
                 return rewriter.create<AddIOp>(loc, lhs, rhs);
             case BinaryOpPredicate::DIV:
+            {
+                if (elementType.isUnsignedInteger())
+                {
+                    return rewriter.create<UnsignedDivIOp>(loc, lhs, rhs);
+                }
                 return rewriter.create<SignedDivIOp>(loc, lhs, rhs);
+            }
             case BinaryOpPredicate::MOD:
+            {
+                if (elementType.isUnsignedInteger())
+                {
+                    return rewriter.create<UnsignedRemIOp>(loc, lhs, rhs);
+                }
                 return rewriter.create<SignedRemIOp>(loc, lhs, rhs);
+            }
             case BinaryOpPredicate::MUL:
                 return rewriter.create<MulIOp>(loc, lhs, rhs);
             case BinaryOpPredicate::SUB:
@@ -2533,7 +2554,7 @@ void ValueToStdLoweringPass::runOnModule()
 
     ConversionTarget target(*context);
     target.addLegalDialect<gpu::GPUDialect>();
-    target.addLegalOp<gpu::GPUModuleOp, ModuleOp, vir::ModuleTerminatorOp>();
+    target.addLegalOp<gpu::GPUModuleOp, ModuleOp, vir::ModuleTerminatorOp, UnrealizedConversionCastOp>();
     target.markOpRecursivelyLegal<gpu::GPUModuleOp>();
     auto isLegalOperation = [&](Operation* op) {
         if (auto typeAttr = op->getAttrOfType<TypeAttr>(function_like_impl::getTypeAttrName()); typeAttr && !typeConverter.isLegal(typeAttr.getValue()))

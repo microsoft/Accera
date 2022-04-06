@@ -24,11 +24,14 @@ namespace
             .value("undefined", value::ValueType::Undefined, "undefined type")
             .value("void", value::ValueType::Void, "void type")
             .value("bool", value::ValueType::Boolean, "1 byte boolean")
-            .value("byte", value::ValueType::Byte, "1 byte unsigned integer")
             .value("int8", value::ValueType::Int8, "1 byte signed integer")
             .value("int16", value::ValueType::Int16, "2 byte signed integer")
             .value("int32", value::ValueType::Int32, "4 byte signed integer")
             .value("int64", value::ValueType::Int64, "8 byte signed integer")
+            .value("uint8", value::ValueType::Byte, "1 byte unsigned integer")
+            .value("uint16", value::ValueType::Uint16, "2 byte unsigned integer")
+            .value("uint32", value::ValueType::Uint32, "4 byte unsigned integer")
+            .value("uint64", value::ValueType::Uint64, "8 byte unsigned integer")
             .value("index", value::ValueType::Index, "index type")
             .value("float16", value::ValueType::Float16, "2 byte floating point")
             .value("float32", value::ValueType::Float, "4 byte floating point")
@@ -200,7 +203,12 @@ Args:
             .ADD_CTOR(int16_t)
             .ADD_CTOR(int32_t)
             .ADD_CTOR(int64_t)
+            .ADD_CTOR(uint8_t)
+            .ADD_CTOR(uint16_t)
+            .ADD_CTOR(uint32_t)
+            .ADD_CTOR(uint64_t)
             .ADD_CTOR(float)
+            // .ADD_CTOR(float16_t) // no built-in type
             .ADD_CTOR(double)
             .def(
                 "__getitem__", [](value::Array& array, const std::vector<value::Scalar>& indices) {
@@ -284,7 +292,12 @@ specific to the EmitterContext, specified by the Emittable type.
             .ADD_CTOR(int16_t)
             .ADD_CTOR(int32_t)
             .ADD_CTOR(int64_t)
+            .ADD_CTOR(uint8_t)
+            .ADD_CTOR(uint16_t)
+            .ADD_CTOR(uint32_t)
+            .ADD_CTOR(uint64_t)
             .ADD_CTOR(float)
+            // .ADD_CTOR(float16_t) // no built-in type
             .ADD_CTOR(double)
             .def(py::hash(py::self))
             .def_property("layout", &value::Value::GetLayout, &value::Value::SetLayout)
@@ -316,6 +329,11 @@ specific to the EmitterContext, specified by the Emittable type.
             .ADD_CTOR(int16_t)
             .ADD_CTOR(int32_t)
             .ADD_CTOR(int64_t)
+            .ADD_CTOR(uint8_t)
+            .ADD_CTOR(uint16_t)
+            .ADD_CTOR(uint32_t)
+            .ADD_CTOR(uint64_t)
+            // .ADD_CTOR(float16_t) // no built-in type
             .ADD_CTOR(float)
             .ADD_CTOR(double)
             .def(py::self + py::self)
@@ -346,9 +364,8 @@ specific to the EmitterContext, specified by the Emittable type.
                 return value::ShiftLeft(s, value::Cast(shift, s.GetType()));
             })
             .def("__floordiv__", [](value::Scalar& a, value::Scalar& b) {
-                return (a.GetType() == value::ValueType::Float || a.GetType() == value::ValueType::Double) ?
-                           // Floor is limited to floating point types
-                           value::Floor(value::Divide(a, b)) : value::Divide(a, b);
+                // Floor is limited to floating point types
+                return a.GetValue().IsFloatingPoint() ? value::Floor(value::Divide(a, b)) : value::Divide(a, b);
             })
             .def("__and__", &value::BitwiseAnd)
             .def("__or__", &value::BitwiseOr)

@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: v1.2.3)
 
 # Section 1: Arrays
 Accera stores data in multi-dimensional arrays of scalar elements where all the array elements share the same primary data type (e.g., float32, int8). An array has a constant number of dimensions *d* known at compile-time (e.g., a matrix is a 2-dimensional array). Each dimension has a positive size, and the sequence of *d* sizes is called the *shape* of the array. An element of an array is referred to by a *d*-coordinate zero-based *index vector*.

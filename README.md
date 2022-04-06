@@ -78,7 +78,10 @@ No installation is required. This will launch a Jupyter notebook with the quicks
 
     # transform the schedule, add to the package
     f, i, j, k = schedule.get_indices()
-    ii, jj = schedule.tile((i, j), (16, 16)) # loop tiling
+    ii, jj = schedule.tile({
+        i: 16,
+        j: 16
+    }) # loop tiling
     schedule.reorder(j, i, f, k, jj, ii) # loop reordering
     plan = schedule.create_plan()
     plan.unroll(ii) # loop unrolling

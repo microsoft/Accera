@@ -591,6 +591,15 @@ namespace value
             case ValueType::Int64:
                 _packedBuffer = EmbedPackedBuffer<int64_t>(builder, constData, packedBufferName);
                 break;
+            case ValueType::Uint16:
+                _packedBuffer = EmbedPackedBuffer<uint16_t>(builder, constData, packedBufferName);
+                break;
+            case ValueType::Uint32:
+                _packedBuffer = EmbedPackedBuffer<uint32_t>(builder, constData, packedBufferName);
+                break;
+            case ValueType::Uint64:
+                _packedBuffer = EmbedPackedBuffer<uint64_t>(builder, constData, packedBufferName);
+                break;
             case ValueType::Float16:
                 _packedBuffer = EmbedPackedBuffer<short>(builder, constData, packedBufferName);
                 break;

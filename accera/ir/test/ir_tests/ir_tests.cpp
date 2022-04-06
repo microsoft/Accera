@@ -2608,6 +2608,130 @@ TEST_CASE_METHOD(Fixture, "parallelize_gemm_mlas_value", "[cpu][nest]")
                          << debugString(module));
 }
 
+TEST_CASE_METHOD(Fixture, "unsigned_int_ops", "[cpu][nest]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    const int M = 32;
+    const int N = 32;
+    const int K = 32;
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    auto type = GENERATE(ValueType::Byte, ValueType::Uint16, ValueType::Uint32, ValueType::Uint64);
+
+    DeclareFunction("NestUnsignedIntOps")
+        .Public(true)
+        .Parameters(
+            Value({ type, MemoryLayout(MemoryShape{ M, K }) }),
+            Value({ type, MemoryLayout(MemoryShape{ K, N }) }),
+            Value({ type, MemoryLayout(MemoryShape{ M, N }) }))
+        .Define([=](Array A, Array B, Array C) {
+            Nest nest{ MemoryShape{ M, N, K } };
+
+            auto indices = nest.GetIndices();
+            Scalar i = indices[0];
+            Scalar j = indices[1];
+            Scalar k = indices[2];
+
+            nest.Set([&]() {
+                C(i, j) += A(i, k) + B(k, j);
+                C(i, j) += A(i, k) - B(k, j);
+                C(i, j) += A(i, k) * B(k, j);
+                C(i, j) += A(i, k) / B(k, j);
+                C(i, j) += A(i, k) % B(k, j);
+                C(i, j) += BitwiseNot(C(i, j));
+            });
+        });
+
+    accera::transforms::AcceraPassPipelineOptions options;
+    // options.dumpPasses = true;
+    // options.dumpIntraPassIR = true;
+
+    RunConversionPasses(target, "unsigned_int_ops_" + stringify(target), options);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));        
+}
+
+// Testbed for unit testing / tweaking the debug_check_all_close function
+TEST_CASE_METHOD(Fixture, "debug_check_all_close", "[cpu][nest]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    const int M = 32;
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    auto type = GENERATE(ValueType::Float16, ValueType::Float, ValueType::Double, ValueType::Byte, ValueType::Uint16, ValueType::Uint32, ValueType::Uint64);
+
+    DeclareFunction("CheckAllClose")
+        .Public(true)
+        .Parameters(
+            Value({ type, MemoryLayout(MemoryShape{ M, M }) }),
+            Value({ type, MemoryLayout(MemoryShape{ M, M }) }))
+        .Define([=](Array actual, Array desired) {
+
+            using namespace std::string_literals;
+            auto diff = MakeArray(actual.Shape(), ValueType::Float, "diff");
+            auto atol = Scalar(0.0001f);
+
+            auto maxAbsoluteDiff = MakeArray(MemoryShape{ 1 }, diff.GetType(), "maxAbsoluteDiff");
+            auto count = MakeArray(MemoryShape{ 1 }, ValueType::Int32, "count");
+
+            auto zero = Scalar(0.0f);
+            auto max = Scalar(std::numeric_limits<float>::max());
+            auto zeroCount = Cast(Scalar(0), count.GetType());
+            auto oneCount = Cast(Scalar(1), count.GetType());
+            auto total = Cast(Scalar(actual.Size()), count.GetType());
+
+            Nest nest(actual.Shape());
+            auto indices = nest.GetIndices();
+            nest.Set([&]() {
+                diff(indices) = Cast(actual(indices) - desired(indices), diff.GetType());
+                diff(indices) = Clamp(Abs(diff(indices)), zero, max); // over/underflow
+                maxAbsoluteDiff(0) = Select(maxAbsoluteDiff(0) >= diff(indices), maxAbsoluteDiff(0), diff(indices));
+                count(0) += Select(diff(indices) <= atol, zeroCount, oneCount);
+            });
+
+            If(count(0) > zeroCount, [&]() {
+                bool toStderr = true;
+                Print("\nERROR: Not equal to tolerance: "s, toStderr);
+                Print(atol, toStderr);
+                Print("\n\nMismatched elements: "s, toStderr);
+                Print(count, toStderr);
+                Print("/ "s, toStderr);
+
+                Print(total, toStderr);
+                Print(" ("s, toStderr);
+                auto percent = Scalar(100.0f) * Cast(count(0), ValueType::Float) / Cast(total, ValueType::Float);
+                Print(percent, toStderr);
+                Print(" %)\nMax absolute difference: "s, toStderr);
+                Print(maxAbsoluteDiff, toStderr);
+
+                // TODO: which is more useful, printing a summary or printing the full diff to reveal possible patterns?
+                Print("\nDifferences:\n"s, toStderr);
+                Print(diff, toStderr);
+                Print("\n\n"s, toStderr);
+            })
+            .Else([&] {
+                Print("\nOK (no mismatches detected)\n"s);
+            });
+    
+        });
+
+    accera::transforms::AcceraPassPipelineOptions options;
+    // options.dumpPasses = true;
+    // options.dumpIntraPassIR = true;
+
+    RunConversionPasses(target, "debug_check_all_close_" + stringify(target), options);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));        
+}
+
 TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_mfma_rocm", "[gpu][nest][cache][main]")
 {
     const int64_t M = 32;

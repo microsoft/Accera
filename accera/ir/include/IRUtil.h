@@ -382,5 +382,8 @@ namespace util
 
     void EraseAllOpsInBlock(mlir::PatternRewriter& rewriter, mlir::Block& block);
 
+    mlir::Value ToSignlessMLIRValue(mlir::OpBuilder& builder, mlir::Value value);
+    mlir::Type ToSignlessMLIRType(mlir::OpBuilder& builder, mlir::Type type);
+
 } // namespace util
 } // namespace accera::ir

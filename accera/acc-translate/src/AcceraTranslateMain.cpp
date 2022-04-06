@@ -20,10 +20,18 @@
 
 #include "Target/Cpp/TranslateToCpp.h"
 
+
+
 using namespace mlir;
+
 
 namespace
 {
+
+llvm::cl::opt<int> indexBitwidth{ "indexBitwidth",
+                                  llvm::cl::desc("The bitwidth of the unsigned integer type used to represent indices"),
+                                  llvm::cl::init(32) };
+
 // This function should be called before creating any MLIRContext if one
 // expects all the possible translations to be made available to the context
 // automatically.
@@ -32,7 +40,7 @@ inline void registerArgoTranslations()
     [[maybe_unused]] static bool initOnce = []() {
         TranslateFromMLIRRegistration printCppRegistration(
             "print-cpp",
-            translateModuleToCpp,
+            [&](Operation* m, llvm::raw_ostream& os) -> LogicalResult { return translateModuleToCpp(m, os, indexBitwidth); },
             [](DialectRegistry& registry) {
                 registerAllDialects(registry);
                 accera::ir::GetDialectRegistry().appendTo(registry);

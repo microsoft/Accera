@@ -25,7 +25,7 @@ namespace cpp_printer
 
         std::string getName() override { return "Affine"; }
 
-        LogicalResult printPrologue() override;
+        LogicalResult printDeclarations() override;
 
         /// print Operation from Affine Dialect
         LogicalResult printDialectOperation(Operation* op, bool* skipped, bool* consumed) override;

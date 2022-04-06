@@ -290,20 +290,6 @@ def accxp_ActiveBlockCacheReduceOp : accxp_Op<"active_block_cache_reduce", [Attr
                         StrAttr:$activeBlockTag,
                         UnitAttr:$thrifty,
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
-
-  let builders = [
-    OpBuilder<(ins
-      "Value":$array,
-      "Value":$cache,
-      "ValueRange":$lbOperands,
-      "ValueRange":$ubOperands,
-      "mlir::ArrayAttr":$lbMaps,
-      "mlir::ArrayAttr":$ubMaps,
-      "mlir::AffineMap":$activeBlockToCacheMap,
-      "StringRef":$activeBlockTag,
-      "bool":$thrifty,
-      "const VectorizationInfo&":$vectorizationInfo
-    )>];
 }
 
 //

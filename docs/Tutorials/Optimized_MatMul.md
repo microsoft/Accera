@@ -1,3 +1,6 @@
+[//]: # (Project: Accera)
+[//]: # (Version: v1.2.3)
+
 ## Optimized MatMul
 
 Optimizing MatMul depends heavily on the target platform. The code in the example below is optimized specifically for an Intel Xeon E5-2673 v3 CPU, but will work equally well on CPUs with similar hardware characteristics like AMD Epyc 7551 and so on.

@@ -24,13 +24,19 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-from accera import ScalarType, Array, Function, Target, Package
+from accera import ScalarType, Array, Function, Nest, Target, Package
 from accera.test import verifiers
 
 TEST_MODE = Package.Mode.DEBUG if DEV_MODE else Package.Mode.RELEASE
 TEST_FORMAT = Package.Format.MLIR_DYNAMIC if DEV_MODE else Package.Format.HAT_DYNAMIC
-
 TEST_PACKAGE_DIR = "test_acccgen"
+
+# Groups of types commonly used for tests
+INT_TYPES = [
+    ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64, ScalarType.uint8, ScalarType.uint16,
+    ScalarType.uint32, ScalarType.uint64
+]
+FLOAT_TYPES = [ScalarType.float16, ScalarType.float32, ScalarType.float64]
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -49,7 +55,6 @@ def expectedFailure(reason: FailedReason, msg: str, condition: bool = True) -> C
     "Extends the unittest.expectedFailure decorator to print failure details and takes an optional condition"
 
     def _decorator(func):
-
         @unittest.expectedFailure
         def _wrapper(x):
             print(f"\n{reason.value}: {msg}")
@@ -65,12 +70,11 @@ def expectedFailure(reason: FailedReason, msg: str, condition: bool = True) -> C
 
 
 class DSLTest_01Arrays(unittest.TestCase):
-
     def _verify_nest(self, nest, args: Tuple[Array], package_name, correctness_check_values=None) -> None:
 
         # create a HAT package and add the function to it
         package = Package()
-        function = package.add(nest, args, base_name="array_nest_test")
+        function = package.add(nest, args, base_name=package_name)
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
         # build the HAT package
@@ -113,7 +117,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         self.assertIsNotNone(A)
 
     def test_input_array_infinite_major_dimension(self) -> None:
-        from accera import Nest, inf
+        from accera import inf
 
         with self.assertRaises(ValueError):
             Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(inf, inf))
@@ -142,18 +146,27 @@ class DSLTest_01Arrays(unittest.TestCase):
         self.assertIsNotNone(A)
 
     def test_const_array(self) -> None:
-        import numpy as np
-        for dt in [np.int8, np.int16, np.int32, np.int64, np.float32, np.float64]:
+        for dt in [
+                bool,    # np.bool is deprecated in favor of bool
+                np.int8,
+                np.int16,
+                np.int32,
+                np.int64,
+                np.uint8,
+                np.uint16,
+                np.uint32,
+                np.uint64,
+                np.float16,
+                np.float32,
+                np.float64
+        ]:
             D = np.ones((128, 256), dtype=dt)
             A = Array(role=Array.Role.CONST, data=D)
             self.assertIsNotNone(A)
 
     def test_const_array_type_layout(self) -> None:
-        import numpy as np
-
         D = np.ones((128, 256), dtype=np.float64)
-        for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64, ScalarType.float16,
-                  ScalarType.float32, ScalarType.float64]:
+        for t in [ScalarType.bool] + INT_TYPES + FLOAT_TYPES:
             A = Array(role=Array.Role.CONST, element_type=t, layout=Array.Layout.LAST_MAJOR, data=D)
             self.assertIsNotNone(A)
 
@@ -167,7 +180,6 @@ class DSLTest_01Arrays(unittest.TestCase):
 
     def test_temp_array_materialization_1(self) -> None:
         # Materializes (allocates) a TEMP array externally to an added function
-        from accera import Nest, Package
 
         def make_test_fn(package, A, B, C):
             T = Array(role=Array.Role.TEMP, element_type=A.element_type, shape=A.shape)
@@ -194,7 +206,6 @@ class DSLTest_01Arrays(unittest.TestCase):
 
     def test_temp_array_materialization_2(self) -> None:
         # Materializes (allocates) a TEMP array within an added function
-        from accera import Nest, Package
 
         package = Package()
         A = Array(shape=(256, 32), role=Array.Role.INPUT)
@@ -252,7 +263,6 @@ class DSLTest_01Arrays(unittest.TestCase):
     def test_temp_array_materialization_3(self) -> None:
         # Materializes (allocates) a TEMP array within some nest iteration logic
         # *without* passing the array as a function argument
-        from accera import Nest, Package
 
         package = Package()
         A = Array(shape=(256, 32), role=Array.Role.INPUT_OUTPUT)
@@ -279,7 +289,6 @@ class DSLTest_01Arrays(unittest.TestCase):
             package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_first_major_array_access(self) -> None:
-        from accera import Nest
         A = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(256, 32))
@@ -301,7 +310,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def test_last_major_array_access(self) -> None:
-        from accera import Nest
         A = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.LAST_MAJOR)
 
         nest = Nest(shape=(256, 32))
@@ -323,7 +331,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def test_array_value_type_cast(self) -> None:
-        from accera import Nest
         A = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR)
         B = Array(
             shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR, element_type=ScalarType.int32
@@ -352,7 +359,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         self._verify_nest(nest, (A, B), "test_array_value_type_cast", correctness_check_values=correctness_check_values)
 
     def test_subarray(self) -> None:
-        from accera import Nest
         package = Package()
 
         arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(256, 256))
@@ -388,7 +394,6 @@ class DSLTest_01Arrays(unittest.TestCase):
             package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_subarray_l2(self) -> None:
-        from accera import Nest
         package = Package()
 
         arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(256, 256))
@@ -431,11 +436,8 @@ class DSLTest_01Arrays(unittest.TestCase):
 
 
 class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
-
     def _create_nest(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
         # helper function to create a nest so that we can focus on the logic function
-        from accera import Nest
-
         M, N, S = shape
 
         A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
@@ -444,80 +446,94 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
         return Nest(shape=(M, N, S)), A, B, C
 
-    def _build_nest(self, nest, args: Tuple[Array], package_name) -> None:
+    def _build_nest(self, nest, args: Tuple[Array], package_name, correctness_check_values=None) -> None:
         # helper function to build a nest so that we can focus on the logic function
-
         # create a HAT package and add the nest to it
         package = Package()
-        package.add(nest, args, base_name="op_test")
+        function = package.add(nest, args, base_name=package_name)
 
         # build the HAT package
-        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
             package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+            if correctness_check_values:
+                v.check_correctness(
+                    function.name, before=correctness_check_values["pre"], after=correctness_check_values["post"]
+                )
 
     def test_signed_types(self) -> None:
-        for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64, ScalarType.float16,
-                  ScalarType.float32, ScalarType.float64]:
-            nest, A, B, C = self._create_nest((16, 10, 11), type=t)
-            i, j, k = nest.get_indices()
+        for t in [ScalarType.int16, ScalarType.int32, ScalarType.int64] + FLOAT_TYPES:
+
+            A = Array(role=Array.Role.INPUT, element_type=t, shape=(16, 16))
+            B = Array(role=Array.Role.INPUT, element_type=t, shape=(16, 16))
+            C = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(16, 16))
+
+            nest = Nest(shape=(16, 16))
+            i, j = nest.get_indices()
 
             @nest.iteration_logic
             def _():
-                C[i, j] += A[i, k] + B[k, j]
-                C[i, j] += A[i, k] - B[k, j]
-                C[i, j] += A[i, k] * B[k, j]
-                C[i, j] += A[i, k] / B[k, j]
+                C[i, j] += A[i, j] + B[i, j]
+                C[i, j] += A[i, j] - B[i, j]
+                C[i, j] += A[i, j] * B[i, j]
+                C[i, j] += A[i, j] / B[i, j]
 
-            self._build_nest(nest, [A, B, C], f"test_types_{t}")
+            dtype = np.dtype(t.name)
 
-    @expectedFailure(FailedReason.NOT_IN_CORE, "Unsigned types")
+            A_test = np.random.random(A.shape).astype(dtype)
+            B_test = np.ones((C.shape)).astype(dtype)    # avoid divide by zero
+            C_test = np.random.random(C.shape).astype(dtype)
+
+            C_ref = C_test + A_test + B_test
+            C_ref = C_ref + A_test - B_test
+            C_ref = C_ref + A_test * B_test
+            C_ref = C_ref + A_test / B_test
+
+            if t == ScalarType.float16:    # TODO: verification issue with correctness check?
+                correctness_check_values = None
+            else:
+                correctness_check_values = {
+                    "pre": [A_test, B_test, C_test],
+                    "post": [A_test, B_test, C_ref]
+                }
+
+            self._build_nest(nest, [A, B, C], f"test_types_{t.name}", correctness_check_values)
+
     def test_unsigned_types(self) -> None:
         for t in [ScalarType.uint8, ScalarType.uint16, ScalarType.uint32, ScalarType.uint64]:
-            nest, A, B, C = self._create_nest((16, 10, 11), type=t)
-            i, j, k = nest.get_indices()
+
+            A = Array(role=Array.Role.INPUT, element_type=t, shape=(16, 16))
+            B = Array(role=Array.Role.INPUT, element_type=t, shape=(16, 16))
+            C = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(16, 16))
+
+            nest = Nest(shape=(16, 16))
+            i, j = nest.get_indices()
 
             @nest.iteration_logic
             def _():
-                C[i, j] += A[i, k] + B[k, j]
-                C[i, j] += A[i, k] - B[k, j]
-                C[i, j] += A[i, k] * B[k, j]
-                C[i, j] += A[i, k] / B[k, j]
+                C[i, j] += A[i, j] + B[i, j]
+                C[i, j] += A[i, j] - B[i, j]
+                C[i, j] += A[i, j] * B[i, j]
+                C[i, j] += A[i, j] / B[i, j]
 
-            self._build_nest(nest, [A, B, C], f"test_types_{t}")
+            dtype = np.dtype(t.name)
+            A_test = np.random.random(A.shape).astype(dtype)
+            B_test = np.ones((C.shape)).astype(dtype)    # avoid divide by zero
+            C_test = np.random.random(C.shape).astype(dtype)
 
-    def test_cast(self) -> None:
-        from accera import _cast
-        for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64]:
-            nest, A, B, C = self._create_nest((16, 10, 11), type=t)
-            i, j, k = nest.get_indices()
+            C_ref = C_test + A_test + B_test
+            C_ref = C_ref + A_test - B_test
+            C_ref = C_ref + A_test * B_test
+            C_ref = C_ref + A_test / B_test
 
-            @nest.iteration_logic
-            def _():
-                C[i, j] += A[i, k] + _cast(B[k, j], t)
-                C[i, j] += A[i, k] - _cast(B[k, j], t)
-                C[i, j] += A[i, k] * _cast(B[k, j], t)
-                C[i, j] += A[i, k] / _cast(B[k, j], t)
+            correctness_check_values = {
+                "pre": [A_test, B_test, C_test],
+                "post": [A_test, B_test, C_ref]
+            }
 
-            self._build_nest(nest, [A, B, C], f"test_types_{t}")
+            self._build_nest(nest, [A, B, C], f"test_types_{t.name}", correctness_check_values)
 
-    def test_unsigned_cast(self) -> None:
-        from accera import _unsigned_cast
-        for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64]:
-            nest, A, B, C = self._create_nest((16, 10, 11), type=t)
-            i, j, k = nest.get_indices()
-
-            @nest.iteration_logic
-            def _():
-                C[i, j] += A[i, k] + _unsigned_cast(B[k, j], t)
-                C[i, j] += A[i, k] - _unsigned_cast(B[k, j], t)
-                C[i, j] += A[i, k] * _unsigned_cast(B[k, j], t)
-                C[i, j] += A[i, k] / _unsigned_cast(B[k, j], t)
-
-            self._build_nest(nest, [A, B, C], f"test_types_{t}")
-
-    def test_arithmetic_operations_1(self) -> None:
-        for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64, ScalarType.float16,
-                  ScalarType.float32, ScalarType.float64]:
+    def test_arithmetic_operations(self) -> None:
+        for t in INT_TYPES + FLOAT_TYPES:
             nest, A, B, C = self._create_nest((16, 10, 11), type=t)
             i, j, k = nest.get_indices()
 
@@ -532,43 +548,43 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 C[i, j] += A[i, k] % B[k, j]
                 C[i, j] += A[i, k]**B[k, j]
 
-            self._build_nest(nest, [A, B, C], f"test_arithmetic_operations_{t}")
+            self._build_nest(nest, [A, B, C], f"test_arithmetic_operations_{t.name}")
 
     def test_relational_operations(self) -> None:
         from accera._lang_python._lang import _If
 
-        nest, A, B, C = self._create_nest((16, 10, 11))
-        i, j, k = nest.get_indices()
+        for t in [ScalarType.bool] + INT_TYPES + FLOAT_TYPES:
+            nest, A, B, C = self._create_nest((16, 10, 11))
+            i, j, k = nest.get_indices()
 
-        @nest.iteration_logic
-        def _():
+            @nest.iteration_logic
+            def _():
+                def f1():
+                    C[i, j] += A[i, k] + B[k, j]
 
-            def f1():
-                C[i, j] += A[i, k] + B[k, j]
+                def f2():
+                    C[i, j] -= A[i, k] + B[k, j]
 
-            def f2():
-                C[i, j] -= A[i, k] + B[k, j]
+                def f3():
+                    C[i, j] *= A[i, k] + B[k, j]
 
-            def f3():
-                C[i, j] *= A[i, k] + B[k, j]
+                def f4():
+                    C[i, j] /= A[i, k] + B[k, j]
 
-            def f4():
-                C[i, j] /= A[i, k] + B[k, j]
+                # BUGBUG: this syntax probably needs to change
+                _If(A[i, k] == B[k, j], f1)
+                _If(A[i, k] != B[k, j], f2)
+                _If(A[i, k] < B[k, j], f3)
+                _If(A[i, k] <= B[k, j], f4)
+                _If(A[i, k] > B[k, j], f1)
+                _If(A[i, k] >= B[k, j], f2)
 
-            # BUGBUG: this syntax probably needs to change
-            _If(A[i, k] == B[k, j], f1)
-            _If(A[i, k] != B[k, j], f2)
-            _If(A[i, k] < B[k, j], f3)
-            _If(A[i, k] <= B[k, j], f4)
-            _If(A[i, k] > B[k, j], f1)
-            _If(A[i, k] >= B[k, j], f2)
-
-        self._build_nest(nest, [A, B, C], "test_relational_operations")
+            self._build_nest(nest, [A, B, C], f"test_relational_operations_{t.name}")
 
     def test_logical_operations(self) -> None:
         from accera import logical_and, logical_or, logical_not
 
-        for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64]:
+        for t in [ScalarType.bool] + INT_TYPES:
             nest, A, B, C = self._create_nest((16, 10, 11), type=t)
             i, j, k = nest.get_indices()
 
@@ -578,10 +594,10 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 C[i, j] += logical_and(A[i, k], B[k, j])
                 C[i, j] += logical_or(A[i, k], B[k, j])
 
-            self._build_nest(nest, [A, B, C], f"test_logical_operations_{t}")
+            self._build_nest(nest, [A, B, C], f"test_logical_operations_{t.name}")
 
-    def test_bitwise_operations_1(self) -> None:
-        for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64]:
+    def test_bitwise_operations(self) -> None:
+        for t in INT_TYPES:
             nest, A, B, C = self._create_nest((16, 10, 11), type=t)
             i, j, k = nest.get_indices()
 
@@ -594,35 +610,32 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 C[i, j] += A[i, j] ^ B[j, k]
                 C[i, j] += ~A[i, j]
 
-            self._build_nest(nest, [A, B, C], f"test_bitwise_operations_{t}")
+            self._build_nest(nest, [A, B, C], f"test_bitwise_operations_{t.name}")
 
-    def test_intrinsics_1(self) -> None:
+    def test_intrinsics(self) -> None:
         from accera import max, min
 
-        for t in [ScalarType.float16, ScalarType.float32, ScalarType.float64, ScalarType.int8, ScalarType.int16,
-                  ScalarType.int32, ScalarType.int64]:
+        for t in INT_TYPES + FLOAT_TYPES:
 
             nest, A, B, C = self._create_nest((16, 10, 11), type=t)
             i, j, k = nest.get_indices()
 
-            # Define the loop nest logic
             @nest.iteration_logic
             def _():
                 C[i, j] += max(A[i, j], B[j, k])
                 C[i, j] += min(A[i, j], B[j, k])
 
-            self._build_nest(nest, [A, B, C], f"test_intrinsics_1_{t}")
+            self._build_nest(nest, [A, B, C], f"test_intrinsics_{t.name}")
 
-    def test_intrinsics_2(self) -> None:
+    def test_intrinsics_float(self) -> None:
         from accera import abs, sqrt, exp, log, log10, log2, sin, cos, ceil, floor, tan, cosh, sinh, tanh
         # from accera._lang_python import fast_exp, fast_exp_mlas
 
-        for t in [ScalarType.float16, ScalarType.float32, ScalarType.float64]:
+        for t in FLOAT_TYPES:
 
             nest, A, B, C = self._create_nest((16, 10, 11), type=t)
             i, j, k = nest.get_indices()
 
-            # Define the loop nest logic
             @nest.iteration_logic
             def _():
                 C[i, j] += abs(A[i, j])
@@ -642,7 +655,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 C[i, j] += cosh(B[j, k])
                 C[i, j] += tanh(A[i, j])
 
-            self._build_nest(nest, [A, B, C], f"test_intrinsics_2_{t}")
+            self._build_nest(nest, [A, B, C], f"test_intrinsics_float_{t.name}")
 
     def test_convenience_syntax_1(self) -> None:
         nest, A, B, C = self._create_nest((16, 10, 11))
@@ -679,10 +692,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
 
 class DSLTest_03Schedules(unittest.TestCase):
-
     def _create_nest(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
-        from accera import Nest
-
         M, N, S = shape
 
         A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
@@ -795,7 +805,11 @@ class DSLTest_03Schedules(unittest.TestCase):
             C[i, j] += A[i, k] * B[k, j]
 
         schedule = nest.create_schedule()
-        ii, jj, kk = schedule.tile((i, j, k), shape=(8, 2, 3))
+        ii, jj, kk = schedule.tile({
+            i: 8,
+            j: 2,
+            k: 3
+        })
         self.assertIsNotNone(ii)
         self.assertIsNotNone(jj)
         self.assertIsNotNone(kk)
@@ -804,15 +818,16 @@ class DSLTest_03Schedules(unittest.TestCase):
 
         # tile a subset of the iteration space
         schedule1 = nest.create_schedule()
-        iii, kkk = schedule1.tile((i, k), shape=(8, 3))
+        iii, kkk = schedule1.tile({
+            i: 8,
+            k: 3
+        })
         self.assertIsNotNone(iii)
         self.assertIsNotNone(kkk)
         self.assertEqual(schedule1._indices, [i, iii, j, k, kkk])
         self._verify_schedule(schedule1, [A, B, C], "test_schedule_tile_subset")
 
     def test_schedule_skew(self) -> None:
-        from accera import Nest
-
         for N in [10, 224]:    # input sizes
             for K in [1, 3, 5]:    # filter sizes
                 M = N - K + 1    # output size
@@ -848,8 +863,6 @@ class DSLTest_03Schedules(unittest.TestCase):
                 self._verify_schedule(schedule1, [A, B, C], f"test_schedule_skew_j_i_{N}_{K}", correctness_check_values)
 
     def test_schedule_skew_unrolling(self) -> None:
-        from accera import Nest
-
         N = 10    # input size
         K = 3    # filter size
         M = N - K + 1    # output size = 8
@@ -944,7 +957,6 @@ class DSLTest_03Schedules(unittest.TestCase):
 
 
 class DSLTest_04Fusing(unittest.TestCase):
-
     def _verify_schedule(self, schedule, args: Tuple[Array], package_name, correctness_check_values) -> None:
         # create a HAT package and add the function to it
         package = Package()
@@ -1004,7 +1016,10 @@ class DSLTest_04Fusing(unittest.TestCase):
         # computing the output block-by-block:
         #  first computing C[0:4, 0:4] += A[0:4, 0:4]
         #  then computing C[0:4, 0:4] *= B[0:4, 0:4]
-        ii, jj = schedule.tile((i, j), (4, 4))
+        ii, jj = schedule.tile({
+            i: 4,
+            j: 4
+        })
         schedule.reorder(i, j, f, ii, jj)
 
         self._verify_schedule(schedule, (A, B, C), "test_full_iteration_space_fusing2", correctness_check_values)
@@ -1253,7 +1268,10 @@ class DSLTest_04Fusing(unittest.TestCase):
         # computing the output block-by-block:
         #  first computing C[0:4, 0:4] += A[0:4, 0:4]
         #  then computing C[0:4, 0:4] *= B[0:4, 0:4]
-        ii, jj = schedule.tile((i, j), (4, 4))
+        ii, jj = schedule.tile({
+            i: 4,
+            j: 4
+        })
         schedule.reorder(i, j, f, ii, jj)
 
         # Emitted fused loop should look like:
@@ -1577,7 +1595,6 @@ class DSLTest_04Fusing(unittest.TestCase):
 
 
 class DSLTest_05Targets(unittest.TestCase):
-
     def test_known_targets(self) -> None:
         intel_name = "Intel 6400"
         intel = Target(known_name=intel_name, num_threads=44)
@@ -1619,21 +1636,16 @@ class DSLTest_05Targets(unittest.TestCase):
         self.assertEqual(v100.category, Target.Category.GPU)
         self.assertEqual(v100.warp_size, 32)
 
-
         mi100 = Target(Target.Model.AMD_MI100)
         self.assertEqual(mi100.warp_size, 64)
         self.assertEqual(mi100.frequency_GHz, 1.502)
-        
+
         a100 = Target(Target.Model.NVIDIA_A100)
         self.assertEqual(a100.warp_size, 32)
 
 
-
 class DSLTest_06PlansCaching(unittest.TestCase):
-
     def _create_plan(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
-        from accera import Nest
-
         M, N, S = shape
 
         A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
@@ -1728,8 +1740,6 @@ class DSLTest_06PlansCaching(unittest.TestCase):
 
     @expectedFailure(FailedReason.NOT_IN_PY, "Various target memory identifiers")
     def test_cache_mapping(self) -> None:
-        from accera import Nest
-
         A = Array(role=Array.Role.INPUT, shape=(1024, ))
 
         nest = Nest(shape=(64, ))
@@ -1746,8 +1756,6 @@ class DSLTest_06PlansCaching(unittest.TestCase):
         self._verify_plan(plan, [A], "test_cache_mapping")
 
     def test_cache_trigger_level(self) -> None:
-        from accera import Nest
-
         A = Array(role=Array.Role.INPUT, shape=(1024, 1024))
         B = Array(role=Array.Role.INPUT_OUTPUT, shape=(1024, 1024))
 
@@ -1770,8 +1778,6 @@ class DSLTest_06PlansCaching(unittest.TestCase):
         self._verify_plan(plan, [A, B], "test_cache_trigger_level")
 
     def test_cache_trigger_level_matmul(self) -> None:
-        from accera import Nest
-
         M = 1024
         N = 1024
         S = 1024
@@ -1813,8 +1819,6 @@ class DSLTest_06PlansCaching(unittest.TestCase):
         )
 
     def test_hierachical_caching(self) -> None:
-        from accera import Nest
-
         M = 1024
         N = 1024
         S = 1024
@@ -1863,7 +1867,6 @@ class DSLTest_06PlansCaching(unittest.TestCase):
 
 
 class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
-
     def _verify_plan(self, plan, args: Tuple[int], package_name, correctness_check_values=None) -> None:
         package = Package()
         function = package.add(plan, args, base_name="vectorization_parallelization_test")
@@ -1917,7 +1920,6 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
         plan = nest.create_plan(my_target)
         plan.vectorize(index=i)
         self._verify_plan(plan, [A, B, C], "test_vectorize")
-        
 
     def test_kernelize(self) -> None:
         from accera import Target, Nest
@@ -1969,8 +1971,6 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
 
     @expectedFailure(FailedReason.NOT_IN_PY, "pinning parallelization to CPU cores")
     def test_cpu_bind(self) -> None:
-        from accera import Nest, Target
-
         A = Array(role=Array.Role.INPUT, shape=(16, 11))
         B = Array(role=Array.Role.INPUT, shape=(11, 10))
         C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 10))
@@ -1988,30 +1988,46 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
         plan.parallelize(indices=(i, j, k), pin=(target.cores[0], target.cores[1]))    # TODO: confirm syntax
         self._verify_plan(plan, [A, B, C], "test_cpu_bind")
 
-    @expectedFailure(FailedReason.NOT_IN_PY, "Update bind syntax to accept GridUnits")
     def test_gpu_bind(self) -> None:
-        from accera import Nest, Target
+        M = 128
+        N = 256
+        K = 256
+        A = Array(role=Array.Role.INPUT, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
 
-        A = Array(role=Array.Role.INPUT, shape=(16, 11))
-        B = Array(role=Array.Role.INPUT, shape=(11, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 10))
-
-        nest = Nest(shape=(16, 10, 11))
+        nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
 
         @nest.iteration_logic
         def _():
             C[i, j] += A[i, k] * B[k, j]
 
-        v100 = Target(Target.Model.NVIDIA_V100, category=Target.Category.GPU, num_threads=16)
+        v100 = Target(Target.Model.NVIDIA_V100, category=Target.Category.GPU)
         plan = nest.create_plan(v100)
 
-        plan.bind(indices=(i, j, k), map=(v100.GridUnit.BLOCK_X, v100.GridUnit.THREAD_X, v100.GridUnit.THREAD_Y))
-        self._verify_plan(plan, [A, B, C], "test_bind")
+        plan.bind(mapping={
+            i: v100.GridUnit.BLOCK_X,
+            j: v100.GridUnit.THREAD_X,
+            k: v100.GridUnit.THREAD_Y
+        })
+
+        test_name = "test_gpu_bind"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                output_dir=output_dir
+            )
 
     def test_scheduling_strategies(self) -> None:
-        from accera import Nest, Target
-
         A = Array(role=Array.Role.INPUT, shape=(256, 1024))
         B = Array(role=Array.Role.INPUT, shape=(1024, 512))
         C = Array(role=Array.Role.INPUT_OUTPUT, shape=(256, 512))
@@ -2080,7 +2096,6 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
 
 
 class DSLTest_08DeferredLayout(unittest.TestCase):
-
     def _verify_package(self, plan, args, package_name, correctness_check_values) -> None:
         package = Package()
         function = package.add(plan, args, base_name="deferred_layout")
@@ -2094,9 +2109,6 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
                 )
 
     def test_deferred_layout_predefined(self) -> None:
-        from accera import Nest, ScalarType
-        import numpy as np
-
         matrix = np.random.rand(128, 128).astype(np.float32)
         B_test = np.random.random(matrix.shape).astype(np.float32)
 
@@ -2140,9 +2152,6 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
             })
 
     def test_deferred_layout_coefficients(self) -> None:
-        from accera import Nest, ScalarType
-        import numpy as np
-
         matrix = np.random.rand(128, 128).astype(np.float32)
         B_test = np.random.random(matrix.shape).astype(np.float32)
 
@@ -2171,7 +2180,6 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
 
 
 class DSLTest_09Parameters(unittest.TestCase):
-
     def test_parameterization_1(self) -> None:
         from accera import create_parameters, Nest
 
@@ -2428,7 +2436,7 @@ class DSLTest_09Parameters(unittest.TestCase):
                 )
 
     def test_parameterization_5(self) -> None:
-        from accera import Nest, Target, create_parameters
+        from accera import create_parameters
 
         A = Array(role=Array.Role.INPUT, shape=(256, 1024))
         B = Array(role=Array.Role.INPUT, shape=(1024, 512))
@@ -2931,13 +2939,10 @@ class DSLTest_09Parameters(unittest.TestCase):
                 self.assertIn(int(data_point["P2"]), [16])
                 self.assertIn(float(data_point["P3"]), [1.0, 2.0])
                 self.assertIn(int(data_point["P4"]), [3, 5, 7])
- 
+
 
 class DSLTest_10Packages(unittest.TestCase):
-
     def _create_plan(self, target=Target.HOST) -> Function:
-        from accera import Nest
-
         A = Array(role=Array.Role.INPUT_OUTPUT, shape=(64, ))
 
         nest = Nest(shape=(64, ))
@@ -2982,7 +2987,6 @@ class DSLTest_10Packages(unittest.TestCase):
             package.build(package_name, format=Package.Format.MLIR_STATIC, output_dir=TEST_PACKAGE_DIR)
 
     def test_default_output_dir(self) -> None:
-
         plan, A = self._create_plan()
 
         package = Package()
@@ -2994,8 +2998,6 @@ class DSLTest_10Packages(unittest.TestCase):
             package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE)
 
     def test_debug_mode_1(self) -> None:
-        from accera import Nest
-
         M = N = K = 16
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
@@ -3034,8 +3036,6 @@ class DSLTest_10Packages(unittest.TestCase):
             )
 
     def test_debug_mode_2(self) -> None:
-        from accera import Nest
-
         M = N = K = 16
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
@@ -3079,7 +3079,7 @@ class DSLTest_10Packages(unittest.TestCase):
                 print(e)
 
     def test_debug_mode_fusion_1(self) -> None:
-        from accera import Nest, fuse
+        from accera import fuse
 
         M = N = 16
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
@@ -3128,7 +3128,7 @@ class DSLTest_10Packages(unittest.TestCase):
             )
 
     def test_debug_mode_fusion_2(self) -> None:
-        from accera import Nest, fuse
+        from accera import fuse
 
         M = N = 16
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
@@ -3186,7 +3186,7 @@ class DSLTest_10Packages(unittest.TestCase):
                 print(e)
 
     def test_debug_mode_fusion_cascading_1(self) -> None:
-        from accera import Nest, fuse
+        from accera import fuse
 
         M = N = 16
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
@@ -3248,7 +3248,7 @@ class DSLTest_10Packages(unittest.TestCase):
             )
 
     def test_debug_mode_fusion_cascading_2(self) -> None:
-        from accera import Nest, fuse
+        from accera import fuse
 
         M = N = 16
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))

@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.1)
+[//]: # (Version: v1.2.3)
 
-# Accera v1.2.1 Reference
+# Accera v1.2.3 Reference
 
 ## `accera.fuse(schedules[, *args, partial])`
 The `fuse` operation combines multiple iteration spaces into a single "fused" iteration space. The fused iteration space represents the union of the work in the original spaces.

@@ -1,0 +1,16 @@
+####################################################################################################
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See LICENSE in the project root for license information.
+####################################################################################################
+# This file allows users to call find_package(Accera) and pick up our targets.
+
+@ACCERA_CONFIG_CODE@
+
+set(LLVM_SETUP_VARIANT "@LLVM_SETUP_VARIANT@")
+set(ACCERA_EXPORTED_LIBS "@ACCERA_EXPORTED_LIBS@")
+set(ACCERA_RUNTIME_LIBS "@ACCERA_RUNTIME_LIBS@")
+set(ACCERA_CMAKE_DIR "@ACCERA_CONFIG_CMAKE_DIR@")
+set(ACCERA_INCLUDE_DIRS "@ACCERA_CONFIG_INCLUDE_DIRS@")
+
+# Provide all our library targets to users.
+include("@ACCERA_CONFIG_EXPORTS_FILE@")

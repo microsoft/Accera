@@ -82,7 +82,8 @@ namespace ir
             os << "//\n";
             os << "// Header for Accera library " << libraryName << "\n";
             os << "//\n\n";
-            os << "#include <stdint.h>\n\n";
+            os << "#include <stdint.h>\n";
+            os << "#include <stdbool.h>\n\n";
 
             // for float16_t
             os << "#if !defined(ACCERA_FLOAT)\n";
@@ -154,14 +155,31 @@ namespace ir
             });
         }
 
-        template <typename StreamType>
-        void WriteLLVMType(StreamType& os, mlir::Type t);
+        struct LLVMType
+        {
+            mlir::Type type;
+
+            // Optional source MLIR type that "type" was derived from
+            // This contains additional info not available in the LLVM dialect, 
+            // such as whether the type was unsigned (LLVM only supports signless types)
+            std::optional<mlir::Type> source;
+        };
 
         template <typename StreamType>
-        void WriteStructType(StreamType& os, mlir::Type mlirTy)
+        void WriteLLVMType(StreamType& os, LLVMType t);
+
+        template <typename StreamType>
+        void WriteLLVMType(StreamType& os, mlir::Type t)
         {
-            assert(mlirTy.isa<mlir::LLVM::LLVMStructType>());
-            auto llvmTy = mlirTy.dyn_cast<mlir::LLVM::LLVMStructType>();
+            WriteLLVMType(os, { t, std::nullopt });
+        }
+
+        template <typename StreamType>
+        void WriteStructType(StreamType& os, LLVMType t)
+        {
+            // ignore source MLIR type (there is no real equivalent)
+            assert(t.type.isa<mlir::LLVM::LLVMStructType>());
+            auto llvmTy = t.type.dyn_cast<mlir::LLVM::LLVMStructType>();
             os << "{ ";
             for (auto& it : llvm::enumerate(llvmTy.getBody()))
             {
@@ -175,160 +193,254 @@ namespace ir
         }
 
         template <typename StreamType>
-        void WriteArrayType(StreamType& os, mlir::Type mlirTy)
+        void WriteArrayType(StreamType& os, LLVMType t)
         {
-            assert(mlirTy.isa<mlir::LLVM::LLVMArrayType>());
-            auto llvmTy = mlirTy.dyn_cast<mlir::LLVM::LLVMArrayType>();
+            assert(t.type.isa<mlir::LLVM::LLVMArrayType>());
+            auto llvmTy = t.type.dyn_cast<mlir::LLVM::LLVMArrayType>();
             auto size = llvmTy.getNumElements();
             auto elemType = llvmTy.getElementType();
-            WriteLLVMType(os, elemType);
+
+            // use additional MLIR type information, if available
+            if (t.source && t.source->isa<mlir::ShapedType>())
+            {
+                auto mlirTy = t.source->dyn_cast<mlir::ShapedType>();
+                WriteLLVMType(os, { elemType, mlirTy.getElementType() });
+            }
+            else
+            {
+                WriteLLVMType(os, elemType);
+            }
+
             os << "[" << size << "]";
         }
 
         template <typename StreamType>
-        void WritePointerType(StreamType& os, mlir::Type mlirTy)
+        void WritePointerType(StreamType& os, LLVMType t)
         {
-            assert(mlirTy.isa<mlir::LLVM::LLVMPointerType>());
-            auto llvmTy = mlirTy.dyn_cast<mlir::LLVM::LLVMPointerType>();
+            assert(t.type.isa<mlir::LLVM::LLVMPointerType>());
+            auto llvmTy = t.type.dyn_cast<mlir::LLVM::LLVMPointerType>();
             auto elemType = llvmTy.getElementType();
-            WriteLLVMType(os, elemType);
+
+            // use additional MLIR type information, if available
+            if (t.source && t.source->isa<mlir::ShapedType>())
+            {
+                auto mlirTy = t.source->dyn_cast<mlir::ShapedType>();
+                WriteLLVMType(os, { elemType, mlirTy.getElementType() });
+            }
+            else
+            {
+                WriteLLVMType(os, elemType);
+            }
             os << "*";
         }
 
         template <typename StreamType>
-        void WriteIntegerType(StreamType& os, mlir::Type t)
+        void WriteIntegerType(StreamType& os, LLVMType t)
         {
-            for (int size : { 8, 16, 32, 64 })
+            // use additional MLIR type information, if available
+            auto type = t.source.has_value() ? *t.source : t.type;
+            auto size = type.getIntOrFloatBitWidth();
+            if (type.isUnsignedInteger(size))
             {
-                if (t.isInteger(size))
+                assert(size > 1); // booleans are signless currently
+                os << "uint" << size << "_t";
+                return;
+            }
+            else if (type.isInteger(size))
+            {
+                if (size > 1)
                 {
                     os << "int" << size << "_t";
-                    return;
                 }
+                else
+                {
+                    os << "bool";
+                }
+                return;
             }
             assert(false && "Error: unsupported bit width");
         }
 
         template <typename StreamType>
-        void WriteFunctionType(StreamType& os, mlir::Type mlirTy, std::optional<std::string> name = std::nullopt)
+        void WriteFloatType(StreamType& os, LLVMType t)
         {
-            auto llvmTy = mlirTy.dyn_cast<mlir::LLVM::LLVMFunctionType>();
-            assert(llvmTy);
+            if (t.type.isF16())
+            {
+                os << "float16_t";
+            }
+            else if (t.type.isF32())
+            {
+                os << "float";
+            }
+            else if (t.type.isF64())
+            {
+                os << "double";
+            }
+        }
 
-            auto returnType = llvmTy.getReturnType();
+        template <typename StreamType>
+        void WriteFunctionType(StreamType& os, LLVMType t, std::optional<std::string> name = std::nullopt)
+        {
+            // returnType name(paramType, ...);
+
+            auto fnTy = t.type.dyn_cast<mlir::LLVM::LLVMFunctionType>();
+            assert(fnTy);
+
+            std::optional<mlir::Type> sourceType;
+            if (t.source) // use additional MLIR type information, if available
+            {
+                auto sourceFnTy = t.source->dyn_cast<mlir::FunctionType>();
+                assert(sourceFnTy.getNumResults() <= 1);
+                if (sourceFnTy.getNumResults() == 1)
+                {
+                    sourceType = sourceFnTy.getResult(0);
+                }
+            }
+            LLVMType returnType = { fnTy.getReturnType(), sourceType };
             WriteLLVMType(os, returnType);
+
             os << ' ';
             if (name)
             {
                 os << *name;
             }
             os << "(";
-            auto numParams = llvmTy.getNumParams();
+            auto numParams = fnTy.getNumParams();
             for (unsigned i = 0; i < numParams; ++i)
             {
                 if (i != 0)
                 {
                     os << ", ";
                 }
-                WriteLLVMType(os, llvmTy.getParamType(i));
+
+                sourceType = std::nullopt;
+                if (t.source) // use additional MLIR type information, if available
+                {
+                    auto sourceFnTy = t.source->dyn_cast<mlir::FunctionType>();
+                    sourceType = sourceFnTy.getInput(i);
+                }
+                LLVMType paramType = { fnTy.getParamType(i), sourceType };
+                WriteLLVMType(os, paramType);
             }
             os << ");";
         }
 
         template <typename StreamType>
-        void WriteFunctionTypeAlias(StreamType& os, mlir::Type mlirTy, std::string name, std::string baseName)
+        void WriteFunctionTypeAlias(StreamType& os, LLVMType t, std::string name, std::string baseName)
         {
-            auto t = mlirTy.dyn_cast<mlir::LLVM::LLVMFunctionType>();
-            assert(t);
+            // returnType (*baseName)(paramType, ...) = name;
+
+            auto fnTy = t.type.dyn_cast<mlir::LLVM::LLVMFunctionType>();
+            assert(fnTy);
 
             os << "#ifndef __" << baseName << "_DEFINED__\n";
             os << "#define __" << baseName << "_DEFINED__\n";
 
-            // retval (*baseName)(params...) = name;
-            auto returnType = t.getReturnType();
+            std::optional<mlir::Type> sourceType;
+            if (t.source) // use additional MLIR type information, if available
+            {
+                auto sourceFnTy = t.source->dyn_cast<mlir::FunctionType>();
+                assert(sourceFnTy.getNumResults() <= 1);
+                if (sourceFnTy.getNumResults() == 1)
+                {
+                    sourceType = sourceFnTy.getResult(0);
+                }
+            }
+
+            LLVMType returnType = { fnTy.getReturnType(), sourceType };
             WriteLLVMType(os, returnType);
 
-            // TODO: Update to use t.params()
             os << " (*" << baseName << ")(";
-            auto numParams = t.getNumParams();
+            auto numParams = fnTy.getNumParams();
             for (unsigned i = 0; i < numParams; ++i)
             {
                 if (i != 0)
                 {
                     os << ", ";
                 }
-                WriteLLVMType(os, t.getParamType(i));
-            }
+
+                sourceType = std::nullopt;
+                if (t.source) // use additional MLIR type information, if available
+                {
+                    auto sourceFnTy = t.source->dyn_cast<mlir::FunctionType>();
+                    sourceType = sourceFnTy.getInput(i);
+                }
+ 
+                LLVMType paramType = { fnTy.getParamType(i), sourceType };
+                WriteLLVMType(os, paramType);
+           }
             os << ") = " << name << ";\n";
             os << "#endif\n";
         }
 
         template <typename StreamType>
-        void WriteLLVMType(StreamType& os, mlir::Type t)
+        void WriteLLVMType(StreamType& os, LLVMType t)
         {
             using namespace mlir::LLVM;
-            if (t.isa<LLVMPointerType>() && t.dyn_cast<LLVMPointerType>().getElementType().isInteger(8)) // std-to-llvm getVoidPtrType uses getInt8PtrTy, so follow that pattern
-            {
-                os << "void*";
-            }
-            else if (t.isa<LLVMPointerType>() && t.dyn_cast<LLVMPointerType>().getElementType().isa<LLVMStructType>())
-            {
-                os << "void*";
-            }
-            else if (t.isa<LLVMStructType>())
-            {
-                WriteStructType(os, t);
-            }
-            else if (t.isa<LLVMArrayType>())
-            {
-                WriteArrayType(os, t);
-            }
-            else if (t.isa<LLVMPointerType>())
-            {
-                WritePointerType(os, t);
-            }
-            else if (t.isa<mlir::IntegerType>())
-            {
-                WriteIntegerType(os, t);
-            }
-            else if (t.isF16())
-            {
-                os << "float16_t";
-            }
-            else if (t.isF32())
-            {
-                os << "float";
-            }
-            else if (t.isF64())
-            {
-                os << "double";
-            }
-            else if (t.isa<LLVMVoidType>())
-            {
-                os << "void";
-            }
-            else if (t.isa<LLVMFunctionType>())
-            {
-                WriteFunctionType(os, t);
-            }
-            else
-            {
-                os << "[[UNKNOWN]]";
-            }
+
+            mlir::TypeSwitch<mlir::Type>(t.type)
+                .Case([&](LLVMPointerType ptrTy) {
+                    auto elementType = ptrTy.getElementType(); 
+               
+                    // std-to-llvm getVoidPtrType uses getInt8PtrTy, so follow that pattern
+                    // (unless we are looking at a shaped MLIR type containing ui8/i8)
+                    if ((!t.source || !t.source->isa<mlir::ShapedType>()) &&
+                        elementType.isInteger(8) || elementType.isa<LLVMStructType>())
+                    {
+                        os << "void*";
+                    }
+                    else
+                    {
+                        WritePointerType(os, t);
+                    }
+                })
+                .Case([&](LLVMStructType) {
+                    WriteStructType(os, t);
+                })
+                .Case([&](LLVMArrayType) {
+                    WriteArrayType(os, t);
+                })
+                .Case([&](mlir::IntegerType) {
+                    WriteIntegerType(os, t);
+                })
+                .Case([&](mlir::FloatType) {
+                    WriteFloatType(os, t);
+                })
+                .Case([&](LLVMVoidType) {
+                    os << "void";
+                })
+                .Case([&](LLVMFunctionType) {
+                    WriteFunctionType(os, t);
+                })
+                .Default([&](Type) {
+                    os << "[[UNKNOWN]]";
+                });
         }
 
-        std::string GetLLVMTypeString(mlir::Type t)
+        std::string GetLLVMTypeString(LLVMType t)
         {
             std::ostringstream os;
             WriteLLVMType(os, t);
             return os.str();
         }
 
-        std::string GetLLVMElementTypeString(mlir::Type t)
+        std::string GetLLVMElementTypeString(LLVMType t)
         {
-            return mlir::TypeSwitch<Type, std::string>(t)
-                .Case<mlir::LLVM::LLVMPointerType>([&](mlir::LLVM::LLVMPointerType llvmTy) { return GetLLVMElementTypeString(llvmTy.getElementType()); })
-                .Default([&](Type) {
+            return mlir::TypeSwitch<mlir::Type, std::string>(t.type)
+                .Case([&](mlir::LLVM::LLVMPointerType ptrTy) { 
+                    assert(t.source && "MLIR type is required");
+                    auto mlirType = mlir::TypeSwitch<mlir::Type, mlir::Type>(*t.source)
+                        .Case([&](mlir::ShapedType shapedTy) {
+                            return shapedTy.getElementType();
+                        })
+                        .Default([&](mlir::Type type) {
+                            assert(false && "Error: unsupported MLIR type");
+                            return type;                       
+                        });
+
+                    return GetLLVMElementTypeString({ ptrTy.getElementType(), mlirType });
+                })
+                .Default([&](mlir::Type) {
                     return GetLLVMTypeString(t);
                 });
         }
@@ -360,14 +472,14 @@ namespace ir
 
             mlir::TypeConverter::SignatureConversion conversion(fnType.getNumInputs());
             auto llvmType = llvmTypeConverter.convertFunctionSignature(fnType, false, conversion);
-            WriteFunctionType(os, llvmType, name);
+            WriteFunctionType(os, { llvmType, fnType }, name);
 
             os << "\n\n";
 
             // if a base name is set, emit an alias for this function using the base name
             if (auto baseName = fn->getAttrOfType<mlir::StringAttr>(ir::BaseNameAttrName))
             {
-                WriteFunctionTypeAlias(os, llvmType, name, baseName.getValue().str());
+                WriteFunctionTypeAlias(os, { llvmType, fnType }, name, baseName.getValue().str());
                 os << "\n\n";
             }
 
@@ -508,7 +620,7 @@ namespace ir
                     if (fn->hasAttr(ir::HeaderDeclAttrName))
                     {
                         auto context = fn.getContext();
-                        auto name = fn.getName().str();
+                        auto fnName = fn.getName().str();
 
                         auto fnType = fn.getType().dyn_cast<mlir::FunctionType>();
                         assert(fnType.getNumResults() <= 1);
@@ -524,7 +636,7 @@ namespace ir
                         auto llvmType = llvmTypeConverter.convertFunctionSignature(fnType, /*isVariadic=*/false, conversion).dyn_cast<mlir::LLVM::LLVMFunctionType>();
 
                         auto function = std::make_unique<hat::Function>();
-                        function->Name(name);
+                        function->Name(fnName);
                         function->Description("");
                         function->CallingConvention(hat::CallingConventionType::CDecl); // TODO : plumb this through
 
@@ -534,18 +646,18 @@ namespace ir
                             // TODO : plumb name / description / usage / etc through
 
                             // Get the logical type information from the MLIR standard dialect version of the function signature
-                            // as the LLVM converted version will lose shape information, but get the data type information from
-                            // the LLVM converted version
-                            [[maybe_unused]] const auto llvmArgType = llvmTypeConverter.convertType(llvmType.getParamType(i));
-                            std::unique_ptr<hat::Parameter> arg = ConvertToIncompleteHATParameter(fnType.getInput(i)); // TODO : plumb through size string
+                            // as the LLVM converted version will lose shape and signness information
+                            const auto llvmArgType = llvmTypeConverter.convertType(llvmType.getParamType(i));
+                            const auto mlirArgType = fnType.getInput(i);
+                            std::unique_ptr<hat::Parameter> arg = ConvertToIncompleteHATParameter(mlirArgType); // TODO : plumb through size string
                             arg->Name(""); // TODO : plumb parameter name through
                             arg->Description(""); // TODO : plumb parameter description
                             arg->Usage(hat::UsageType::InputOutput); // TODO : plumb usage through
 
-                            auto declaredType = GetLLVMTypeString(llvmArgType); // TODO : support for const
+                            auto declaredType = GetLLVMTypeString({ llvmArgType, mlirArgType }); // TODO : support for const
                             arg->DeclaredType(declaredType);
 
-                            auto elementType = GetLLVMElementTypeString(llvmArgType);
+                            auto elementType = GetLLVMElementTypeString({ llvmArgType, mlirArgType });
                             arg->ElementType(elementType);
 
                             function->AddArgument(std::move(arg));

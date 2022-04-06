@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace accera::ir
 {
 namespace executionPlan

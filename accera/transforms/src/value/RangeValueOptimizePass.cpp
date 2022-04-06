@@ -8,6 +8,7 @@
 
 #include <ir/include/IRUtil.h>
 
+#include <llvm/IR/GlobalValue.h>
 #include <mlir/Analysis/DataFlowAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -30,6 +31,7 @@
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/IR/ConstantRange.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_os_ostream.h>
 
@@ -43,296 +45,85 @@ using namespace accera::ir;
 using namespace accera::transforms;
 using namespace accera::ir::value;
 
+using llvm::CmpInst;
+using llvm::ConstantRange;
+using llvm::Instruction;
+
 namespace
 {
 struct RangeValue
 {
     static constexpr int maxBitWidth = 64;
-    APInt min;
-    APInt max;
+    ConstantRange range = ConstantRange::getFull(maxBitWidth);
     RangeValue()
     {
-        min = negInf();
-        max = inf();
+        range = ConstantRange::getFull(maxBitWidth);
+    }
+    RangeValue(const ConstantRange& range_) :
+        range(range_)
+    {
     }
     RangeValue(int64_t min_, int64_t max_)
     {
-        min = APInt(maxBitWidth, min_, true);
-        max = APInt(maxBitWidth, max_, true);
+        range = ConstantRange::getNonEmpty(APInt(maxBitWidth, min_, true), APInt(maxBitWidth, max_ + 1, true));
     }
     RangeValue(APInt min_, APInt max_)
     {
         if (min_.isSingleWord() && max_.isSingleWord())
         {
-            min = APInt(maxBitWidth, min_.getSExtValue(), true);
-            max = APInt(maxBitWidth, max_.getSExtValue(), true);
+            range = ConstantRange::getNonEmpty(
+                APInt(maxBitWidth, min_.getSExtValue(), true),
+                APInt(maxBitWidth, max_.getSExtValue(), true) + 1);
         }
         else
         {
             // is not an int64_t, then the range is not valid
-            min = negInf();
-            max = inf();
+            range = ConstantRange::getFull(maxBitWidth);
         }
     }
 
-    RangeValue(DictionaryAttr dict)
+    RangeValue binaryOp(Instruction::BinaryOps op, const RangeValue& other) const
     {
-        auto lowerBoundAttr = dict.getAs<IntegerAttr>("lower_bound");
-        auto upperBoundAttr = dict.getAs<IntegerAttr>("upper_bound");
-        if (lowerBoundAttr)
-        {
-            min = lowerBoundAttr.getValue();
-        }
-        else
-        {
-            min = negInf();
-        }
-        if (upperBoundAttr)
-        {
-            max = upperBoundAttr.getValue();
-        }
-        else
-        {
-            max = inf();
-        }
+        return range.binaryOp(op, other.range);
     }
 
-    // [a,b] + [c,d] = [a+c,b+d]
-    RangeValue operator+(const RangeValue& other) const
+    bool icmp(CmpInst::Predicate op, const RangeValue& other) const
     {
-        APInt lowerBound, upperBound;
-        if (min.eq(negInf()) || other.min.eq(negInf()))
-        {
-            lowerBound = negInf();
-        }
-        else
-        {
-            bool overflows = false;
-            lowerBound = min.sadd_ov(other.min, overflows);
-            if (overflows)
-            {
-                lowerBound = negInf();
-            }
-        }
-        if (max.eq(inf()) || other.max.eq(inf()))
-        {
-            upperBound = inf();
-        }
-        else
-        {
-            bool overflows = false;
-            upperBound = max.sadd_ov(other.max, overflows);
-            if (overflows)
-            {
-                upperBound = inf();
-            }
-        }
-        return RangeValue(lowerBound, upperBound);
-    }
-
-    // [a,b] - [c,d] = [a-d,b-c]
-    RangeValue operator-(const RangeValue& other) const
-    {
-        APInt lowerBound, upperBound;
-        if (min.eq(negInf()) || other.max.eq(inf()))
-        {
-            lowerBound = negInf();
-        }
-        else
-        {
-            bool overflows = false;
-            lowerBound = min.ssub_ov(other.max, overflows);
-            if (overflows)
-            {
-                lowerBound = negInf();
-            }
-        }
-        if (max.eq(inf()) || other.min.eq(negInf()))
-        {
-            upperBound = inf();
-        }
-        else
-        {
-            bool overflows = false;
-            upperBound = max.ssub_ov(other.min, overflows);
-            if (overflows)
-            {
-                upperBound = inf();
-            }
-        }
-        return RangeValue(lowerBound, upperBound);
-    }
-
-    // [a, b] * [c, d] = [Min(a*c, a*d, b*c, b*d), Max(a*c, a*d, b*c, b*d)]
-    RangeValue operator*(const RangeValue& other) const
-    {
-        APInt acMin, acMax, adMin, adMax, bcMin, bcMax, bdMin, bdMax;
-#define MUL(targetMin, targetMax, a, b)     \
-    {                                       \
-        bool overflows = false;             \
-        auto tmp = a.smul_ov(b, overflows); \
-        if (overflows)                      \
-        {                                   \
-            targetMin = inf();              \
-            targetMax = negInf();           \
-        }                                   \
-        else                                \
-        {                                   \
-            targetMin = tmp;                \
-            targetMax = tmp;                \
-        }                                   \
-    }
-        MUL(acMin, acMax, min, other.min);
-        MUL(adMin, adMax, min, other.max);
-        MUL(bcMin, bcMax, max, other.min);
-        MUL(bdMin, bdMax, max, other.max);
-
-#define APMIN(a, b) (a.slt(b) ? a : b)
-#define APMAX(a, b) (a.sgt(b) ? a : b)
-
-        APInt lowerbound = APMIN(APMIN(acMin, adMin), APMIN(bcMin, bdMin));
-        APInt upperbound = APMAX(APMAX(acMax, adMax), APMAX(bcMax, bdMax));
-
-#undef APMIN
-#undef APMAX
-#undef MUL
-        return RangeValue(lowerbound, upperbound);
-    }
-
-    RangeValue operator%(const RangeValue& other) const
-    {
-        if (isUnBounded() || other.isUnBounded())
-        {
-            return RangeValue();
-        }
-        auto zero = APInt(maxBitWidth, 0, true);
-        if (other.isConstant(zero))
-        {
-            // handle mod 0
-            return RangeValue();
-        }
-
-        SmallVector<APInt, 4> cases;
-        if (isBoundedLower())
-        {
-            if (other.isBoundedLower())
-            {
-                cases.emplace_back(min.srem(other.min));
-            }
-            if (other.isBoundedUpper())
-            {
-                cases.emplace_back(min.srem(other.max));
-            }
-        }
-        if (isBoundedUpper())
-        {
-            if (other.isBoundedLower())
-            {
-                cases.emplace_back(max.srem(other.min));
-            }
-            if (other.isBoundedUpper())
-            {
-                cases.emplace_back(max.srem(other.max));
-            }
-        }
-        auto [minElem, maxElem] = std::minmax_element(cases.begin(), cases.end(), [](const APInt& a, const APInt& b) {
-            return a.slt(b);
-        });
-        return RangeValue(*minElem, *maxElem);
+        return range.icmp(op, other.range);
     }
 
     bool operator==(const RangeValue& other) const
     {
-        return min.eq(other.min) && max.eq(other.max);
-    }
-
-    // [a,b] < [c,d] iff b < c
-    bool operator<(const RangeValue& other) const
-    {
-        return max.slt(other.min);
-    }
-    // [a,b] <= [c,d] iff b <= c
-    bool operator<=(const RangeValue& other) const
-    {
-        return max.sle(other.min);
-    }
-    // [a,b] > [c,d] iff a > d
-    bool operator>(const RangeValue& other) const
-    {
-        return min.sgt(other.max);
-    }
-    // [a,b] >= [c,d] iff a >= d
-    bool operator>=(const RangeValue& other) const
-    {
-        return min.sge(other.min);
+        return range == other.range;
     }
 
     bool contains(APInt value) const
     {
-        if (value == inf() || value == negInf())
-        {
-            return false;
-        }
-        return value.sge(min) && value.sle(max);
+        return range.contains(value);
     }
 
-    bool isBounded() const
+    bool isFullSet() const
     {
-        return !isUnBounded();
+        return range.isFullSet();
     }
-    bool isBoundedLower() const
-    {
-        return !isUnBoundedLower();
-    }
-    bool isBoundedUpper() const
-    {
-        return !isUnBoundedUpper();
-    }
-    bool isUnBoundedLower() const
-    {
-        return min.eq(negInf());
-    }
-    bool isUnBoundedUpper() const
-    {
-        return max.eq(inf());
-    }
-    bool isUnBounded() const
-    {
-        return isUnBoundedLower() || isUnBoundedUpper();
-    }
+
     bool isConstant() const
     {
-        return isBounded() && min.eq(max);
+        return !range.isFullSet() && (range.getLower() + 1 == range.getUpper());
     }
-    bool isConstant(APInt val) const
-    {
-        return isConstant() && min.eq(val);
-    }
-    APInt getConstant() const
-    {
-        assert(isConstant());
-        return min;
-    }
-    static APInt negInf()
-    {
-        return APInt::getSignedMinValue(maxBitWidth);
-    }
-    static APInt inf()
-    {
-        return APInt::getSignedMaxValue(maxBitWidth);
-    }
+
     DictionaryAttr asAttr(MLIRContext* ctx) const
     {
         mlir::NamedAttrList entries;
-        entries.set("lower_bound", mlir::IntegerAttr::get(mlir::IntegerType::get(ctx, 64), min));
-        entries.set("upper_bound", mlir::IntegerAttr::get(mlir::IntegerType::get(ctx, 64), max));
+        entries.set("lower_bound", mlir::IntegerAttr::get(mlir::IntegerType::get(ctx, 64), range.getLower()));
+        entries.set("upper_bound", mlir::IntegerAttr::get(mlir::IntegerType::get(ctx, 64), range.getUpper()));
         return DictionaryAttr::get(ctx, entries);
     }
 };
 
 inline raw_ostream& operator<<(raw_ostream& os, RangeValue value)
 {
-    os << "[" << value.min << ", " << value.max << "]";
+    os << value.range;
     return os;
 }
 
@@ -429,10 +220,13 @@ private:
             .Case([&](IndexCastOp op) { return resolveRangeValue(op); })
             .Case([&](gpu::ThreadIdOp op) { return resolveRangeValue(op); })
             .Case([&](gpu::BlockIdOp op) { return resolveRangeValue(op); })
-            .Case([&](AddIOp op) { return resolveRangeValue(op); })
-            .Case([&](SubIOp op) { return resolveRangeValue(op); })
-            .Case([&](MulIOp op) { return resolveRangeValue(op); })
-            .Case([&](SignedRemIOp op) { return resolveRangeValue(op); })
+            .Case([&](AddIOp op) { return resolveRangeValue(Instruction::BinaryOps::Add, op); })
+            .Case([&](SubIOp op) { return resolveRangeValue(Instruction::BinaryOps::Sub, op); })
+            .Case([&](MulIOp op) { return resolveRangeValue(Instruction::BinaryOps::Mul, op); })
+            .Case([&](SignedRemIOp op) { return resolveRangeValue(Instruction::BinaryOps::SRem, op); })
+            .Case([&](UnsignedRemIOp op) { return resolveRangeValue(Instruction::BinaryOps::URem, op); })
+            .Case([&](SignedDivIOp op) { return resolveRangeValue(Instruction::BinaryOps::SDiv, op); })
+            .Case([&](UnsignedDivIOp op) { return resolveRangeValue(Instruction::BinaryOps::UDiv, op); })
             .Case([&](scf::ForOp op) { return resolveRangeValue(op); })
             .Case([&](AffineForOp op) { return resolveRangeValue(op); })
             .Default([&](Operation*) { return RangeValue(); });
@@ -499,25 +293,10 @@ private:
         auto upperBound = gridIdxAttr.getValue()[gridDimIdx].cast<IntegerAttr>().getInt();
         return RangeValue(0, upperBound);
     }
-    RangeValue resolveRangeValue(AddIOp op)
+    RangeValue resolveRangeValue(Instruction::BinaryOps binOp, Operation* op)
     {
         auto operands = resolveOperands(op);
-        return operands[0] + operands[1];
-    }
-    RangeValue resolveRangeValue(SubIOp op)
-    {
-        auto operands = resolveOperands(op);
-        return operands[0] - operands[1];
-    }
-    RangeValue resolveRangeValue(MulIOp op)
-    {
-        auto operands = resolveOperands(op);
-        return operands[0] * operands[1];
-    }
-    RangeValue resolveRangeValue(SignedRemIOp op)
-    {
-        auto operands = resolveOperands(op);
-        return operands[0] % operands[1];
+        return operands[0].binaryOp(binOp, operands[1]);
     }
     RangeValue resolveRangeValue(AffineForOp op)
     {
@@ -528,7 +307,7 @@ private:
         assert(op.getNumInductionVars() == 1);
         RangeValue lowerBound = resolveRangeValue(op.lowerBound().getDefiningOp());
         RangeValue upperBound = resolveRangeValue(op.upperBound().getDefiningOp());
-        return lowerBound.isConstant() && upperBound.isConstant() ? RangeValue(lowerBound.min, upperBound.max) : RangeValue();
+        return lowerBound.isConstant() && upperBound.isConstant() ? RangeValue(lowerBound.range.getLower(), upperBound.range.getUpper() - 1) : RangeValue();
     }
 };
 struct RangeValueOptimizePass : public ConvertRangeValueOptimizeBase<RangeValueOptimizePass>
@@ -563,7 +342,6 @@ private:
 
     CmpIOpClassification classifyCmpIOp(CmpIOp op)
     {
-
         auto predicate = op.getPredicate();
         auto lhs = op.lhs();
         auto rhs = op.rhs();
@@ -573,7 +351,7 @@ private:
         }
         auto lhsRange = rangeValue->getRange(lhs);
         auto rhsRange = rangeValue->getRange(rhs);
-        if (lhsRange.isUnBounded() || rhsRange.isUnBounded())
+        if (lhsRange.isFullSet() || rhsRange.isFullSet())
         {
             return CmpIOpClassification::Unknown;
         }
@@ -581,41 +359,41 @@ private:
         switch (predicate)
         {
         case CmpIPredicate::slt:
-            if (lhsRange < rhsRange)
+            if (lhsRange.icmp(CmpInst::Predicate::ICMP_SLT, rhsRange))
             {
                 return CmpIOpClassification::AlwaysTrue;
             }
-            else if (lhsRange >= rhsRange)
+            else if (lhsRange.icmp(CmpInst::Predicate::ICMP_SGE, rhsRange))
             {
                 return CmpIOpClassification::AlwaysFalse;
             }
             break;
         case CmpIPredicate::sle:
-            if (lhsRange <= rhsRange)
+            if (lhsRange.icmp(CmpInst::Predicate::ICMP_SLE, rhsRange))
             {
                 return CmpIOpClassification::AlwaysTrue;
             }
-            else if (lhsRange > rhsRange)
+            else if (lhsRange.icmp(CmpInst::Predicate::ICMP_SGT, rhsRange))
             {
                 return CmpIOpClassification::AlwaysFalse;
             }
             break;
         case CmpIPredicate::sgt:
-            if (lhsRange > rhsRange)
+            if (lhsRange.icmp(CmpInst::Predicate::ICMP_SGT, rhsRange))
             {
                 return CmpIOpClassification::AlwaysTrue;
             }
-            else if (lhsRange <= rhsRange)
+            else if (lhsRange.icmp(CmpInst::Predicate::ICMP_SLE, rhsRange))
             {
                 return CmpIOpClassification::AlwaysFalse;
             }
             break;
         case CmpIPredicate::sge:
-            if (lhsRange >= rhsRange)
+            if (lhsRange.icmp(CmpInst::Predicate::ICMP_SGE, rhsRange))
             {
                 return CmpIOpClassification::AlwaysTrue;
             }
-            else if (lhsRange < rhsRange)
+            else if (lhsRange.icmp(CmpInst::Predicate::ICMP_SLT, rhsRange))
             {
                 return CmpIOpClassification::AlwaysFalse;
             }

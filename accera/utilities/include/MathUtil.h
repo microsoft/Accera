@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <type_traits>
 namespace accera
 {
 namespace utilities

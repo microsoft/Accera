@@ -677,7 +677,8 @@ class TensorCoreInformation:
 
 
 MI100_TENSORCORE_INFO = TensorCoreInformation([
-    TensorCoreInformationEntry(ScalarType.float32, ScalarType.float32, [2,2,16]) # maps to the 16x16x4 warp mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=[2,2,16]), # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=[2,2,16]) # maps to the 16x16x4 mfma instruction
 ])
 
 # Tensor Cores is current unused
@@ -688,9 +689,10 @@ KNOWN_GPUS = [
     ["CUDA", "NVidia V100", "Volta",  "sm70",  80, 1024, [1024, 1024, 64], 49152, 32, 1.380000, 65536, None],
     ["CUDA", "NVidia A100", "Ampere", "sm80", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, None],
     # AMD
-    ["ROCM", "AMD Radeon7", "CDNA",  "gfx906", 60,  1024, [1024, 1024, 1024], 65536, 64, 1.801000, 65536, None],
-    ["ROCM", "AMD MI50",    "CDNA",  "gfx906", 60,  1024, [1024, 1024, 1024], 65536, 64, 1.725000, 65536, None],
-    ["ROCM", "AMD MI100",   "CDNA2", "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, MI100_TENSORCORE_INFO]
+    ["ROCM", "AMD Radeon7", "Vega20",    "gfx906", 60,  1024, [1024, 1024, 1024], 65536, 64, 1.801000, 65536, None],
+    ["ROCM", "AMD MI50",    "Vega20",    "gfx906", 60,  1024, [1024, 1024, 1024], 65536, 64, 1.725000, 65536, None],
+    ["ROCM", "AMD MI100",   "Arcturus",  "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, MI100_TENSORCORE_INFO],
+    ["ROCM", "AMD MI200",   "Aldebaran", "gfx90a", 220, 1024, [1024, 1024, 1024], 65536, 64, 1.700000, 65536, None]
 ]
 # yapf: enable
 

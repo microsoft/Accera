@@ -1046,21 +1046,20 @@ namespace executionPlan
         size_t multiCacheIdxCount = cacheMultiCacheIndices.size();
         size_t offsetIdxCount = cacheOffsetAccessIndices.size();
 
-        typename OpType::Adaptor adaptor{ op };
-        std::vector<mlir::Value> baseIndices(adaptor.indices().begin() + (multiCacheIdxCount + offsetIdxCount), adaptor.indices().end());
-
-        return baseIndices;
+        auto operands = op.getMapOperands().drop_front(multiCacheIdxCount + offsetIdxCount);
+ 
+        return std::vector<mlir::Value>(operands.begin(), operands.end());
     }
 
-    std::vector<mlir::Value> MakeCacheOp::getBaseArrayPosition(mlir::AffineLoadOp loadOp)
+    std::vector<mlir::Value> MakeCacheOp::getBaseArrayPosition(mlir::AffineReadOpInterface loadOp)
     {
-        assert(loadOp.memref() == cache());
+        assert(loadOp.getMemRef() == cache());
         return GetBaseArrayLoadStorePosition(loadOp, multiCacheAccessIndices(), offsetAccessIndices());
     }
 
-    std::vector<mlir::Value> MakeCacheOp::getBaseArrayPosition(mlir::AffineStoreOp storeOp)
+    std::vector<mlir::Value> MakeCacheOp::getBaseArrayPosition(mlir::AffineWriteOpInterface storeOp)
     {
-        assert(storeOp.memref() == cache());
+        assert(storeOp.getMemRef() == cache());
         return GetBaseArrayLoadStorePosition(storeOp, multiCacheAccessIndices(), offsetAccessIndices());
     }
 
@@ -1221,7 +1220,8 @@ namespace executionPlan
                                          mlir::ArrayAttr ubMaps,
                                          AffineMap activeBlockToCacheMap,
                                          StringRef activeBlockTag,
-                                         bool thrifty)
+                                         bool thrifty,
+                                         const VectorizationInfo& vecInfo)
     {
         build(builder,
               result,
@@ -1234,7 +1234,8 @@ namespace executionPlan
               activeBlockToCacheMap,
               llvm::None, // scaleValues
               activeBlockTag,
-              thrifty);
+              thrifty,
+              VectorizationInfoAttr::get(vecInfo, builder.getContext()));
     }
 
     //
@@ -1344,7 +1345,8 @@ namespace executionPlan
                                    bool dimReorderCache,
                                    bool thrifty,
                                    bool doubleBufferCache,
-                                   accera::ir::value::MemorySpace doubleBufferMemorySpace)
+                                   accera::ir::value::MemorySpace doubleBufferMemorySpace,
+                                   const VectorizationInfo& vecInfo)
     {
         auto cacheRegionRelevantIndexRangeAttrs = util::VectorToArrayAttr<IndexRange, IndexRangeAttr>(
             cacheAccessContext.cacheRegionRelevantScheduleIndexRanges,
@@ -1390,6 +1392,7 @@ namespace executionPlan
             result.addAttribute("doubleBufferCache", builder.getUnitAttr());
             result.addAttribute("doubleBufferMemorySpace", value::MemorySpaceAttr::get(builder.getContext(), doubleBufferMemorySpace));
         }
+        result.addAttribute("vectorizationInfo", VectorizationInfoAttr::get(vecInfo, builder.getContext()));
         result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({ 1 /* fromValue */, 1 /* toValue */, 1 /* baseInput */, static_cast<int32_t>(cacheAccessContext.fullRelevantScheduleIndices.size()), static_cast<int32_t>(cacheAccessContext.externalRelevantScheduleIndices.size()) }));
     }
 
@@ -1462,7 +1465,8 @@ namespace executionPlan
                                              bool dimReorderCache,
                                              bool thrifty,
                                              bool doubleBufferCache,
-                                             accera::ir::value::MemorySpace doubleBufferMemorySpace)
+                                             accera::ir::value::MemorySpace doubleBufferMemorySpace,
+                                             const VectorizationInfo& vecInfo)
     {
         result.addTypes(builder.getIndexType());
         result.addOperands(input);
@@ -1486,6 +1490,7 @@ namespace executionPlan
             result.addAttribute("doubleBufferCache", builder.getUnitAttr());
             result.addAttribute("doubleBufferMemorySpace", value::MemorySpaceAttr::get(builder.getContext(), doubleBufferMemorySpace));
         }
+        result.addAttribute("vectorizationInfo", VectorizationInfoAttr::get(vecInfo, builder.getContext()));
     }
 
     Index BeginMaxElementCacheRegionOp::index()

@@ -346,7 +346,7 @@ namespace cpp_printer
         {
             if (state.hasRuntime(Runtime::CUDA))
             {
-                return "half";
+                return "vhalf";
             }
             else
             {
@@ -376,7 +376,7 @@ namespace cpp_printer
             const auto sVectorWidth = std::to_string(vectorWidth);
             if constexpr (BitWidth == 16)
             {
-                return std::string("half") + sVectorWidth;
+                return std::string("vhalf") + sVectorWidth;
             }
             else
             {

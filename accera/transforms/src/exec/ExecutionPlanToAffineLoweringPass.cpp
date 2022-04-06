@@ -425,6 +425,18 @@ VectorizationInfo GetVectorizationInfo(Operation* op)
     return vectorizationInfoAttr.getValue();
 }
 
+template <typename CacheOpType>
+VectorizationInfo GetCacheOpVectorizationInfoOrDefault(CacheOpType cacheOp)
+{
+    VectorizationInfo vecInfo;
+    auto vecInfoAttr = cacheOp.vectorizationInfoAttr();
+    if (vecInfoAttr)
+    {
+        vecInfo = vecInfoAttr.getValue();
+    }
+    return vecInfo;
+}
+
 [[maybe_unused]] void SetVectorizationInfo(Operation* op, const VectorizationInfo& vecInfo)
 {
     op->setAttr(VectorizationInfoAttr::getKeyName(), VectorizationInfoAttr::get(vecInfo, op->getContext()));
@@ -948,7 +960,7 @@ struct MultiCacheInfo
 
 std::pair<mlir::Value, mlir::ValueRange> GetAccessValueAndIndices(Operation* loadOrStoreOp)
 {
-    bool isLoadOrStore = isa<memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, mlir::memref::LoadOp, mlir::AffineLoadOp, v::LoadOp>(loadOrStoreOp);
+    bool isLoadOrStore = isa<memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MFMAStoreOp, mlir::memref::LoadOp, mlir::AffineLoadOp, v::LoadOp, v::MFMALoadOp>(loadOrStoreOp);
     assert(isLoadOrStore);
     if (auto stdStoreOp = dyn_cast_or_null<memref::StoreOp>(loadOrStoreOp))
     {
@@ -965,6 +977,11 @@ std::pair<mlir::Value, mlir::ValueRange> GetAccessValueAndIndices(Operation* loa
         v::StoreOp::Adaptor adaptor{ valueStoreOp };
         return std::make_pair(adaptor.memref(), adaptor.indices());
     }
+    else if (auto valueMFMAStoreOp = dyn_cast_or_null<v::MFMAStoreOp>(loadOrStoreOp))
+    {
+        v::MFMAStoreOp::Adaptor adaptor{ valueMFMAStoreOp };
+        return std::make_pair(adaptor.memref(), adaptor.indices());
+    }
     else if (auto stdLoadOp = dyn_cast_or_null<memref::LoadOp>(loadOrStoreOp))
     {
         memref::LoadOp::Adaptor adaptor{ stdLoadOp };
@@ -975,9 +992,14 @@ std::pair<mlir::Value, mlir::ValueRange> GetAccessValueAndIndices(Operation* loa
         mlir::AffineLoadOp::Adaptor adaptor{ affineLoadOp };
         return std::make_pair(adaptor.memref(), adaptor.indices());
     }
-    else if (auto valueLoadOp = dyn_cast_or_null<v::LoadOp>(loadOrStoreOp))
+    else if (auto valueMFMALoadOp = dyn_cast_or_null<v::LoadOp>(loadOrStoreOp))
     {
-        v::LoadOp::Adaptor adaptor{ valueLoadOp };
+        v::LoadOp::Adaptor adaptor{ valueMFMALoadOp };
+        return std::make_pair(adaptor.memref(), adaptor.indices());
+    }
+    else if (auto valueMFMALoadOp = dyn_cast_or_null<v::MFMALoadOp>(loadOrStoreOp))
+    {
+        v::MFMALoadOp::Adaptor adaptor{ valueMFMALoadOp };
         return std::make_pair(adaptor.memref(), adaptor.indices());
     }
     assert(false && "Unhandled load/store case");
@@ -989,7 +1011,7 @@ bool ComputeRegionAccessedByOp(PatternRewriter& rewriter, mlir::MemRefRegion& ac
     rewriter.setInsertionPoint(op);
     auto loc = op->getLoc();
 
-    if (isa<mlir::AffineLoadOp, mlir::AffineStoreOp>(op))
+    if (isa<mlir::AffineLoadOp, mlir::AffineStoreOp, v::MFMALoadOp, v::MFMAStoreOp>(op))
     {
         auto result = activeBlockRegion.compute(op, loopDepth, nullptr, false);
         assert(succeeded(result));
@@ -1033,11 +1055,11 @@ ArrayAccessInfo ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir
             mlir::MemRefRegion activeBlockRegion(loc);
 
             // TODO : make value load/store implement load/store interfaces from std dialect
-            if (isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp>(arrayUserOp))
+            if (isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MFMAStoreOp>(arrayUserOp))
             {
                 result.valueWritten = true;
             }
-            if (isa<mlir::memref::LoadOp, mlir::AffineLoadOp, v::LoadOp>(arrayUserOp))
+            if (isa<mlir::memref::LoadOp, mlir::AffineLoadOp, v::LoadOp, v::MFMALoadOp>(arrayUserOp))
             {
                 result.valueRead = true;
                 if (result.onlyReadsAreAccumulates)
@@ -1069,7 +1091,7 @@ ArrayAccessInfo ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir
 
                             for (auto addedValueUser : addResult.getUsers())
                             {
-                                if (!isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp>(addedValueUser))
+                                if (!isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MFMAStoreOp>(addedValueUser))
                                 {
                                     result.onlyReadsAreAccumulates = false;
                                     break;
@@ -1088,7 +1110,7 @@ ArrayAccessInfo ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir
                                 break;
                             }
                         }
-                        else if (isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp>(loadedValueUser))
+                        else if (isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MFMAStoreOp>(loadedValueUser))
                         {
                             // If it is just a load-and-store without any other uses of the loaded value, then treat that as a simple accumulate equivalent to accumulating the value 0
                             auto dstValueAndIndices = GetAccessValueAndIndices(loadedValueUser);
@@ -1537,22 +1559,42 @@ mlir::AffineLoadOp CreateLoad(mlir::OpBuilder& builder,
     }
 }
 
+// Create an MFMALoadOp that understands how to access caches
+v::MFMALoadOp CreateMFMALoad(mlir::OpBuilder& builder,
+                             mlir::Location loc,
+                             v::MFMAMatrixType resultType,
+                             mlir::Value src,
+                             const std::vector<mlir::Value>& baseArrayPosition,
+                             const std::vector<std::pair<Index, mlir::Value>>& unrealizedLoopNestIndices = {})
+{
+    if (auto srcCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(src.getDefiningOp()))
+    {
+        mlir::AffineValueMap loadAccessInfo = srcCacheOp.insertCachePosition(builder.getInsertionBlock(), baseArrayPosition, unrealizedLoopNestIndices);
+        return builder.create<v::MFMALoadOp>(loc, resultType, src, loadAccessInfo.getAffineMap(), loadAccessInfo.getOperands());
+    }
+    else
+    {
+        return builder.create<v::MFMALoadOp>(loc, resultType, src, baseArrayPosition);
+    }
+}
+
 // Create an AffineStoreOp that understands how to access caches
-mlir::AffineStoreOp CreateStore(mlir::OpBuilder& builder,
-                                mlir::Location loc,
-                                mlir::Value value,
-                                mlir::Value dst,
-                                const std::vector<mlir::Value>& baseArrayPosition,
-                                const std::vector<std::pair<Index, mlir::Value>>& unrealizedLoopNestIndices = {})
+template <typename StoreOp = mlir::AffineStoreOp>
+StoreOp CreateStore(mlir::OpBuilder& builder,
+                    mlir::Location loc,
+                    mlir::Value value,
+                    mlir::Value dst,
+                    const std::vector<mlir::Value>& baseArrayPosition,
+                    const std::vector<std::pair<Index, mlir::Value>>& unrealizedLoopNestIndices = {})
 {
     if (auto dstCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(dst.getDefiningOp()))
     {
         mlir::AffineValueMap storeAccessInfo = dstCacheOp.insertCachePosition(builder.getInsertionBlock(), baseArrayPosition, unrealizedLoopNestIndices);
-        return builder.create<mlir::AffineStoreOp>(loc, value, dst, storeAccessInfo.getAffineMap(), storeAccessInfo.getOperands());
+        return builder.create<StoreOp>(loc, value, dst, storeAccessInfo.getAffineMap(), storeAccessInfo.getOperands());
     }
     else
     {
-        return builder.create<mlir::AffineStoreOp>(loc, value, dst, baseArrayPosition);
+        return builder.create<StoreOp>(loc, value, dst, baseArrayPosition);
     }
 }
 
@@ -1645,6 +1687,7 @@ std::vector<IndexAttr> GetLoadStoreAccessIndexAttrs(LoadStoreOp op)
     for (auto indexValue : indexValues)
     {
         mlir::AffineForOp forOp = mlir::getForInductionVarOwner(indexValue);
+        if (!forOp) continue; // TODO: Is this correct???
         assert(forOp != nullptr);
         assert(forOp->hasAttrOfType<IndexAttr>("index"));
         auto indexAttr = forOp->getAttrOfType<IndexAttr>("index");
@@ -2063,7 +2106,8 @@ LogicalResult MultiCacheCopyOpRewrite::matchAndRewrite(MultiCacheCopyOp multiCac
                                                       multiCacheCopyOp.toCache(),
                                                       multiCacheCopyOp.activeBlockTag(),
                                                       multiCacheCopyOp.thrifty(),
-                                                      true); // skipBarriers : this copy will already be guarded by barriers at the multicache level, so skip creating them internally
+                                                      true, // skipBarriers : this copy will already be guarded by barriers at the multicache level, so skip creating them internally
+                                                      multiCacheCopyOp.vectorizationInfoAttr());
     });
 
     rewriter.eraseOp(multiCacheCopyOp);
@@ -2144,6 +2188,13 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
     std::optional<v::ExecutionTarget> execTargetOpt = util::ResolveExecutionTarget(cacheCopyOp);
     auto execTarget = *execTargetOpt;
 
+    std::optional<VectorizationInfo> vecInfo;
+    auto vecInfoLLVMOpt = cacheCopyOp.vectorizationInfo();
+    if (vecInfoLLVMOpt.hasValue())
+    {
+        vecInfo = vecInfoLLVMOpt.getValue().getValue();
+    }
+
     if (constantShapeOpt.has_value())
     {
         auto activeBlockShape = *constantShapeOpt;
@@ -2197,7 +2248,7 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
                                                           ThreadYIndexName,
                                                           ThreadXIndexName,
                                                           ThreadVectorizationIndexName };
-            auto [copyNestOp, copyScheduleOp, copyExecPlanOp] = CreateActiveBlockCacheLoopnest(rewriter, loc, activeBlockIterationShape, activeBlockDimNames, std::nullopt, elementByteWidth, execTarget, "copy", [&](OpBuilder& currentBuilder, const std::vector<mlir::Value>& orderedSymbolicIndexOpValues) {
+            auto [copyNestOp, copyScheduleOp, copyExecPlanOp] = CreateActiveBlockCacheLoopnest(rewriter, loc, activeBlockIterationShape, activeBlockDimNames, vecInfo, elementByteWidth, execTarget, "copy", [&](OpBuilder& currentBuilder, const std::vector<mlir::Value>& orderedSymbolicIndexOpValues) {
                 // The induction variables have been shifted to represent the constant iteration space
                 // however, the maps expect they are constructed based on the original mappings so we
                 // need to offset each IV by its lower bound map applied to its lower bound operands
@@ -2306,13 +2357,6 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
         }
         else
         {
-            auto vLambdaOp = cacheCopyOp->getParentOfType<v::ValueLambdaOp>();
-            std::optional<VectorizationInfo> vecInfo;
-            if (vLambdaOp && HasVectorizationInfo(vLambdaOp))
-            {
-                vecInfo = GetVectorizationInfo(vLambdaOp);
-            }
-
             auto [copyNestOp, copyScheduleOp, copyExecPlanOp] = CreateActiveBlockCacheLoopnest(rewriter, loc, activeBlockShape, {}, vecInfo, elementByteWidth, execTarget, "copy", [&](OpBuilder& currentBuilder, const std::vector<mlir::Value>& orderedSymbolicIndexOpValues) {
                 // The induction variables have been shifted to represent the constant iteration space
                 // however, the maps expect they are constructed based on the original mappings so we
@@ -2454,19 +2498,19 @@ LogicalResult ActiveBlockCacheReduceOpRewrite::matchAndRewrite(ActiveBlockCacheR
 
     auto constantShapeOpt = GetConstantActiveBlockShape(lbMaps, ubMaps);
 
+    std::optional<VectorizationInfo> vecInfo;
+    auto vecInfoLLVMOpt = cacheReduceOp.vectorizationInfo();
+    if (vecInfoLLVMOpt.hasValue())
+    {
+        vecInfo = vecInfoLLVMOpt.getValue().getValue();
+    }
+
     if (constantShapeOpt.has_value())
     {
         auto activeBlockShape = *constantShapeOpt;
         std::optional<v::ExecutionTarget> execTargetOpt = util::ResolveExecutionTarget(cacheReduceOp);
         assert(execTargetOpt.has_value());
         auto execTarget = *execTargetOpt;
-
-        auto vLambdaOp = cacheReduceOp->getParentOfType<v::ValueLambdaOp>();
-        std::optional<VectorizationInfo> vecInfo;
-        if (vLambdaOp && HasVectorizationInfo(vLambdaOp))
-        {
-            vecInfo = GetVectorizationInfo(vLambdaOp);
-        }
 
         auto [reduceNestOp, reduceScheduleOp, reduceExecPlanOp] = CreateActiveBlockCacheLoopnest(rewriter, loc, activeBlockShape, {}, vecInfo, elementByteWidth, execTarget, "reduce", [&](OpBuilder& currentBuilder, const std::vector<mlir::Value>& orderedSymbolicIndexOpValues) {
             // The induction variables have been shifted to represent the constant iteration space
@@ -3830,6 +3874,39 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                     rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
                 }
             })
+            .Case([&](v::MFMALoadOp loadOp) {
+                v::MFMALoadOp::Adaptor loadAdaptor{ loadOp };
+                rewriter.setInsertionPoint(loadOp);
+                if (isActiveBlockCache)
+                {
+                    auto baseArrayPosition = GetBaseArrayPosition(rewriter, loc, loadOp);
+                    auto newLoadOp = CreateMFMALoad(rewriter, loc, loadOp.getMFMAMatrixType(), toValue, baseArrayPosition);
+                    loadOp.replaceAllUsesWith(newLoadOp.getResult());
+                    TransferOrSetAccessAttrs(loadOp, newLoadOp);
+                    rewriter.eraseOp(loadOp);
+                }
+                else
+                {
+                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    rewriter.replaceOpWithNewOp<v::MFMALoadOp>(loadOp, loadOp.getMFMAMatrixType(), toValueAccessContext.value, cacheMap, accessIndices);
+                }
+            })
+            .Case([&](v::MFMAStoreOp storeOp) {
+                v::MFMAStoreOp::Adaptor storeAdaptor{ storeOp };
+                rewriter.setInsertionPoint(storeOp);
+                if (isActiveBlockCache)
+                {
+                    auto baseArrayPosition = GetBaseArrayPosition(rewriter, loc, storeOp);
+                    auto newStoreOp = CreateStore<v::MFMAStoreOp>(rewriter, loc, storeAdaptor.value(), toValue, baseArrayPosition);
+                    TransferOrSetAccessAttrs(storeOp, newStoreOp);
+                    rewriter.eraseOp(storeOp);
+                }
+                else
+                {
+                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    rewriter.replaceOpWithNewOp<v::MFMAStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
+                }
+            })
             .Case([&](ActiveElementCacheCopyOp cacheCopyOp) {
                 rewriter.setInsertionPoint(cacheCopyOp);
                 ActiveElementCacheCopyOp::Adaptor copyAdaptor{ cacheCopyOp };
@@ -4711,7 +4788,8 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                                                                           multiCacheInfo.activeBlockToCacheMap,
                                                                           activeBlockTag,
                                                                           beginCacheRegionOp.thrifty(),
-                                                                          true); // toCache
+                                                                          true, // toCache
+                                                                          beginCacheRegionOp.vectorizationInfoAttr());
                 // Re-create the affine yield op at the end of the block that we erased
                 loopBuilder.create<mlir::AffineYieldOp>(loc);
                 firstIterCopy->replaceUsesOfWith(triggerLoopParentIV, clonedtriggerLoopParentLoop.getInductionVar());
@@ -4754,7 +4832,8 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                                                                              multiCacheInfo.activeBlockToCacheMap,
                                                                              activeBlockTag,
                                                                              beginCacheRegionOp.thrifty(),
-                                                                             true); // toCache
+                                                                             true,
+                                                                             beginCacheRegionOp.vectorizationInfoAttr()); // toCache
                 });
 
                 // Create mapping ops for each cache active block region associated with this multiCache
@@ -4781,7 +4860,8 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                                                                              multiCacheInfo.activeBlockToCacheMap,
                                                                              activeBlockTag,
                                                                              beginCacheRegionOp.thrifty(),
-                                                                             false); // toCache
+                                                                             false, // toCache
+                                                                             beginCacheRegionOp.vectorizationInfoAttr());
                 });
                 // Mark the trigger loop parent loop to unswitch the last iteration so that our affine.if checks
                 // are always true in the main loop and always false in the unswitched final iteration
@@ -4816,7 +4896,8 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                                                           multiCacheInfo.activeBlockToCacheMap,
                                                           activeBlockTag,
                                                           beginCacheRegionOp.thrifty(),
-                                                          true); // toCache
+                                                          true, // toCache
+                                                          beginCacheRegionOp.vectorizationInfoAttr());
                     }
                     else
                     {
@@ -4848,7 +4929,8 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                                                                       rewriter.getAffineMapArrayAttr(multiCacheInfo.activeBlockInfo.ubMaps),
                                                                       multiCacheInfo.activeBlockToCacheMap,
                                                                       activeBlockTag,
-                                                                      beginCacheRegionOp.thrifty());
+                                                                      beginCacheRegionOp.thrifty(),
+                                                                      GetCacheOpVectorizationInfoOrDefault(beginCacheRegionOp));
                         }
                         else
                         {
@@ -4871,7 +4953,8 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                                                                     false, // toCache : this copy will copy from the cache back to the outer array
                                                                     activeBlockTag,
                                                                     beginCacheRegionOp.thrifty(),
-                                                                    false); // skipBarriers : this copy isn't already guarded by barriers, so don't skip them
+                                                                    false, // skipBarriers : this copy isn't already guarded by barriers, so don't skip them
+                                                                    beginCacheRegionOp.vectorizationInfoAttr());
                         }
                         else
                         {
@@ -5033,7 +5116,8 @@ LogicalResult MaxElementCacheRegionOpRewrite::matchAndRewrite(BeginMaxElementCac
                                                           beginMaxElementCacheRegionOp.dimReorderCache(),
                                                           beginMaxElementCacheRegionOp.thrifty(),
                                                           beginMaxElementCacheRegionOp.doubleBufferCache(),
-                                                          doubleBufferMemorySpace);
+                                                          doubleBufferMemorySpace,
+                                                          GetCacheOpVectorizationInfoOrDefault(beginMaxElementCacheRegionOp));
 
     // This new cache region op has already been hoisted as high as we want to hoist it
     newBeginOp->setAttr("hoisted", rewriter.getUnitAttr());
@@ -5599,6 +5683,19 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "The store into C was not the last instruction");
     }
 
+    // A * B + C is valid only if A and B are FP32 and C is FP32 or if A and B are FP16 and C is FP32
+    if (!((loadAOp.getMemRefType().getElementType().isF32() &&
+           loadBOp.getMemRefType().getElementType().isF32() &&
+           storeC.getMemRefType().getElementType().isF32()) ||
+          (loadAOp.getMemRefType().getElementType().isF16() &&
+           loadBOp.getMemRefType().getElementType().isF16() &&
+           storeC.getMemRefType().getElementType().isF32())))
+    {
+        return rewriter.notifyMatchFailure(&*innerLoopBodyIter,
+                                           "Invalid data types. "
+                                           "A * B + C is valid only if A and B are FP32 and C is FP32 or if A and B are FP16 and C is FP32");
+    }
+
     mlir::OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(innerLoop.getBody(), innerLoop.getBody()->getTerminator()->getIterator());
 
@@ -5607,8 +5704,8 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     auto ctx = rewriter.getContext();
 
     auto warpSize = rewriter.create<ConstantIndexOp>(loc, util::ResolveWarpSize(affineForOp).value());
-    auto four = rewriter.create<ConstantIndexOp>(loc, 4);
-    auto sixteen = rewriter.create<ConstantIndexOp>(loc, tensorizationInfo.dim.back());
+    auto vecSize = rewriter.create<ConstantIndexOp>(loc, tensorizationInfo.dim[0] * tensorizationInfo.dim[1]);
+    auto leadingDim = rewriter.create<ConstantIndexOp>(loc, tensorizationInfo.dim.back());
     auto tidX = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x");
     auto tidY = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y");
     auto bidX = rewriter.create<gpu::BlockIdOp>(loc, rewriter.getIndexType(), "x");
@@ -5616,13 +5713,13 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     auto bdimX = rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x");
     auto blockTid = rewriter.create<AddIOp>(loc, tidX, rewriter.create<MulIOp>(loc, tidY, bdimX));
     auto warpId = rewriter.create<UnsignedDivIOp>(loc, blockTid, warpSize);
-    auto warpX = rewriter.create<UnsignedRemIOp>(loc, warpId, four);
-    auto warpY = rewriter.create<UnsignedDivIOp>(loc, warpId, four);
+    auto warpX = rewriter.create<UnsignedRemIOp>(loc, warpId, vecSize);
+    auto warpY = rewriter.create<UnsignedDivIOp>(loc, warpId, vecSize);
     auto rowOffset = rewriter.create<AddIOp>(loc,
-                                             rewriter.create<MulIOp>(loc, warpY, sixteen),
+                                             rewriter.create<MulIOp>(loc, warpY, leadingDim),
                                              rewriter.create<MulIOp>(loc, bidX, warpSize));
     auto colOffset = rewriter.create<AddIOp>(loc,
-                                             rewriter.create<MulIOp>(loc, warpX, sixteen),
+                                             rewriter.create<MulIOp>(loc, warpX, leadingDim),
                                              rewriter.create<MulIOp>(loc, bidY, warpSize));
 
     std::vector<int64_t> mfmaMatrixShape{ tensorizationInfo.dim[0], tensorizationInfo.dim[1], tensorizationInfo.dim[2] };
@@ -5733,7 +5830,6 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         RemoveTensorizationInfo(loop);
     }
     RemoveTensorizationInfo(affineForOp);
-    (void)util::PromoteIfSingleIteration(rewriter, affineForOp);
     rewriter.finalizeRootUpdate(affineForOp);
 
     return success();
@@ -6145,7 +6241,8 @@ LogicalResult HoistScalingToCacheReduceRewrite::matchAndRewrite(mlir::AffineStor
                                                                   activeBlockCacheReduceOp.activeBlockToCacheMap(),
                                                                   scaleValues,
                                                                   activeBlockCacheReduceOp.activeBlockTag(),
-                                                                  activeBlockCacheReduceOp.thrifty());
+                                                                  activeBlockCacheReduceOp.thrifty(),
+                                                                  activeBlockCacheReduceOp.vectorizationInfoAttr());
         }
     }
 

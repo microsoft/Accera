@@ -176,8 +176,11 @@ void BarrierOptPass::runOnOperation()
                             prevBarrier.barrier.emitRemark("BarrierOpRewrite: removing redundant barrier");
                         prevBarrier.barrier.erase();
                     }
-
-                    prevBarrier = barrierInfo;
+                    auto barrier = barrierInfo.barrier;
+                    if (!(isa<LoopLikeOpInterface>(barrier->getParentOp()) && activeWrites.empty() && activeReads.empty()))
+                    {
+                        prevBarrier = barrierInfo;
+                    }
                 },
                 [&](MemoryAccessInfo& memOpInfo) {
                     if (memOpInfo.accessType == MemoryAccessType::Write)

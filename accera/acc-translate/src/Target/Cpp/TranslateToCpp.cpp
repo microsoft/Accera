@@ -4,6 +4,8 @@
 //  Authors: Abdul Dakkak
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include "transforms/include/AcceraPasses.h"
+
 #include "TranslateToCpp.h"
 #include "CppPrinter.h"
 
@@ -21,21 +23,22 @@ namespace mlir
 
 LogicalResult translateModuleToCpp(Operation* m, raw_ostream& os)
 {
-    cpp_printer::CppPrinter printer(os);
-#if 0
+    cpp_printer::CppPrinter printer(os); 
+#if 1
     auto context = m->getContext();
 
     PassManager pm(context);
     auto& optPM = pm.nest<mlir::FuncOp>();
     optPM.addPass(memref::createFoldSubViewOpsPass());
     optPM.addPass(createAffineScalarReplacementPass());
+    pm.addPass(accera::transforms::value::createRangeValueOptimizePass());
     pm.addPass(createCSEPass()); 
     pm.addPass(createCanonicalizerPass());
 
     if (failed(pm.run(m)))
     {
         return failure();
-    } 
+    }  
 #endif
     return printer.process(m);
 }

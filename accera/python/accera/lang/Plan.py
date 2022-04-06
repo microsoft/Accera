@@ -176,8 +176,9 @@ class Plan:
             if step != 1:
                 raise ValueError("The tensorization index stride must be contiguous") 
             tensorize_dims.append(stop) 
-        if not self._target.tensor_core.supports(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=tensorize_dims):
-            raise ValueError("The target does not support the given tensorization dimensions") 
+        if not self._target.tensor_core.supports(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=tensorize_dims) and \
+            not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=tensorize_dims):
+            raise ValueError("The target does not support the given tensorization dimensions with shape=", tensorize_dims) 
 
         idxs = [context.mapping[id(index)] for index in indices] 
 
@@ -188,7 +189,7 @@ class Plan:
         source: Union[Array, Cache],
         index: Union[LoopIndex, DelayedParameter] = None,
         trigger_index: Union[LoopIndex, DelayedParameter] = None,
-        layout: Array.Layout = None,
+        layout: Union[Array.Layout, DelayedParameter] = None,
         max_elements: int = None,
         thrifty: Union[bool, DelayedParameter] = None,
         location: _MemorySpace = _MemorySpace.NONE,
@@ -196,6 +197,7 @@ class Plan:
         trigger_level: Union[int, DelayedParameter] = None,
         double_buffer: Union[bool, DelayedParameter] = False,
         double_buffer_location: Union[object, _MemorySpace, DelayedParameter] = AUTO,
+        vectorize: Union[bool, DelayedParameter, object] = AUTO,
         _delayed_cache: DelayedCache = None
     ):
         """Adds a cache for a view target
@@ -210,6 +212,7 @@ class Plan:
             max_elements: The maximum elements to include in the cached region. Specify one and only one of `index`, `level`, `max_elements`.
             thrifty: Use thrifty caching (copy data into a cache only if the cached data differs from the original active block). This defaults to False as it slows down compilation speed so it is intended as an opt-in feature.
             double_buffer: Make this a double buffer cache by copying data one iteration ahead and using private memory on GPU for this procedure.
+            vectorize: Whether to vectorize the cache operations. Defaults to AUTO, which will behave like vectorize=True if the loopnest has a vectorized loop or vectorize=False if the loopnest has no vectorized loops.
             double_buffer_location: The memory space used for storing iteration data for the double buffer cache. Requires that double_buffer is set to True. Defaults to AUTO.
                 AUTO will configure the double buffering location based on the following:
                 | location            | double_buffer | double_buffer_location = `AUTO` |
@@ -217,7 +220,7 @@ class Plan:
                 | MemorySpace.SHARED  | True          | MemorySpace.PRIVATE             |
                 | !MemorySpace.SHARED | True          | Same value as location          |
         """
-        if any([isinstance(arg, DelayedParameter) for arg in (index, trigger_index, level, trigger_level, thrifty, double_buffer, double_buffer_location)]) or \
+        if any([isinstance(arg, DelayedParameter) for arg in (index, trigger_index, level, trigger_level, thrifty, double_buffer, double_buffer_location, vectorize, layout)]) or \
             (isinstance(source, DelayedCache) and not source.completed):
             # If any of the cache level arguments are parameters, then this cache call is incomplete until those parameters
             # have values. Additionally, if this is a hierarchical cache and an outer cache is parameterized,
@@ -229,7 +232,6 @@ class Plan:
             self._delayed_calls[partial(
                 self.cache,
                 source=source,
-                layout=layout,
                 max_elements=max_elements,
                 location=location,
                 _delayed_cache=delayed_cache
@@ -238,9 +240,11 @@ class Plan:
                 "trigger_index": trigger_index,
                 "level": level,
                 "trigger_level": trigger_level,
+                "layout": layout,
                 "thrifty": thrifty,
                 "double_buffer": double_buffer,
-                "double_buffer_location" : double_buffer_location
+                "double_buffer_location" : double_buffer_location,
+                "vectorize": vectorize
             }
             return delayed_cache
 
@@ -358,18 +362,34 @@ class Plan:
             thrifty=thrifty,
             location=location,
             double_buffer=double_buffer,
-            double_buffer_location=double_buffer_location
+            double_buffer_location=double_buffer_location,
+            vectorize=vectorize
         )
 
         if _delayed_cache:
             _delayed_cache.complete(cache)
             cache = _delayed_cache
+            if _delayed_cache.enqueue_command:
+                self._commands.append(partial(self._add_cache, cache))
+                _delayed_cache.enqueue_command = False
+        else:
+            self._commands.append(partial(self._add_cache, cache))
 
-        self._commands.append(partial(self._add_cache, cache))
         return cache
 
     def _add_cache(self, cache, context: NativeLoopNestContext):
         from ..Targets import Target
+
+        # Resolve vectorize=AUTO to either True or False since vectorize() will have been called by this point
+        if cache.vectorize is AUTO:
+            cache.vectorize = False
+            for attrs in self._index_attrs.values():
+                if "vectorized" in attrs:
+                    cache.vectorize = True
+
+        vectorization_info = None
+        if cache.vectorize:
+            vectorization_info = self._target.vectorization_info
 
         last_in_index = context.mapping[id(cache.index)] if cache.index else None
 
@@ -393,7 +413,8 @@ class Plan:
                 dim_order=cache.dimension_permutation,
                 thrifty=cache.thrifty,
                 double_buffer=cache.double_buffer,
-                double_buffer_location=cache.double_buffer_location
+                double_buffer_location=cache.double_buffer_location,
+                vectorization_info=vectorization_info
             )
         else:
             cache.native_cache = context.plan.add_cache(
@@ -408,7 +429,8 @@ class Plan:
                 dim_order=cache.dimension_permutation,
                 thrifty=cache.thrifty,
                 double_buffer=cache.double_buffer,
-                double_buffer_location=cache.double_buffer_location
+                double_buffer_location=cache.double_buffer_location,
+                vectorization_info=vectorization_info
             )
 
     def pack_and_embed_buffer(

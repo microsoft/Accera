@@ -9,6 +9,7 @@
 #include <variant>
 
 #include "CacheAccessMaps.h"
+#include "ExecutionPlanAttributes.h"
 #include "ExecutionPlanEnums.h"
 #include "ir/include/nest/Index.h"
 #include "ir/include/nest/IndexRange.h"

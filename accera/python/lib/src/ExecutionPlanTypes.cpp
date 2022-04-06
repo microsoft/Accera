@@ -7,6 +7,7 @@
 
 #include <utilities/include/Exception.h>
 #include <value/include/Plan.h>
+#include <value/include/VectorizationInformation.h>
 
 #include <ir/include/value/ValueEnums.h>
 
@@ -117,36 +118,37 @@ namespace
                    const std::optional<util::DimensionOrder>& dimOrder,
                    bool thrifty,
                    bool doubleBuffer,
-                   value::MemorySpace doubleBufferMemorySpace) {
+                   value::MemorySpace doubleBufferMemorySpace,
+                   const std::optional<value::VectorizationInformation>& vectorizationInfo) {
                     if (outermostIncludedSplitIndex.has_value())
                     {
                         value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
                         if (memoryMap.has_value())
                         {
-                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *memoryMap, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *memoryMap, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else if (dimOrder.has_value())
                         {
-                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else
                         {
-                            return plan.AddCache(target, *outermostIncludedSplitIndex, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *outermostIncludedSplitIndex, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                     }
                     else
                     {
                         if (memoryMap.has_value())
                         {
-                            return plan.AddCache(target, *maxElements, *memoryMap, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *maxElements, *memoryMap, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else if (dimOrder.has_value())
                         {
-                            return plan.AddCache(target, *maxElements, *dimOrder, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *maxElements, *dimOrder, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else
                         {
-                            return plan.AddCache(target, *maxElements, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *maxElements, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                     }
                 },
@@ -161,7 +163,8 @@ namespace
                 "dim_order"_a,
                 "thrifty"_a,
                 "double_buffer"_a,
-                "double_buffer_location"_a)
+                "double_buffer_location"_a,
+                "vectorization_info"_a)
             .def("emit_runtime_init_packing", py::overload_cast<value::ViewAdapter, const std::string&, const std::string&, value::CacheIndexing>(&value::Plan::EmitRuntimeInitPacking), "target"_a, "packing_func_name"_a, "packed_buf_size_func_name"_a, "indexing"_a = value::CacheIndexing::GlobalToPhysical)
             .def("pack_and_embed_buffer", py::overload_cast<value::ViewAdapter, value::ViewAdapter, const std::string&, const std::string&, value::CacheIndexing>(&value::Plan::PackAndEmbedBuffer), "target"_a, "constant_data_buffer"_a, "wrapper_fn_name"_a, "packed_buffer_name"_a, "indexing"_a = value::CacheIndexing::GlobalToPhysical)
             .def("vectorize", &value::Plan::Vectorize, "i"_a, "vectorization_info"_a)
@@ -186,11 +189,12 @@ namespace
                    const std::optional<util::DimensionOrder>& dimOrder,
                    bool thrifty,
                    bool doubleBuffer,
-                   value::MemorySpace doubleBufferMemorySpace) {
+                   value::MemorySpace doubleBufferMemorySpace,
+                   const std::optional<value::VectorizationInformation>& vectorizationInfo) {
                     value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
                     if (outermostIncludedSplitIndex.has_value())
                     {
-                        return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, thrifty, doubleBuffer, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                        return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                     }
                     else if (maxElements.has_value())
                     {
@@ -214,7 +218,8 @@ namespace
                 "dim_order"_a,
                 "thrifty"_a,
                 "double_buffer"_a,
-                "double_buffer_location"_a)
+                "double_buffer_location"_a,
+                "vectorization_info"_a)
             .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a)
             .def("map_index_to_processor", &value::GPUPlan::MapIndexToProcessor, "index"_a, "proc"_a);
     }

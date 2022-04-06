@@ -44,6 +44,8 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 
+#include <functional>
+#include <numeric>
 #include <optional>
 
 #define DEBUG_TYPE "accera-to-gpu"
@@ -332,7 +334,12 @@ struct ValueMFMALoadOpToRocDLConversion final : public OpConversionPattern<vir::
         auto m = warpTid % wmmaM;
         auto ks = warpTid.floorDiv(wmmaM);
 
-        auto vecSize = 4;
+        auto vecSize = std::accumulate(
+                           mfmaMatrixType.getShape().begin(),
+                           mfmaMatrixType.getShape().end(),
+                           1,
+                           std::multiplies<int64_t>()) /
+                       leadingDim;
         auto vecTy = mlir::VectorType::get({ vecSize }, elementType);
         // For AOp load from the input memref with a column stride of 4
         //
@@ -367,10 +374,10 @@ struct ValueMFMALoadOpToRocDLConversion final : public OpConversionPattern<vir::
         auto d1 = rewriter.getAffineDimExpr(1);
         auto loadAffineMap = MFMALoadOpAdaptor.map().getValue(); // [d0, d1, d2, sa, sb]
         auto offsetAOpMap = AffineMap::get(2, 3, { d0 + m, d1 + ks }, ctx); // [d0, d1, sx, sy, sz]
-        auto strideAOpMap = AffineMap::get(2, 1, { d0, d1 + strideOffset * 4 }, ctx); // [d0, d1, s0]
+        auto strideAOpMap = AffineMap::get(2, 1, { d0, d1 + strideOffset * vecSize }, ctx); // [d0, d1, s0]
         auto offsetBOpMap = AffineMap::get(2, 3, { d0 + ks, d1 + m }, ctx); // [d0, d1, sx, sy, sz]
-        auto strideBOpMap = AffineMap::get(2, 1, { d0 + strideOffset * 4, d1 }, ctx); // [d0, d1, s0]
-        auto offsetCOpMap = AffineMap::get(2, 3, { d0 + ks * 4, d1 + m }, ctx); // [d0, d1, sx, sy, sz]
+        auto strideBOpMap = AffineMap::get(2, 1, { d0 + strideOffset * vecSize, d1 }, ctx); // [d0, d1, s0]
+        auto offsetCOpMap = AffineMap::get(2, 3, { d0 + ks * vecSize, d1 + m }, ctx); // [d0, d1, sx, sy, sz]
         auto strideCOpMap = AffineMap::get(2, 1, { d0 + strideOffset, d1 }, ctx); // [d0, d1, s0]
         auto matrixLayoutMap = ::llvm::StringSwitch<AffineMap>(mfmaMatrixOperand.str())
                                    .Case("AOp", strideAOpMap.compose(offsetAOpMap))
@@ -409,7 +416,7 @@ struct ValueMFMALoadOpToRocDLConversion final : public OpConversionPattern<vir::
         mlir::Value vec = rewriter.create<vector::BroadcastOp>(loc, vecTy, zero);
 
         auto i32Ty = rewriter.getIntegerType(32);
-        auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, 4, 1, vec);
+        auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, vecSize, 1, vec);
         auto loopBuilder = utilir::MakeBodyBuilder(loop);
         auto inductionVar = loop.getInductionVar();
         auto regionIterArg = loop.getRegionIterArgs()[0];
@@ -448,6 +455,7 @@ struct ValueMFMAStoreOpToRocDLConversion final : public OpConversionPattern<vir:
         auto memref = mfmaStoreOpAdaptor.memref();
         auto indices = mfmaStoreOpAdaptor.indices();
         auto mfmaMatrixType = op.getMFMAMatrixType();
+        auto mfmaMatrixOperand = mfmaMatrixType.getOperand();
 
         auto leadingDim = mfmaMatrixType.getLeadingDim();
         if (leadingDim != 16) // 16x16x4
@@ -468,7 +476,13 @@ struct ValueMFMAStoreOpToRocDLConversion final : public OpConversionPattern<vir:
         auto wmmaM = leadingDim;
         auto m = warpTid % wmmaM;
         auto ks = warpTid.floorDiv(wmmaM);
-        auto offsetMap = AffineMap::get(2, 4, { d0 + ks * 4 + strideOffset, d1 + m }, ctx);
+        auto vecSize = std::accumulate(
+                           mfmaMatrixType.getShape().begin(),
+                           mfmaMatrixType.getShape().end(),
+                           1,
+                           std::multiplies<int64_t>()) /
+                       leadingDim;
+        auto offsetMap = AffineMap::get(2, 4, { d0 + ks * vecSize + strideOffset, d1 + m }, ctx);
 
         auto storeAffineMap = op.getAffineMap();
         auto composedMap = offsetMap.compose(storeAffineMap);
@@ -488,7 +502,7 @@ struct ValueMFMAStoreOpToRocDLConversion final : public OpConversionPattern<vir:
         }
 
         auto i32Ty = rewriter.getIntegerType(32);
-        auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, 4, 1);
+        auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, vecSize, 1);
         auto loopBuilder = utilir::MakeBodyBuilder(loop);
         auto inductionVar = loop.getInductionVar();
         auto laneIndex = loopBuilder.create<mlir::IndexCastOp>(loc, inductionVar, i32Ty);
@@ -508,16 +522,21 @@ struct ValueMFMAConstantOpToRocDLConversion final : public OpRewritePattern<vir:
     LogicalResult matchAndRewrite(vir::MFMAConstantOp op, PatternRewriter& rewriter) const final
     {
 
-        auto mfmaType = op.getMFMAMatrixType();
+        auto mfmaMatrixType = op.getMFMAMatrixType();
 
-        auto leadingDim = mfmaType.getLeadingDim();
+        auto leadingDim = mfmaMatrixType.getLeadingDim();
         if (leadingDim != 16) // 16x16x4
         {
             return rewriter.notifyMatchFailure(op, "unhandled matrix shape");
         }
 
-        auto vecSize = 4;
-        auto vecTy = VectorType::get({ vecSize }, mfmaType.getElementType());
+        auto vecSize = std::accumulate(
+                           mfmaMatrixType.getShape().begin(),
+                           mfmaMatrixType.getShape().end(),
+                           1,
+                           std::multiplies<int64_t>()) /
+                       leadingDim;
+        auto vecTy = VectorType::get({ vecSize }, mfmaMatrixType.getElementType());
 
         rewriter.replaceOpWithNewOp<vector::BroadcastOp>(op, vecTy, op.value());
 
@@ -551,6 +570,7 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
         {
             return rewriter.notifyMatchFailure(op, "expecting a vector type for OpC");
         }
+        auto isFP16 = opA.getType().cast<VectorType>().getElementType().isF16();
 
         mlir::OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPoint(op);
@@ -558,14 +578,11 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
         auto i32Ty = rewriter.getIntegerType(32);
         Value zero = rewriter.create<mlir::ConstantOp>(loc, i32Ty, rewriter.getZeroAttr(i32Ty));
 
-        auto destVectorType = opC.getType().cast<VectorType>();
-        auto numElems = destVectorType.getShape()[0];
-        if (numElems != 4)
+        if (isFP16)
         {
-            return rewriter.notifyMatchFailure(op, "expecting a 16x16 matrix type for OpC");
+            rewriter.replaceOpWithNewOp<ROCDL::mfma_f32_16x16x16f16>(op, opC.getType(), ValueRange{ opA, opB, opC, zero, zero, zero });
         }
-
-        if (numElems == 4)
+        else
         {
             auto numIterations = 4;
             auto result = opC;
@@ -585,10 +602,6 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
             auto elemB = loopBuilder.create<vector::ExtractElementOp>(loc, opB, laneIndex);
             auto mfmaOp = loopBuilder.create<ROCDL::mfma_f32_16x16x4f32>(loc, result.getType(), ValueRange{ elemA, elemB, regionIterArg, zero, zero, zero });
             loopBuilder.create<AffineYieldOp>(loc, ValueRange{ mfmaOp });
-        }
-        else
-        {
-            return rewriter.notifyMatchFailure(op, "Unsupported op size.");
         }
         return success();
     }
@@ -777,8 +790,7 @@ struct AcceraToROCDLPass : public accera::transforms::ConvertAcceraToROCDLBase<A
             vir::MFMALoadOp,
             vir::MFMAStoreOp,
             vir::BarrierOp,
-            gpu::BlockDimOp
-            >();
+            gpu::BlockDimOp>();
         target.addLegalDialect<
             mlir::AffineDialect,
             mlir::BuiltinDialect,
@@ -832,8 +844,7 @@ struct AcceraToNVVMPass : public accera::transforms::ConvertAcceraToNVVMBase<Acc
             vir::MFMALoadOp,
             vir::MFMAStoreOp,
             vir::BarrierOp,
-            gpu::BlockDimOp
-            >();
+            gpu::BlockDimOp>();
         target.addLegalDialect<
             mlir::AffineDialect,
             mlir::BuiltinDialect,

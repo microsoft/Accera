@@ -2567,7 +2567,7 @@ class DSLTest_09Parameters(unittest.TestCase):
                     )
 
     def test_parameterization_grid(self) -> None:
-        from accera import create_parameters, get_parameters_from_grid, Nest, Schedule
+        from accera import create_parameters, create_parameter_grid, Nest, Schedule
 
         P0, P1, P2, P3, P4 = create_parameters(5)
 
@@ -2596,7 +2596,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             P4: [3, 5, 7]
         }
 
-        parameters = get_parameters_from_grid(parameter_grid)
+        parameters = create_parameter_grid(parameter_grid)
         package.add(sched, args=(A, B, C), base_name="matmul", parameters=parameters)
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
@@ -2789,7 +2789,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(name=package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_fusion_parameterization_4(self) -> None:
-        from accera import create_parameters, Nest, fuse, get_parameters_from_grid
+        from accera import create_parameters, Nest, fuse, create_parameter_grid
 
         A = Array(role=Array.Role.INPUT, element_type=float, shape=(128, ))
         B = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(128, ))
@@ -2873,7 +2873,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         package.add(
             fs,
             args=(A, B, C),
-            parameters=get_parameters_from_grid({
+            parameters=create_parameter_grid({
                 P0: [64, 8],
                 P1: [12, 16, 20],
                 P2: [2, 10]
@@ -2885,7 +2885,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(name=package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_parameterization_auxiliary_data(self) -> None:
-        from accera import create_parameters, get_parameters_from_grid, Nest, Schedule
+        from accera import create_parameters, create_parameter_grid, Nest, Schedule
         from hatlib import HATPackage
 
         P0, P1, P2, P3, P4 = create_parameters(5)
@@ -2915,7 +2915,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             P4: [3, 5, 7]
         }
 
-        parameters = get_parameters_from_grid(parameter_grid)
+        parameters = create_parameter_grid(parameter_grid)
         package.add(sched, args=(A, B, C), base_name="matmul", parameters=parameters)
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
@@ -2924,7 +2924,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         hat_package = HATPackage(pathlib.Path(TEST_PACKAGE_DIR) / f"{package_name}.hat")
         functions = [fn for fn in hat_package.get_functions()]
         for function in functions:
-            data_point = function.auxiliary['accera']
+            data_point = function.auxiliary['accera']['parameters']
             if data_point:
                 self.assertIn(int(data_point["P0"]), [8, 16])
                 self.assertIn(int(data_point["P1"]), [16, 32])

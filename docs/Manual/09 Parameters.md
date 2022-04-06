@@ -60,7 +60,7 @@ schedule.reorder(order=P6)
 ```
 Later, we can set the value of `P6` to the index tuple `(j,k,i)`.
 
-## Get parameters from an entire parameter grid
+## Create parameters from an entire parameter grid
 Consider the parameterized nest defined above. Rather than setting a specific value for each parameter, imagine that we have a set of different values for each parameter. For example, consider that we want `P0` to have a value in set `{8, 16}`, `P1` in `{16, 32}`, `P2` to be always `16`, and `P3` in `{1,2}`. We can define the *parameter grid* with this data, which lists all the valid parameter combinations. In our case, this grid includes the following parameter settings:
 ```python
 {P0:8, P1:16, P2:16, P3:1.0}
@@ -75,9 +75,18 @@ Consider the parameterized nest defined above. Rather than setting a specific va
 
 Accera provides an easy way to add all the functions that correspond to the parameter grid at once:
 ```python
-parameters = get_parameters_from_grid(parameter_grid={P0:[8,16], P1:[16,32], P2:[16], P3:[1.0,2.0]})
+parameters = create_parameter_grid(parameter_choices={P0:[8,16], P1:[16,32], P2:[16], P3:[1.0,2.0]})
 package.add(nest, args=(A, B, C), base_name="matmul", parameters)
 ```
 In this case, `package.add` generates a function eight times, once for each parameter combination in the grid.  Other than `nest`, `package.add` can alternatively accept a `Schedule` (if we are performing schedule transformations), or a `Plan` (if we are setting target-specific options). All eight functions share the same base name. However, Accera automatically adds a unique suffix to each function name to prevent duplication. This pattern allows optional filtering by inspecting the generated parameter values list before calling `package.add`.
 
+You can define a lambda or function to filter out combinations from the parameter grid. The arguments to the filter are the values of a parameter combination, and it should return True if the combination should be included, and False otherwise:
+```python
+parameters = create_parameter_grid(parameter_choices={P0:[8,16], P1:[16,32], P2:[16], P3:[1.0,2.0]}, filter_func=lambda p0, p1, p2, p3: p2 < p1 and 4 * (p0 * p3 + p1 * p2 + p1 * p3 + p2 * p3) / 1024 < 256)
+```
+
+To limit the size of the parameter grid (and therefore the number of functions generated) to at most 5:
+```python
+parameters = create_parameter_grid(parameter_choices={P0:[8,16], P1:[16,32], P2:[16], P3:[1.0,2.0]}, sample=5)
+```
 <div style="page-break-after: always;"></div>

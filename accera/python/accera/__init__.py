@@ -10,7 +10,7 @@ except:
     __version__ = None
 
 from .Targets import Target
-from .Parameter import DelayedParameter, create_parameters, get_parameters_from_grid
+from .Parameter import DelayedParameter, create_parameters, create_parameter_grid
 from .Constants import *
 from .Package import Package
 

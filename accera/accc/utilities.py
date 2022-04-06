@@ -103,7 +103,7 @@ def run_command(
             if proc.returncode:
                 dump_file_contents(stderr)
                 dump_file_contents(stdout)
-                raise subprocess.CalledProcessError(proc.returncode, command_to_run)
+                raise subprocess.CalledProcessError(proc.returncode, " ".join(command_to_run))
 
 
 def rename_files_in_dir(root_dir, filename_replacements_dict):

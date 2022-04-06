@@ -14,14 +14,14 @@ package.add(nest, base_name="func1")
 package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", platform=acc.Packag+-e.Platform.WINDOWS)
 ```
 
-The result will be two files: `myPackage.hat` and `myPackage.dll`. The output directory defaults to current working directory. We can change the output directory with `output_dir` set to a relative or absolute path:
+The result is two files: `myPackage.hat` and `myPackage.dll`. The output directory defaults to current working directory. We can change the output directory with `output_dir` set to a relative or absolute path:
 
 ```python
 package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", platform=acc.Package.Platform.WINDOWS, output_dir="hat_packages")
 ```
 
 ## MLIR package format
-MLIR format is primarily used for debugging the multiple stages of MLIR lowering, from the Accera DSL all the way to runnable code.
+MLIR format is used for debugging the multiple stages of MLIR lowering, from the Accera DSL all the way to runnable code.
 ```python
 package.build(format=acc.Package.Format.MLIR, name="myPackage")
 ```
@@ -48,11 +48,11 @@ package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", mode=acc.
 ## Adding descriptions
 Accera allows us to specify some standard descriptive fields in a package:
 ```python
-package.add_description(version​​​​​​​​​​​​​​​​="1.0", license="https://mit-license.org/", author="Microsoft Research")​​​​​​​​​​
+package.add_description(version="1.0", license="https://mit-license.org/", author="Microsoft Research")
 ```
 Additionally, we can add arbitrary metadata to the package description as follows:
 ```python
-package.add_description(other={​​​​​​​​​​​​​​​​"title": "My Package Title", "source": "https://github.com/", "citations": ["https://arxiv.org/2021.12345/", "https://arxiv.org/2021.56789/"]}​​​​​​​​​​​​​​​​)
+package.add_description(other={"title": "My Package Title", "source": "https://github.com/", "citations": ["https://arxiv.org/2021.12345/", "https://arxiv.org/2021.56789/"]})
 ```
 
 

@@ -36,7 +36,7 @@ Accera supports the following four array roles where each role is treated differ
 -   Temporary 
 
 ### Input arrays
-Input arrays are *immutable external* arrays whose element type, shape, and affine layout are known at compile time. However, their contents are only available at runtime. If the Accera function is emitted as a function in C, each input array is passed as a *const* pointer argument. For example, we can construct a 10&times;20 input array of 32-bit floating-point numbers by writing
+Input arrays are *immutable external* arrays whose element type, shape, and affine layout are known at compile-time. However, their contents are only available at runtime. If the Accera function is emitted as a function in C, each input array is passed as a *const* pointer argument. For example, we can construct a 10&times;20 input array of 32-bit floating-point numbers by writing
 ```Python
 import accera as acc
 
@@ -48,7 +48,7 @@ The layout of this array would be the default layout, which is `acc.Array.Layout
 Input/Output arrays are similar to the input arrays except that they are *mutable external* arrays, i.e., their values can be changed. This type of array is used to output the results of the loop-nest computation. If the Accera function is emitted as a function in C, each input array is passed as a non-const pointer argument.
 
 ### Constant arrays
-These are the only Accera arrays whose contents are known at compile time. Constant arrays are *immutable internal* arrays whose memory layout can be chosen automatically without any external constraints since they are internally scoped. For example, a constant array can be automatically laid out according to the loop nest's memory access pattern. The layout of a constant array could even depend on its contents (e.g., its sparsity pattern). 
+These are the only Accera arrays whose contents are known at compile-time. Constant arrays are *immutable internal* arrays whose memory layout can be chosen automatically without any external constraints since they are internally scoped. For example, a constant array can be automatically laid out according to the loop nest's memory access pattern. The layout of a constant array could even depend on its contents (e.g., its sparsity pattern). 
 
 We must provide the constant array data (the element values) when constructing it. This data can be any Python buffer or a *numpy* array:
 ```Python

@@ -1,5 +1,5 @@
-[//]: # (Project: Accera)
-[//]: # (Version: v1.2.3)
+[//]: # "Project: Accera"
+[//]: # "Version: v1.2.3"
 
 ## Installing on Windows
 
@@ -7,14 +7,15 @@
 
 #### Visual Studio
 
-Accera requires a C++ compiler that supports C++ 17. You can download [Visual Studio 2019 Enterprise Edition]( https://visualstudio.microsoft.com/downloads/) or [Visual Studio 2022 Community Edition](https://visualstudio.microsoft.com/vs/). Install Update 10 or later, which includes the LLVM OpenMP libraries only for VS 2019.
+Accera requires a C++ compiler that supports C++ 17. You can download [Visual Studio 2019 Enterprise Edition](https://visualstudio.microsoft.com/downloads/) or [Visual Studio 2022 Community Edition](https://visualstudio.microsoft.com/vs/). Install Update 10 or later, which includes the LLVM OpenMP libraries only for VS 2019.
 
-Select *Desktop Development with C++*.
+Select _Desktop Development with C++_.
 
 Accera requires [Spectre-mitigated libraries](https://docs.microsoft.com/en-us/cpp/build/reference/qspectre?view=msvc-160):
-1. Go to *Individual Components*
+
+1. Go to _Individual Components_
 2. Type in "Spectre" in the search box
-3. Select the latest version of the MSVC libraries, e.g., *MSVC v142 - VS 2019 C++ x64/x86 Spectre-mitigated libs (Latest)* (your actual version may vary)
+3. Select the latest version of the MSVC libraries, e.g., _MSVC v142 - VS 2019 C++ x64/x86 Spectre-mitigated libs (Latest)_ (your actual version may vary)
 
 #### CMake
 
@@ -25,6 +26,7 @@ Accera requires [CMake](https://cmake.org/) 3.14 or newer. A version of CMake th
 Accera's packages require Python 3.7 64-bit or newer, plus a version of `pip` that supports 64-bit packages (`win_amd64`). One way to obtain this is to download and install [Miniconda](https://docs.conda.io/en/latest/miniconda.html). Download "Miniconda3 Windows 64-bit".
 
 ###### Optional: Create a conda environment
+
 After installing Miniconda, you can optionally create an environment to manage different Python versions.
 
 From an "Anaconda Prompt", create and then activate an environment for Python 3.7 (or a newer version if you prefer). Make sure to activate an environment from other applications that you use to develop Accera.
@@ -46,7 +48,7 @@ https://github.com/microsoft/Accera
 
 ### Build and install Accera
 
-From the command line that has Python in the path, such as an Anaconda Command Prompt, run the `build.bat` script to install dependencies and build the Accera Python package. Replace `<path_to_accera>` with the path to the cloned Accera repository.
+From a command line with Python in your PATH, such as an Anaconda Command Prompt, run the `build.bat` script to install dependencies and build the Accera Python package. Replace `<path_to_accera>` with the path to the cloned Accera repository.
 
 ```shell
 cd <path_to_accera>
@@ -55,6 +57,7 @@ build.bat
 
 Update or install the resulting `.whl` file from the `dist` subdirectory. The `--find-links` option tells pip to look at the `dist` subdirectory for the dependent packages.
 The whl filename depends on your Python version, your OS, and your CPU architecture.
+
 ```shell
 pip install -U dist\accera-0.0.1-cp37-cp37m-win_amd64.whl --find-links=dist
 ```
@@ -101,5 +104,3 @@ ctest -C Release
 ```
 cmake --build . --config Release --target install -- /m
 ```
-
-

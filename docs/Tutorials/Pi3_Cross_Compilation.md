@@ -62,7 +62,7 @@ B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, sh
 C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
 ```
 
-We now use the `Nest` class to define our 3-layered nested for loop. The range indices are `M`, `N`, and `K`, with the outermost loop (`M`) listed first. We can get the loop nest indices to perform the computation.
+We now use the `Nest` class to define our 3-layered nested for-loop. The range indices are `M`, `N`, and `K`, with the outermost loop (`M`) listed first. We can get the loop nest indices to perform the computation.
 
 ```python
 # Define the loop nest
@@ -161,12 +161,12 @@ python hello_matmul_pi3_generator.py
 python3 hello_matmul_pi3_generator.py
 ```
 
-As we run the script, there should be a header file `hello_matmul_pi3.HAT` and an object file `hello_matmul_pi3.o` in the ELF format. The `.HAT` file format is described [here](https://github.com/microsoft/HAT). This is part of a HAT package with the `obj`.
+After we run the script, there should be a header file `hello_matmul_pi3.hat` and an object file `hello_matmul_pi3.o` in the ELF format. The `.hat` file format is described [here](https://github.com/microsoft/HAT). Collectively, we call the `.hat file` and `object file` a "HAT package".
 
 
 ### Runner code
 
-Let's now see how we can call our MatMul implementation from the Hat package on the Raspberry Pi 3.
+Let's now see how we can call our MatMul implementation from the HAT package on the Raspberry Pi 3.
 
 Create a file called `hello_matmul_pi3_runner.cpp` with the code below. You can find it [here](cross_compilation_pi3/hello_matmul_pi3_runner.cpp).
 
@@ -208,14 +208,14 @@ int main(int argc, const char** argv)
 
 The above code creates the `A`, `B`, and `C` matrices and calls the function `hello_matmul_pi3_py` to perform MatMul.
 
-Now that we have written the code, we compile and link it with the HAT package to create an executable file. Save this file to your working directory, in the exact location as `hello_matmul_pi3_generator.py,` and the generated `*.HAT` and `*.o` files.
+Now that we have written the code, we compile and link it with the HAT package to create an executable file. Save this file to your working directory, in the exact location as `hello_matmul_pi3_generator.py,` and the generated `*.hat` and `*.o` files.
 
 
 ### Build and run
 
 #### On the Raspberry Pi 3 device
 
-For this step, you'll be working with your Raspberry Pi device. If your Pi device is accessible over the network, copy `hello_matmul_pi3_runner.cpp`, `hello_matmul_pi3.HAT`, and `hello_matmul_pi3.o` using the Unix scp tool or the Windows WinSCP tool [here](https://winscp.net/eng/index.php)., otherwise use a USB thumb drive to transfer files manually. You do not need to copy the other generated files and folders.
+For this step, you'll be working with your Raspberry Pi device. If your Pi device is accessible over the network, copy `hello_matmul_pi3_runner.cpp`, `hello_matmul_pi3.hat`, and `hello_matmul_pi3.o` using the Unix scp tool or the Windows WinSCP tool [here](https://winscp.net/eng/index.php)., otherwise use a USB thumb drive to transfer files manually. You do not need to copy the other generated files and folders.
 
 You also need *gcc*. Although it is often installed by default on Raspberry Pi 3 systems, type this for confirmation:
 
@@ -238,4 +238,4 @@ Calling MatMul M=128, K=256, N=256
 Result (first few elements): 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922
 ```
 
-You can now experiment with the generated MatMul function with your own inputs. You just have to modify `hello_matmul_pi3_runner.cpp` on the Raspberry Pi 3 and recompile it with the existing HAT package.
+You can now experiment with the generated MatMul function with your own inputs. To try different inputs, you can modify `hello_matmul_pi3_runner.cpp` on the Raspberry Pi 3 and recompile it with the existing HAT package.

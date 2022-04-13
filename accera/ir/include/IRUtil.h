@@ -259,7 +259,7 @@ namespace util
 
     std::optional<ir::value::ExecutionTarget> ResolveExecutionTarget(mlir::Operation* op, bool exact = false);
     std::optional<ir::value::ExecutionRuntime> ResolveExecutionRuntime(mlir::Operation* op, bool exact = false);
-    std::optional<int64_t> ResolveWarpSize(mlir::Operation* op);
+    std::optional<std::pair<int, int>> ResolveWarpSize(mlir::Operation* op);
 
     mlir::Operation* CreateGPUControlBarrier(mlir::OpBuilder& builder, const std::string scope, std::optional<mlir::Location> loc = std::nullopt);
 

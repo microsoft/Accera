@@ -315,7 +315,11 @@ namespace util
             return execTargetAttr.getValue();
         }
 
-        assert(execAwareOp && "Unable to find a function-like op which surrounds the curent op");
+        if (!execAwareOp)
+        {
+            return std::nullopt;
+        }
+
         return mlir::TypeSwitch<Operation*, std::optional<vir::ExecutionTarget>>(execAwareOp)
             .Case([](mlir::gpu::GPUFuncOp op) {
                 return vir::ExecutionTarget::GPU;
@@ -346,7 +350,7 @@ namespace util
         Operation* moduleLikeOp = op;
         auto execRuntimeAttr = getExecRuntime(moduleLikeOp);
         // if the runtime attribute is not found in the rcv.module, then
-        // search the mlir.module for the runtime (using a fully qualified attribute name) 
+        // search the mlir.module for the runtime (using a fully qualified attribute name)
         if (!exact && op && !execRuntimeAttr)
         {
             if ((moduleLikeOp = op->getParentOfType<vir::ValueModuleOp>()))
@@ -368,21 +372,16 @@ namespace util
         return execRuntimeAttr.getValue();
     }
 
-    std::optional<int64_t> ResolveWarpSize(mlir::Operation* op)
+    std::optional<std::pair<int, int>> ResolveWarpSize(mlir::Operation* op)
     {
         auto runtime = ResolveExecutionRuntime(op);
         if (runtime == vir::ExecutionRuntime::CUDA)
-        {
-            return 32;
-        }
-        else if (runtime == vir::ExecutionRuntime::ROCM)
-        {
-            return 64;
-        }
-        else
-        {
-            return std::nullopt;
-        }
+            return std::make_pair(8, 4); // 32
+
+        if (runtime == vir::ExecutionRuntime::ROCM)
+            return std::make_pair(8, 8); // 64
+
+        return std::nullopt;
     }
 
     mlir::Operation* CreateGPUControlBarrier(mlir::OpBuilder& builder, const std::string scope, std::optional<mlir::Location> loc /*= std::nullopt*/)
@@ -754,6 +753,7 @@ namespace util
             }
         }
         assert(false && "Neither op found in block");
+        return nullptr;
     }
 
     mlir::AffineMap ComposeAffineMapSequence(const std::vector<mlir::AffineMap>& maps)

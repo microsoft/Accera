@@ -14,7 +14,7 @@ Accera requires the following tools and libraries:
 * Ccache
 * LLVM OpenMP 5, if using parallelization
 
-Homebrew is a package manager that makes it easy to install the prerequisites. Homebrew can be downloaded and installed by:
+Homebrew is a package manager that makes it easy to install the prerequesits. Homebrew can be downloaded and installed by:
 
 ```
 /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
@@ -59,7 +59,7 @@ cd <path_to_accera>
 sh ./build.sh
 ```
 
-Update or install the resulting `.whl` file from the `dist` sudirectory. The name depends on your Python version, your OS and your CPU architecture.
+Update or install the resulting `.whl` file from the `dist` sudirectory. The name depends on your Python version, your OS and your CPU architecture e.g.
 ```shell
 pip install -U ./dist/accera-0.0.1-cp37-cp37-macosx_10_15_x86_64.whl --find-links=dist
 ```
@@ -78,7 +78,7 @@ git submodule update
 ./external/vcpkg/vcpkg install catch2 tomlplusplus accera-llvm --overlay-ports=external/llvm
 ```
 
-The last command typically takes a few hours to build and then install Accera's fork of LLVM. We recommend reserving at least 20GB of disk space for the LLVM build.
+The last command typically takes a few hours to build and then install Accera's fork of LLVM. We recommend you reserve at least 20GB of disk space for the LLVM build.
 
 #### Configure CMake
 
@@ -102,5 +102,3 @@ ctest -C Release
 ```shell
 cmake --build . --config Release --target install
 ```
-
-

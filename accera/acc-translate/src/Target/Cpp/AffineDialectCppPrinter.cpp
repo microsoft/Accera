@@ -448,20 +448,22 @@ namespace cpp_printer
     {
         if (!affineForOp.getResults().empty())
         {
-            if (affineForOp.getIterOperands().size() > 1 || affineForOp->getResults().size() > 1)
+            if (affineForOp.getIterOperands().size() != affineForOp.getResults().size())
             {
-                os << "AffineForOp with multiple iter operands or results is not supported yet.\n";
+                os << "AffineForOp: number of iter operands is different from the number of results.\n";
                 return failure();
             }
-            auto resultVar = affineForOp.getResults()[0];
-            auto iterVar = affineForOp.getRegionIterArgs()[0];
-            auto initVal = affineForOp.getIterOperands()[0];
 
-            StringRef iterVarName = state.nameState.getOrCreateName(
-                iterVar, SSANameState::SSANameKind::Variable);
+            assert(affineForOp.getIterOperands().size() == affineForOp.getNumRegionIterArgs());
 
-            RETURN_IF_FAILED(printer->printType(resultVar.getType()));
-            os << " " << iterVarName << " = " << state.nameState.getName(initVal) << ";\n";
+            for (auto&& [resultVar, iterVar, initVal] : llvm::zip(affineForOp.getResults(), affineForOp.getRegionIterArgs(), affineForOp.getIterOperands()))
+            {
+                StringRef iterVarName = state.nameState.getOrCreateName(
+                    iterVar, SSANameState::SSANameKind::Variable);
+
+                RETURN_IF_FAILED(printer->printType(resultVar.getType()));
+                os << " " << iterVarName << " = " << state.nameState.getName(initVal) << ";\n";
+            }
         }
 
         if (!affineForOp.hasConstantLowerBound())
@@ -501,12 +503,13 @@ namespace cpp_printer
 
         if (!affineForOp.getResults().empty())
         {
-            auto resultVar = affineForOp.getResults()[0];
-            auto iterVar = affineForOp.getRegionIterArgs()[0];
-            StringRef resultName = state.nameState.getOrCreateName(
-                resultVar, SSANameState::SSANameKind::Variable);
-            RETURN_IF_FAILED(printer->printType(resultVar.getType()));
-            os << " " << resultName << " = " << state.nameState.getName(iterVar) << ";\n";
+            for (auto&& [resultVar, iterVar] : llvm::zip(affineForOp.getResults(), affineForOp.getRegionIterArgs()))
+            {
+                StringRef resultName = state.nameState.getOrCreateName(
+                    resultVar, SSANameState::SSANameKind::Variable);
+                RETURN_IF_FAILED(printer->printType(resultVar.getType()));
+                os << " " << resultName << " = " << state.nameState.getName(iterVar) << ";\n";
+            }
         }
 
         return success();
@@ -518,12 +521,15 @@ namespace cpp_printer
         {
             return success();
         }
+
         auto affineForOp = affineYieldOp->getParentOfType<AffineForOp>();
-        auto iterVar = affineForOp.getRegionIterArgs()[0];
-        auto result = affineYieldOp.getOperand(0);
+        for (auto i = 0; i < affineForOp.getNumRegionIterArgs(); ++i)
+        {
+            auto iterVar = affineForOp.getRegionIterArgs()[i];
+            auto result = affineYieldOp.getOperand(i);
 
-        os << state.nameState.getName(iterVar) << " = " << state.nameState.getName(result);
-
+            os << state.nameState.getName(iterVar) << " = " << state.nameState.getName(result) << ";\n";
+        }
         return success();
     }
 

@@ -139,6 +139,10 @@ class Array:
         return self._layout
 
     @property
+    def requested_layout(self):
+        return self._requested_layout
+
+    @property
     def shape(self):
         return list(self._shape)
 

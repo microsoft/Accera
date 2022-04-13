@@ -26,6 +26,8 @@
 #include "value/ValueAttrs.cpp.inc"
 #include "value/ValueOpsEnums.cpp.inc"
 
+#include <numeric>
+
 namespace accera::ir::value
 {
 void ValueDialect::initialize()
@@ -457,9 +459,9 @@ void MapReduceOp::build(OpBuilder& builder, OperationState& result, Value input,
     }
 }
 
-// //===----------------------------------------------------------------------===//
-// // MFMAMatrixType
-// //===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+// MFMAMatrixType
+//===----------------------------------------------------------------------===//
 
 MFMAMatrixType MFMAMatrixType::get(ArrayRef<int64_t> shape, Type elementType, StringRef operand)
 {
@@ -500,8 +502,88 @@ bool MFMAMatrixType::isValidElementType(Type elementType)
     return elementType.isF16() || elementType.isF32();
 }
 
-int64_t MFMAMatrixType::getLeadingDim() const {
+int64_t MFMAMatrixType::getLeadingDim() const
+{
     return getShape().back();
+}
+
+MFMAMatrixType::Shape MFMAMatrixType::getShapeType(const ArrayRef<int64_t>& mfmaShape)
+{
+    if (mfmaShape[0] == 4 && mfmaShape[1] == 16 && mfmaShape[2] == 64)
+        return Shape::T4x16x64;
+
+    if (mfmaShape[0] == 2 && mfmaShape[1] == 32 && mfmaShape[2] == 64)
+        return Shape::T2x32x64;
+
+    if (mfmaShape[0] == 4 && mfmaShape[1] == 4 && mfmaShape[2] == 32)
+        return Shape::T4x4x32;
+
+    if (mfmaShape[0] == 2 && mfmaShape[1] == 2 && mfmaShape[2] == 16)
+        return Shape::T2x2x16;
+
+    assert(false && "Invalid MFMA op.");
+    return Shape::Invalid;
+}
+
+MFMAMatrixType::Shape MFMAMatrixType::getShapeType() const
+{
+    return getShapeType(getShape());
+}
+
+int64_t MFMAMatrixType::getThreadTileSize() const
+{
+    switch (getShapeType())
+    {
+    case Shape::T4x16x64:
+        [[fallthrough]];
+    case Shape::T2x32x64:
+        return 64;
+    case Shape::T4x4x32:
+        return 16;
+    case Shape::T2x2x16:
+        return 4;
+    default:
+        return 0;
+    }
+}
+
+bool MFMAMatrixType::isValidShape() const
+{
+    return getShapeType() != Shape::Invalid;
+}
+
+int64_t MFMAMatrixType::getNumBlocks() const
+{
+    switch (getShapeType())
+    {
+    case Shape::T4x16x64:
+        return 4;
+    case Shape::T2x32x64:
+        return 2;
+    case Shape::T4x4x32:
+        [[fallthrough]];
+    case Shape::T2x2x16:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+int64_t MFMAMatrixType::getTileFactor() const
+{
+    switch (getShapeType())
+    {
+    case Shape::T4x16x64:
+        return 2;
+    case Shape::T2x32x64:
+        return 4;
+    case Shape::T4x4x32:
+        [[fallthrough]];
+    case Shape::T2x2x16:
+        return 1;
+    default:
+        return 0;
+    }
 }
 
 LogicalResult
@@ -514,8 +596,11 @@ MFMAMatrixType::verify(llvm::function_ref<InFlightDiagnostic()> emitError,
         !operand.equals("COp"))
         return emitError() << "operand expected to be one of AOp, BOp or COp";
 
-    if (!MFMAMatrixType::isValidElementType(elementType))
+    if (!isValidElementType(elementType))
         return emitError() << "MFMAMatrixType elements must be F16 or F32";
+
+    if (getShapeType(shape) == Shape::Invalid)
+        return emitError() << "MFMAMatrixType has an invalid shape";
 
     return success();
 }
@@ -547,9 +632,9 @@ static LogicalResult verify(MFMAComputeOp op)
         !opTypes[C].getOperand().equals("COp"))
         return op.emitError("operands must be in the order AOp, BOp, COp");
 
-    auto aShape = opTypes[A].getShape();
-    auto bShape = opTypes[B].getShape();
-    auto cShape = opTypes[C].getShape();
+    auto aShape = opTypes[A].getShapeType();
+    auto bShape = opTypes[B].getShapeType();
+    auto cShape = opTypes[C].getShapeType();
 
     if (aShape != bShape || aShape != cShape)
         return op.emitError("operand shapes do not satisfy matmul constraints");
@@ -576,7 +661,7 @@ static LogicalResult verify(MFMAConstantOp op)
 
 static LogicalResult verify(MFMALoadOp op)
 {
-    auto srcType = op.getMemRefType(); 
+    auto srcType = op.getMemRefType();
     auto resMatrixType = op.getMFMAMatrixType();
     auto operand = resMatrixType.getOperand();
     auto srcMemSpace = srcType.getMemorySpaceAsInt();
@@ -599,7 +684,7 @@ static LogicalResult verify(MFMAStoreOp op)
     auto srcMatrixType = op.getMFMAMatrixType();
     auto dstMemrefType = op.getMemRefType();
     auto dstMemSpace = dstMemrefType.getMemorySpaceAsInt();
-    
+
     if (dstMemSpace != kGenericMemorySpace && dstMemSpace != kSharedMemorySpace &&
         dstMemSpace != kGlobalMemorySpace)
         return op.emitError(

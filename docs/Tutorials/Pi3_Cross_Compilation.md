@@ -5,25 +5,25 @@
 
 By the end of this tutorial, you will learn how to:
 
-* Cross compile a simple Matrix Multiplication (MatMul) function for execution on a Raspberry Pi 3.
-* Produce a [HAT](https://github.com/microsoft/hat) package containing the MatMul function that can be called on the Pi 3 target.
-* Call the function on a Raspberry Pi 3 from C/C++ code.
+* Cross compile a simple Matrix Multiplication (MatMul) function for execution on a Raspberry Pi 3
+* Produce a [HAT](https://github.com/microsoft/hat) package containing the MatMul function that can be called on Pi 3 target
+* Call the function from C or C++ code on a Raspberry Pi 3
 
 ## Prerequisites
 
-* You should have Accera installed. If not, you can find the instructions in [here](../Install/README.md).
-* Be familiar with writing Python and C++ code.
-* Have access to a Raspberry Pi 3 device.
+* This tutorial assumes you already have Accera installed. If not, you can find the instructions in [here](../Install/README.md)
+* You should also be familiar with writing Python and C++
+* You have access to a Raspberry Pi 3 device
 
 ## A naive MatMul algorithm
 
-Consider the example of multiplying matrices A and B and adding the result into matrix C. In NumPy syntax, this can be expressed as:
+Let's consider the example of multiplying matrices A and B, and adding the result into matrix C. In NumPy syntax, this can be expressed as:
 
 ```
 C += A @ B
 ```
 
-A naive algorithm for matrix multiplication typically contains 3 nested for-loops. In Python, this can be expressed as:
+A naive algorithm for matrix multiplication typically contains 3 nested for loops. Expressed in Python, this could like:
 
 ```
 # A.shape = (M, K), B.shape = (K, N), C.shape = (M, N)
@@ -34,18 +34,17 @@ for i in range(M):
             C[i, j] += A[i, k] * B[k, j]
 ```
 
-
 ### Accera Python DSL
 
-Let's walk through a naïve Matrix Multiplication (MatMul) using Accera. Instead of using the default target, i.e., the host machine, we specify a target representing a Raspberry Pi 3 to cross-compile the host for a different target.
+We will now walk through a naive Matrix Multiplication (MatMul) using Accera. In order to cross compile on the host for a different target, instead of using the default target that is the host machine, we will specify a target that represents a Raspberry Pi 3.
 
-Create an empty file called `hello_matmul_pi3_generator.py`. First, we import Accera's module:
+Create an empty file called `hello_matmul_pi3_generator.py`. First we'll import Accera's module.
 
 ```python
 import accera as acc
 ```
 
-Define some matrix sizes, where A's shape is M by K, B's is K by N, and C's, M by N. 
+Define some matrix sizes. A will be M by K, B will be K by N, and C will be M by N.
 
 ```python
 # Define our matrix sizes
@@ -54,7 +53,7 @@ N = 256
 K = 256
 ```
 
-Write a Python function that receives `A`, `B`, and `C` arrays. These are our input and input/output matrices.
+Write a Python function that receives arrays `A`, `B` and `C`. These are our input and input/output matrices.
 
 ```python
 A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, K))
@@ -62,7 +61,7 @@ B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, sh
 C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
 ```
 
-We now use the `Nest` class to define our 3-layered nested for-loop. The range indices are `M`, `N`, and `K`, with the outermost loop (`M`) listed first. We can get the loop nest indices to perform the computation.
+Here, we will use the `Nest` class to define our 3-layered nested for loop. The range indices are `M`, `N`, and `K`, with the outermost loop (`M`) listed first. We can get the loop nest indices in order to perform the computation.
 
 ```python
 # Define the loop nest
@@ -72,7 +71,7 @@ nest = acc.Nest(shape=(M, N, K))
 i, j, k = nest.get_indices()
 ```
 
-Next, we define the logic for every iteration of the loop nest:
+Next we define the logic of each iteration of the loop nest:
 ```python
 # Define the loop nest logic
 @nest.iteration_logic
@@ -80,13 +79,13 @@ def _():
     C[i, j] += A[i, k] * B[k, j]
 ```
 
-We have finished defining the logic of MatMul. Let's now define the schedule which controls the execution of logic. For this, we first create the schedule from the nest:
+We have finished defining the logic of MatMul, and let's define the schedule which controls how the logic is executed. To do this, we first create the schedule from the nest:
 
 ```python
 sched = nest.create_schedule()
 ```
 
-At this point, `sched` represents the default schedule for our algorithm. We can also perform some basic transformations on this schedule. For example, the following lines of code split the `k` index into blocks of 4 ( `k`, `k+4`, `k+8`, and so on).
+At this point, `sched` represents the default schedule for our algorithm. We can also perform some basic transformations on this schedule. For example, the following lines of code will split the `k` index in blocks of 4 (so `k`, `k+4`, `k+8`, and so on).
 
 ```python
 # Split the k loop into blocks of 4, effectively doing this
@@ -143,7 +142,7 @@ Finally, we build the statically-linked HAT package for the Raspbian platform:
 # Build the HAT package
 package.build(name="hello_matmul_pi3", format=acc.Package.Format.HAT_STATIC, platform=acc.Package.Platform.RASPBIAN)
 ```
-After following the above steps, you should now have all the code necessary to generate your Accera MatMul function that can be called on a Raspberry Pi 3 target. You can find the complete Python script [here](cross_compilation_pi3/hello_matmul_pi3_generator.py).
+By now, you should have all the code necessary to generate your Accera MatMul function that can be called on a Raspberry Pi 3 target. You can also find the complete Python script [here](cross_compilation_pi3/hello_matmul_pi3_generator.py).
 
 ### Generate HAT package
 
@@ -161,14 +160,14 @@ python hello_matmul_pi3_generator.py
 python3 hello_matmul_pi3_generator.py
 ```
 
-After we run the script, there should be a header file `hello_matmul_pi3.hat` and an object file `hello_matmul_pi3.o` in the ELF format. The `.hat` file format is described [here](https://github.com/microsoft/HAT). Collectively, we call the `.hat file` and `object file` a "HAT package".
+After this runs, you should see a header file `hello_matmul_pi3.HAT` and an object file `hello_matmul_pi3.o` in the ELF format. The `.HAT` file format is described [here](https://github.com/microsoft/HAT). Together with the `obj`, this is part of a HAT package.
 
 
 ### Runner code
 
-Let's now see how we can call our MatMul implementation from the HAT package on the Raspberry Pi 3.
+We will now walk through how to call our MatMul implementation from the HAT package on the Raspberry Pi 3.
 
-Create a file called `hello_matmul_pi3_runner.cpp` with the code below. You can find it [here](cross_compilation_pi3/hello_matmul_pi3_runner.cpp).
+Create a file called `hello_matmul_pi3_runner.cpp` with the code below. You can also find it [here](cross_compilation_pi3/hello_matmul_pi3_runner.cpp).
 
 ```cpp
 #include <stdio.h>
@@ -206,25 +205,24 @@ int main(int argc, const char** argv)
 }
 ```
 
-The above code creates the `A`, `B`, and `C` matrices and calls the function `hello_matmul_pi3_py` to perform MatMul.
+The code above creates the `A`, `B`, and `C` matrices, and calls the function `hello_matmul_pi3_py` to perform MatMul.
 
-Now that we have written the code, we compile and link it with the HAT package to create an executable file. Save this file to your working directory, in the exact location as `hello_matmul_pi3_generator.py,` and the generated `*.hat` and `*.o` files.
-
+Now that we have written the code, we will compile and link it with the HAT package to create an executable. Save the file to your working directory, in the same location as `hello_matmul_pi3_generator.py` and the generated `*.HAT` and `*.o` files.
 
 ### Build and run
 
 #### On the Raspberry Pi 3 device
 
-For this step, you'll be working with your Raspberry Pi device. If your Pi device is accessible over the network, copy `hello_matmul_pi3_runner.cpp`, `hello_matmul_pi3.hat`, and `hello_matmul_pi3.o` using the Unix scp tool or the Windows WinSCP tool [here](https://winscp.net/eng/index.php)., otherwise use a USB thumb drive to transfer files manually. You do not need to copy the other generated files and folders.
+For this step, you’ll be working with your Raspberry Pi device. If your Pi device is accessible over the network, copy `hello_matmul_pi3_runner.cpp`, `hello_matmul_pi3.HAT`, and `hello_matmul_pi3.o` using the Unix scp tool or the Windows WinSCP tool [here](https://winscp.net/eng/index.php)., otherwise use a USB thumb drive to transfer files manually. You do not need to copy the other generated files and folders.
 
-You also need *gcc*. Although it is often installed by default on Raspberry Pi 3 systems, type this for confirmation:
+You will need *gcc*, it is often installed by default on Raspberry Pi 3 systems, but to confirm type:
 
 ```shell
 sudo apt-get install -y gcc
 ```
 
-This has been verified with "Raspbian GNU/Linux 9 (stretch)" and gcc<4:6.3.0-4> and should work with subsequent versions.
-Now, you can run the following commands to build and run.
+This has been verified with "Raspbian GNU/Linux 9 (stretch)" and gcc<4:6.3.0-4>, and should work with subsequent versions.
+Then you can run the following commands to build and run.
 
 ```shell
 gcc hello_matmul_pi3_runner.cpp hello_matmul_pi3.o -o hello_matmul_pi3_runner
@@ -238,4 +236,4 @@ Calling MatMul M=128, K=256, N=256
 Result (first few elements): 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922
 ```
 
-You can now experiment with the generated MatMul function with your own inputs. To try different inputs, you can modify `hello_matmul_pi3_runner.cpp` on the Raspberry Pi 3 and recompile it with the existing HAT package.
+You can now experiment with the generated MatMul function with your own inputs. Simply modify `hello_matmul_pi3_runner.cpp` on the Raspberry Pi 3 and recompile with the existing HAT package.

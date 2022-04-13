@@ -321,10 +321,14 @@ using vfloatx2_t = float __attribute__((ext_vector_type(2)));
 using vfloatx4_t = float __attribute__((ext_vector_type(4)));
 using vfloatx8_t = float __attribute__((ext_vector_type(8)));
 using vfloatx16_t = float __attribute__((ext_vector_type(16)));
+using vfloatx32_t = float __attribute__((ext_vector_type(32)));
+using vfloatx64_t = float __attribute__((ext_vector_type(64)));
 using vhalfx2_t = vhalf __attribute__((ext_vector_type(2)));
 using vhalfx4_t = vhalf __attribute__((ext_vector_type(4)));
 using vhalfx8_t = vhalf __attribute__((ext_vector_type(8)));
 using vhalfx16_t = vhalf __attribute__((ext_vector_type(16)));
+using vhalfx32_t = vhalf __attribute__((ext_vector_type(32)));
+using vhalfx64_t = vhalf __attribute__((ext_vector_type(64)));
 #elif defined(__CUDA__)
 #include "cuda_fp16.h"
 #endif // !defined(__HIP_PLATFORM_AMD__)

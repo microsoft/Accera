@@ -152,7 +152,6 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
 
     valueFuncOpPM.addPass(createCanonicalizerPass());
     valueFuncOpPM.addPass(loopnest::createLoopNestToValueFuncPass({ { options.dumpIntraPassIR.getValue(), options.basename + "LoopNestToValueFuncPass_Subpasses" }, options.printLoops.getValue(), options.printVecOpDetails.getValue() }));
-    // valueFuncOpPM.addPass(value::createBarrierOptPass()); // disable for now ... still has issues
 
     pmAdaptor.addPass(value::createValueFuncToTargetPass());
     pmAdaptor.addPass(createSymbolDCEPass());
@@ -164,9 +163,8 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     funcOpPM.addPass(createLowerAffinePass());
     funcOpPM.addPass(createConvertSCFToOpenMPPass());
 
-    // Or perhaps we should put the barrier optimization here
-
     pmAdaptor.addPass(value::createValueToStdPass(options.enableProfile));
+    funcOpPM.addPass(value::createBarrierOptPass(options.writeBarrierGraph.getValue(), options.barrierGraphFilename.getValue()));
     pmAdaptor.addPass(value::createRangeValueOptimizePass());
     pmAdaptor.addPass(createCanonicalizerPass());
     pmAdaptor.addPass(createCSEPass());

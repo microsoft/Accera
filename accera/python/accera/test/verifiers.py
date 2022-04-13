@@ -48,6 +48,12 @@ class FileChecker():
     def check_label(self, pattern):
         self.directives.append(f"CHECK-LABEL: {pattern}")
 
+    def check_next(self, pattern):
+        self.directives.append(f"CHECK-NEXT: {pattern}")
+
+    def check_same(self, pattern):
+        self.directives.append(f"CHECK-SAME: {pattern}")
+
     def check_count(self, pattern, n):
         self.directives.append(f"CHECK-COUNT-{n}: {pattern}")
 

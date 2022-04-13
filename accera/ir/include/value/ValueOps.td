@@ -1146,21 +1146,37 @@ class MFMAMatrixOf<list<Type> allowedTypes> :
   "$_self.cast<::accera::ir::value::MFMAMatrixType>().getElementType()",
   "accv.mfma_matrix", "::accera::ir::value::MFMAMatrixType">;
 
-def accv_MFMAComputeOp: accv_Op<"mfma_compute", [NoSideEffect, AllTypesMatch<["opC", "res"]>]> {
+def accv_MFMAComputeOp: accv_Op<"mfma_compute", [NoSideEffect, AllTypesMatch<["opC", "result"]>]> {
   let summary = "MFMA Compute";
   let description = [{
     The `accv.mfma_compute` op is an abstraction of TensorCore ops (currently GPU centric).
+    cbsz: Defines the number of blocks that can do a broadcast within a group. Legal values = 0-4. The block ID of this group comes from ABID.
+    abid: Block ID of block to broadcast during matrix multiply (MFMA ops).
+    blgp: “B”-Matrix Lane-Group Pattern. Controls how to swizzle the matrix lane groups (LG) in VGPRs when doing matrix multiplication by controlling the swizzle muxes.
+    Documentation: https://developer.amd.com/wp-content/resources/CDNA1_Shader_ISA_14December2020.pdf (Pg. 250)
   }];
 
   let arguments = (ins
-                  Arg<MFMAMatrixOf<[F16, F32]>>:$opA,
-                  Arg<MFMAMatrixOf<[F16, F32]>>:$opB,
-                  Arg<MFMAMatrixOf<[F16, F32]>>:$opC);
+                  Arg<MFMAMatrixOf<[I8, F16, F32]>>:$opA,
+                  Arg<MFMAMatrixOf<[I8, F16, F32]>>:$opB,
+                  Arg<MFMAMatrixOf<[I32, F32]>>:$opC,
+                  I32Attr:$cbsz,
+                  I32Attr:$abid,
+                  I32Attr:$blgp);
 
-  let results = (outs accv_MFMAMatrix:$res);
+  let results = (outs accv_MFMAMatrix:$result);
+
+  code extraClassDeclaration = [{  
+    MFMAMatrixType getMFMAMatrixType() {
+      return result().getType().template cast<MFMAMatrixType>();
+    }
+    ArrayRef<int64_t> getMFMAMatrixShape() {
+      return getMFMAMatrixType().getShape();
+    }
+  }];
 
   let assemblyFormat = [{
-    $opA `,` $opB`,` $opC attr-dict `:` type($opA) `,` type($opB) `,` type($opC) `->` type($res)
+    $opA `,` $opB`,` $opC `,` $cbsz `,` $abid `,` $blgp attr-dict `:` type($opA) `,` type($opB) `,` type($opC) `->` type($result)
   }];
 
   let verifier = [{ return ::verify(*this); }];
@@ -1179,7 +1195,7 @@ def accv_MFMAConstantOp : accv_Op<"mfma_constant_matrix",
 
   let description = [{
     The `accv.mfma_constant_matrix` creates a constant MFMA matrix that can be subsequently
-    using within an accv.mfma_compute operation.
+    used within an accv.mfma_compute operation.
 
     This operation takes a constant as its operand. The op returns a `!accv.mfma_matrix`.
   }];
@@ -1224,7 +1240,7 @@ def accv_MFMALoadOp : accv_Op<"mfma_load_matrix",
   }];
 
   let arguments = (ins
-    Arg<MemRefRankOf<[F16, F32], [2]>, "", [MemRead]>:$memref,
+    Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "", [MemRead]>:$memref,
     Variadic<acc_Indexlike>:$indices,
     OptionalAttr<AffineMapAttr>:$map
   );
@@ -1294,8 +1310,8 @@ def accv_MFMAStoreOp : accv_Op<"mfma_store_matrix", [
   }];
 
   let arguments = (ins 
-        Arg<MFMAMatrixOf<[F16, F32]>>:$value,
-        Arg<MemRefRankOf<[F16, F32], [2]>, "",[MemWrite]>:$memref,              
+        Arg<MFMAMatrixOf<[I32, F32]>>:$value,
+        Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "",[MemWrite]>:$memref,
         Variadic<acc_Indexlike>:$indices,
         OptionalAttr<AffineMapAttr>:$map);
 

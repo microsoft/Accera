@@ -220,6 +220,13 @@ def BarrierOpt : Pass<"optimize-barriers"> {
     "mlir::AffineDialect",
     "mlir::memref::MemRefDialect"
   ];
+  let options = [
+    Option<"writeBarrierGraph", "barrier-opt-dot", "bool", /*default=*/"false",
+           "Write out barrier analysis graph in graphviz format">,
+    Option<"barrierGraphFilename", "barrier-opt-dot-filename", "std::string",
+           /*default=*/"\"\"",
+           "Filename for barrier analysis graph in graphviz format">
+  ];
 }
 
 //===----------------------------------------------------------------------===//

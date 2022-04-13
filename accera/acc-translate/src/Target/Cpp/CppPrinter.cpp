@@ -472,7 +472,11 @@ namespace cpp_printer
 
     LogicalResult CppPrinter::printVectorType(VectorType type)
     {
-        os << "v";
+        if (!type.getElementType().isa<Float16Type>())
+        {
+            // FP16 is "vhalf" but a vector of FP16 is "vhalfxN_t", so don't prepend "v" if the element type is FP16
+            os << "v";
+        }
         RETURN_IF_FAILED(printType(type.getElementType()));
         os << "x";
         os << type.getNumElements();
@@ -747,7 +751,7 @@ namespace cpp_printer
             // doesn't really matter - just beautify the output a bit by skipping
             // an unecessary semicolon
             if (!isa<scf::IfOp>(op) && !isa<scf::ForOp>(op) && !isa<AffineForOp>(op) &&
-                !isa<AffineIfOp>(op) && !skipped)
+                !isa<AffineIfOp>(op) && !isa<AffineYieldOp>(op) && !skipped)
             {
                 os << ";\n";
             }

@@ -725,8 +725,20 @@ class TensorCoreInformation:
 
 
 MI100_TENSORCORE_INFO = TensorCoreInformation([
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=[2,2,16]), # maps to the 16x16x4 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=[2,2,16]) # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=[2,2,16]), # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=[4,4,32]), # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=[2,32,64]), # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=[4,16,64]), # maps to the 16x16x4 mfma instruction
+
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=[2,2,16]), # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=[4,4,32]), # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=[2,32,64]), # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=[4,16,64]), # maps to the 16x16x4 mfma instruction
+
+    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=[2,2,16]), # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=[4,4,32]), # maps to the 32x32x2 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=[2,32,64]), # maps to the 32x32x1 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=[4,16,64]) # maps to the 16x16x1 mfma instruction
 ])
 
 # Tensor Cores is current unused

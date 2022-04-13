@@ -86,6 +86,8 @@ struct AcceraPassPipelineOptions : mlir::PassPipelineOptions<AcceraPassPipelineO
     Option<bool> enableProfile{ *this, "enable-profiling", llvm::cl::init(false) };
     Option<bool> printLoops{ *this, "print-loops", llvm::cl::init(false) };
     Option<bool> printVecOpDetails{ *this, "print-vec-details", llvm::cl::init(false) };
+    Option<bool> writeBarrierGraph{ *this, "barrier-opt-dot", llvm::cl::init(false) };
+    Option<std::string> barrierGraphFilename{ *this, "barrier-opt-dot-filename", llvm::cl::init(std::string{}) };
 };
 
 void addAcceraToLLVMPassPipeline(mlir::OpPassManager& pm, const AcceraPassPipelineOptions& options);

@@ -2778,9 +2778,9 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_mfma_rocm", "[gpu][nest][ca
                     Scalar tidX = GPU::ThreadId().X();
                     Scalar tidY = GPU::ThreadId().Y();
 
-                    auto mfmaAMatrix = MFMALoad(A.GetValue(), { 16, 16 }, "AOp");
-                    auto mfmaBMatrix = MFMALoad(B.GetValue(), { 16, 16 }, "BOp");
-                    auto mfmaCMatrix = MFMALoad(C.GetValue(), { 16, 16 }, "COp");
+                    auto mfmaAMatrix = MFMALoad(A.GetValue(), { 2, 2, 16 }, "AOp");
+                    auto mfmaBMatrix = MFMALoad(B.GetValue(), { 2, 2, 16 }, "BOp");
+                    auto mfmaCMatrix = MFMALoad(C.GetValue(), { 2, 2, 16 }, "COp");
                     auto mfmaDMatrix = MFMACompute(mfmaAMatrix, mfmaBMatrix, mfmaCMatrix);
                     MFMAStore(mfmaDMatrix, C.GetValue());
                 });
@@ -2925,9 +2925,9 @@ TEST_CASE_METHOD(Fixture, "test_rocm_cache", "[gpu][nest][cache][main]")
                     Scalar tidX = GPU::ThreadId().X();
                     Scalar tidY = GPU::ThreadId().Y();
 
-                    auto mfmaAMatrix = MFMALoad(A.GetValue(), { 16, 16 }, "AOp");
-                    auto mfmaBMatrix = MFMALoad(B.GetValue(), { 16, 16 }, "BOp");
-                    auto mfmaCMatrix = MFMALoad(C.GetValue(), { 16, 16 }, "COp");
+                    auto mfmaAMatrix = MFMALoad(A.GetValue(), { 2, 2, 16 }, "AOp");
+                    auto mfmaBMatrix = MFMALoad(B.GetValue(), { 2, 2, 16 }, "BOp");
+                    auto mfmaCMatrix = MFMALoad(C.GetValue(), { 2, 2, 16 }, "COp");
                     auto mfmaDMatrix = MFMACompute(mfmaAMatrix, mfmaBMatrix, mfmaCMatrix);
                     MFMAStore(mfmaDMatrix, C.GetValue());
                 });

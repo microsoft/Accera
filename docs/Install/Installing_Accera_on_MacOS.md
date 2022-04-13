@@ -11,7 +11,7 @@ Accera requires the following tools and libraries for building the generated cod
 * Python 3.7 or newer
 * OpenMP 5, if using parallelization
 
-Homebrew is a package manager that makes it easy to install the prerequisites. Homebrew can be downloaded and installed by:
+Homebrew is a package manager that makes it easy to install the prerequesits. Homebrew can be downloaded and installed by:
 
 ```shell
 /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
@@ -50,5 +50,3 @@ The `accera` Python package can be installed from PyPI:
 ```shell
 pip install accera
 ```
-
-

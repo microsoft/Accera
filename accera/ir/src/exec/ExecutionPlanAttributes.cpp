@@ -176,7 +176,7 @@ namespace executionPlan
             return {};
         if (failed(parser.parseRBrace()))
             return {};
-        return TensorizationInfoAttr::get(TensorizationInfo{std::array<int, 3>{dim0, dim1, dim2}}, parser.getBuilder().getContext());
+        return TensorizationInfoAttr::get(TensorizationInfo{std::array<int64_t, 3>{dim0, dim1, dim2}}, parser.getBuilder().getContext());
     }
 
     void print(TensorizationInfoAttr attr, mlir::DialectAsmPrinter& printer)

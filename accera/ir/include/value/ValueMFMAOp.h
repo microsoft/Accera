@@ -9,26 +9,24 @@
 #include "ValueAttributes.h"
 #include "ValueEnums.h"
 
-
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/TypeSupport.h>
-
 
 namespace accera::ir::value
 {
 using llvm::ArrayRef;
 using llvm::StringRef;
 
-using mlir::Type;
 using mlir::LogicalResult;
+using mlir::Type;
 
 /// MFMAMatrixType storage and uniquing. Array is uniqued based on its shape,
 /// type, and operand.
 struct MFMAMatrixStorageType : public mlir::TypeStorage
 {
-    MFMAMatrixStorageType(unsigned numDims, const int64_t* dimShapes, Type elementType, StringRef operand) :
-        dimShapes(dimShapes), numDims(numDims), elementType(elementType), operand(operand) {}
+    MFMAMatrixStorageType(unsigned numDims_, const int64_t* dimShapes_, Type elementType_, StringRef operand_) :
+        dimShapes(dimShapes_), numDims(numDims_), elementType(elementType_), operand(operand_) {}
 
     /// The hash key for uniquing.
     using KeyTy = std::tuple<ArrayRef<int64_t>, Type, StringRef>;
@@ -105,6 +103,15 @@ class MFMAMatrixType
 public:
     using Base::Base;
 
+    enum class Shape
+    {
+        T4x16x64,
+        T2x32x64,
+        T4x4x32,
+        T2x2x16,
+        Invalid
+    };
+
     /// Get MFMAMatrixType and verify construction Invariants.
     static MFMAMatrixType get(ArrayRef<int64_t> shape, Type elementType, StringRef operand);
 
@@ -141,5 +148,18 @@ public:
 
     /// The stride between consecutive rows of the MFMA matrix.
     int64_t getLeadingDim() const;
+
+    Shape getShapeType() const;
+
+    int64_t getThreadTileSize() const;
+
+    bool isValidShape() const;
+
+    int64_t getNumBlocks() const;
+
+    int64_t getTileFactor() const;
+
+private:
+    static Shape getShapeType(const ArrayRef<int64_t>& mfmaShape);
 };
 } // namespace accera::ir::value

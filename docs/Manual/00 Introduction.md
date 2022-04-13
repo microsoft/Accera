@@ -35,7 +35,7 @@ Traditionally, this safety is achieved by trading off the true potential of a pr
 Accera moderates this trade-off between safety and expressivity by explicitly defining what level of safety guarantees are being given by each transformation under different circumstances. Some situations are safer than others. However, the programmer knows exactly what safeties are being guaranteed in all cases. 
 
 ### 3: The programmer is in control
-Accera gives the programmer maximum control over the generated logic by providing access to the underlying knobs that determine how algorithms are optimized. Convenience methods and carefully used default values can prevent verbosity. As per the use case, these helper methods can always be tuned, even overridden. 
+Accera gives the programmer maximum control over the generated logic by providing access to the underlying knobs that determine how algorithms are optimized.  Convenience methods and carefully used default values can prevent verbosity. As per the use case, these helper methods can always be tuned, even overridden. 
 
 <div style="page-break-after: always;"></div>
 

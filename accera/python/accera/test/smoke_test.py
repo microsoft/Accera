@@ -3,11 +3,10 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
-
+import os
 import sys
 import unittest
 import logging
-import os
 import pathlib
 import shutil
 import numpy as np
@@ -38,7 +37,8 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-from accera import Package, ScalarType, Nest, Array, Scalar, fuse, create_parameters
+from accera import Package, ScalarType, Nest, Array, Constants, Scalar, fuse, create_parameters
+from accera._lang_python._lang import _MemorySpace
 from accera.samples import MatrixMultiplication
 from accera.test import verifiers
 
@@ -1480,22 +1480,51 @@ class SmokeTest(unittest.TestCase):
         self.assertTrue(os.path.isdir(TEST_PACKAGE_DIR))
 
     def _verify_matrix_multiplication_function(
-        self, function: "accera.Function", package: Package, package_name: str, file_check_fn: Callable = None
+        self,
+        function: "accera.Function",
+        package: Package,
+        package_name: str,
+        file_check_fn: Callable = None,
+        check_correctness: bool = True,
+        tolerance: float = 1e-5,
+        file_list: List[str] = None,
+        package_format: Package.Format = None,
+        package_mode: Package.Mode = None,
+        quiet=True
     ) -> None:
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
-        package_format = self.PACKAGE_FORMAT
+        package_format = package_format or self.PACKAGE_FORMAT
+        package_mode = package_mode or self.PACKAGE_MODE
+
         if file_check_fn:
             package_format |= Package.Format.MLIR    # filecheck requires MLIR output
 
-        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=package_format, mode=self.PACKAGE_MODE, output_dir=output_dir)
+        with verifiers.VerifyPackage(self, package_name, output_dir, file_list=file_list) as v:
+            package.build(name=package_name,
+                          format=package_format,
+                          mode=package_mode,
+                          output_dir=output_dir,
+                          _quiet=quiet)
 
-            A_test, B_test, C_test = (np.random.random(p.shape).astype(np.float32) for p in function.args)
-            C_ref = C_test + A_test @ B_test
+            if check_correctness:
+                print("Verifying correctness...")
 
-            v.check_correctness(function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref))
+                # Create the arrays with the appropriate layout
+                A_test, B_test, C_test = (np.ndarray(p.shape, dtype=np.dtype(p.element_type.name), order=p.requested_layout.to_numpy_order()) for p in function.requested_args)
+
+                # Create all the random input data
+                A_test_data, B_test_data, C_test_data = (np.random.random(p.shape).astype(np.dtype(p.element_type.name)) for p in function.requested_args)
+
+                # Assign the default-ordered input data to the appropriately-ordered arrays
+                A_test[:] = A_test_data
+                B_test[:] = B_test_data
+                C_test[:] = C_test_data
+
+                C_ref = C_test + A_test @ B_test
+
+                v.check_correctness(function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref), tolerance=tolerance)
 
             # apply optional file checks
             if file_check_fn:
@@ -2325,6 +2354,8 @@ class SmokeTest(unittest.TestCase):
             j: block_y
         })
 
+        schedule.reorder(i, j, ii, jj)
+
         plan = schedule.create_plan(target=target)
         plan.bind(
             mapping={
@@ -2402,18 +2433,12 @@ class SmokeTest(unittest.TestCase):
 
                     v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_ref, Output_ref))
 
-    def test_rocm_tensorize_single_block_single_warp_output(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 16
-        N = M
-        K = M
-        outer_tile_x = 16
-        outer_tile_y = outer_tile_x
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+    def _rocm_tensorize(self, M, N, K, outer_tile_x, outer_tile_y, mfma_tile, tolerance=1e-5, intype=ScalarType.float32, outtype=ScalarType.float32, verify=True) -> None:
+        from accera import Target
+        A = Array(role=Array.Role.INPUT, element_type=intype, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=intype, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT,
+                  element_type=outtype, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -2429,9 +2454,9 @@ class SmokeTest(unittest.TestCase):
             j: outer_tile_y
         })
         iii, jjj, kk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            k: 16
+            ii: mfma_tile[0],
+            jj: mfma_tile[1],
+            k: mfma_tile[2]
         })
 
         schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
@@ -2448,172 +2473,137 @@ class SmokeTest(unittest.TestCase):
         )
         plan.tensorize(indices=(iii, jjj, kk))
 
-        test_name = "test_rocm_tensorize_single_block_single_warp_output"
         package = Package()
+        num_blocks = M * N / outer_tile_x / outer_tile_y
+        num_warps = outer_tile_x * outer_tile_y / mfma_tile[2] / mfma_tile[2]
+        test_name = "test_rocm_tensorize"
+        test_name += "_single_block" if num_blocks == 1 else "_multi_block"
+        test_name += "_single_warp_output" if num_warps == 1 else "_multi_warp_output"
+        test_name += "_fp32" if intype == ScalarType.float32 else "_fp16"
+        test_name += "_fp32_t" if outtype == ScalarType.float32 else "_fp16_t"
+        test_name += str(mfma_tile[2]) + "_w"
+        test_name += str(mfma_tile[1])
         function = package.add(plan, args=(A, B, C), base_name=test_name)
 
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir
-            )
-
-            if ROCM_AVAILABLE:
-                before = [np.random.rand(*p.shape).astype(np.float32) for p in function.args]
-                after = [before[0], before[1], before[2] + before[0] @ before[1]]
-
-                v.check_correctness(function.name, before=before, after=after)
-
-    def test_rocm_tensorize_single_block_multi_warp_output(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 64
-        N = M
-        K = M
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y
-        })
-        iii, jjj, kk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            k: 16
-        })
-
-        schedule.reorder((i, j, k, ii, jj, iii, jjj, kk))
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_Y,
-                j: target.GridUnit.BLOCK_X,
-                ii: target.GridUnit.THREAD_Y,
-                jj: target.GridUnit.THREAD_X
-            }
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE and verify,
+            tolerance=tolerance,
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
         )
-        plan.tensorize(indices=(iii, jjj, kk))
 
-        test_name = "test_rocm_tensorize_single_block_multi_warp_output"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
+    def test_rocm_tensorize_single_block_single_warp_output_fp32_fp32_t16_w2(self) -> None:
+        self._rocm_tensorize(16, 16, 16, 16, 16, (2, 2, 16))
 
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
+    def test_rocm_tensorize_single_block_single_warp_output_fp32_fp32_t32_w4(self) -> None:
+        self._rocm_tensorize(32, 32, 32, 32, 32, (4, 4, 32))
 
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir
-            )
+    def test_rocm_tensorize_single_block_single_warp_output_fp32_fp32_t64_w32(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64))
 
-            if ROCM_AVAILABLE:
-                before = [np.random.rand(*p.shape).astype(np.float32) for p in function.args]
-                after = [before[0], before[1], before[2] + before[0] @ before[1]]
+    def test_rocm_tensorize_single_block_single_warp_output_fp32_fp32_t64_w16(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (4, 16, 64))
 
-                v.check_correctness(function.name, before=before, after=after)
+    def test_rocm_tensorize_single_block_multi_warp_output_fp32_fp32_t16_w2(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 2, 16))
 
-    def test_rocm_tensorize_multi_block_multi_warp_output(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
+    def test_rocm_tensorize_single_block_multi_warp_output_fp32_fp32_t32_w4(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (4, 4, 32))
 
-        M = 1024
-        N = M
-        K = M
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp32_fp32_t16_w2(self) -> None:
+        self._rocm_tensorize(1024, 1024, 1024, 64, 64, (2, 2, 16))
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp32_fp32_t32_w4(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 4, 32))
 
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp32_fp32_t64_w32(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 64, (2, 32, 64))
 
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp32_fp32_t64_w16(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 16, 64))
 
-        schedule = nest.create_schedule()
+    def test_rocm_tensorize_single_block_single_warp_output_fp16_fp32_t16_w2(self) -> None:
+        self._rocm_tensorize(16, 16, 16, 16, 16, (2, 2, 16), 1e-3, ScalarType.float16)
 
-        ii, jj = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y
-        })
-        iii, jjj, kk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            k: 16
-        })
+    def test_rocm_tensorize_single_block_single_warp_output_fp16_fp32_t32_w4(self) -> None:
+        self._rocm_tensorize(32, 32, 32, 32, 32, (4, 4, 32), 1e-3, ScalarType.float16)
 
-        schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
+    def test_rocm_tensorize_single_block_single_warp_output_fp16_fp32_t64_w32(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), 1e-3, ScalarType.float16)
 
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_Y,
-                j: target.GridUnit.BLOCK_X,
-                ii: target.GridUnit.THREAD_Y,
-                jj: target.GridUnit.THREAD_X
-            }
-        )
-        plan.tensorize(indices=(iii, jjj, kk))
+    def test_rocm_tensorize_single_block_single_warp_output_fp16_fp32_t64_w16(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (4, 16, 64), 1e-3, ScalarType.float16)
 
-        test_name = "test_rocm_tensorize_multi_block_multi_warp_output"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
+    def test_rocm_tensorize_single_block_multi_warp_output_fp16_fp32_t16_w2(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 2, 16), 1e-3, ScalarType.float16)
 
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
+    def test_rocm_tensorize_single_block_multi_warp_output_fp16_fp32_t32_w4(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (4, 4, 32), 1e-3, ScalarType.float16)
 
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir
-            )
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp32_t16_w2(self) -> None:
+        self._rocm_tensorize(1024, 1024, 1024, 64, 64, (2, 2, 16), 1e-3, ScalarType.float16)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp32_t32_w4(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 4, 32), 1e-3, ScalarType.float16)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp32_t64_w32(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 64, (2, 32, 64), 1e-3, ScalarType.float16)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp32_t64_w16(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 16, 64), 1e-3, ScalarType.float16)
+
+    def test_rocm_tensorize_single_block_single_warp_output_fp16_fp16_t16_w2(self) -> None:
+        self._rocm_tensorize(16, 16, 16, 16, 16, (2, 2, 16), 1e-3, ScalarType.float16, ScalarType.float16)
+
+    def test_rocm_tensorize_single_block_single_warp_output_fp16_fp16_t32_w4(self) -> None:
+        self._rocm_tensorize(32, 32, 32, 32, 32, (4, 4, 32), 1e-3, ScalarType.float16, ScalarType.float16)
+
+    def test_rocm_tensorize_single_block_single_warp_output_fp16_fp16_t64_w32(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), 1e-3, ScalarType.float16, ScalarType.float16)
+
+    def test_rocm_tensorize_single_block_single_warp_output_fp16_fp16_t64_w16(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (4, 16, 64), 1e-3, ScalarType.float16, ScalarType.float16)
+
+    # TODO: This requires tolerance to be set higher than the other tests (verify discrepancies)
+    def test_rocm_tensorize_single_block_multi_warp_output_fp16_fp16_t16_w2(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 2, 16), 1e-2, ScalarType.float16, ScalarType.float16)
+
+    def test_rocm_tensorize_single_block_multi_warp_output_fp16_fp16_t32_w4(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (4, 4, 32), 1e-3, ScalarType.float16, ScalarType.float16)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp16_t16_w2(self) -> None:
+        self._rocm_tensorize(1024, 1024, 1024, 64, 64, (2, 2, 16), 1e-2, ScalarType.float16, ScalarType.float16)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp16_t32_w4(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 4, 32), 1e-2, ScalarType.float16, ScalarType.float16)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp16_t64_w32(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 64, (2, 32, 64), 1e-2, ScalarType.float16, ScalarType.float16)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp16_t64_w16(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 16, 64), 1e-2, ScalarType.float16, ScalarType.float16)
 
     @expectedFailure(FailedReason.INVALID, "the hardware does not support the requested tensorcore shape")
     def test_rocm_tensorize_invalid_shape_output(self) -> None:
+        self._rocm_tensorize(256, 256, 256, 64, 64, (64, 64, 64),
+                             "test_rocm_tensorize_invalid_shape_output", False)
+
+    def _gpu_cache(self, M, N, K, m_tile_size, n_tile_size, k_tile_size, test_name, dBuffer=False, dBufferLoacation = Constants.AUTO) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
 
-        M = 256
-        N = M
-        K = M
-        block_x = 64
-        block_y = block_x
-        tile_size = 64
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
+                  shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
+                  shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -2624,17 +2614,12 @@ class SmokeTest(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        ii, jj = schedule.tile({
-            i: block_x,
-            j: block_y
+        ii, jj, kk = schedule.tile({
+            i: m_tile_size,
+            j: n_tile_size,
+            k: k_tile_size
         })
-        iii, jjj, kk = schedule.tile({
-            ii: tile_size,
-            jj: tile_size,
-            k: tile_size
-        })
-
-        schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
+        schedule.reorder(i, j, k, ii, jj, kk)
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
@@ -2646,185 +2631,33 @@ class SmokeTest(unittest.TestCase):
                 jj: target.GridUnit.THREAD_Y
             }
         )
-        plan.tensorize(indices=(iii, jjj, kk))
 
-        test_name = "test_rocm_tensorize_invalid_shape_output"
+        plan.cache(A, index=ii, double_buffer=dBuffer,
+                   location=_MemorySpace.SHARED, double_buffer_location=dBufferLoacation, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(B, index=ii, double_buffer=dBuffer,
+                   location=_MemorySpace.SHARED, double_buffer_location=dBufferLoacation, layout=Array.Layout.FIRST_MAJOR)
+
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
 
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir
-            )
-
-            if ROCM_AVAILABLE:
-                before = [np.random.rand(*p.shape).astype(np.float32) for p in function.args]
-                after = [before[0], before[1], before[2] + before[0] @ before[1]]
-
-                v.check_correctness(function.name, before=before, after=after)
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE,
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+        )
 
     def test_gpu_cache_simple(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
-        from accera._lang_python._lang import _MemorySpace
-
-        M = 1024
-        N = 1024
-        K = 1024
-        block_x = 16
-        block_y = block_x
-        k_tile_size = 32
-
-        m_tile_size = block_x
-        n_tile_size = block_y
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: m_tile_size,
-            j: n_tile_size,
-            k: k_tile_size
-        })
-        schedule.reorder(i, j, k, ii, jj, kk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-        plan.cache(A, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
-        plan.cache(B, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
-
-        test_name = "test_gpu_cache_simple"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
-
-            if ROCM_AVAILABLE:
-                before = [np.random.rand(*p.shape).astype(np.float32) for p in function.args]
-                after = [before[0], before[1], before[2] + before[0] @ before[1]]
-
-                v.check_correctness(function.name, before=before, after=after)
+        self._gpu_cache(1024, 1024, 1024, 16, 16, 32, "test_gpu_cache_simple")
 
     def test_gpu_cache_double_buffering(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
-        from accera._lang_python._lang import _MemorySpace
-
-        M = 2560
-        N = 1536
-        K = 2048
-        block_x = 16
-        block_y = block_x
-        k_tile_size = 32
-
-        m_tile_size = block_x
-        n_tile_size = block_y
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: m_tile_size,
-            j: n_tile_size,
-            k: k_tile_size
-        })
-        schedule.reorder(i, j, k, ii, jj, kk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-        plan.cache(A, index=ii, double_buffer=True, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
-        plan.cache(B, index=ii, double_buffer=True, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
-
-        test_name = "test_gpu_cache_double_buffering"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
-
-            if ROCM_AVAILABLE:
-                before = [np.random.rand(*p.shape).astype(np.float32) for p in function.args]
-                after = [before[0], before[1], before[2] + before[0] @ before[1]]
-
-                v.check_correctness(function.name, before=before, after=after)
+        self._gpu_cache(2560, 1536, 2048, 16, 16, 32,
+                        "test_gpu_cache_double_buffering", True)
 
     def test_gpu_cache_double_buffering_trigger_index(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
-        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
         from accera._lang_python._lang import _MemorySpace
 
         M = 2560
@@ -2838,8 +2671,10 @@ class SmokeTest(unittest.TestCase):
         m_tile_size = block_x
         n_tile_size = block_y
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
+                  shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
+                  shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
             role=Array.Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
@@ -2895,109 +2730,18 @@ class SmokeTest(unittest.TestCase):
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
 
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
-
-            if ROCM_AVAILABLE:
-                before = [np.random.rand(*p.shape).astype(np.float32) for p in function.args]
-                after = [before[0], before[1], before[2] + before[0] @ before[1]]
-
-                v.check_correctness(function.name, before=before, after=after)
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE,
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+        )
 
     def test_gpu_cache_double_buffering_mem_space(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera.lang import CacheIndexing, BLOCK_X, BLOCK_Y, THREAD_X, THREAD_Y
-        from accera._lang_python._lang import _MemorySpace
-
-        M = 2560
-        N = 1536
-        K = 2048
-        block_x = 16
-        block_y = block_x
-        k_tile_size = 32
-
-        m_tile_size = block_x
-        n_tile_size = block_y
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: m_tile_size,
-            j: n_tile_size,
-            k: k_tile_size
-        })
-        schedule.reorder(i, j, k, ii, jj, kk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-        plan.cache(
-            A, index=ii, double_buffer=True, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
-        )    # Double buffer should be in private mem
-        plan.cache(
-            B,
-            index=ii,
-            double_buffer=True,
-            location=_MemorySpace.SHARED,
-            double_buffer_location=_MemorySpace.SHARED,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        test_name = "test_gpu_cache_double_buffering_mem_space"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
-
-            if ROCM_AVAILABLE:
-                before = [np.random.rand(*p.shape).astype(np.float32) for p in function.args]
-                after = [before[0], before[1], before[2] + before[0] @ before[1]]
-
-                v.check_correctness(function.name, before=before, after=after)
+        self._gpu_cache(2560, 1536, 2048, 16, 16, 32,
+                        "test_gpu_cache_double_buffering_mem_space", True, _MemorySpace.PRIVATE)
 
     def test_cpu_cache_double_buffering_trigger_index(self) -> None:
         from accera import Array, Nest, Package, ScalarType
@@ -3046,7 +2790,7 @@ class SmokeTest(unittest.TestCase):
 
         self._verify_matrix_multiplication_function(function, package, test_name)
 
-    def test_gpu_barrier_opt(self):
+    def test_gpu_barrier_opt(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
         from accera._lang_python._lang import Allocate, _MemorySpace, Array as NativeArray
         from accera._lang_python._lang._gpu import Barrier
@@ -3165,18 +2909,7 @@ class SmokeTest(unittest.TestCase):
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
 
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir
-            )
-
+        def file_check_fn(v):
             # We expect the output to have a block dim = [1,1,1] and grid dim = [1,1,1]
             # there will be an inner 16x16x16 loop that performs the actual computation.
             # i.e. the computation is performed by a single block and which contains a single thread
@@ -3194,11 +2927,15 @@ class SmokeTest(unittest.TestCase):
             checker.check_count("for (uint32_t idx{{[0-9]}} = 0; idx{{[0-9]}} < 16; idx{{[0-9]}} += 1) {", 3)
             checker.run()
 
-            if ROCM_AVAILABLE:
-                before = [np.random.rand(*p.shape).astype(np.float32) for p in function.args]
-                after = [before[0], before[1], before[2] + before[0] @ before[1]]
-
-                v.check_correctness(function.name, before=before, after=after)
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            file_check_fn=file_check_fn,
+            check_correctness=ROCM_AVAILABLE,
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+        )
 
     # Thrifty caching
     def test_thrifty_caching_simple_input_cache(self) -> None:
@@ -4176,6 +3913,119 @@ class SmokeTest(unittest.TestCase):
 
     #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_elide_boundary_no_elide_main")
 
+    def test_gpu_cache_different_input_layouts(self):
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera._lang_python._lang import _MemorySpace
+
+        M = 2560
+        N = 1536
+        K = 2048
+        block_x = 16
+        block_y = block_x
+        k_outer_tile_size = 512
+        k_inner_tile_size = 32
+
+        m_tile_size = block_x
+        n_tile_size = block_y
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i,j] += A[i,k] * B[k,j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile({
+            i: m_tile_size,
+            j: n_tile_size,
+            k: k_outer_tile_size
+        })
+
+        kkk = schedule.split(kk, k_inner_tile_size)
+        schedule.reorder(i, j, k, kk, ii, jj, kkk)
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
+        )
+        plan.cache(A, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(B, index=ii, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
+
+        package_name = "test_gpu_cache_different_input_layouts"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=package_name)
+
+        def file_check_fn(verifier):
+            # We expect the A matrix to be loaded with sequential Thread X ids moving sequentially in the
+            # second logical dimension, and the B matrix to be loaded with sequential Thread X ids moving
+            # sequentially in the first logical dimension
+            checker = verifier.file_checker(f"*_LoopNestToValueFunc.mlir")
+
+            # Function decl
+            checker.check_label('accv.func nested @test_gpu_cache_different_input_layouts_')
+            checker.check_same('%[[Array_A:[a-z0-9_]+]]: memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>')
+            checker.check_same('%[[Array_B:[a-z0-9_]+]]: memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>')
+            checker.check_same('%[[Array_C:[a-z0-9_]+]]: memref<2560x1536xf32, affine_map<(d0, d1) -> (d0 * 1536 + d1)>>')
+
+            # Block X/Y
+            checker.check('%[[Block_Y:[0-9_]+]] = "gpu.block_id"() {dimension = "y"} : () -> index')
+            checker.check('%[[Block_X:[0-9_]+]] = "gpu.block_id"() {dimension = "x"} : () -> index')
+
+            # Cache allocations
+            checker.check('%[[Cache_A:[0-9_]+]] = "accv.alloc"() : () -> memref<16x32xf32, 3>')
+            checker.check('%[[Cache_B:[0-9_]+]] = "accv.alloc"() : () -> memref<32x16xf32, 3>')
+
+            # Loops outside of cache regions
+            checker.check('affine.for %[[Block_X_iv:[a-z0-9_]+]] = 0 to 1 {')
+            checker.check('affine.for %[[Block_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
+            checker.check('affine.for %[[k_iv:[a-z0-9_]+]] = 0 to 2048 step 512 {')
+            checker.check('affine.for %[[kk_iv:[a-z0-9_]+]] = 0 to 512 step 32 {')
+
+            # check the A matrix load / store
+            checker.check('"accv.lambda"() ( {')
+            checker.check('%[[Thread_X:[0-9_]+]] = "gpu.thread_id"() {dimension = "x"}')
+            checker.check('%[[Thread_Y:[0-9_]+]] = "gpu.thread_id"() {dimension = "y"}')
+            checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
+            checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
+            checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
+            checker.check('%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][(%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32 + symbol(%[[Block_X]]) * 16 - (((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) floordiv 16) * 16, %[[lpt_iv]] * 256 + %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - ((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) * 32] : memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>')
+            checker.check('affine.store %[[Loaded_A_Val]], %[[Cache_A]][((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) mod 16, (%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) mod 32] : memref<16x32xf32, 3>')
+
+            # check the B matrix load / store
+            checker.check('"accv.lambda"() ( {')
+            checker.check('%[[Thread_X:[0-9_]+]] = "gpu.thread_id"() {dimension = "x"}')
+            checker.check('%[[Thread_Y:[0-9_]+]] = "gpu.thread_id"() {dimension = "y"}')
+            checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
+            checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
+            checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
+            checker.check('%[[Loaded_B_Val:[0-9_]+]] = affine.load %[[Array_B]][%[[k_iv]] + %[[kk_iv]] + %[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - ((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) * 32, (%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32 + symbol(%[[Block_Y]]) * 16 - (((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) floordiv 16) * 16] : memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>')
+            checker.check('affine.store %[[Loaded_B_Val]], %[[Cache_B]][(%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) mod 32, ((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) mod 16] : memref<32x16xf32, 3>')
+
+            checker.run()
+
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            package_name,
+            file_check_fn=file_check_fn,
+            check_correctness=ROCM_AVAILABLE,
+            file_list=[f"{package_name}.cu", f"{package_name}.hat"],
+            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+        )
+
+
     def test_vectorized_and_unvectorized_cpu_caches(self):
         from accera import AUTO
         M = 512
@@ -4227,15 +4077,8 @@ class SmokeTest(unittest.TestCase):
 
         self._verify_matrix_multiplication_function(function, package, f"test_vectorized_and_unvectorized_cpu_caches")
 
-    def test_rocm_cache_tensorize(self) -> None:
+    def _rocm_cache_tensorize(self, M, N, K, outer_tile_x, outer_tile_y, outer_tile_k, test_name, tensorize=True, cache=True, dBuffer = False, dBufferLocation = Constants.AUTO, vectorize=False) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 1024
-        N = 1024
-        K = 1024
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
@@ -4272,750 +4115,59 @@ class SmokeTest(unittest.TestCase):
         plan = schedule.create_plan(target=target)
         plan.bind(
             mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
+                i: target.GridUnit.BLOCK_Y,
+                j: target.GridUnit.BLOCK_X,
+                ii: target.GridUnit.THREAD_Y,
+                jj: target.GridUnit.THREAD_X
             }
         )
-        plan.tensorize(indices=(iii, jjj, kkk))
-        plan.cache(
-            A, index=ii, double_buffer=False, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
-        )
-        plan.cache(
-            B, index=ii, double_buffer=False, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
-        )
 
-        test_name = "test_rocm_cache_tensorize"
+        if tensorize:
+            plan.tensorize(indices=(iii, jjj, kkk))
+
+        if cache:
+            plan.cache(
+                A, index=ii, double_buffer=dBuffer, double_buffer_location=dBufferLocation, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
+            )
+            plan.cache(
+                B, index=ii, double_buffer=dBuffer, double_buffer_location=dBufferLocation, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
+            )
+
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
 
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE,
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+        )
 
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
+    def test_rocm_cache_tensorize(self) -> None:
+        self._rocm_cache_tensorize(1024, 1024, 1024, 64, 64, 64, "test_rocm_cache_tensorize")
 
     def test_rocm_cache_double_buffering_tensorize(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 1024
-        N = 1024
-        K = 1024
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
-            k: outer_tile_k
-        })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
-
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-        plan.tensorize(indices=(iii, jjj, kkk))
-        plan.cache(
-            A,
-            index=ii,
-            double_buffer=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-        plan.cache(
-            B,
-            index=ii,
-            double_buffer=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        test_name = "test_rocm_cache_double_buffering_tensorize"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
+        self._rocm_cache_tensorize(1024, 1024, 1024, 64, 64, 64, "test_rocm_cache_double_buffering_tensorize", True, True, True, _MemorySpace.PRIVATE)
 
     def test_rocm_non_square(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 2560
-        N = 1536
-        K = 2048
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
-            k: outer_tile_k
-        })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
-
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-
-        test_name = "test_rocm_non_square"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
-
-    def test_rocm_non_square_coalesced(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 2560
-        N = 1536
-        K = 2048
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
-            k: outer_tile_k
-        })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
-
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_Y,
-                j: target.GridUnit.BLOCK_X,
-                ii: target.GridUnit.THREAD_Y,
-                jj: target.GridUnit.THREAD_X
-            }
-        )
-
-        test_name = "test_rocm_non_square_coalesced"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
+        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_non_square", False, False)
 
     def test_rocm_tensorize_non_square(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 2560
-        N = 1536
-        K = 2048
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
-            k: outer_tile_k
-        })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
-
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-        plan.tensorize(indices=(iii, jjj, kkk))
-
-        test_name = "test_rocm_tensorize_non_square"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
+        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_tensorize_non_square", True, False)
 
     def test_rocm_cache_non_square(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 2560
-        N = 1536
-        K = 2048
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
-            k: outer_tile_k
-        })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
-
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-        plan.cache(
-            A, index=ii, double_buffer=False, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
-        )
-        plan.cache(
-            B, index=ii, double_buffer=False, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
-        )
-
-        test_name = "test_rocm_cache_non_square"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
+        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_cache_non_square", False)
 
     def test_rocm_cache_double_buffering_non_square(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
+        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_cache_double_buffering_non_square", False, True, True, _MemorySpace.PRIVATE)
 
-        M = 2560
-        N = 1536
-        K = 2048
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
+    def test_rocm_cache_double_buffering_tensorize_non_square(self) -> None:
+        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_cache_double_buffering_tensorize_non_square", True, True, True, _MemorySpace.PRIVATE)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
-            k: outer_tile_k
-        })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
-
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-        plan.cache(
-            A,
-            index=ii,
-            double_buffer=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-        plan.cache(
-            B,
-            index=ii,
-            double_buffer=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        test_name = "test_rocm_cache_double_buffering_non_square"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
-
-    def test_rocm_a_bt_cache_double_buffering_tensorize_non_square(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 2560
-        N = 1536
-        K = 2048
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, K), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[j, k]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
-            k: outer_tile_k
-        })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
-
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-        plan.tensorize(indices=(iii, jjj, kkk))
-        plan.cache(
-            A,
-            index=ii,
-            double_buffer=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-        plan.cache(
-            B,
-            index=ii,
-            double_buffer=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        test_name = "test_rocm_a_bt_cache_double_buffering_tensorize_non_square"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
-
-    def test_rocm_a_bt_vectorized_cache_double_buffering_tensorize_non_square(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 2560
-        N = 1536
-        K = 2048
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, K), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[j, k]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
-            k: outer_tile_k
-        })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
-
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-        plan.tensorize(indices=(iii, jjj, kkk))
-        plan.cache(
-            A,
-            index=ii,
-            double_buffer=True,
-            vectorize=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-        plan.cache(
-            B,
-            index=ii,
-            double_buffer=True,
-            vectorize=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        test_name = "test_rocm_a_bt_vectorized_cache_double_buffering_tensorize_non_square"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
-
-    def test_rocm_cache_double_buffering_tensorize_non_square_coalesced(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 2560
-        N = 1536
-        K = 2048
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
-            k: outer_tile_k
-        })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
-
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_Y,
-                j: target.GridUnit.BLOCK_X,
-                ii: target.GridUnit.THREAD_Y,
-                jj: target.GridUnit.THREAD_X
-            }
-        )
-        plan.tensorize(indices=(iii, jjj, kkk))
-        plan.cache(
-            A,
-            index=ii,
-            double_buffer=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-        plan.cache(
-            B,
-            index=ii,
-            double_buffer=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        test_name = "test_rocm_cache_double_buffering_tensorize_non_square_coalesced"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
+    def test_rocm_vectorized_cache_double_buffering_tensorize_non_square(self) -> None:
+        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_vectorized_cache_double_buffering_tensorize_non_square", True, True, True, _MemorySpace.PRIVATE, True)
 
     # @expectedFailure(FailedReason.BUG, "3d loads are not supported by tensorization")
     # def test_rocm_cache_double_buffering_tensorize_batched(self) -> None:
@@ -5198,92 +4350,6 @@ class SmokeTest(unittest.TestCase):
     #             output_dir=output_dir,
     #             _quiet=False
     #         )
-
-    def test_rocm_cache_double_buffering_tensorize_non_square(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
-        M = 2560
-        N = 1536
-        K = 2048
-        outer_tile_x = 64
-        outer_tile_y = outer_tile_x
-        outer_tile_k = 64
-
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(
-            role=Array.Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        schedule = nest.create_schedule()
-
-        ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
-            k: outer_tile_k
-        })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
-
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-        target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
-            }
-        )
-        plan.tensorize(indices=(iii, jjj, kkk))
-        plan.cache(
-            A,
-            index=ii,
-            double_buffer=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-        plan.cache(
-            B,
-            index=ii,
-            double_buffer=True,
-            location=target.MemorySpace.SHARED,
-            double_buffer_location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
-
-        test_name = "test_rocm_cache_double_buffering_tensorize_non_square"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
 
     # @expectedFailure(FailedReason.BUG, "Caching C with double buffering mode is not currently producing the right result")
     # def test_rocm_cache_double_buffering__with_c_cache_tensorize(self) -> None:
@@ -5630,18 +4696,15 @@ class SmokeTest(unittest.TestCase):
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
 
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE,
+            tolerance=0.2, # Higher tolerance for fp16
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+        )
 
     def test_rocm_cache_double_buffering_tensorize_fp16(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -5687,10 +4750,10 @@ class SmokeTest(unittest.TestCase):
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind({
-            i: target.GridUnit.BLOCK_X,
-            j: target.GridUnit.BLOCK_Y,
-            ii: target.GridUnit.THREAD_X,
-            jj: target.GridUnit.THREAD_Y
+            i: target.GridUnit.BLOCK_Y,
+            j: target.GridUnit.BLOCK_X,
+            ii: target.GridUnit.THREAD_Y,
+            jj: target.GridUnit.THREAD_X
         })
         plan.tensorize(indices=(iii, jjj, kkk))
         plan.cache(
@@ -5714,18 +4777,15 @@ class SmokeTest(unittest.TestCase):
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
 
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-        shutil.rmtree(output_dir, ignore_errors=True)
-
-        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-                                                                             f"{test_name}.hat"]) as v:
-            package.build(
-                name=test_name,
-                format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-                output_dir=output_dir,
-                _quiet=False
-            )
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE,
+            tolerance=0.2, # Higher tolerance for fp16
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+        )
 
 
 if __name__ == '__main__':

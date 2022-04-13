@@ -1908,8 +1908,12 @@ Matrix MLIRContext::MFMAComputeImpl(Matrix A, Matrix B, Matrix C)
     auto aValue = ToMLIRValue(builder, A);
     auto bValue = ToMLIRValue(builder, B);
     auto cValue = ToMLIRValue(builder, C);
+    // TODO: plumbing
+    auto cbsz = 0;
+    auto abid = 0;
+    auto blgp = 0;
 
-    mlir::Value result = builder.create<ir::value::MFMAComputeOp>(loc, cValue.getType(), aValue, bValue, cValue);
+    mlir::Value result = builder.create<ir::value::MFMAComputeOp>(loc, cValue.getType(), aValue, bValue, cValue, cbsz, abid, blgp);
 
     EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { C.GetType(), 1 } });
     Emittable emittable{ &emittableInfo };

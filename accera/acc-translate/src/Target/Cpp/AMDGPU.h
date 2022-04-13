@@ -15,7 +15,7 @@ namespace mlir
 namespace cpp_printer
 {
 
-    llvm::Optional<std::string> GetAMDMFMAOpName(mlir::Type outTy, mlir::Type inTy);
+    llvm::Optional<std::string> GetAMDMFMAOpName(const mlir::Type& aTy, const mlir::Type& bTy, const mlir::Type& cTy, const mlir::Type& resTy);
 
 } // namespace cpp_printer
 } // namespace mlir

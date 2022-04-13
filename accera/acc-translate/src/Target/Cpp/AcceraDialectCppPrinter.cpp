@@ -68,31 +68,30 @@ namespace cpp_printer
 
     LogicalResult AcceraDialectCppPrinter::printOp(vir::MFMAComputeOp mfmaOp)
     {
-        assert(mfmaOp);
-        auto accumInputTy = mfmaOp.opC().getType();
-        auto accumOutputTy = mfmaOp.res().getType();
-        auto funName = GetAMDMFMAOpName(accumOutputTy, accumInputTy);
-        if (!funName)
-        {
-            return failure();
-        }
-        auto idx = state.nameState.getOrCreateName(
-            mfmaOp.res(), SSANameState::SSANameKind::Variable);
-        auto ty = mfmaOp.res().getType();
-        if (auto memrefTy = ty.dyn_cast<MemRefType>())
-        {
-            ty = VectorType::get(memrefTy.getNumElements(), memrefTy.getElementType());
-        }
+        return failure();
+        // assert(mfmaOp);
+        // auto funName = GetAMDMFMAOpName(mfmaOp.opA().getType(), mfmaOp.opB().getType(), mfmaOp.opC().getType(), mfmaOp.result().getType());
+        // if (!funName)
+        // {
+        //     return failure();
+        // }
+        // auto idx = state.nameState.getOrCreateName(
+        //     mfmaOp.result(), SSANameState::SSANameKind::Variable);
+        // auto ty = mfmaOp.result().getType();
+        // if (auto memrefTy = ty.dyn_cast<MemRefType>())
+        // {
+        //     ty = VectorType::get(memrefTy.getNumElements(), memrefTy.getElementType());
+        // }
 
-        RETURN_IF_FAILED(printer->printType(ty));
-        os << " " << idx << " = ";
-        os << funName << "(";
-        os << state.nameState.getName(mfmaOp.opA()) << ", ";
-        os << state.nameState.getName(mfmaOp.opB()) << ", ";
-        os << state.nameState.getName(mfmaOp.opC()) << ", ";
-        os << "0, 0, 0";
-        os << ")";
-        return success();
+        // RETURN_IF_FAILED(printer->printType(ty));
+        // os << " " << idx << " = ";
+        // os << funName << "(";
+        // os << state.nameState.getName(mfmaOp.opA()) << ", ";
+        // os << state.nameState.getName(mfmaOp.opB()) << ", ";
+        // os << state.nameState.getName(mfmaOp.opC()) << ", ";
+        // os << "0, 0, 0";
+        // os << ")";
+        // return success();
     }
 
     LogicalResult AcceraDialectCppPrinter::printDialectOperation(
@@ -106,7 +105,7 @@ namespace cpp_printer
         };
 
         TypeSwitch<Operation*>(op)
-            .Case<vir::MFMAComputeOp>(handler)
+            //.Case<vir::MFMAComputeOp>(handler)
             .Case<vir::CallOp>(handler)
             .Case<vir::ReturnOp>(handler)
             .Default([&](Operation*) { *consumed = false; });

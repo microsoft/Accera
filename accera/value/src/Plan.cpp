@@ -201,7 +201,7 @@ namespace value
             }
         }
 
-        void Tensorize(std::vector<ScalarIndex> indices, std::array<int, 3> dims)
+        void Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims)
         {
             auto& builder = GetBuilder();
 
@@ -408,7 +408,7 @@ namespace value
         return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace);
     }
 
-    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, std::array<int, 3> dims)
+    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims)
     {
         _impl->Tensorize(indices, dims);
     }

@@ -13,7 +13,7 @@ namespace executionPlan
 {
     struct TensorizationInfo
     {
-        std::array<int, 3> dim{0,0,0};
+        std::array<int64_t, 3> dim{0,0,0};
     private:
         friend inline bool operator==(const TensorizationInfo& p1, const TensorizationInfo& p2)
         {

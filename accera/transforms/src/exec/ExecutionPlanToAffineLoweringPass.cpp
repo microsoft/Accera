@@ -2119,7 +2119,6 @@ LogicalResult MultiCacheCopyOpRewrite::matchAndRewrite(MultiCacheCopyOp multiCac
 
 LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCopyOp cacheCopyOp, PatternRewriter& rewriter) const
 {
-    // TODO : handle gpu
     // Copy data from the source buffer to the destination buffer by iterating over the cache region shape described
     // by the lower and upper bound maps and operands and mapping from cache region indices to the source buffer and destination buffer
 
@@ -2275,20 +2274,34 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
 
                 mlir::AffineMap cacheFillNestMap = mlir::AffineMap::get(5, 0, cacheFillNestToFlatExpr);
 
-                // TODO: Handle arbitrary memory order input
-                auto cumulativeStride = 1;
-                std::vector<mlir::AffineExpr> flatToActiveExprs;
+                llvm::SmallVector<int64_t, 4> multiCacheStrides;
+                int64_t activeBlockOffset; // TODO : do we need to leverage this in any way? we're currently just arranging the threads according to fast/slow dimensions of the logical memref
+                auto strideResult = mlir::getStridesAndOffset(memRefType, multiCacheStrides, activeBlockOffset);
+                assert(succeeded(strideResult));
+                auto numMultiCacheDims = multiCacheStrides.size() - activeBlockRank;
+                std::vector<int64_t> activeBlockStrides(multiCacheStrides.begin() + numMultiCacheDims, multiCacheStrides.end());
 
-                for (int dim_counter = 0; dim_counter < activeBlockRank; ++dim_counter)
+                // We want to traverse the dimensions of the active block in increasing stride order, so keep track of the logical dimensions and sort them
+                std::vector<std::pair<size_t, int64_t>> activeBlockLogicalDimAndStride;
+                size_t dimIdxCounter = 0;
+                std::transform(activeBlockStrides.begin(), activeBlockStrides.end(), std::back_inserter(activeBlockLogicalDimAndStride), [&](int64_t stride) {
+                    return std::make_pair(dimIdxCounter++, stride);
+                });
+
+                std::sort(activeBlockLogicalDimAndStride.begin(), activeBlockLogicalDimAndStride.end(), [](const std::pair<size_t, int64_t>& left, const std::pair<size_t, int64_t>& right) {
+                    return left.second < right.second;
+                });
+
+                auto cumulativeStride = 1;
+                std::vector<mlir::AffineExpr> flatToActiveBlockExprs(activeBlockRank);
+                for (const auto& [activeBlockLogicalDimIdx, stride] : activeBlockLogicalDimAndStride)
                 {
-                    auto curDimSize = activeBlockShape[(activeBlockRank - 1) - dim_counter];
-                    mlir::AffineExpr flatToActiveBlockExpr = ((currentBuilder.getAffineDimExpr(0).floorDiv(cumulativeStride)) % curDimSize);
-                    flatToActiveExprs.push_back(flatToActiveBlockExpr);
+                    auto curDimSize = activeBlockShape[activeBlockLogicalDimIdx];
+                    flatToActiveBlockExprs[activeBlockLogicalDimIdx] = ((currentBuilder.getAffineDimExpr(0).floorDiv(cumulativeStride)) % curDimSize);
                     cumulativeStride *= curDimSize;
                 }
-                std::reverse(flatToActiveExprs.begin(), flatToActiveExprs.end());
 
-                mlir::AffineMap flatBufferToActiveBlockMap = mlir::AffineMap::get(1, 0, flatToActiveExprs, currentBuilder.getContext());
+                mlir::AffineMap flatBufferToActiveBlockMap = mlir::AffineMap::get(1, 0, flatToActiveBlockExprs, currentBuilder.getContext());
                 auto gpuFillNestToActiveBlockMap = flatBufferToActiveBlockMap.compose(cacheFillNestMap);
 
                 std::vector<mlir::Value> loopNestIVs(orderedSymbolicIndexOpValues.begin(), orderedSymbolicIndexOpValues.end());
@@ -5598,7 +5611,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     opsToErase.push(loadAOp);
 
     innerLoopBodyIter++;
-    // 1. load from B matrix
+    // 2. load from B matrix
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<mlir::AffineLoadOp>(*innerLoopBodyIter))
     {
         llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the load from B Op\n";
@@ -5608,7 +5621,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     opsToErase.push(loadBOp);
 
     (void)innerLoopBodyIter++;
-    // 1. muliply A * B
+    // 3. muliply A * B
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<v::BinOp>(*innerLoopBodyIter))
     {
         llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the binary A*C multiplication op\n";
@@ -5633,7 +5646,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     opsToErase.push(loadCOp);
 
     (void)innerLoopBodyIter++;
-    // 1. add A * B + C
+    // 5. add A * B + C
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<v::BinOp>(*innerLoopBodyIter))
     {
         llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the binary C accumulation op\n";
@@ -5648,7 +5661,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     opsToErase.push(accumC);
 
     (void)innerLoopBodyIter++;
-    // 4. store C
+    // 6. store C
     auto storeC = cast<mlir::AffineStoreOp>(*innerLoopBodyIter);
     if (innerLoopBodyIter == innerLoopBodyEnd || !storeC)
     {
@@ -5692,11 +5705,11 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
            storeC.getMemRefType().getElementType().isF32()) ||
           (loadAOp.getMemRefType().getElementType().isF16() &&
            loadBOp.getMemRefType().getElementType().isF16() &&
-           storeC.getMemRefType().getElementType().isF32())))
+           (storeC.getMemRefType().getElementType().isF32() || storeC.getMemRefType().getElementType().isF16()))))
     {
         return rewriter.notifyMatchFailure(&*innerLoopBodyIter,
                                            "Invalid data types. "
-                                           "A * B + C is valid only if A and B are FP32 and C is FP32 or if A and B are FP16 and C is FP32");
+                                           "A * B + C is valid only if A and B are FP32 and C is FP32 or if A and B are FP16 and C is FP32/FP16");
     }
 
     mlir::OpBuilder::InsertionGuard guard(rewriter);
@@ -5706,32 +5719,44 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     auto loc = innerLoop.getLoc();
     auto ctx = rewriter.getContext();
 
-    auto warpSize = rewriter.create<ConstantIndexOp>(loc, util::ResolveWarpSize(affineForOp).value());
-    auto vecSize = rewriter.create<ConstantIndexOp>(loc, tensorizationInfo.dim[0] * tensorizationInfo.dim[1]);
-    auto leadingDim = rewriter.create<ConstantIndexOp>(loc, tensorizationInfo.dim.back());
+    auto getMatrixTypeOfMemref = [](mlir::MemRefType memrefType, const auto& shape, llvm::StringRef operand) -> v::MFMAMatrixType {
+        return v::MFMAMatrixType::get(shape, memrefType.getElementType(), operand);
+    };
+
+    const auto mfmaType = getMatrixTypeOfMemref(loadAOp.getMemRefType(), tensorizationInfo.dim, "AOp"); // A, B and C have same mfma type
+    const auto& [warpSizeX, warpSizeY] = util::ResolveWarpSize(affineForOp).value();
+    auto warpSize = rewriter.create<ConstantIndexOp>(loc, warpSizeX * warpSizeY);
+    auto i32Ty = rewriter.getI32Type();
+    auto int0 = rewriter.create<ConstantOp>(loc, i32Ty, rewriter.getZeroAttr(i32Ty));
+    auto leadingDim = rewriter.create<ConstantIndexOp>(loc, mfmaType.getLeadingDim());
+    auto tileFactor = rewriter.create<ConstantIndexOp>(loc, mfmaType.getTileFactor());
     auto tidX = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x");
     auto tidY = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y");
     auto bidX = rewriter.create<gpu::BlockIdOp>(loc, rewriter.getIndexType(), "x");
     auto bidY = rewriter.create<gpu::BlockIdOp>(loc, rewriter.getIndexType(), "y");
     auto bdimX = rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x");
+    auto bdimY = rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "y");
+    // We reshape the physical block dimensions to compute the correct offsets.
+    // Multiplying blockDim.x and dividing blockDim.y by tile factor to keep the size same.
+    auto reshapedBlockDimX = rewriter.create<MulIOp>(loc, bdimX, tileFactor);
+    auto reshapedBlockDimY = rewriter.create<UnsignedDivIOp>(loc, bdimY, tileFactor);
     auto blockTid = rewriter.create<AddIOp>(loc, tidX, rewriter.create<MulIOp>(loc, tidY, bdimX));
     auto warpId = rewriter.create<UnsignedDivIOp>(loc, blockTid, warpSize);
-    auto warpX = rewriter.create<UnsignedRemIOp>(loc, warpId, vecSize);
-    auto warpY = rewriter.create<UnsignedDivIOp>(loc, warpId, vecSize);
+    auto warpsX = rewriter.create<UnsignedDivIOp>(loc, reshapedBlockDimX, rewriter.create<ConstantIndexOp>(loc, warpSizeX));
+    auto warpsY = rewriter.create<UnsignedDivIOp>(loc, reshapedBlockDimY, rewriter.create<ConstantIndexOp>(loc, warpSizeY));
+    auto warpIdX = rewriter.create<UnsignedRemIOp>(loc, warpId, warpsX);
+    auto warpIdY = rewriter.create<UnsignedDivIOp>(loc, warpId, warpsX);
+    auto singleBlockOffsetCol = rewriter.create<MulIOp>(loc, warpsX, leadingDim);
+    auto singleBlockOffsetRow = rewriter.create<MulIOp>(loc, warpsY, leadingDim);
     auto rowOffset = rewriter.create<AddIOp>(loc,
-                                             rewriter.create<MulIOp>(loc, warpY, leadingDim),
-                                             rewriter.create<MulIOp>(loc, bidX, warpSize));
+                                             rewriter.create<MulIOp>(loc, warpIdY, leadingDim),
+                                             rewriter.create<MulIOp>(loc, bidY, singleBlockOffsetRow));
     auto colOffset = rewriter.create<AddIOp>(loc,
-                                             rewriter.create<MulIOp>(loc, warpX, leadingDim),
-                                             rewriter.create<MulIOp>(loc, bidY, warpSize));
+                                             rewriter.create<MulIOp>(loc, warpIdX, leadingDim),
+                                             rewriter.create<MulIOp>(loc, bidX, singleBlockOffsetCol));
 
-    std::vector<int64_t> mfmaMatrixShape{ tensorizationInfo.dim[0], tensorizationInfo.dim[1], tensorizationInfo.dim[2] };
-    auto getMatrixTypeOfMemref = [=](mlir::MemRefType memrefType, const std::vector<int64_t>& shape, llvm::StringRef operand) -> v::MFMAMatrixType {
-        return v::MFMAMatrixType::get(shape, memrefType.getElementType(), operand);
-    };
-
-    auto loadMatrixOp = [&](AffineLoadOp loadOp, StringRef kind) {
-        auto mfmaMatrixType = getMatrixTypeOfMemref(loadOp.getMemRefType(), mfmaMatrixShape, kind);
+    auto loadMatrixOp = [&](AffineLoadOp loadOp, StringRef kind, auto mfma_block_offset) {
+        auto mfmaMatrixType = getMatrixTypeOfMemref(loadOp.getMemRefType(), tensorizationInfo.dim, kind);
         if (kind == "AOp")
         {
             [[maybe_unused]] auto d0 = rewriter.getAffineDimExpr(0);
@@ -5748,7 +5773,8 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
                                                offsetMap.compose(loadOp.getAffineMap()),
                                                loadOpOperands);
         }
-        else if (kind == "BOp")
+
+        if (kind == "BOp")
         {
             auto d0 = rewriter.getAffineDimExpr(0);
             [[maybe_unused]] auto d1 = rewriter.getAffineDimExpr(1);
@@ -5764,7 +5790,8 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
                                                offsetMap.compose(loadOp.getAffineMap()),
                                                loadOpOperands);
         }
-        else if (kind == "COp")
+
+        if (kind == "COp")
         {
             [[maybe_unused]] auto d0 = rewriter.getAffineDimExpr(0);
             [[maybe_unused]] auto d1 = rewriter.getAffineDimExpr(1);
@@ -5772,7 +5799,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
             auto colOffsetSym = rewriter.getAffineSymbolExpr(1);
             auto offsetMap = AffineMap::get(2, 2, { rowOffsetSym, colOffsetSym }, ctx);
             SmallVector<mlir::Value, 4> loadOpOperands(loadOp.getMapOperands());
-            loadOpOperands.push_back(rowOffset);
+            loadOpOperands.push_back(rewriter.create<AddIOp>(loc, rowOffset, mfma_block_offset));
             loadOpOperands.push_back(colOffset);
             // llvm::dbgs() << "COp with offset " << offsetMap << " with load "
             //              << loadOp.getAffineMap() << " and composed = " << offsetMap.compose(loadOp.getAffineMap()) << "\n";
@@ -5782,20 +5809,18 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
                                                offsetMap.compose(loadOp.getAffineMap()),
                                                loadOpOperands);
         }
-        else
-        {
-            llvm::report_fatal_error("Unknown kind of matrix");
-        }
+
+        llvm::report_fatal_error("Unknown kind of matrix");
     };
 
-    auto StoreOp = [&](AffineStoreOp storeOp, Value value) {
+    auto StoreOp = [&](AffineStoreOp storeOp, Value value, auto mfma_block_offset) {
         [[maybe_unused]] auto d0 = rewriter.getAffineDimExpr(0);
         [[maybe_unused]] auto d1 = rewriter.getAffineDimExpr(1);
         auto rowOffsetSym = rewriter.getAffineSymbolExpr(0);
         auto colOffsetSym = rewriter.getAffineSymbolExpr(1);
         auto offsetMap = AffineMap::get(2, 2, { rowOffsetSym, colOffsetSym }, ctx);
         SmallVector<mlir::Value, 4> storeOpOperands(storeOp.getMapOperands());
-        storeOpOperands.push_back(rowOffset);
+        storeOpOperands.push_back(rewriter.create<AddIOp>(loc, rowOffset, mfma_block_offset));
         storeOpOperands.push_back(colOffset);
         // llvm::dbgs() << "COpOut with offset " << offsetMap << " with load "
         //              << storeOp.getAffineMap() << " and composed = " << offsetMap.compose(storeOp.getAffineMap()) << "\n";
@@ -5806,13 +5831,17 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
                                             storeOpOperands);
     };
 
-    auto aMfmaMatrix = loadMatrixOp(loadAOp, "AOp");
-    auto bMfmaMatrix = loadMatrixOp(loadBOp, "BOp");
-    auto cMfmaMatrix = loadMatrixOp(loadCOp, "COp");
-
-    auto destMfmaMatrix = rewriter.create<MFMAComputeOp>(loc, cMfmaMatrix.getType(), aMfmaMatrix, bMfmaMatrix, cMfmaMatrix);
-
-    [[maybe_unused]] auto mfmaStoreOp = StoreOp(storeC, destMfmaMatrix);
+    auto aMfmaMatrix = loadMatrixOp(loadAOp, "AOp", int0);
+    auto bMfmaMatrix = loadMatrixOp(loadBOp, "BOp", int0);
+    const auto numBlocks = mfmaType.getNumBlocks();
+    const auto cbsz = numBlocks / 2;
+    for (int iBlock = 0, rowOffset = 0; iBlock < numBlocks; ++iBlock, rowOffset += tensorizationInfo.dim[1])
+    {
+        auto offset = rewriter.create<ConstantIndexOp>(loc, rowOffset);
+        auto cMfmaMatrix = loadMatrixOp(loadCOp, "COp", offset);
+        auto destMfmaMatrix = rewriter.create<MFMAComputeOp>(loc, cMfmaMatrix.getType(), aMfmaMatrix, bMfmaMatrix, cMfmaMatrix, cbsz, iBlock, 0);
+        [[maybe_unused]] auto mfmaStoreOp = StoreOp(storeC, destMfmaMatrix, offset);
+    }
 
     while (!opsToErase.empty())
     {

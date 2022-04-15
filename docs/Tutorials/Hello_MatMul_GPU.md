@@ -7,11 +7,11 @@ In this tutorial you will learn how to implement a simple Matrix Multiplication 
 
 ### Prerequisites
 
-* This tutorial assumes you already have Accera installed. If not, you can find the instructions in [here](../Install/README.md)
-* You are familiar with writing Python and C++
-* You are familiar with basic GPU programming and concepts
-* You have completed the [Hello_MatMul](Hello_MatMul.md) tutorial
-* You have the [Vulkan SDK and runtime](https://vulkan.lunarg.com/sdk/home) installed
+* You should have Accera installed. If not, you can find the instructions in [here](../Install/README.md).
+* Be familiar with writing Python and C++ code.
+* Be familiar with basic GPU programming and concepts.
+* You have completed the [Hello_MatMul](Hello_MatMul.md) tutorial.
+* You have installed the [Vulkan SDK and runtime](https://vulkan.lunarg.com/sdk/home).
 
 ### Review: the naive MatMul algorithm
 

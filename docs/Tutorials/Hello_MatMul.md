@@ -242,4 +242,4 @@ You can now experiment with the generated MatMul function with your own inputs.
 
 ### Optimized MatMul algorithm
 
-The above example illustrates a naive algorithm. To see what a more optimized version looks like, see the [Optimized MatMul](./Optimized_MatMul.md) tutorial.
+The above example illustrates a naive algorithm. To see what a more optimized version of such an algorithm looks like, see the [Optimized MatMul](./Optimized_MatMul.md) tutorial.

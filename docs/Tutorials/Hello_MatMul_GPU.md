@@ -3,7 +3,7 @@
 
 ## Hello MatMul GPU
 
-In this tutorial you will learn how to implement a simple Matrix Multiplication (MatMul) function for execution on a GPU. We will use the Accera's Domain Specific Language (DSL) to produce a [HAT](https://github.com/microsoft/hat) package containing the MatMul function that can be called from the host to launch the MatMul function on the GPU.
+This tutorial will teach you how to implement a simple Matrix Multiplication (MatMul) function for execution on a GPU. We will use the Accera's Domain Specific Language (DSL) to produce a [HAT](https://github.com/microsoft/hat) package containing the MatMul function that can be called from the host to launch the MatMul function on the GPU.
 
 ### Prerequisites
 
@@ -15,13 +15,13 @@ In this tutorial you will learn how to implement a simple Matrix Multiplication 
 
 ### Review: the naive MatMul algorithm
 
-As in the [Hello_MatMul](Hello_MatMul.md) tutorial, we'll consider the example of multiplying matrices A and B, and adding the result into matrix C. In NumPy syntax, this can be expressed as:
+As in the [Hello_MatMul](Hello_MatMul.md) tutorial, we'll consider the example of multiplying matrices A and B and adding the result into matrix C. In NumPy syntax, this can be expressed as:
 
 ```
 C += A @ B
 ```
 
-A naive algorithm for matrix multiplication typically contains 3 nested for loops. Expressed in Python, this could look like:
+A naive algorithm for matrix multiplication typically contains 3 nested for-loops. Expressed in Python, this will look like this:
 
 ```
 for i in range(M):

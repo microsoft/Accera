@@ -13,7 +13,6 @@ By the end of this tutorial, you will learn how to:
 
 * You should have Accera installed. If not, you can find the instructions in [here](../Install/README.md).
 * Be familiar with writing Python and C++ code.
-* Have access to a Raspberry Pi 3 device.
 
 ### A naive MatMul algorithm
 
@@ -79,7 +78,7 @@ def _():
     C[i, j] += A[i, k] * B[k, j]
 ```
 
-We have finished defining the logic of MatMul. Let's now define the schedule which controls the execution of logic. For this, we first create the schedule from the nest:
+We have finished defining the logic of MatMul. Let’s now define the schedule to control the execution of the logic. We create a schedule from the nest:
 
 ```python
 sched = nest.create_schedule()
@@ -158,11 +157,11 @@ python hello_matmul_generator.py
 python3 hello_matmul_generator.py
 ```
 
-As we run the script, you should see a header file `hello_matmul.hat` and some object files (such as `hello_matmul.obj` or `hello_matmul.o`). The `.hat` file format is described [here](https://github.com/microsoft/hat). In Accera, we call these files the "HAT package".
+As we run the script, you should see a header file `hello_matmul.hat` and some object files (such as `hello_matmul.obj` or `hello_matmul.o`). The `.hat` file format is described [here](https://github.com/microsoft/hat). In Accera, we call these files the "HAT Package".
 
 #### Runner code
 
-Let's now see how we can call our MatMul implementation from the Hat package.
+Let's now see how we can call our MatMul implementation from the HAT package.
 
 Create a file called `hello_matmul_runner.cpp` with the code below. You can find it [here](hello_matmul/hello_matmul_runner.cpp).
 
@@ -204,7 +203,7 @@ int main(int argc, const char** argv)
 
 The above code creates the `A`, `B`, and `C` matrices, and calls the function `hello_matmul_py` to perform MatMul.
 
-Now that we have written the code, we will compile and link it with the HAT package to create an executable file. Save this file to your working directory, in the same location as `hello_matmul_generator.py` and the generated `*.hat` and object files.
+Now that we have written the code, we will compile and link it with the HAT package to create an executable. Save this file to your working directory, in the same location as `hello_matmul_generator.py` and the generated `*.hat` and object files.
 
 #### Build and run
 
@@ -242,4 +241,4 @@ You can now experiment with the generated MatMul function with your own inputs.
 
 ### Optimized MatMul algorithm
 
-The above example illustrates a naive algorithm. To see what a more optimized version of such an algorithm looks like, see the [Optimized MatMul](./Optimized_MatMul.md) tutorial.
+The above example illustrates a naive algorithm. To see what a more optimized version of this algorithm looks like, see the [Optimized MatMul](./Optimized_MatMul.md) tutorial.

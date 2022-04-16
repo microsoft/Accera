@@ -40,7 +40,7 @@ Create an empty file called `hello_matmul_gpu_generator.py`. Import dependent mo
 import accera as acc
 ```
 
-Define some matrix sizes. A will be M by K, B will be K by N, and C will be M by N.
+Define some matrix sizes, where A's shape is M by K, B's is K by N, and C's, M by N.
 
 ```python
 # Define our matrix sizes
@@ -49,7 +49,7 @@ N = 512
 K = 256
 ```
 
-Declare our arrays `A`, `B` and `C`. These are our input and input/output matrices and hold 32-bit floating point elements.
+Declare `A`, `B`, and `C` arrays. These are our input and input/output matrices and hold 32-bit floating-point elements.
 
 ```python
 A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, K))
@@ -57,7 +57,7 @@ B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, sh
 C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
 ```
 
-Use the `Nest` class to define our 3-layered nested for loop and get the indices:
+Use the `Nest` class to define our 3-layered nested for-loop and get the indices:
 ```python
 # Define the loop nest
 nest = acc.Nest(shape=(M, N, K))
@@ -66,7 +66,7 @@ nest = acc.Nest(shape=(M, N, K))
 i, j, k = nest.get_indices()
 ```
 
-Next we define the logic of each iteration of the loop nest:
+Next, we define the logic for every iteration of the loop nest:
 ```python
 # Define the loop nest logic
 @nest.iteration_logic
@@ -74,13 +74,14 @@ def _():
     C[i, j] += A[i, k] * B[k, j]
 ```
 
-We have finished defining the logic of MatMul. Notice how up to this point, this is identical to what we did for the [CPU example](Hello_MatMul.md). Next, define the schedule which controls how the logic is executed. To do this, we first create the schedule from the nest:
+We have finished defining the logic of MatMul. Notice how, up to this point, it is identical to what we did for the [CPU example](Hello_MatMul.md). Let's now define the schedule to control the execution logic. To do this, we first create the schedule from the nest:
 
 ```python
 schedule = nest.create_schedule()
 ```
 
-In order to execute this efficiently on our chosen hardware target, we will transform the iteration space and change the plan according to some predefined constants. The values of these constants can come either from hardware target characteristics and the shapes of the arrays, or can be found through auto-tuning. These will be explained in more detail in a subsequent tutorial. For now, define:
+We will transform the iteration space and change the plan according to some predefined constants to execute this efficiently on our chosen hardware target. The values of these constants can come either from hardware target characteristics and the shapes of the arrays or can be found through auto-tuning. These will be explained in detail in a subsequent tutorial. For now, define:
+
 ```python
 block_x = 16
 block_y = 16
@@ -92,12 +93,12 @@ ii = schedule.split(i, block_x)
 jj = schedule.split(j, block_y)
 ```
 
-Set the order to traverse the iteration space. Note that on the precise order of execution on GPU targets will be unknown due to the parallel nature of the hardware. Nevertheless, setting the order here is important, since the coarse grain parallelization (e.g. grid) should precede the more fine grained (e.g. warps/wavefronts):
+Set the order to traverse the iteration space. Note that the precise order of execution on GPU targets will be unknown due to the parallel nature of the hardware. Nevertheless, setting the order here is important since the coarse grain parallelization (e.g., grid) should precede the more fine-grained (e.g., warps/wavefronts):
 ```python
 schedule.reorder(i, j, ii, jj, k)
 ```
 
-Create a plan from the schedule. The plan allows us to control specific execution behavior on the hardware target, such grid launch dimensions and thread blocks sizes, which are essential for high performance:
+Create a plan from the schedule. The plan allows us to control specific execution behavior on the hardware target. Such grid launch dimensions and thread blocks sizes are essential for high performance:
 ```python
 target = acc.Target(category=acc.Target.Category.GPU, runtime=acc.Target.Runtime.VULKAN)
 plan = schedule.create_plan(target)
@@ -127,7 +128,7 @@ Finally, we build the HAT package:
 package.build(name="hello_matmul_gpu", format=acc.Package.Format.HAT_STATIC)
 ```
 
-By now, you have all the code necessary to generate an Accera MatMul function that runs on the GPU. You can also find the complete Python script [here](hello_matmul_gpu/hello_matmul_gpu_generator.py).
+By now, you have all the code necessary to generate an Accera MatMul function that runs on the GPU. You can find the complete Python script [here](hello_matmul_gpu/hello_matmul_gpu_generator.py).
 
 #### Generate HAT package
 
@@ -145,13 +146,13 @@ python hello_matmul_gpu_generator.py
 python3 hello_matmul_gpu_generator.py
 ```
 
-After this runs, you should see a header file `hello_matmul_gpu.hat` and some object files (such as `hello_matmul_gpu.obj` or `hello_matmul_gpu.o`). The build process also generates a supporting module, `AcceraGPUUtilities.hat` and its object file, for GPU initialization and uninitialization. In Accera, we call these files the "HAT package".
+As the script runs, you should see a header file `hello_matmul_gpu.hat` and some object files (such as `hello_matmul_gpu.obj` or `hello_matmul_gpu.o`). The build process also generates a supporting module, `AcceraGPUUtilities.hat` and its object file for GPU initialization and uninitialization. In Accera, we call these files the "HAT package".
 
 #### Runner code
 
-We will now walk through how to call our MatMul implementation from the HAT package.
+Let's see how we can call our MatMul implementation from the HAT package. 
 
-Create a file called `hello_matmul_gpu_runner.cpp` with the code below. You can also find it [here](hello_matmul_gpu/hello_matmul_gpu_runner.cpp).
+Create a file called `hello_matmul_gpu_runner.cpp` having the code given below. You can find it [here](hello_matmul_gpu/hello_matmul_gpu_runner.cpp).
 
 ```cpp
 #include <stdio.h>
@@ -202,13 +203,14 @@ int main(int argc, const char** argv)
 }
 ```
 
-The code above creates the `A`, `B`, and `C` matrices, and calls the function `hello_matmul_gpu` to perform MatMul.
+The above code creates the `A`, `B`, and `C` matrices and calls the function `hello_matmul_gpu` to perform MatMul.
 
-Now that we have written the code, we will compile and link it with the HAT package to create an executable. Save the file to your working directory, in the same location as `hello_matmul_gpu_generator.py` and the generated `*.hat` and object files.
+Now that we have the code, compile and link it with the HAT package to create an executable. Save the file to your working directory, in the exact location as `hello_matmul_gpu_generator.py` and the generated `*.hat` and object files.
+
 
 #### Build and run
 
-Accera includes a shared library that wraps the Vulkan APIs (`acc-vulkan-runtime-wrappers.so`, `acc-vulkan-runtime-wrappers.dll`, or `acc-vulkan-runtime-wrappers.dylib`). We will need to provide the path to this shared library when building and running the executable.
+Accera includes a shared library that wraps the Vulkan APIs (`acc-vulkan-runtime-wrappers.so`, `acc-vulkan-runtime-wrappers.dll`, or `acc-vulkan-runtime-wrappers.dylib`). We need to provide the path to this shared library when building and running the executable.
 
 Find the installed path to the "accera" package:
 
@@ -228,7 +230,7 @@ From the output above, find the `Location` entry, for example:
 Location: /usr/local/lib/python3.8/dist-packages
 ```
 
-Note down this path, we will be using it below.
+We will use this path below.
 
 ##### Windows
 
@@ -283,7 +285,7 @@ g++ hello_matmul_gpu_runner.cpp *.a $ACCERA_PATH/*.so -o hello_matmul_gpu_runner
 LD_LIBRARY_PATH=$ACCERA_PATH ./hello_matmul_gpu_runner
 ```
 
-The output should look like:
+The output should look like this:
 
 ```
 Calling MatMul M=1024, K=256, N=512

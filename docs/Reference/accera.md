@@ -5,7 +5,7 @@
 
 # Module functions
 * [`accera.create_parameters`](functions/create_parameters.md) `(number)`
-* [`accera.get_parameters_from_grid`](functions/get_parameters_from_grid.md) `(parameter_grid)`
+* [`accera.create_parameter_grid`](functions/create_parameter_grid.md) `(parameter_choices, filter_func, sample)`
 * [`accera.fuse`](functions/fuse.md) `(schedules[, partial])`
 
 # Top level enumerations

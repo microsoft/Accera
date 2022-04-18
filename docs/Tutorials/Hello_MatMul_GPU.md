@@ -3,7 +3,7 @@
 
 ## Hello MatMul GPU
 
-This tutorial will teach you how to implement a simple Matrix Multiplication (MatMul) function for execution on a GPU. We will use the Accera's Domain Specific Language (DSL) to produce a [HAT](https://github.com/microsoft/hat) package containing the MatMul function that can be called from the host to launch the MatMul function on the GPU.
+In this tutorial, you will learn how to implement a simple Matrix Multiplication (MatMul) function for execution on a GPU. We will use the Accera's Domain Specific Language (DSL) to produce a [HAT](https://github.com/microsoft/hat) package containing the MatMul function that can be called from the host to launch the MatMul function on the GPU.
 
 ### Prerequisites
 
@@ -21,7 +21,7 @@ As in the [Hello_MatMul](Hello_MatMul.md) tutorial, we'll consider the example o
 C += A @ B
 ```
 
-A naive algorithm for matrix multiplication typically contains 3 nested for-loops. Expressed in Python, this will look like this:
+A naive algorithm for matrix multiplication typically contains 3 nested for-loops. Expressed in Python, this can look like:
 
 ```
 for i in range(M):
@@ -49,7 +49,7 @@ N = 512
 K = 256
 ```
 
-Declare `A`, `B`, and `C` arrays. These are our input and input/output matrices and hold 32-bit floating-point elements.
+Declare arrays `A`, `B`, and `C`. These are our input and input/output matrices and hold 32-bit floating-point elements.
 
 ```python
 A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, K))
@@ -146,13 +146,13 @@ python hello_matmul_gpu_generator.py
 python3 hello_matmul_gpu_generator.py
 ```
 
-As the script runs, you should see a header file `hello_matmul_gpu.hat` and some object files (such as `hello_matmul_gpu.obj` or `hello_matmul_gpu.o`). The build process also generates a supporting module, `AcceraGPUUtilities.hat` and its object file for GPU initialization and uninitialization. In Accera, we call these files the "HAT package".
+After this script runs, you should see a header file `hello_matmul_gpu.hat` and some object files (such as `hello_matmul_gpu.obj` or `hello_matmul_gpu.o`). The build process also generates a supporting module, `AcceraGPUUtilities.hat` and its object file for GPU initialization and uninitialization. In Accera, we call these files the "HAT package".
 
 #### Runner code
 
 Let's see how we can call our MatMul implementation from the HAT package. 
 
-Create a file called `hello_matmul_gpu_runner.cpp` having the code given below. You can find it [here](hello_matmul_gpu/hello_matmul_gpu_runner.cpp).
+Create a file called `hello_matmul_gpu_runner.cpp` containing the code below. You can find it [here](hello_matmul_gpu/hello_matmul_gpu_runner.cpp).
 
 ```cpp
 #include <stdio.h>

@@ -5,26 +5,27 @@
 
 # Safety Analysis
 
-Providing safety guarantees to preserve the underlying logic no matter how we transform the schedule is one of the most important features of the Accera that makes a programmer's job easier. However, not all Accera schedules are safe, and those that are safe are much easier to work with.
+One of the most important features in Accera is to provide safety guarantees to preserve the underlying logic no matter how we transform the schedule. Not all Accera schedules are safe, but those that are safe are much easier to work with.
 
-First, note that order-invariant schedules are always safe because Accera transformations never really remove any iterations, only change the order of the loop-nest iterations, and possibly, add empty iterations in the form of padding. Recall that a `Nest` represents a simple nest, which is assumed to be order-invariant, and therefore any schedule that was created by a call to `create_schedule()` is safe.
+## Order-invariant Schedules
+Order-invariant schedules are always safe because Accera transformations never remove any iterations. They only change the order of the loop-nest iterations, or add empty iterations in the form of padding when necessary. Recall that a `Nest` represents a simple nest. A simple nest is assumed to be order-invariant, and therefore any schedule created by a call to `create_schedule()` is safe.
 
 ## Safety and Fusing
-Another way to create a schedule is via fusing (see [Section 4 of the Accera manual](<../Manual/04%20Fusing.md>)). Say that we have a sequence of *n* schedules: `schedule0`, `schedule1`, ... and we partially fuse their first *m* dimensions. Namely,
+Fusing is another way to create a schedule (see [Section 4 of the Accera manual](<../Manual/04%20Fusing.md>)). Say that we have a sequence of *n* schedules: `schedule0`, `schedule1`, ... and we partially fuse their first *m* dimensions. Namely:
 ```python
 schedule = acc.fuse((schedule0, schedule1, ...), partial=m)
 ```
-At this point, `schedule` is equivalent to sequentially executing the individual schedules. However, is the `schedule` safe as defined above? In other words, does `schedule` guarantee the preservation of underlying logic, regardless of the applied transformation?
+At this point, `schedule` is equivalent to sequentially executing the individual schedules. However, is the fused `schedule` safe? In other words, does `schedule` guarantee the preservation of underlying logic, regardless of the applied transformation?
 
 The dimensions of `schedule` fall into three categories:
 
-* *Fusing dimensions*: at first, this category contains a single dimension, the first dimension of `schedule`. However, if this dimension is split, its derived dimensions are added to the category.
-* *Fused dimensions*: at first, this category contains the next *m* dimensions in `schedule`. If any of these dimensions are split, the derived dimensions are also added to the category.
-* *Unfused dimensions*: includes all the remaining dimensions.
+* *Fusing dimensions*: at first, this category contains a single dimension, the first dimension of `schedule`. However, if this dimension is split, its derived dimensions are added to this category.
+* *Fused dimensions*: at first, this category contains the next *m* dimensions of `schedule`. If any of these dimensions are split, the derived dimensions are also added to this category.
+* *Unfused dimensions*: all the remaining dimensions.
 
-Note that the individual schedules being fused may themselves result from a previous fusing operation. The categories noted above only relate to the role of each dimension in the current fusing operation.
+Note that the individual schedules being fused may have been created by a previous fusing operations. The categories noted above only relate to the role of each dimension in the *current* fusing operation.
 
-### A Theorem
+### Theorem
 Imagine that we apply a sequence of transformations to `schedule`, which may derive new dimensions. Derived dimensions belong to the same category as the dimension from which they were derived. Suppose the fusing dimension (and its derived dimensions) precedes all the unfused dimensions. In that case, for any value of the fused dimensions, all the corresponding work from `schedule0` is executed before any of the corresponding work from `schedule1`. Similarly, all the corresponding work from `schedule1` is executed before any of the corresponding work from `schedule2`; and so on.
 
 #### Proof

@@ -21,7 +21,7 @@ As in the [Hello_MatMul](Hello_MatMul.md) tutorial, we'll consider the example o
 C += A @ B
 ```
 
-A naive algorithm for matrix multiplication typically contains 3 nested for-loops. Expressed in Python, this will look like:
+A naive algorithm for matrix multiplication typically contains 3 nested for-loops. Expressed in Python, this can look like:
 
 ```
 for i in range(M):

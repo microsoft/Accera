@@ -31,7 +31,7 @@ Imagine that we apply a sequence of transformations to `schedule`, which may der
 #### Proof
 For simplicity, assume that there is only one fusing dimension, `f`. Also, assume that we've only fused two schedules, `schedule0` and `schedule1`. Note that these simplifying assumptions can easily be relaxed.
 
-Assume that `f` precedes all of the unfused dimensions. Therefore, dimensions that precede `f` are necessarily fused dimensions. Let `U` be a sequence of concrete values for all the fused dimensions, and let `V` denote only those values that correspond to dimensions that precede `f`. The work from `schedule0` that corresponds to the concrete values in U is contained in the slice (V, 0, \*, ..., \*). Similarly, the work form `schedule1` that corresponds to the values in U is contained in (V, 1, \*, ..., \*). Finally, note that the former slice lexicographically precedes the latter, concluding the proof.
+Assume that `f` precedes all of the unfused dimensions. Therefore, dimensions that precede `f` are necessarily fused dimensions. Let `U` be a sequence of concrete values for all the fused dimensions, and let `V` denote only those values that correspond to dimensions that precede `f`. The work from `schedule0` that corresponds to the concrete values in `U` is contained in the slice (V, 0, \*, ..., \*). Similarly, the work form `schedule1` that corresponds to the values in `U` is contained in (V, 1, \*, ..., \*). Finally, note that the former slice lexicographically precedes the latter, concluding the proof.
 
 #### An example
 To make the theorem less abstract, we demonstrate how it applies to a simple example. Assume that we start with two three-dimensional schedules, `schedule0` and `schedule1`, and we fuse their first two dimensions:
@@ -49,11 +49,9 @@ jj, kk0 = schedule.tile({
 })
 schedule.reorder(j, i, f, k0, k1, kk0, jj)
 ```
-Dimensions `i`, `j`, and `jj` are fused dimensions, while `k0`, `kk0`, and `k1` are unfused dimensions. Note that the fusing dimension `f` precedes all of the unfused dimensions, satisfying the theorem's condition. Next, choose concrete values for the fused dimensions, say, `i=4`, `j=3`, and `jj=2`. The work from `schedule0` that corresponds to these values is contained in the slice (3, 4, 0, *, *, *, *). Similarly, the work from `schedule1` that corresponds to these values is contained in the slice (3, 4, 1, *, *, *, *). The former slice lexicographically precedes the latter and is therefore executed first.
+Dimensions `i`, `j`, and `jj` are fused dimensions, while `k0`, `kk0`, and `k1` are unfused dimensions. Note that the fusing dimension `f` precedes all of the unfused dimensions, satisfying the theorem's condition. Next, choose concrete values for the fused dimensions, say, `i=4`, `j=3`, and `jj=2`. The work from `schedule0` that corresponds to these values is contained in the slice (3, 4, 0, \*, \*, \*, \*). Similarly, the work from `schedule1` that corresponds to these values is contained in the slice (3, 4, 1, \*, \*, \*, \*). The former slice lexicographically precedes the latter and is therefore executed first.
 
 ### Safety
 The theorem holds for any schedule, but it does not imply that every schedule is safe. Additional effort is required to prove whether a specific schedule is safe. When performing a `fuse` operation, we must examine the specific circumstances and consider whether the theorem provides a sufficient condition for safety.
 
 <div style="page-break-after: always;"></div>
-
-

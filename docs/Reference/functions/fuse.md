@@ -12,7 +12,7 @@ In cases where it doesn't make sense to fuse all of the iteration space dimensio
 
 argument | description | type/default
 --- | --- | ---
-`schedules` | Either the schedules to fuse if performing partial fusing, or the first schedule to fuse if fusing all dimensions | tuple of `Schedule` or `Schedule` |
+`schedules` | Either the schedules to fuse if performing partial fusing or the first schedule to fuse if fusing all dimensions | tuple of `Schedule` or `Schedule` |
 `*args` | Optional variable arguments containing subsequent schedules to fuse | variable `Schedule` arguments
 `partial` | The number of dimensions to fuse. If not specified, all dimensions will be fused | non-negative integer
 
@@ -45,3 +45,5 @@ schedule.reorder(i, j, f, k)
 
 
 <div style="page-break-after: always;"></div>
+
+

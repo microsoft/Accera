@@ -12,7 +12,7 @@ In cases where it doesn't make sense to fuse all of the iteration space dimensio
 
 argument | description | type/default
 --- | --- | ---
-`schedules` | Either the schedules to fuse if performing partial fusing or the first schedule to fuse if fusing all dimensions | tuple of `Schedule` or `Schedule` |
+`schedules` | If performing partial fusing, this is a tuple of the schedules to fuse. If performing full fusing, this contains the first schedule to fuse, while `args` will contain the subsequent schedules.
 `*args` | Optional variable arguments containing subsequent schedules to fuse | variable `Schedule` arguments
 `partial` | The number of dimensions to fuse. If not specified, all dimensions will be fused | non-negative integer
 

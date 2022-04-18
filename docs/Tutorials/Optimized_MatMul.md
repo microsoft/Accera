@@ -125,7 +125,7 @@ Create a plan from the schedule and the current target. The plan allows us to co
 plan = schedule.create_plan(target)
 ```
 
-Add caching. We use an input cache for array `B` that exceeds our threshold. The `B` cache will be packed according to the access pattern specified by the schedule. We use an input/output cache for array `C`. See [Section 5 caching](../Manual/06%20Plans%20-%20Caching.md) for more information:
+Add caching. We use an input cache for array `B` that exceeds our threshold. The `B` cache will be packed according to the access pattern specified by the schedule. We use an input/output cache for array `C`. See [caching](../Manual/06%20Plans%20-%20Caching.md) for more information:
 ```python
 # Cache the B array by prefetching and packing the memory footprint along slices of the jj dimension.
 plan.cache(B, jj)

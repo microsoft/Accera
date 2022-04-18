@@ -45,12 +45,11 @@ A multidimensional array of scalar elements.
 
 A local copy of an `Array` block.
 
-
 ---
 
 ## `class accera.Index`
 
-An index that represents one of the loops in a `Nest` or one of the iteration-space dimensions of a `Schedule` or `Plan`.
+An index representing one of the loops in a `Nest` or one of the iteration-space dimensions of a `Schedule` or a `Plan`.
 
 ---
 
@@ -71,7 +70,7 @@ The logic of a loop nest.
 
 ## `class accera.Package`
 
-A collection of functions that can be built and emitted for use in client code.
+Represents a collection of functions that can be built and emitted for use in client code.
 
 ### Constructors
 * [`Package`](<classes/Package/Package.md>) `()`
@@ -90,7 +89,7 @@ A collection of functions that can be built and emitted for use in client code.
 
 ## `class accera.Parameter`
 
-A placeholder that can used instead of concrete values when constructing or calling the methods of a `Nest`, `Schedule`, or `Plan`.
+A placeholder that can be used instead of concrete values when constructing or calling the methods of a `Nest`, `Schedule`, or `Plan`.
 
 ---
 
@@ -121,3 +120,5 @@ A target platform for the cross-compiler.
 * [`accera.Target.Models`](<classes/Target/Model.md>)
 
 <div style="page-break-after: always;"></div>
+
+

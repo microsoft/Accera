@@ -3,10 +3,10 @@
 
 ## Optimized MatMul
 
-Optimizing MatMul is highly dependent on the target platform. The code in the example below is optimized specifically for an Intel Xeon E5-2673 v3 CPU. However, it should work equally well on CPUs with similar hardware characteristics like AMD Epyc 7551.
+Optimizing MatMul is highly dependent on the target platform. The code in the example below is optimized specifically for an Intel Xeon E5-2673 v3 CPU. However, it should work equally well on CPUs with similar hardware characteristics, such as an AMD Epyc 7551.
 
 By the end of this tutorial, you will learn how to:
-* Implement a performant Matrix Multiplication (MatMul) function targetting AVX2 FMA3 CPUs like Intel Haswell or the AMD Epyc families, using Accera's Domain Specific Language (DSL).
+* Implement a performant Matrix Multiplication (MatMul) function targetting AVX2 FMA3 CPUs like Intel Haswell or the AMD Epyc families.
 * Produce a [HAT](https://github.com/microsoft/hat) package containing the optimized MatMul function.
 * Call the function from C or C++ code.
 
@@ -38,8 +38,8 @@ for i in range(M):
 
 We will walk through how to specify an optimized Matrix Multiplication (MatMul) using Accera. This tutorial assumes the following:
 
-* Specific matrix sizes, input A is 784 x 128, B is 128 x 512, the output C is 784 x 512 elements. These represent a mid-level layer in a Resnet-50 model. The A matrix contains the activation values from the previous layer, and the B matrix contains the weights of the neural network layer.
-* Row-major layout of the array elements.
+* Specific matrix sizes. Inputs A and B are 784 x 128 and 128 x 512 matrices, respectively. The output C is a 784 x 512 matrix. These can represent a mid-level layer in a Resnet-50 model. The A matrix contains the activation values from the previous layer, and the B matrix contains the weights of the neural network layer.
+* Row-major layout of the matrix elements.
 * The target hardware is capable of AVX2 FMA3 instructions, such as the Intel Xeon E5-2673 v3 or the AMD Epyc 7551.
 
 Create an empty file called `optimized_matmul_generator.py`. Import dependent modules:
@@ -98,14 +98,14 @@ We create a CPU target that defines constants for the SIMD vector sizes and the 
 target = acc.Target(category=acc.Target.Category.CPU)
 ```
 
-Transform the iteration space to specify the tiling behavior. See (tiling)[TODO:markdown...] section to learning more about tiling:
+Transform the iteration space to specify the tiling behavior:
 ```python
 ii = schedule.split(i, tile_size_i)
 jj = schedule.split(j, tile_size_j)
 kk = schedule.split(k, tile_size_k)
 ```
 
-Next, let's split the iteration space to match the kernel characteristics. See (kernels)[TODO:markdown...] section to learning more about kernels:
+Next, let's split the iteration space to match the kernel characteristics:
 ```python
 kkk = schedule.split(kk, inner_dim_unroll)
 iii = schedule.split(ii, num_rows_in_kernel)
@@ -125,7 +125,7 @@ Create a plan from the schedule and the current target. The plan allows us to co
 plan = schedule.create_plan(target)
 ```
 
-Add caching. We use an input cache for array B that exceeds our threshold. The B matrix cache will be packed according to the access pattern specified by the schedule. We use an input/output cache for array C. See [Section 5 caching](TODO:…) for more information:
+Add caching. We use an input cache for array `B` that exceeds our threshold. The `B` cache will be packed according to the access pattern specified by the schedule. We use an input/output cache for array `C`. See [Section 5 caching](../Manual/06%20Plans%20-%20Caching.md) for more information:
 ```python
 # Cache the B array by prefetching and packing the memory footprint along slices of the jj dimension.
 plan.cache(B, jj)
@@ -140,7 +140,7 @@ Kernelize the inner dimensions, which applies unroll and vectorize transformatio
 plan.kernelize(unroll_indices=[jjj, iii, kkk], vectorize_indices=jjjj)
 ```
 
-Use the plan to add a callable function named `optimized_matmul_py` to a HAT package.
+Use the plan to add a function named `optimized_matmul_py` to a HAT package.
 ```python
 # Create a package and add a function to the package based on the plan
 package = acc.Package()
@@ -171,7 +171,7 @@ python optimized_matmul_generator.py
 python3 optimized_matmul_generator.py
 ```
 
-The generator script produces a HAT package (`hello_matmul.hat`). Examine this file, and you will see that it contains the exported function with the following meta-data:
+The generator script produces a HAT file (`optimized_matmul.hat`). Examine this file, and you will see that it contains the exported function with the following meta-data:
 
 ```toml
 [functions.optimized_matmul_py_4a6286d9]
@@ -193,7 +193,7 @@ void optimized_matmul_py_4a6286d9(float*, float*, float*);
 
 Accera automatically appends a unique identifier to the function implementation, such as `optimized_matmul_py_4a6286d9` to support auto-tuning. This name is re-generated every time the HAT package is rebuilt. To make it easier for client code to use the function, Accera also provides a fixed-name alias, `optimized_matmul_py`, for the same function.
 
-To see how Accera has handled the code generation given the iteration space transformations and the final plan, you can change the `format=HAT` to `format=MLIR`, which will output MLIR for each major lowering phase. Stepping through the progression of lowerings, you can see how Accera moves from simple representation of the [Accera DSL](optimized_matmul/mlir/1_Canonicalizer.mlir), to the final [optimized assembly](optimized_matmul/mlir/optimized_matmul_llvm.mlir).
+To see how Accera generates code for the iteration space transformations and the plan, you can change the `format=HAT` to `format=MLIR`, which will output MLIR for each lowering phase. Stepping through the progression of lowerings, you can see how Accera moves from simple representation of the [Accera DSL](optimized_matmul/mlir/1_Canonicalizer.mlir), to the final [optimized assembly](optimized_matmul/mlir/optimized_matmul_llvm.mlir).
 
 Compare this to previous tutorial, whose naive DSL is given [here](hello_matmul/mlir/1_Canonicalizer.mlir), and final assembly can be viewed [here](hello_matmul/mlir/hello_matmul_llvm.mlir).
 

@@ -55,3 +55,5 @@ Dimensions `i`, `j`, and `jj` are fused dimensions, while `k0`, `kk0`, and `k1` 
 The theorem holds for any schedule, but it does not imply that every schedule is safe. Additional effort is required to prove whether a specific schedule is safe. When performing a `fuse` operation, we must examine the specific circumstances and consider whether the theorem provides a sufficient condition for safety.
 
 <div style="page-break-after: always;"></div>
+
+

@@ -70,7 +70,7 @@ The logic of a loop nest.
 
 ## `class accera.Package`
 
-A collection of functions can be built and emitted for use in client code.
+A `Package` is a collection of functions that can be built and emitted for use in client code.
 
 ### Constructors
 * [`Package`](<classes/Package/Package.md>) `()`
@@ -89,7 +89,7 @@ A collection of functions can be built and emitted for use in client code.
 
 ## `class accera.Parameter`
 
-A placeholder can be used instead of concrete values when constructing or calling the methods of a `Nest`, `Schedule`, or `Plan`.
+A placeholder that can be used instead of concrete values when constructing or calling the methods of a `Nest`, `Schedule`, or `Plan`.
 
 ---
 

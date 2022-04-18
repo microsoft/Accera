@@ -23,13 +23,13 @@ The dimensions of `schedule` fall into three categories:
 * *Fused dimensions*: at first, this category contains the next *m* dimensions of `schedule`. If any of these dimensions are split, the derived dimensions are also added to this category.
 * *Unfused dimensions*: all the remaining dimensions.
 
-Note that the individual schedules being fused may have been created by a previous fusing operations. The categories noted above only relate to the role of each dimension in the *current* fusing operation.
+Note that the individual schedules being fused may have been created by previous fusing operations. The categories above relate to the role of each dimension in the *current* fusing operation.
 
 ### Theorem
 Imagine that we apply a sequence of transformations to `schedule`, which may derive new dimensions. Derived dimensions belong to the same category as the dimension from which they were derived. Suppose the fusing dimension (and its derived dimensions) precedes all the unfused dimensions. In that case, for any value of the fused dimensions, all the corresponding work from `schedule0` is executed before any of the corresponding work from `schedule1`. Similarly, all the corresponding work from `schedule1` is executed before any of the corresponding work from `schedule2`; and so on.
 
 #### Proof
-For simplicity, assume that there is only one fusing dimension, `f`. Also, assume that we only fused two schedules, `schedule0` and `schedule1`. Note that these simplifying assumptions can easily be relaxed.
+For simplicity, assume that there is only one fusing dimension, `f`. Also, assume that we've only fused two schedules, `schedule0` and `schedule1`. Note that these simplifying assumptions can easily be relaxed.
 
 Assume that `f` precedes all of the unfused dimensions. Therefore, dimensions that precede `f` are necessarily fused dimensions. Let `U` be a sequence of concrete values for all the fused dimensions, and let `V` denote only those values that correspond to dimensions that precede `f`. The work from `schedule0` that corresponds to the concrete values in U is contained in the slice (V, 0, \*, ..., \*). Similarly, the work form `schedule1` that corresponds to the values in U is contained in (V, 1, \*, ..., \*). Finally, note that the former slice lexicographically precedes the latter, concluding the proof.
 

@@ -314,15 +314,23 @@ class Package:
         else:
             raise ValueError("Invalid type for source")
 
-    def _add_functions_to_module(self, module):
+    def _add_functions_to_module(self, module, fail_on_error = False):
         with SetActiveModule(module):
+            to_pop = []
             for name, wrapped_func in self._fns.items():
                 print(f"Building function {name}")
                 try:
                     wrapped_func._emit()
-                except:
+                except Exception as e:
+                    to_pop.append(name)
                     print(f"Compiler error when trying to build function {name}")
-                    raise
+                    print(e)
+                    if fail_on_error:
+                        raise
+                    else:
+                        continue
+            for name in to_pop:
+                del self._fns[name]
 
     def _add_debug_utilities(self, tolerance):
         from .Debug import get_args_to_debug, add_debugging_functions
@@ -408,6 +416,7 @@ class Package:
         platform: Platform = Platform.HOST,
         tolerance: float = 1e-5,
         output_dir: str = None,
+        fail_on_error:bool = False,
         _quiet=True
     ):
         """Builds a HAT package.
@@ -452,7 +461,7 @@ class Package:
 
         # Create the package module
         package_module = _lang_python._Module(name=name, options=compiler_options)
-        self._add_functions_to_module(package_module)
+        self._add_functions_to_module(package_module, fail_on_error)
 
         # Debug mode: emit the debug function that uses the utility functions
         for fn_name, utilities in debug_utilities.items():

@@ -4,6 +4,8 @@
 ####################################################################################################
 
 import copy
+import cpuinfo
+import re
 from typing import List, Union
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
@@ -927,8 +929,7 @@ class Target(_TargetContainer):
         super().__init__()
 
         if known_name:
-            # in case a value from the Model enum is used
-            known_name = str(known_name)
+            known_name = self._try_get_known_name(known_name)
 
             if known_name == "HOST":
 
@@ -992,6 +993,39 @@ class Target(_TargetContainer):
         # If known_name was provided, we should override the internal fields too
         if known_name:
             super().__post_init__()
+
+    def _try_get_known_name(self, known_name):
+        if known_name == "HOST":
+            cpu_info = cpuinfo.get_cpu_info()
+
+            # use regular expression to match the names in known devices with the model name from cpuinfo,
+            # the regex looks like ^.*?\b[word1]\b.*?\b[word2]\b.*?\b[word3]\b.*? ... \b[wordN]\b.*?
+            # for example, given name strings "Intel" and "W-2123", which can match the following string,
+            # "Intel(R) Xeon(R) W-2123 CPU @ 3.60GHz", this is case insensitive match.
+            for m in Model:
+                name_info = re.split(r'\s', m.name)
+
+                regex_match = r'^.*?'
+                for info in name_info:
+                    regex_match = regex_match + r'\b' + info + r'\b.*?'
+
+                match = re.match(regex_match, cpu_info['brand_raw'], re.IGNORECASE)
+                if match:
+                    return m.name
+
+            # print a warning for unknown host if nothing matched
+            from termcolor import colored
+            print(
+                colored(
+                    """Warning: Your host machine is not a known target model. To generate optimal code, we recommend that you inspect the accera.Target.Models enumeration to find the closest matching target model,
+and create a Target using that model. You may also define a custom target if there is no closest match.
+For more details please refer to this link: https://microsoft.github.io/Accera/Reference/classes/Target/Target/#known-device-names""",
+                    'yellow'
+                )
+            )
+
+        # in case a value from the Model enum is used
+        return str(known_name)
 
     def is_compatible_with(self, other: "Target"):
         return all([

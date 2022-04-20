@@ -10,3 +10,5 @@ lit
 packaging
 hatlib
 varname
+py-cpuinfo
+termcolor

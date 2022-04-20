@@ -11,7 +11,7 @@ Accera requires the following tools and libraries for building the generated cod
 * Python 3.7 or newer
 * OpenMP 5, if using parallelization
 
-Ubuntu 20.04 is recommended. A quick way to start is to use a fresh Docker container for Ubuntu 20.04:
+Ubuntu 20.04 is recommended. A quick way to start is to use a new Docker container for Ubuntu 20.04:
 
 ```shell
 docker run -v $PWD:/code -it --entrypoint "/bin/bash" ubuntu:focal
@@ -37,3 +37,5 @@ The `accera` Python package can be installed from PyPI:
 ```shell
 pip install accera
 ```
+
+

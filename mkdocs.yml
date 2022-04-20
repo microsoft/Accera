@@ -29,11 +29,11 @@ theme:
     - search.share
     - search.suggest
     - toc.integrate
-  favicon: assets/favicon.png
+  favicon: assets/logos/favicon.png
   font:
     text: Open Sans
     code: Source Code Pro
-  logo: assets/A_lighttext.png
+  logo: assets/logos/A_lighttext.png
   palette:
     - media: "(prefers-color-scheme: light)" 
       scheme: default

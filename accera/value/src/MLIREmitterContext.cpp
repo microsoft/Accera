@@ -1078,16 +1078,25 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
         }
 
         auto returnValueCopy = returnValue;
-        returnValueCopy = fn(argValuesCopy);
-        if (returnValueCopy)
+        try
         {
-            assert(!isGpu);
+            returnValueCopy = fn(argValuesCopy);
+            if (returnValueCopy)
+            {
+                assert(!isGpu);
 
-            (void)b.create<accera::ir::value::ReturnOp>(loc, ToMLIRValue(b, *returnValueCopy));
+                (void)b.create<accera::ir::value::ReturnOp>(loc, ToMLIRValue(b, *returnValueCopy));
+            }
+            else
+            {
+                (void)b.create<accera::ir::value::ReturnOp>(loc);
+            }
         }
-        else
+        catch (...)
         {
+            llvm::errs() << "Error when building function " << fnName << "\n";
             (void)b.create<accera::ir::value::ReturnOp>(loc);
+            throw;
         }
 
         {
@@ -1963,8 +1972,7 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)
                     return Wrap(builder.create<mlir::IndexCastOp>(loc, signlessMlirValue, toType));
                 })
                 .Case([&](mlir::FloatType) {
-                    return fromIntType.isUnsigned() ? Wrap(builder.create<mlir::UIToFPOp>(loc, signlessMlirValue, toType)) :
-                        Wrap(builder.create<mlir::SIToFPOp>(loc, signlessMlirValue, toType));
+                    return fromIntType.isUnsigned() ? Wrap(builder.create<mlir::UIToFPOp>(loc, signlessMlirValue, toType)) : Wrap(builder.create<mlir::SIToFPOp>(loc, signlessMlirValue, toType));
                 })
                 .Default([&](mlir::Type) {
                     throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
@@ -1992,19 +2000,16 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)
             return mlir::TypeSwitch<mlir::Type, Scalar>(toType)
                 .Case([&](mlir::IntegerType toIntType) {
                     auto toIntTypeSignless = accera::ir::util::ToSignlessMLIRType(builder, toIntType);
-                    return toIntType.isUnsigned() ? Wrap(builder.create<mlir::FPToUIOp>(loc, mlirValue, toIntTypeSignless)) :
-                        Wrap(builder.create<mlir::FPToSIOp>(loc, mlirValue, toIntTypeSignless));
+                    return toIntType.isUnsigned() ? Wrap(builder.create<mlir::FPToUIOp>(loc, mlirValue, toIntTypeSignless)) : Wrap(builder.create<mlir::FPToSIOp>(loc, mlirValue, toIntTypeSignless));
                 })
                 .Case([&](mlir::FloatType toFloatType) {
-                    return fromFloatType.getWidth() > toFloatType.getWidth() ? Wrap(builder.create<mlir::FPTruncOp>(loc, mlirValue, toType)) :
-                        Wrap(builder.create<mlir::FPExtOp>(loc, mlirValue, toType));
+                    return fromFloatType.getWidth() > toFloatType.getWidth() ? Wrap(builder.create<mlir::FPTruncOp>(loc, mlirValue, toType)) : Wrap(builder.create<mlir::FPExtOp>(loc, mlirValue, toType));
                 })
                 .Default([&](mlir::Type) {
                     throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
                     llvm_unreachable("unexpected");
                     return Scalar();
                 });
-
         })
         .Default([&](mlir::Type) {
             throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));

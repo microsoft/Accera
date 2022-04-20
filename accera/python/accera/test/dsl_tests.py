@@ -258,7 +258,7 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         package_name = "test_temp_array_materialization_2_wrong_role"
         with self.assertRaises(ValueError):
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR, fail_on_error=True)
 
     def test_temp_array_materialization_3(self) -> None:
         # Materializes (allocates) a TEMP array within some nest iteration logic

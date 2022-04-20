@@ -11,18 +11,18 @@ By the end of this tutorial, you will learn how to:
 
 ### Prerequisites
 
-* You should have Accera installed. If not, you can find the instructions in [here](../Install/README.md).
-* Be familiar with writing Python and C++ code.
+* This tutorial assumes you already have Accera installed. If not, you can find the instructions in [here](../Install/README.md)
+* You should also be familiar with writing Python and C++
 
 ### A naive MatMul algorithm
 
-Consider the example of multiplying matrices A and B and adding the result into matrix C. In NumPy syntax, this can be expressed as:
+Let's consider the example of multiplying matrices A and B, and adding the result into matrix C. In NumPy syntax, this can be expressed as:
 
 ```
 C += A @ B
 ```
 
-A naive algorithm for matrix multiplication typically contains 3 nested for-loops. In Python, this can be expressed as:
+A naive algorithm for matrix multiplication typically contains 3 nested for loops. Expressed in Python, this could like:
 
 ```
 # A.shape = (M, K), B.shape = (K, N), C.shape = (M, N)
@@ -35,15 +35,15 @@ for i in range(M):
 
 #### Accera Python DSL
 
-Let's walk through a naïve Matrix Multiplication (MatMul) using Accera.
+We will now walk through a naive Matrix Multiplication (MatMul) using Accera.
 
-Create an empty file called `hello_matmul_generator.py`. First we import Accera's module.
+Create an empty file called `hello_matmul_generator.py`. First we'll import Accera's module.
 
 ```python
 import accera as acc
 ```
 
-Define some matrix sizes, where A's shape is M by K, B's is K by N, and C's, M by N.
+Define some matrix sizes. A will be M by K, B will be K by N, and C will be M by N.
 
 ```python
 # Define our matrix sizes
@@ -60,7 +60,7 @@ B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, sh
 C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
 ```
 
-We now use the `Nest` class to define our 3-layered nested for loop. The range indices are `M`, `N`, and `K`, with the outermost loop (`M`) listed first. We can get the loop nest indices to perform the computation.
+Here, we will use the `Nest` class to define our 3-layered nested for loop. The range indices are `M`, `N`, and `K`, with the outermost loop (`M`) listed first. We can get the loop nest indices in order to perform the computation.
 
 ```python
 # Define the loop nest
@@ -70,7 +70,7 @@ nest = acc.Nest(shape=(M, N, K))
 i, j, k = nest.get_indices()
 ```
 
-Next, we define the logic for each iteration of the loop nest:
+Next we define the logic of each iteration of the loop nest:
 ```python
 # Define the loop nest logic
 @nest.iteration_logic
@@ -78,13 +78,13 @@ def _():
     C[i, j] += A[i, k] * B[k, j]
 ```
 
-We have finished defining the logic of MatMul. Let’s now define the schedule to control the execution of the logic. We create a schedule from the nest:
+We have finished defining the logic of MatMul, and let's define the schedule which controls how the logic is executed. To do this, we first create the schedule from the nest:
 
 ```python
 sched = nest.create_schedule()
 ```
 
-At this point, `sched` represents the default schedule for our algorithm. We can also perform some basic transformations on this schedule. For example, the following lines of code split the `k` index into blocks of 4 ( `k`, `k+4`, `k+8`, and so on).
+At this point, `sched` represents the default schedule for our algorithm. We can also perform some basic transformations on this schedule. For example, the following lines of code will split the `k` index in blocks of 4 (so `k`, `k+4`, `k+8`, and so on).
 
 ```python
 # Split the k loop into blocks of 4, effectively doing this
@@ -139,7 +139,7 @@ Finally, we build the HAT package:
 package.build(name="hello_matmul")
 ```
 
-By now, you should have all the code necessary to generate your first Accera MatMul function. You can find the complete Python script [here](hello_matmul/hello_matmul_generator.py).
+By now, you should have all the code necessary to generate your first Accera MatMul function. You can also find the complete Python script [here](hello_matmul/hello_matmul_generator.py).
 
 #### Generate HAT package
 
@@ -157,13 +157,13 @@ python hello_matmul_generator.py
 python3 hello_matmul_generator.py
 ```
 
-As we run the script, you should see a header file `hello_matmul.hat` and some object files (such as `hello_matmul.obj` or `hello_matmul.o`). The `.hat` file format is described [here](https://github.com/microsoft/hat). In Accera, we call these files the "HAT Package".
+After this runs, you should see a header file `hello_matmul.hat` and some object files (such as `hello_matmul.obj` or `hello_matmul.o`). The `.hat` file format is described [here](https://github.com/microsoft/hat). In Accera, we call these files the "HAT package".
 
 #### Runner code
 
-Let's now see how we can call our MatMul implementation from the HAT package.
+We will now walk through how to call our MatMul implementation from the HAT package.
 
-Create a file called `hello_matmul_runner.cpp` with the code below. You can find it [here](hello_matmul/hello_matmul_runner.cpp).
+Create a file called `hello_matmul_runner.cpp` with the code below. You can also find it [here](hello_matmul/hello_matmul_runner.cpp).
 
 ```cpp
 #include <stdio.h>
@@ -201,9 +201,9 @@ int main(int argc, const char** argv)
 }
 ```
 
-The above code creates the `A`, `B`, and `C` matrices, and calls the function `hello_matmul_py` to perform MatMul.
+The code above creates the `A`, `B`, and `C` matrices, and calls the function `hello_matmul_py` to perform MatMul.
 
-Now that we have written the code, we will compile and link it with the HAT package to create an executable. Save this file to your working directory, in the same location as `hello_matmul_generator.py` and the generated `*.hat` and object files.
+Now that we have written the code, we will compile and link it with the HAT package to create an executable. Save the file to your working directory, in the same location as `hello_matmul_generator.py` and the generated `*.hat` and object files.
 
 #### Build and run
 
@@ -241,4 +241,4 @@ You can now experiment with the generated MatMul function with your own inputs.
 
 ### Optimized MatMul algorithm
 
-The above example illustrates a naive algorithm. To see what a more optimized version of this algorithm looks like, see the [Optimized MatMul](./Optimized_MatMul.md) tutorial.
+The above example illustrates a naive algorithm. To see what a more optimized version could like like, see the [Optimized MatMul](./Optimized_MatMul.md) tutorial.

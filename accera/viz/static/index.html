@@ -1,0 +1,213 @@
+<!--
+Copyright (c) Microsoft Corporation. All rights reserved.
+Licensed under the MIT License. See LICENSE in the project root for license information.
+Authors: Alex Soustek
+-->
+
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>Iteration Space Visualizer</title>
+	<style>
+		body {
+			margin: 0;
+			background-color: white;
+		}
+	</style>
+</head>
+
+<body>
+	<div class="container">
+		<div id="automated_viz_info">
+			<h1 id="status" style="text-align: center;">Status: </h1>
+			<h1 id="current_processing" style="text-align: center;">Currently Processing: </h1>
+		</div>
+		<div id="normal_viz_info">
+			<h1 id="viz_title" style="text-align: center;">No visualization selected</h1>
+			<div id="render_container" style="margin: 0 auto; display: table;">
+			</div>
+		</div>
+	</div>
+	<div id="controls" style="margin: 0 auto; display: table;">
+		<a style="display: none;" id="downloader_hidden" onclick="" download="image.png">Download Current Frame</a>
+		<a href="#" id="downloader" onclick="save_frame()" download="image.png">Download Current Frame</a>
+		<br />
+		<label for="viz_list">Select visualization to run:</label>
+		<select name="viz_list" id="viz_list">
+		</select>
+		<button onclick="refreshVizList()">Refresh</button>
+		<br />
+		<label for="save_to_browser">Save Frames Through Browser</label>
+		<input type="checkbox" id="save_to_browser" name="save_to_browser" value="save_to_browser">
+		<br />
+		<label for="enable_video">Enable Saving Of Video Frames</label>
+		<input type="checkbox" id="enable_video" name="enable_video" value="enable_video">
+		<br />
+		<label for="enable_image">Enable Saving Of Individual Image Frames</label>
+		<input type="checkbox" id="enable_image" name="enable_image" value="enable_image">
+		<br />
+		<button onclick="loadSelectedViz()">Load + Run Visualization</button>
+	</div>
+	<script src="js/three.js"></script>
+	<script src="js/tween.umd.js"></script>
+	<script src="js/OrbitControls.js"></script>
+	<script src="https://unpkg.com/@seregpie/three.text-texture"></script>
+	<script src="https://unpkg.com/@seregpie/three.text-sprite"></script>
+	<script>
+		function save_frame() {
+			console.log("trying download")
+			document.getElementById("downloader").download = "image.png";
+			document.getElementById("downloader").href = document.getElementById("render_container").children[0].toDataURL("image/png");
+		}
+	</script>
+	<script src="js/viz_library.js"></script>
+	<script src="/visualizations/common.js"></script>
+	<script>
+		// Check URL for parameters
+		var url = new URL(window.location);
+		var search_params = url.searchParams;
+
+		var selected_viz = search_params.get("selected_viz");
+		var save_through_browser = (search_params.get("save_through_browser") === "true");
+
+		var enable_video = false;
+		if (search_params.get("enable_video") != null) {
+			enable_video = (search_params.get("enable_video") === "true");
+		}
+
+		var enable_image = true;
+		if (search_params.get("enable_image") != null) {
+			enable_image = (search_params.get("enable_image") === "true");
+		}
+
+		var automated_run = false;
+		if (search_params.get("automated_run") != null) {
+			automated_run = (search_params.get("automated_run") === "true");
+		}
+
+		function setAutomationStatus(processing_file, status) {
+			var automated_processing = document.getElementById("current_processing")
+			var automated_status = document.getElementById("status")
+			automated_processing.innerHTML = 'Processing file: ' + processing_file;
+			automated_status.innerHTML = 'Status: ' + status;
+		}
+
+		var automated_info = document.getElementById("automated_viz_info")
+		var normal_info = document.getElementById("controls")
+		var viz_title = document.getElementById("viz_title")
+		if (automated_run) {
+			automated_info.style.display = "block"
+			normal_info.style.display = "none"
+			viz_title.style.display = "none"
+		} else {
+			automated_info.style.display = "none"
+			normal_info.style.display = "table"
+			viz_title.style.display = "block"
+		}
+
+		document.getElementById("save_to_browser").checked = save_through_browser;
+		document.getElementById("enable_video").checked = enable_video;
+		document.getElementById("enable_image").checked = enable_image;
+
+		if (selected_viz) {
+			setAutomationStatus(selected_viz, enable_video ? 'Rendering images and video' : 'Rendering images');
+			loadScript('/visualizations/' + selected_viz)
+				.then(() => {
+					LoadAndPlayViz(save_through_browser, enable_video, enable_image);
+				})
+				.catch(() => {
+					console.error('Failed to load visualization!');
+				});
+		}
+
+		// Update list of visualizations available
+		function refreshVizList() {
+			PerformRequest(HTTP_METHODS.GET, '/api/list_visualizations')
+				.then((json) => {
+					var viz_list = document.getElementById("viz_list");
+					var i, L = viz_list.options.length - 1;
+					for (i = L; i >= 0; i--) {
+						viz_list.remove(i);
+					}
+					json.visualizations.forEach((elem) => {
+						var option = document.createElement('option');
+						option.text = option.value = elem;
+						viz_list.add(option, 0);
+
+						if (selected_viz === elem) {
+							viz_list.value = elem;
+							console.log("Reselecting viz: " + elem)
+						}
+					});
+				});
+		}
+		refreshVizList();
+
+		function loadSelectedViz() {
+			var url = new URL(window.location);
+			var search_params = url.searchParams;
+			search_params.set('selected_viz', document.getElementById("viz_list").value);
+			search_params.set('save_through_browser', document.getElementById("save_to_browser").checked);
+			search_params.set('enable_video', document.getElementById("enable_video").checked);
+			search_params.set('enable_image', document.getElementById("enable_image").checked);
+			url.search = search_params.toString();
+			var new_url = url.toString();
+			console.log(new_url);
+			window.location = new_url;
+		}
+
+		function advanceAutomatedRun() {
+			var url = new URL(window.location);
+			var search_params = url.searchParams;
+
+			var remaining_files = search_params.get('remaining_files');
+			if (remaining_files) {
+				var remaining_file_arr = decodeURI(remaining_files).split(',');
+				if (remaining_file_arr.length > 0) {
+					var next_file = remaining_file_arr.shift()
+					console.log('Next file being processed: ' + next_file);
+
+					search_params.delete('remaining_files');
+					if (remaining_file_arr.length > 0) {
+						var uriEncodedFileList = encodeURI(remaining_file_arr.join(','));
+						search_params.set('remaining_files', uriEncodedFileList);
+					}
+
+					search_params.set('selected_viz', next_file);
+					url.search = search_params.toString();
+					var new_url = url.toString();
+					window.location = new_url;
+				}
+			}
+			else {
+				setAutomationStatus('None', 'Finished');
+			}
+		}
+
+		// Load the current viz async
+		async function LoadAndPlayViz(saveImagesThroughBrowser, enableVideo, enableImage) {
+			const vizInfo = await VizInfo();
+			const pageVizInfo = {
+				save_through_browser: saveImagesThroughBrowser,
+				enable_video: enableVideo,
+				enable_image: enableImage
+			};
+			const fullVizInfo = { ...vizInfo, ...pageVizInfo };
+
+			document.getElementById("viz_title").innerHTML = fullVizInfo.name;
+			console.log("Creating a visualization from: ")
+			console.log(fullVizInfo);
+			const viz = await CreateVizObject(fullVizInfo);
+			SetupSceneDefaults(viz);
+			const visResults = await RunViz(viz);
+
+			if (automated_run) {
+				advanceAutomatedRun();
+			}
+		}
+	</script>
+</body>
+
+</html>

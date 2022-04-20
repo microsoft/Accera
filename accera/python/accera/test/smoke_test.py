@@ -1490,6 +1490,7 @@ class SmokeTest(unittest.TestCase):
         file_list: List[str] = None,
         package_format: Package.Format = None,
         package_mode: Package.Mode = None,
+        fail_on_error: bool = True,
         quiet=True
     ) -> None:
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
@@ -1506,6 +1507,7 @@ class SmokeTest(unittest.TestCase):
                           format=package_format,
                           mode=package_mode,
                           output_dir=output_dir,
+                          fail_on_error=fail_on_error,
                           _quiet=quiet)
 
             if check_correctness:

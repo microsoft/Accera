@@ -33,6 +33,8 @@ Accera provides a pre-defined list of known target names through the [`accera.Ta
 
 These known targets provide typical hardware settings and may not fit exactly to your specific hardware characteristics. If your target matches closely with (but not exactly to) one of these targets, you can always start with a known target and update the properties accordingly.
 
+If your target is your host machine, Accera will first try to find your host machine's CPU in the list of known devices then use its corresponding capabilities. If none is found, we recommend that you inspect the closest matching device in [`accera.Target.Models`](<Model.md>) enumeration in order to generate optimal code. If there is no closely matching device for you host machine, we suggest you to look at the following section to define a cpu target in Accera.
+
 ## Examples
 
 Let's take a look at some examples to understand how to define a CPU target in Accera.

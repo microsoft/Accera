@@ -22,30 +22,30 @@ Consider a scenario where we want first to shift and then scale each element of 
 C = (C + A) * B
 ```
 
-If all three matrices are 16 by 16, one way to do this without fusing is to write: 
+If all three matrices are 10 by 10, one way to do this without fusing is to write: 
 ```python
-A = acc.Array(role=acc.Array.Role.INPUT, shape=(16, 16))
-B = acc.Array(role=acc.Array.Role.INPUT, shape=(16, 16))
-C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(16, 16))
+A = acc.Array(role=acc.Array.Role.INPUT, shape=(10, 10))
+B = acc.Array(role=acc.Array.Role.INPUT, shape=(10, 10))
+C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(10, 10))
 
 # Create nest_simple and schedule_simple
-nest_simple = acc.Nest(shape=(16, 16))
+nest_simple = acc.Nest(shape=(10, 10))
 i, j = nest_simple.get_indices()
 
 @nest_simple.iteration_logic
 def _():
-    C[i,j] = (C[i,j] + A[i,j]) * B[i,j]
+    C[i, j] = (C[i, j] + A[i, j]) * B[i, j]
 
 schedule_simple = nest_simple.create_schedule()
 ```
 Note that each iteration in `schedule_simple` executes simultaneously on all three arrays. However, there can be a case where concurrent operation on these arrays creates excessive pressure on the computer’s memory cache, resulting in lower performance. In such a case, simultaneous operation on two arrays instead of three has a computational advantage.
 
-Therefore, we may first want to compute `C += A` and then compute `C *= B`.  Better yet, we may want to compute `C` in 4&times;4 blocks. We first computing `C[0:4, 0:4] += A[0:4, 0:4]`. Subsequently, we compute `C[0:4, 0:4] *= B[0:4, 0:4]`. Finally, we move on to the next block and compute `C[4:8, 0:4] += A[4:8, 0:4]`, and so on. This way, fusing offers remarkable flexibility to explore all of these different execution possibilities. 
+Therefore, we may first want to compute `C += A` and then compute `C *= B`.  Better yet, we may want to compute `C` in 2&times;2 blocks. We first compute `C[0:2, 0:2] += A[0:2, 0:2]`. Subsequently, we compute `C[0:2, 0:2] *= B[0:2, 0:2]`. Finally, we move on to the next block and compute `C[2:4, 0:2] += A[2:4, 0:2]`, and so on. This way, fusing offers remarkable flexibility to explore all of these different execution possibilities. 
 
 First, we define two separate nests, one for the `C += A` logic and one for the `C *= B` logic, and get their corresponding default schedules: 
 ```python
 # Create nest0 and schedule0
-nest0 = acc.Nest(shape=(16, 16))
+nest0 = acc.Nest(shape=(10, 10))
 i0, j0 = nest0.get_indices()
 
 @nest0.iteration_logic
@@ -55,7 +55,7 @@ def _():
 schedule0 = nest0.create_schedule()
 
 # Create nest1 and schedule1
-nest1 = acc.Nest(shape=(16, 16))
+nest1 = acc.Nest(shape=(10, 10))
 i1, j1 = nest1.get_indices()
 
 @nest1.iteration_logic
@@ -65,65 +65,80 @@ def _():
 schedule1 = nest1.create_schedule()
 ```
 
-Before fusing, both `schedule0` and `schedule1` have a shape (16, 16). Now, let’s fuse them:
+Before fusing, both `schedule0` and `schedule1` have a shape (10, 10). Now, let’s fuse them:
 ```python
 # Create a fused schedule
 schedule = acc.fuse(schedule0, schedule1)
 f, i, j = schedule.get_indices()
 ```
-Fusing creates a new fused schedule `schedule` with a shape (2, 16, 16). It does not change `schedule0` and `schedule1`. The first dimension in `schedule` is the so-called fusing dimension `f`. Its slice (0, \*, \*) contains a copy of `schedule0`, and its slice (1, \*, \*) contains a copy of `schedule1`.
+Fusing creates a new fused schedule `schedule` with a shape (2, 10, 10). It does not change `schedule0` and `schedule1`. The first dimension in `schedule` is the so-called fusing dimension `f`. Its slice (0, \*, \*) contains a copy of `schedule0`, and its slice (1, \*, \*) contains a copy of `schedule1`.
+
+![Before fusing](../assets/viz/fuse1.png)  |  ![After fusing](../assets/viz/fuse1a.png)
+:-------------------------:|:-------------------------:
+*Before fusing* |  *After `fuse(schedule0, schedule1)`*
 
 In loop form, `schedule` is now equivalent to the following Python code:
 ```python
 # f = 0
-for i in range(16):
-    for j in range(16):
+for i in range(10):
+    for j in range(10):
         C[i, j] += A[i, j]
 # f = 1
-for i in range(16):
-    for j in range(16):
+for i in range(10):
+    for j in range(10):
         C[i, j] *= B[i, j]
 ```
+
 Not much has happened until now since executing `schedule` as-is is equivalent to executing `schedule0` followed by `schedule1`. However, this can be changed by transforming the fused schedule. For example, we can recover `schedule_simple` by reordering the indices as follows:
 ```python
 schedule.reorder(i, j, f)
 ```
+
+![Before reorder](../assets/viz/fuse1a.png)  |  ![After reorder](../assets/viz/fuse1b.png)
+:-------------------------:|:-------------------------:
+*Before `reorder(i, j, f)`* |  *After `reorder(i, j, f)`*
+
 The fusing dimension moves from the first position to the last position. Now, `schedule` is equivalent to the following Python code:
 ```python
-for i in range(16):
-    for j in range(16):
+for i in range(10):
+    for j in range(10):
         # f = 0
         C[i, j] += A[i, j]
         # f = 1
         C[i, j] *= B[i, j]
 ```
 
-Recall that we discussed computing the output block-by-block: first computing `C[0:4, 0:4] += A[0:4, 0:4]`, then computing `C[0:4, 0:4] *= B[0:4, 0:4]`, and so on. This can be achieved with the following sequence of transformations:
+![full fusion traversal](../assets/viz/fuse1b_animated.gif)
+
+*Resulting iteration sequence for `C = (C + A) * B`. (White elements represent `C + A`; purple elements are `C * B`)*
+
+#### Tiling
+Recall that we discussed computing the output block-by-block: first computing `C[0:2, 0:2] += A[0:2, 0:2]`, then computing `C[0:2, 0:2] *= B[0:2, 0:2]`, and so on. This can be achieved with the following sequence of transformations:
 ```python
 ii, jj = schedule.tile({
-    i: 4,
-    j: 4
+    i: 2,
+    j: 2
 })
 schedule.reorder(i, j, f, ii, jj)
 ```
 The resulting `schedule` is equivalent to the following Python code:
 ```python
-for i in range(0, 16, 4):
-    for j in range(0, 16, 4):
+for i in range(0, 10, 2):
+    for j in range(0, 10, 2):
         # f = 0
-        for ii in range(4):
-            for jj in range(4):
+        for ii in range(2):
+            for jj in range(2):
                 C[i+ii, j+jj] += A[i+ii, j+jj]
         # f = 1
-        for ii in range(4):
-            for jj in range(4):
+        for ii in range(2):
+            for jj in range(2):
                 C[i+ii, j+jj] *= B[i+ii, j+jj]
 ```
 ## Constraints of Fusing Dimension
 The fusing dimension comes with certain constraints that are discussed from the `safety` perspective with examples. 
 
 ### Constraint 1: the fusing dimension is executed sequentially
-Unlike other dimensions that allow parallelization, vectorization, or tensorization (see [Section 7](<07%20Plans%20-%20Vectorization%20and%20Parallelization.md>) ), none of these operations can be applied to the fusing dimension. The fusing dimension must be executed sequentially. This constraint enables the safety guarantee discussed below.   
+Unlike other dimensions that allow parallelization, vectorization, or tensorization (see [Section 7](<07%20Plans%20-%20Operations%20and%20Optimizations.md>) ), none of these operations can be applied to the fusing dimension. The fusing dimension must be executed sequentially. This constraint enables the safety guarantee discussed below.   
 
 ### Safety
 Before applying any subsequent transformations, the fused schedule is always logically equal to executing the original schedules sequentially. However, is it safe? Recall that a schedule is considered safe if the underlying logic is guaranteed to be unchanged regardless of the applied transformation. The safety of a fused schedule depends on circumstances that may break logic equivalence: 
@@ -144,8 +159,8 @@ schedule_t.reorder(a, b, f)
 ```
 To understand this change in the logic, note that the resulting schedule is equivalent to the following Python code:
 ```python
-for a in range(16):
-    for b in range(16):
+for a in range(10):
+    for b in range(10):
         C[a, b] += A[a, b]
         C[b, a] *= B[b, a]
 ```
@@ -184,12 +199,13 @@ Imagine that we have an element-wise operator `relu`, and we want to implement t
 ```python
 C = relu(C + A @ B)
 ```
-Here, `A` has a shape of (16, 11), `B` has a shape of (11, 10), and `C` has a shape of (16, 10). Let’s now define two nests, one for `C += A @ B` and the other for `C = relu(C)`, and obtain their corresponding default schedules:
+Here, `A` has a shape of (8, 4), `B` has a shape of (4, 8), and `C` has a shape of (8, 8). Let’s now define two nests, one for `C += A @ B` and the other for `C = relu(C)`, and obtain their corresponding default schedules:
 ```python
 # Create nest0 and schedule0
-nest0 = acc.Nest(shape=(16, 10, 11))
+nest0 = acc.Nest(shape=(8, 8, 4))
 i0, j0, k0 = nest0.get_indices()
 
+# nest0 performs C += A @ B
 @nest0.iteration_logic
 def _():
     C[i0, j0] += A[i0, k0] * B[k0, j0]
@@ -197,9 +213,10 @@ def _():
 schedule0 = nest0.create_schedule()
 
 # Create nest1 and schedule1
-nest1 = acc.Nest(shape=(16, 10))
+nest1 = acc.Nest(shape=(8, 8))
 i1, j1 = nest1.get_indices()
 
+# nest1 performs C = relu(C)
 @nest1.iteration_logic
 def _():
     C[i1, j1] = acc.max(C[i1, j1], 0)
@@ -211,14 +228,25 @@ In `schedule0` and `schedule1`, the first dimension represents the rows of `C` a
 schedule = acc.fuse((schedule0, schedule1), partial=2)
 f, i, j, k0 = schedule.get_indices()
 ```
-The fused iteration space `schedule` has a shape of (2, 16, 10, 11). Its slice (0, \*, \*, \*) contains a copy of `schedule0`, the slice (1, \*, \*, 0) contains a copy of `schedule1`, and the rest of its elements are padded. Note that the code above overwrites the index `k0`, which initially was an index of `schedule0`. However, now it corresponds to the unfused index in `schedule`. Note that the name `k0` is a stylistic choice, we could have chosen a different name.
 
+The fused iteration space `schedule` has a shape of (2, 8, 8, 4). Its slice (0, \*, \*, \*) contains a copy of `schedule0`, the slice (1, \*, \*, 0) contains a copy of `schedule1`, and the rest of its elements are padded. Note that the code above overwrites the index `k0`, which initially was an index of `schedule0`. However, now it corresponds to the unfused index in `schedule`. Note that the name `k0` is a stylistic choice, we could have chosen a different name.
+
+![Before fusing](../assets/viz/fuse2.png)  |  ![After fusing](../assets/viz/fuse2a.png)
+:-------------------------:|:-------------------------:
+*Before fusing* |  *After `fuse((schedule0, schedule1), partial=2)` (padded elements in blue)*
+
+#### Safety
 Is `schedule` safe? Recall that for each value of `i` and `j`, Accera guarantees that the corresponding work in `schedule0` (`C[i,j] += A[i,k0] * B[k0,j]` for all values of `k0`) is executed before the corresponding work in `schedule1` (`C[i,j] = max(C[i,j], 0)`), and this holds regardless of how the fused schedule is transformed. Since these are the only operations that touch `C[i,j]` and the `ReLU` operation is always executed last, this warrants that `schedule` is safe. Therefore, we can focus all of our attention on optimizing performance without worrying about correctness from this point onwards.
 
 Executing `schedule` as-is is equivalent to executing `schedule0` in its entirety, followed by executing `schedule1`. Suppose we want to interleave the two schedules and perform `relu` immediately after calculating each element of the matrix product. In that case, we reorder the dimensions such that `i` and `j` preceded `f`:
 ```python
 schedule.reorder(i, j, f, k0)
 ```
+
+![Before reorder](../assets/viz/fuse2a_A.png)  |  ![After reorder](../assets/viz/fuse2b.png)
+:-------------------------:|:-------------------------:
+*Before `reorder(i, j, f, k0)`* |  *After `reorder(i, j, f, k0)`*
+
 The resulting schedule is now equivalent to the following Python code:
 
 ```python
@@ -231,27 +259,32 @@ for i in range(16):
         C[i,j] = max(C[i,j], 0)
 ```
 
+
+![relu(C + A @ B) traversal](../assets/viz/fuse2b_animated.gif)
+
+*Iteration sequence for `C = relu(C + A @ B)`. (White elements represent `C + A @ B`; purple elements are `relu(C)`; blue elements are padding.)*
+
 ### Partial fusing example: multiplying three matrices
 Consider fusing two matrix-matrix multiplications to get matrix-matrix-matrix multiplication. Specifically, say that our goal is to calculate the equivalent of the following Python code:
 ```python
 E += A @ B @ D
 ```
-Where `A` has a shape (16, 11), `B` (11, 10), `D` (10, 7), and `E` (16, 7).
+Where `A` has a shape (4, 5), `B` (5, 6), `D` (6, 10), and `E` (4, 10).
 
 We start by defining the arrays. In addition to `A`, `B`, `D`, and `E`, we define a temporary array `C` to store the intermediate result of `A@B`.
 ```python
-A = acc.Array(role=acc.Array.Role.INPUT, shape=(16, 11))
-B = acc.Array(role=acc.Array.Role.INPUT, shape=(11, 10))
-C = acc.Array(role=acc.Array.Role.TEMP, shape=(16, 10))
-D = acc.Array(role=acc.Array.Role.INPUT, shape=(10, 7))
-E = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(16, 7))
+A = acc.Array(role=acc.Array.Role.INPUT, shape=(4, 5))
+B = acc.Array(role=acc.Array.Role.INPUT, shape=(5, 6))
+C = acc.Array(role=acc.Array.Role.TEMP, shape=(4, 6))
+D = acc.Array(role=acc.Array.Role.INPUT, shape=(6, 10))
+E = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(4, 10))
 ```
 Note that `C` has the role of `TEMP`. Temporary arrays are mutable and initialized with zeros. Moreover, these arrays are logical objects that may not exist in memory during the entire computation.
 
 Next, define a simple nest to compute `C += A @ B` and another simple nest to compute `E += C @ D`.
 ```python
 # Create nest0 and schedule0 for C = A @ B
-nest0 = acc.Nest(shape=(16, 10, 11))
+nest0 = acc.Nest(shape=(4, 6, 5))
 i0, j0, k0 = nest0.get_indices()
 
 @nest0.iteration_logic
@@ -261,7 +294,7 @@ def _():
 schedule0 = nest0.create_schedule()
 
 # Create nest1 and schedule1 E += C @ D
-nest1 = acc.Nest(shape=(16, 7, 10))
+nest1 = acc.Nest(shape=(4, 10, 6))
 i1, j1, k1 = nest1.get_indices()
 
 @nest1.iteration_logic
@@ -276,21 +309,31 @@ schedule1.reorder(i1, k1, j1)
 schedule = acc.fuse((schedule0, schedule1), partial=2)
 f, i, j, k0, j1 = schedule.get_indices()
 ```
-The fused iteration space has a shape of (2, 16, 10, 11, 7). `f` is the fusing dimension, `i` is the result of fusing `i0` and `i1`, and `j` is the result of fusing `j0` and `k1`. On the other hand, `k0` is the unfused dimension from `schedule0`, and `j1` is the unfused dimension from `schedule1`. The slice (0, \*, \*, \*, 0) contains a copy of `schedule0` and the slice (1, \*, \*, 0, \*) contains a copy of `schedule1`. The rest of the iteration space is padded with empty elements.
 
+![Before reorder(i1, k1, j1)](../assets/viz/fuse3.png)  |  ![After reorder(i1, k1, j1)](../assets/viz/fuse3a.png)
+:-------------------------:|:-------------------------:
+*Before `reorder(i1, k1, j1)`* |  *After `reorder(i1, k1, j1)`*
+
+The fused iteration space has a shape of (2, 4, 6, 5, 10). `f` is the fusing dimension, `i` is the result of fusing `i0` and `i1`, and `j` is the result of fusing `j0` and `k1`. On the other hand, `k0` is the unfused dimension from `schedule0`, and `j1` is the unfused dimension from `schedule1`. The slice (0, \*, \*, \*, 0) contains a copy of `schedule0` and the slice (1, \*, \*, 0, \*) contains a copy of `schedule1`. The rest of the iteration space is padded with empty elements.
+
+![After fusing](../assets/viz/fuse3b.png)
+
+*After `fuse((schedule0, schedule1), partial=2)` (White elements represent `C += A @ B`; purple elements are `E += C @ D`; blue elements are padding.)*
+
+#### Safety
 Is `schedule` safe? Again, recall that for each value of `i` and `j`, Accera guarantees that all of the corresponding work in `schedule0` (`C[i, j] += A[i, k0] * B[k0, j]` for all values of `k0`) is executed before any of the corresponding work in `schedule1` (`E[i, j1] += C[i, j] * D[j, j1]` for all values of `j1`). In other words, each element of `C` is entirely computed before it is used. This confirms that the `schedule` is safe.
 
 Initially, the fused schedule is equivalent to the following Python code:
 ```python
 # f = 0
-for i in range(0, 16):
-    for j in range(0, 10):
-        for k0 in range(11):
+for i in range(4):
+    for j in range(6):
+        for k0 in range(5):
             C[i, j] += A[i, k0] * B[k0, j]
 # f = 1
-for i in range(0, 16):
-    for j in range(0, 10):
-        for j1 in range(7):
+for i in range(4):
+    for j in range(6):
+        for j1 in range(10):
             E[i, j1] += C[i, j] * D[j, j1]
 ```
 
@@ -298,12 +341,28 @@ We can now manipulate the fused schedule in various ways. For example, we can do
 ```python
 schedule.reorder(i, j, f, k0, j1)
 ```
-This schedule is equivalent to the following Python code:
+This schedule is equivalent to the following Python loops:
 ```python
-for i in range(0, 16):
-    for j in range(0, 10):
+for i in range(4):
+    for j in range(6):
+        for f in range(2):
+            for k0 in range(5):
+                for j1 in range(7):
+                    if f == 0 and j1 == 0:
+                        # f = 0, create C[i, j]
+                        C[i, j] += A[i, k0] * B[k0, j]
+                    if f == 1 and k0 == 0:
+                        # f = 1, use C[i, j]
+                        E[i, j1] += C[i, j] * D[j, j1]
+```
+
+The simplified loops after unswitching:
+
+```python
+for i in range(4):
+    for j in range(6):
         # f = 0, create C[i, j]
-        for k0 in range(11):
+        for k0 in range(5):
             C[i, j] += A[i, k0] * B[k0, j]
         # f = 1, use C[i, j]
         for j1 in range(7):
@@ -312,26 +371,31 @@ for i in range(0, 16):
 
 The advantage of this schedule is that only one element of `C` is active at any time in the computation. Accera can reuse the same memory location to store the active element of `C` instead of storing all of `C` in physical memory.
 
-Similarly, we can compute a 4&times;2 block of `C`. Do all the work that uses this block and then move on to the next block:
+![After reorder(i, j, f, k0, j1)](../assets/viz/fuse3c.png)
+
+*After `reorder(i, j, f, k0, j1)` (White elements represent `C += A @ B`; purple elements are `E += C @ D`; blue elements are padding.)*
+
+#### Tiling
+As a further optimization, we can compute a 2&times;3 block of `C`. Do all the work that uses this block and then move on to the next block:
 ```python
 ii, jj = schedule.tile({
-    i: 4,
-    j: 2
+    i: 2,
+    j: 3
 })
 schedule.reorder(i, j, f, ii, jj, k0, j1)
 ```
 This schedule is equivalent to the following Python code:
 ```python
-for i in range(0, 16, 4):
-    for j in range(0, 10, 2):
+for i in range(0, 4, 2):
+    for j in range(0, 6, 3):
         # f = 0
-        for ii in range(4):
-            for jj in range(2):
+        for ii in range(2):
+            for jj in range(3):
                 for k0 in range(11):
                     C[i+ii, j+jj] += A[i+ii, k0] * B[k0, j+jj]
         # f = 1
-        for ii in range(4):
-            for jj in range(2):
+        for ii in range(2):
+            for jj in range(3):
                 for j1 in range(7):
                     E[i+ii, j1] += C[i+ii, j+jj] * D[j+jj, j1]
 ```

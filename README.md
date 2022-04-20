@@ -1,4 +1,4 @@
-![Accera logo](https://microsoft.github.io/Accera/assets/Accera_darktext.png)
+![Accera logo](https://microsoft.github.io/Accera/assets/logos/Accera_darktext.png)
 <div style="margin-bottom:30px"></div>
 
 <a href="https://pypi.org/project/accera/"><img src="https://badge.fury.io/py/accera.svg" alt="PyPI package version"/></a> <a href="https://pypi.org/project/accera/"><img src="https://img.shields.io/pypi/pyversions/accera" alt="Python versions"/></a> ![MIT License](https://img.shields.io/pypi/l/accera)

@@ -9,7 +9,7 @@ except:
     # CMake-driven builds do not generate _version.py yet
     __version__ = None
 
-from .Targets import Target
+from .Targets import Target, KNOWN_DEVICES, KNOWN_CPUS, KNOWN_GPUS
 from .Parameter import DelayedParameter, create_parameters, create_parameter_grid
 from .Constants import *
 from .Package import Package

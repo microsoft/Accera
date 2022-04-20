@@ -7,7 +7,7 @@ By the end of this tutorial, you will learn how to:
 
 * Cross compile a simple Matrix Multiplication (MatMul) function for execution on a Raspberry Pi 3.
 * Produce a [HAT](https://github.com/microsoft/hat) package containing the MatMul function that can be called on the Pi 3 target.
-* Call the function from C or C++ code on a Pi 3.
+* Call the function on a Raspberry Pi 3 from C/C++ code.
 
 ## Prerequisites
 
@@ -37,7 +37,7 @@ for i in range(M):
 
 ### Accera Python DSL
 
-Let's walk through a naïve Matrix Multiplication (MatMul) using Accera. Instead of using the default target, i.e., the host machine, we specify a target representing a Raspberry Pi 3 to cross-compile for a different target.
+Let's walk through a naïve Matrix Multiplication (MatMul) using Accera. Instead of using the default target, i.e., the host machine, we specify a target representing a Raspberry Pi 3 to cross-compile the host for a different target.
 
 Create an empty file called `hello_matmul_pi3_generator.py`. First, we import Accera's module:
 
@@ -62,7 +62,7 @@ B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, sh
 C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
 ```
 
-We now use the `Nest` class to define our 3-layered nested for loop. The range indices are `M`, `N`, and `K`, with the outermost loop (`M`) listed first. We can get the loop nest indices to perform the computation.
+We now use the `Nest` class to define our 3-layered nested for-loop. The range indices are `M`, `N`, and `K`, with the outermost loop (`M`) listed first. We can get the loop nest indices to perform the computation.
 
 ```python
 # Define the loop nest
@@ -161,7 +161,7 @@ python hello_matmul_pi3_generator.py
 python3 hello_matmul_pi3_generator.py
 ```
 
-As we run the script, there should be a header file `hello_matmul_pi3.hat` and an object file `hello_matmul_pi3.o` in the ELF format. The `.hat` file format is described [here](https://github.com/microsoft/HAT). Together, the `.hat` and `.o` form a HAT package.
+After we run the script, there should be a header file `hello_matmul_pi3.hat` and an object file `hello_matmul_pi3.o` in the ELF format. The `.hat` file format is described [here](https://github.com/microsoft/HAT). Collectively, we call the `.hat file` and `object file` a "HAT package".
 
 
 ### Runner code
@@ -238,4 +238,4 @@ Calling MatMul M=128, K=256, N=256
 Result (first few elements): 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922 1536.419922
 ```
 
-You can now experiment with the generated MatMul function with your own inputs. Simply modify `hello_matmul_pi3_runner.cpp` on the Raspberry Pi 3 and recompile it with the existing HAT package.
+You can now experiment with the generated MatMul function with your own inputs. To try different inputs, you can modify `hello_matmul_pi3_runner.cpp` on the Raspberry Pi 3 and recompile it with the existing HAT package.

@@ -107,9 +107,9 @@ async function RunViz(Viz, SceneView) {
             arrow_length: d2, 
             arrow_start_offset: 0,
             label: " k",
-            label_pos: 0.1,
+            label_pos: 0.08,
             label_size: 1,
-            arrow_distance_from_edge: 1,
+            arrow_distance_from_edge: 0.67,
             arrow_display_side: CUBE_SIDES.RIGHT,
         },
     }

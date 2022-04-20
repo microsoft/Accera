@@ -112,7 +112,7 @@ No installation is required. This will launch a Jupyter notebook with the quicks
     import numpy as np
 
     # load the package
-    hat_package = hat.load("hello_accera.hat")
+    _, functions = hat.load("hello_accera.hat")
 
     # call one of the functions with test inputs
     A_test = np.random.rand(512, 512).astype(np.float32)
@@ -120,7 +120,7 @@ No installation is required. This will launch a Jupyter notebook with the quicks
     C_test = np.zeros((512, 512)).astype(np.float32)
     C_numpy = np.maximum(C_test + A_test @ B_test, 0.0)
 
-    matmul_relu = hat_package["matmul_relu_fusion_transformed"]
+    matmul_relu = functions["matmul_relu_fusion_transformed"]
     matmul_relu(A_test, B_test, C_test)
 
     # check correctness

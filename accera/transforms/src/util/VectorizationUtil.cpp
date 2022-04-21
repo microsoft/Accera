@@ -271,16 +271,6 @@ bool IsUnrolledAccessSequential(mlir::PatternRewriter& rewriter,
     // Check if the temporary clones are all accessing sequential memory
     auto accessMapComposition = ir::util::GetIndexToMemoryLocationMap(rewriter.getContext(), op);
 
-    if (accessMapComposition.getNumSymbols() > 0)
-    {
-        // TODO : support for this case
-        // The memref maps can have symbols in them following some SubView / linalg.slice uses,
-        // however the symbol that ought to be used isn't plumbed through so we don't know what
-        // to provide for that here when composing maps
-        // So to favor safety, return false here so we're left with a simple unroll
-        return false;
-    }
-
     bool sequential = true;
     for (size_t unrollIdx = 1; unrollIdx < vectorSize; ++unrollIdx)
     {
@@ -350,8 +340,7 @@ std::optional<VectorizedOp> VectorizeLoadOp(mlir::PatternRewriter& rewriter,
 
     if (isSequential)
     {
-        llvm::SmallVector<bool, 4> inBounds = { true };
-        result = rewriter.create<mlir::vector::TransferReadOp>(op.getLoc(), vectorType, op.memref(), indices, inBounds);
+        result = rewriter.create<mlir::vector::LoadOp>(op.getLoc(), vectorType, op.memref(), indices);
     }
     else
     {
@@ -396,8 +385,7 @@ std::optional<VectorizedOp> VectorizeStoreOp(mlir::PatternRewriter& rewriter,
 
     if (isSequential)
     {
-        llvm::SmallVector<bool, 4> inBounds = { true };
-        mlir::Operation* storeOp = rewriter.create<mlir::vector::TransferWriteOp>(op.getLoc(), vectorizedValueToStore, op.memref(), indices, inBounds);
+        mlir::Operation* storeOp = rewriter.create<mlir::vector::StoreOp>(op.getLoc(), vectorizedValueToStore, op.memref(), indices);
         return storeOp;
     }
     else
@@ -437,8 +425,7 @@ std::optional<VectorizedOp> VectorizeAffineLoadOp(mlir::PatternRewriter& rewrite
 
     if (isSequential)
     {
-        llvm::SmallVector<bool, 4> inBounds = { true };
-        result = rewriter.create<mlir::vector::TransferReadOp>(op.getLoc(), vectorType, op.memref(), indices, inBounds);
+        result = rewriter.create<mlir::vector::LoadOp>(op.getLoc(), vectorType, op.memref(), indices);
     }
     else
     {
@@ -485,8 +472,7 @@ std::optional<VectorizedOp> VectorizeAffineStoreOp(mlir::PatternRewriter& rewrit
 
     if (isSequential)
     {
-        llvm::SmallVector<bool, 4> inBounds = { true };
-        mlir::Operation* storeOp = rewriter.create<mlir::vector::TransferWriteOp>(op.getLoc(), vectorizedValueToStore, op.memref(), indices, inBounds);
+        mlir::Operation* storeOp = rewriter.create<mlir::vector::StoreOp>(op.getLoc(), vectorizedValueToStore, op.memref(), indices);
         return storeOp;
     }
     else

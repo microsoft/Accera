@@ -2217,24 +2217,24 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
             auto gpuParams = accera::ir::targets::GPU::FromArrayAttr(launchAttr);
             std::vector<int64_t> blockDimSizes = { gpuParams.block.x, gpuParams.block.y, gpuParams.block.z };
 
-            int64_t totalLoadsPerThread = 0;
-            auto vectorSizePerThread = 1; // TODO: Plumb hardware supported vector size
             auto activeBlockVolume = std::accumulate(activeBlockShape.begin(), activeBlockShape.end(), 1, std::multiplies<int64_t>());
 
             // Use thread mappings any time one of the arrays we're indexing into is non-private
             bool useThreadMappings = outerArrayMemRefSpace != static_cast<unsigned int>(v::MemorySpace::Private) ||
                                      cacheMemRefSpace != static_cast<unsigned int>(v::MemorySpace::Private);
 
-            if (useThreadMappings)
-            {
-                totalLoadsPerThread = activeBlockVolume / (blockDimSizes[0] * blockDimSizes[1] * blockDimSizes[2]);
-            }
-            else
+            if (!useThreadMappings)
             {
                 // If we're copying from private memory to private memory, then don't consider the block sizes as we won't
                 // have any threads to map relative to either of these buffers
                 blockDimSizes = { 1, 1, 1 };
-                totalLoadsPerThread = activeBlockVolume;
+            }
+            int64_t totalLoadsPerThread = activeBlockVolume / (blockDimSizes[0] * blockDimSizes[1] * blockDimSizes[2]);
+
+            int64_t vectorSizePerThread = 1;
+            if (vecInfo.has_value() && vecInfo->vectorBytes > 0)
+            {
+                vectorSizePerThread = std::min(vecInfo->vectorBytes / elementByteWidth, totalLoadsPerThread);
             }
 
             auto loadsPerThread = std::max((int64_t)1, (int64_t)(totalLoadsPerThread / vectorSizePerThread));
@@ -4341,6 +4341,22 @@ MakeCacheOp CreateDoubleBufferTempArray(mlir::OpBuilder& builder,
     auto tempArrayMultiCacheAccessIndices = multiCacheAccessIndices;
     auto tempArrayAccessMap = cacheAccessMap;
 
+    std::optional<VectorizationInfo> vecInfo;
+    auto vecInfoLLVMOpt = cacheRegionOp.vectorizationInfo();
+    if (vecInfoLLVMOpt.hasValue())
+    {
+        vecInfo = vecInfoLLVMOpt.getValue().getValue();
+    }
+
+    auto elementBitWidth = cacheMemRefType.getElementTypeBitWidth();
+    auto elementByteWidth = elementBitWidth / 8;
+
+    int64_t vectorSizePerThread = 1;
+    if (vecInfo.has_value() && vecInfo->vectorBytes > 0)
+    {
+        vectorSizePerThread = vecInfo->vectorBytes / elementByteWidth;
+    }
+
     size_t arrayRank = cacheAccessMap.getNumDims() - cacheOffsetIndices.size() - multiCacheAccessIndices.size();
 
     std::vector<int64_t> tempArrayActiveBlockShape = activeBlockCacheShape;
@@ -4366,8 +4382,9 @@ MakeCacheOp CreateDoubleBufferTempArray(mlir::OpBuilder& builder,
             auto gpuParams = accera::ir::targets::GPU::FromArrayAttr(launchAttr);
             std::vector<int64_t> blockDimSizes = { gpuParams.block.x, gpuParams.block.y, gpuParams.block.z };
 
-            auto vectorSizePerThread = 1; // TODO : support vectorized loads changing the volume
             int64_t activeBlockVolume = std::accumulate(activeBlockCacheShape.begin(), activeBlockCacheShape.end(), 1, std::multiplies<int64_t>());
+            int64_t totalWorkPerThread = activeBlockVolume / (blockDimSizes[0] * blockDimSizes[1] * blockDimSizes[2]);
+            vectorSizePerThread = std::min(vectorSizePerThread, totalWorkPerThread);
             auto loadsPerThread = activeBlockVolume / (blockDimSizes[0] * blockDimSizes[1] * blockDimSizes[2] * vectorSizePerThread);
             loadsPerThread = std::max((int64_t)1, (int64_t)loadsPerThread);
             tempArrayActiveBlockShape = { loadsPerThread, vectorSizePerThread };

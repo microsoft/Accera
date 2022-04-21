@@ -181,6 +181,16 @@ namespace value
         return target;
     }
 
+    std::vector<std::string> GetKnownDeviceNames()
+    {
+        std::vector<std::string> names;
+        for (const auto& [name, _] : KnownTargetDeviceNameMap)
+        {
+            names.push_back(name);
+        }
+        return names;
+    }
+
     void CompleteTargetDevice(TargetDevice& targetDevice)
     {
         auto deviceName = targetDevice.deviceName;

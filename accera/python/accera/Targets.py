@@ -9,7 +9,7 @@ import re
 from typing import List, Union
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
-from ._lang_python import ScalarType
+from ._lang_python import ScalarType, _GetKnownDeviceNames
 from ._lang_python._lang import (BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z, _MemorySpace, _ExecutionRuntime as Runtime)
 
 
@@ -744,17 +744,19 @@ MI100_TENSORCORE_INFO = TensorCoreInformation([
 ])
 
 # Tensor Cores is current unused
-KNOWN_GPUS_HEADER = ["Runtime", "Model", "Branding", "Family", "Cores", "MaxThreadsPerBlock", "MaxBlockSize", "MaxSharedMemoryPerBlock", "WarpSize", "Base Freq", "MaxRegistersPerBlock", "TensorCoreInformation"]
+KNOWN_GPUS_HEADER = ["Runtime", "Model", "Branding", "Family", "Cores", "MaxThreadsPerBlock", "MaxBlockSize", "MaxSharedMemoryPerBlock", "WarpSize", "Base Freq", "MaxRegistersPerBlock", "Vector Bytes", "TensorCoreInformation"]
 KNOWN_GPUS = [
     # NVIDIA
-    ["CUDA", "NVidia P100", "Pascal", "sm60",  56, 1024, [1024, 1024, 64], 49152, 32, 1.328500, 65536, None],
-    ["CUDA", "NVidia V100", "Volta",  "sm70",  80, 1024, [1024, 1024, 64], 49152, 32, 1.380000, 65536, None],
-    ["CUDA", "NVidia A100", "Ampere", "sm80", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, None],
+    ["CUDA", "NVidia P100", "Pascal", "sm60",  56, 1024, [1024, 1024, 64], 49152, 32, 1.328500, 65536, 0, None], # TODO : get the real values for the vector register sizes in bytes
+    ["CUDA", "NVidia V100", "Volta",  "sm70",  80, 1024, [1024, 1024, 64], 49152, 32, 1.380000, 65536, 0, None],
+    ["CUDA", "NVidia A100", "Ampere", "sm80", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, 0, None],
     # AMD
-    ["ROCM", "AMD Radeon7", "Vega20",    "gfx906", 60,  1024, [1024, 1024, 1024], 65536, 64, 1.801000, 65536, None],
-    ["ROCM", "AMD MI50",    "Vega20",    "gfx906", 60,  1024, [1024, 1024, 1024], 65536, 64, 1.725000, 65536, None],
-    ["ROCM", "AMD MI100",   "Arcturus",  "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, MI100_TENSORCORE_INFO],
-    ["ROCM", "AMD MI200",   "Aldebaran", "gfx90a", 220, 1024, [1024, 1024, 1024], 65536, 64, 1.700000, 65536, None]
+    ["ROCM", "AMD Radeon7", "Vega20",    "gfx906", 60,  1024, [1024, 1024, 1024], 65536, 64, 1.801000, 65536, 0, None],
+    ["ROCM", "AMD MI50",    "Vega20",    "gfx906", 60,  1024, [1024, 1024, 1024], 65536, 64, 1.725000, 65536, 0, None],
+
+    # The MI100 can move up to Up to 4 DWORDs per instruction, so we set the vector size to 16 bytes - https://developer.amd.com/wp-content/resources/CDNA1_Shader_ISA_14December2020.pdf
+    ["ROCM", "AMD MI100",   "Arcturus",  "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, 16, MI100_TENSORCORE_INFO],
+    ["ROCM", "AMD MI200",   "Aldebaran", "gfx90a", 220, 1024, [1024, 1024, 1024], 65536, 64, 1.700000, 65536, 0, None]
 ]
 # yapf: enable
 
@@ -795,8 +797,11 @@ class _TargetContainer:
     _max_vector_registers: int = 0
 
     def __post_init__(self):
-        self._device_name = \
+
+        device_name = \
             self.family.lower() if self.family else (self.name.lower() if self.name else self._device_name)
+        if device_name in  _GetKnownDeviceNames():
+            self._device_name = device_name
 
         self._full_extensions = self.extensions
 
@@ -872,6 +877,8 @@ def _recompute_known_devices():
             frequency_GHz=device["Base Freq"],
             max_registers_per_block=device["MaxRegistersPerBlock"],
             tensor_core=device["TensorCoreInformation"],
+            vector_bytes=device["Vector Bytes"],
+            vector_registers=1, # Setting this to 1 will enable vectorization but prevents unroll-and-jamming cache filling. TODO : get the right value for this
         )
         KNOWN_DEVICES[target.category][target.name] = target
         model_names.append((target.name, target.name))
@@ -961,12 +968,13 @@ class Target(_TargetContainer):
                     device = KNOWN_DEVICES[category].get(known_name)
 
                 if not device:
-                    raise Exception(
-                        "Unknown device name for category. If a new device has been added at runtime, _recompute_known_devices must be called"
-                    )
-
-                for f in fields(device):
-                    setattr(self, f.name, getattr(device, f.name))
+                    if category != Category.GPU: # TODO: GPUs characteristics are not fully fleshed out
+                        raise Exception(
+                            f"Unknown device name for {category}. If a new device has been added at runtime, _recompute_known_devices must be called"
+                        )
+                else:
+                    for f in fields(device):
+                        setattr(self, f.name, getattr(device, f.name))
 
         # override with user-specified values, if any
         # KEEP THIS SORTED

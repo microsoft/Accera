@@ -209,8 +209,12 @@ def scm_version(version_file):
         #   {tag}+dYYYYMMDD
         # distance and not clean:
         #   {++tag}.dev{distance}+{scm letter}{revision hash}.dYYYYMMDD
-        dev_commit_version = get_version(version_scheme="python-simplified-semver")
-        version_str = get_version(version_scheme="python-simplified-semver", local_scheme="no-local-version")
+        try:
+            dev_commit_version = get_version(version_scheme="python-simplified-semver")
+            version_str = get_version(version_scheme="python-simplified-semver", local_scheme="no-local-version")
+        except LookupError:
+            dev_commit_version = version_str = "0.0.1"
+            print(f"Warning: Could not find git configuration, falling back to version {version_str}")
 
         # Whl filename version format (tag must be of the format n(.n)+):
         # ACCERA_PACKAGE_FOR_CI=1:

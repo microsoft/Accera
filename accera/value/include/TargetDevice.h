@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace accera
 {
@@ -50,11 +51,15 @@ namespace value
     /// <summary> Create a TargetDevice from a device name. </summary>
     TargetDevice GetTargetDevice(std::string deviceName);
 
+    /// <summary> Get the known device names. </summary>
+    std::vector<std::string> GetKnownDeviceNames();
+
     /// <summary> Create a fully-specified TargetDevice from a partially-specified one. </summary>
     /// Typically, this function is used after manually filling in a subset of the fields of a
     /// `TargetDevice` struct, in order to fill in reasonable values for the remaining fields.
     /// Note that the structs returned from `GetTargetDevice(deviceName)` are fully-specified, and don't
     /// require you to call this function to complete them.
     void CompleteTargetDevice(TargetDevice& partialDeviceInfo);
+
 } // namespace value
 } // namespace accera

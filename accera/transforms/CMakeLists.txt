@@ -65,6 +65,7 @@ set(rcgpu_include
 
 set(util_src
   src/util/MathUtilities.cpp
+  src/util/RangeValueUtilities.cpp
   src/util/SnapshotUtilities.cpp
   src/util/VectorizationUtil.cpp
   src/util/VectorizedOp.cpp
@@ -75,6 +76,7 @@ set(util_src
 
 set(util_include
   include/util/MathUtilities.h
+  include/util/RangeValueUtilities.h
   include/util/SnapshotUtilities.h
   include/util/VectorizationUtil.h
   include/util/VectorizedOp.h

@@ -6,18 +6,14 @@
 ####################################################################################################
 
 # I will host a local web server to host the tool written in JS (three.js) and provide
-# some APIs which create/manage folders for the visualization tool, i may also be used to store images and combine them into a
+# some APIs which create/manage folders for the vizualization tool, i may also be used to store images and combine them into a
 # video vis FFMPEG bindings wooooo!
 
 import webbrowser
 import os
 import logging
 import json
-import ffmpeg
 import bottle
-from binascii import a2b_base64
-from bottle import static_file, run, route, get, post, redirect, response, request
-from os.path import relpath
 import glob
 import re
 import shutil
@@ -26,6 +22,14 @@ import fnmatch
 import urllib
 import threading
 import time
+from binascii import a2b_base64
+from bottle import static_file, run, route, get, post, redirect, response, request
+from os.path import relpath
+
+try:
+    import ffmpeg
+except:
+    pass
 
 parser = argparse.ArgumentParser(description='A tool to help create visualizations for iteration spaces.')
 parser.add_argument('--port', nargs='?', const=8000, default=8000, type=int, help='Specify the port for the webserver')
@@ -237,7 +241,7 @@ def finish_sequence():
     try:
         (ffmpeg.input(str(input_glob), framerate=fps).output(str(output_file), pix_fmt='yuv420p', vb='20M').run())
     except Exception as e:
-        print('Failed to invoke ffmpeg')
+        print('Failed to invoke ffmpeg. Try "pip install ffmpeg-python" to install this dependency')
         print(str(e))
         return json.dumps({'success': False})
 

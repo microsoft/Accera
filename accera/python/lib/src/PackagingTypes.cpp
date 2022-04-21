@@ -81,6 +81,7 @@ ARM: fp16, neon, vfp3, d16, vfp4, hwdiv-arm, hwdiv
     {
         module.def("_GetTargetDeviceFromName", &value::GetTargetDevice, "device_name"_a);
         module.def("_CompleteTargetDevice", &value::CompleteTargetDevice, "partial_device_info"_a);
+        module.def("_GetKnownDeviceNames", &value::GetKnownDeviceNames);
 
         module.def("_DeclareFunction", &value::DeclareFunction, "name"_a);
         module.def("_ResolveConstantDataReference", &value::ResolveConstantDataReference);

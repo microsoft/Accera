@@ -5,7 +5,7 @@
 
 ## `accera.Plan.parallelize(indices[, pin, policy])`
 
-Performs one or more loops in parallel on multiple cores or processors.
+Executes one or more loops in parallel on multiple cores or processors.
 
 Only available for targets with multiple cores or processors.
 
@@ -15,7 +15,7 @@ argument | description | type/default
 --- | --- | ---
 `indices` | The iteration-space dimensions to run in parallel. To assign multiple threads to an index, first split that index, then parallelize its split indices. <br/> Unsplit indices will be assigned one thread each, split indices will be assigned threads based on the number of split blocks. This is limited by the number of threads supported by the target. | tuple of `accera.Index`
 `pin` | Pin the computation to a subset of cores or processors. | tuple of target-specific identifiers
-`policy` | The scheduling policy to apply ("dynamic" or "static"). | string. Defaults to "static"
+`policy` | The scheduling policy to apply ("dynamic" or "static"). | string. Defaults to "static".
 
 ## Examples
 
@@ -51,3 +51,5 @@ plan.parallelize(indices=(i, j, k), policy="dynamic")
 ```
 
 <div style="page-break-after: always;"></div>
+
+

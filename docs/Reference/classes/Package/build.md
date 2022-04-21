@@ -13,7 +13,7 @@ argument | description | type/default
 `name` | The package name. | string
 `format` | The format of the package. | `accera.Package.Format`, defaults to `Package.Format.HAT_STATIC`
 `mode` | The package mode, such as whether it is optimized or used for debugging. | `robopy.Package.Mode`, defaults to `Package.Mode.Release`
-`platform` | The platform where the package will run. | `accera.Package.Platform`
+`platform` | The platform where the package runs. | `accera.Package.Platform`
 `tolerance` | The tolerance for correctness checking when `mode = Package.Mode.Debug`. | float, defaults to 1e-5
 `output_dir` | The path to an output directory. Defaults to the current directory if unspecified. | string
 
@@ -62,3 +62,5 @@ package.build(format=acc.Package.Format.HAT_STATIC, name="myPackagePi3", platfor
 ```
 
 <div style="page-break-after: always;"></div>
+
+

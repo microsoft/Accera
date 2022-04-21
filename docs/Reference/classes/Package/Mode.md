@@ -6,8 +6,8 @@
 
 type | description
 --- | ---
-`accera.Package.Mode.DEBUG` | Debug mode (automatically tests logical equivalence)
-`accera.Package.Mode.RELEASE` | Release (maximally optimized)
+`accera.Package.Mode.DEBUG` | Debug mode (automatically tests logical equivalence).
+`accera.Package.Mode.RELEASE` | Release (maximally optimized).
 
 
 <div style="page-break-after: always;"></div>

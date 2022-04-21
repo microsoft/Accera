@@ -4,7 +4,7 @@
 # Accera v1.2.3 Reference
 
 ## `accera.Schedule.create_plan([target])`
-Create a plan for the nest.
+Creates a plan for the nest.
 
 ## Arguments
 

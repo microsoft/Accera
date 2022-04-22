@@ -11,7 +11,7 @@ Defines the capabilities of a target processor.
 
 argument | description | type/default
 --- | --- | ---
-`known_name` | A name of a device known to Accera | string \| accera.Target.Model / "HOST".
+`known_name` | A name of a device known to Accera | string \| accera.Target.Model / "HOST"
 `architecture` | The processor architecture | accera.Target.Architecture
 `cache_lines` | Cache lines (kilobytes) | list of positive integers
 `cache_sizes` | Cache sizes (bytes) | list of positive integers
@@ -29,7 +29,7 @@ argument | description | type/default
 
 ## Known device names
 
-Accera provides a pre-defined list of known target through the [`accera.Target.Models`](<Model.md>) enumeration.
+Accera provides a pre-defined list of known targets through the [`accera.Target.Models`](<Model.md>) enumeration.
 
 These known targets provide typical hardware settings and may not fit your specific hardware characteristics exactly. If your target matches closely with (but not exactly to) one of these targets, you can always start with a known target and update the properties accordingly.
 
@@ -69,12 +69,12 @@ gpu_target = acc.Target(name="Custom GPU processor", category=acc.Target.Categor
 ```
 
 ## Additional Notes on Instruction Set Extensions
-The details on extensions are important to identify the number of vector registers and vector bytes of each SIMD register supported by a processor. These values may help you determine if you are leveraging the vector units of the underlying hardware to its best capabilities.
+It is important to identify the number of vector registers and vector bytes of each SIMD register. These values may help you determine if you are leveraging the vector units of the underlying hardware to its best capabilities.
 
 ### AVX
 Advanced Vector Extensions (AVX) promotes legacy 128-bit SIMD instructions that operate on XMM registers to use a vector-extension (VEX) prefix and operate on 256-bit YMM registers.
 
-Intel AVX introduced support for 256-bit wide SIMD registers (YMM0-YMM7 in operating modes that are 32-bit or less, YMM0-YMM15 in 64-bit mode). For Accera, 64-bit mode is the default, and we do not add this as an argument to define
+Intel AVX introduced support for 256-bit wide SIMD registers (YMM0-YMM7 in operating modes that are 32-bit or less, YMM0-YMM15 in 64-bit mode). For Accera, 64-bit mode is the default.
 a target. The lower 128-bits of the YMM registers are aliased to the respective 128-bit XMM registers.
 In Intel AVX, there are 256-bit wide vector registers, 16 XMM registers, and 16 YMM registers to support an extension of 128-bits.
 

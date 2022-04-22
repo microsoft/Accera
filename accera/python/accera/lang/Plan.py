@@ -21,6 +21,7 @@ from ..Constants import AUTO
 
 from .._lang_python._lang import BarrierScope, CacheIndexing, _MemorySpace
 
+
 class Plan:
     def __init__(self, schedule: Schedule, target: Target = Target.HOST):
         self._sched = schedule
@@ -86,7 +87,7 @@ class Plan:
         pin: Union[Tuple[Any], DelayedParameter] = None,
         policy: Union[str, DelayedParameter] = "static"
     ):
-        """Performs one or more loops in parallel on multiple cores or processors.
+        """Executes one or more loops in parallel on multiple cores or processors.
         Only available for targets with multiple cores or processors.
 
         Args:
@@ -137,11 +138,19 @@ class Plan:
             idxs, num_threads, _ParallelizationPolicy.DYNAMIC if policy == "dynamic" else _ParallelizationPolicy.STATIC
         )
 
+    def tensorize(self, indices: Union[LoopIndex, Tuple[LoopIndex]]):
+        """Only available for targets with native matrix multiplication instruction (tensor core) support. 
+        Marks the dimensions of the iteration-space for tensorization. 
+        Only perfectly nested loops of the following form can be tensorized:
 
-    def tensorize(
-        self,
-        indices: Union[LoopIndex, Tuple[LoopIndex]]
-    ):
+        for i in range(M):
+            for k in range(N):
+                for j in range(K):
+                    C[i, j] += A[i, k] * B[k, j]
+
+        Args:
+            indices: The iteration space dimensions to tensorize.
+        """
         if self._target.category != Target.Category.GPU:
             raise ValueError("tensorization currently only supported on GPU targets")
 
@@ -178,7 +187,9 @@ class Plan:
             tensorize_dims.append(stop)
         if not self._target.tensor_core.supports(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=tensorize_dims) and \
             not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=tensorize_dims):
-            raise ValueError("The target does not support the given tensorization dimensions with shape=", tensorize_dims)
+            raise ValueError(
+                "The target does not support the given tensorization dimensions with shape=", tensorize_dims
+            )
 
         idxs = [context.mapping[id(index)] for index in indices]
 
@@ -212,7 +223,7 @@ class Plan:
             max_elements: The maximum elements to include in the cached region. Specify one and only one of `index`, `level`, `max_elements`.
             thrifty: Use thrifty caching (copy data into a cache only if the cached data differs from the original active block). This defaults to False as it slows down compilation speed so it is intended as an opt-in feature.
             double_buffer: Make this a double buffer cache by copying data one iteration ahead and using private memory on GPU for this procedure.
-            vectorize: Whether to vectorize the cache operations. Defaults to AUTO, which will behave like vectorize=True if the loopnest has a vectorized loop or vectorize=False if the loopnest has no vectorized loops.
+            vectorize: Whether to vectorize the cache operations. Defaults to AUTO, which will behave like `vectorize=True` if the loopnest has a vectorized loop or `vectorize=False` if the loopnest has no vectorized loops.
             double_buffer_location: The memory space used for storing iteration data for the double buffer cache. Requires that double_buffer is set to True. Defaults to AUTO.
                 AUTO will configure the double buffering location based on the following:
                 | location            | double_buffer | double_buffer_location = `AUTO` |
@@ -230,11 +241,7 @@ class Plan:
             # have an object to hold onto
             delayed_cache = DelayedCache(plan=self, target=source)
             self._delayed_calls[partial(
-                self.cache,
-                source=source,
-                max_elements=max_elements,
-                location=location,
-                _delayed_cache=delayed_cache
+                self.cache, source=source, max_elements=max_elements, location=location, _delayed_cache=delayed_cache
             )] = {
                 "index": index,
                 "trigger_index": trigger_index,
@@ -243,7 +250,7 @@ class Plan:
                 "layout": layout,
                 "thrifty": thrifty,
                 "double_buffer": double_buffer,
-                "double_buffer_location" : double_buffer_location,
+                "double_buffer_location": double_buffer_location,
                 "vectorize": vectorize
             }
             return delayed_cache

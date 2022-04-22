@@ -40,7 +40,7 @@ class Nest:
         return Schedule(self)
 
     def create_plan(self, target: "accera.Target" = Target.HOST) -> "accera.Plan":
-        """Convenience syntax to create a plan from this nest
+        """Creates a plan using the default schedule for the nest.
 
         Args:
             target: Optional target specification. Defaults to the HOST
@@ -71,9 +71,9 @@ class Nest:
         """Adds iteration logic to the nest
 
         Args:
-            logic: Python function that represents the logic to run in the innermost loop of the nest
-            predicate: The predicate that determine when the logic code should run
-            placement: The predicate that determines where the logic code should be placed
+            logic: Python function that represents the logic to run in the innermost loop of the nest.
+            predicate: The predicate that determine when the logic code should run.
+            placement: The predicate that determines where the logic code should be placed.
 
         Remarks: this can be invoked as a decorator, where the logic function will be the first argument:
 

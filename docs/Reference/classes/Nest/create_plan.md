@@ -4,7 +4,7 @@
 # Accera v1.2.3 Reference
 
 ## `accera.Nest.create_plan([target])`
-Create a plan using the default schedule for the nest.
+Creates a plan using the default schedule for the nest.
 
 ## Arguments
 

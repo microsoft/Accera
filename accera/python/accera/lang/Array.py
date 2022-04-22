@@ -22,10 +22,10 @@ class Array:
 
     class Role(Enum):
         "Defines the Array role"
-        INPUT = (auto())    #: An input array (immutable external-scope) whose contents are known at compile-time
-        INPUT_OUTPUT = auto()    #: An input/output array (mutable external-scope)
-        CONST = auto()    #: A constant array (immutable internal-scope)
-        TEMP = auto()    #: A temporary array (mutable internal-scope)
+        INPUT = (auto())    #: An input array (immutable external-scope) whose contents are known at compile-time.
+        INPUT_OUTPUT = auto()    #: An input/output array (mutable external-scope).
+        CONST = auto()    #: A constant array (immutable internal-scope).
+        TEMP = auto()    #: A temporary array (mutable internal-scope).
 
     def __init__(
         self,
@@ -39,7 +39,7 @@ class Array:
         """Creates an Array
 
         Args:
-            role: The role of the array, which determines if the array scope is internal or external and if the array is mutable or immutable.
+            role: The role of the array determines if the array scope is internal or external and if the array is mutable or immutable.
             data: The contents of a constant array. Required for `Array,Role.CONST` arrays but should not be specified for other roles.
             element_type: The array element type, default: ScalarType.float32 or inferred from data
             layout: The affine memory map, default: Array.Layout.FIRST_MAJOR

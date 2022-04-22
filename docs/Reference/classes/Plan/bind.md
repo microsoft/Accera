@@ -14,7 +14,7 @@ argument | description | type/default
 
 ## Examples
 
-Mark the `i`, `j`, and `k` indices to execute on an NVidia V100's `BLOCK_X`, `THREAD_X`, and `THREAD_Y` grid axes respectively.
+Mark the `i`, `j`, and `k` indices to execute on NVidia V100's `BLOCK_X`, `THREAD_X`, and `THREAD_Y` grid axes, respectively.
 
 ```python
 v100 = acc.Target(Target.Model.NVIDIA_V100)
@@ -26,3 +26,5 @@ plan.bind({
 ```
 
 <div style="page-break-after: always;"></div>
+
+

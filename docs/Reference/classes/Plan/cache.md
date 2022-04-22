@@ -10,19 +10,18 @@ Adds a caching strategy to a plan.
 
 argument | description | type
 --- | --- | ---
-`source` | The array or cache from which this cache is copied. | `Array` or `Cache`
-`index` | The index used to determine the cache level. Specify one and only one of `index`, `level`, `max_elements`. | `Index`
-`trigger_index` | The index used to determine what level to fill the cache at. `trigger_index` can't come after `index` in the schedule order, and will default to `index` if not specified. Specify at most one of `trigger_index` or `trigger_level`. | `Index`
-`layout` | The affine memory map, if different from the source. | [`accera.Layout`](<../Array/Layout.md>)
-`level` | The key-slice level to cache (the number of wildcard dimensions in a key-slice). Specify one and only one of `index`, `level`, `max_elements`. | positive integer
+`source` | The array or cache from which this cache is copied. | `Array` or `Cache`.
+`index` | The index used to determine the cache level. Specify one and only one of `index`, `level`, `max_elements`. | `Index`.
+`trigger_index` | The index used to determine what level to fill the cache at. `trigger_index` can't come after `index` in the schedule order and will default to `index` if not specified. Specify at most one of `trigger_index` or `trigger_level`. | `Index`.
+`layout` | The affine memory map, if different from the source. | [`accera.Layout`](<../Array/Layout.md>).
+`level` | The key-slice level to cache (the number of wildcard dimensions in a key-slice). Specify one and only one of `index`, `level`, `max_elements`. | positive integer.
 `trigger_level` | The key-slice level to fill the cache at. `trigger_level` can't be smaller than `level`, and will default to `level` if not specified. Specify at most one of `trigger_index` or `trigger_level`. | positive integer
 `max_elements` | The maximum elements to include in the cached region. Specify one and only one of `index`, `level`, `max_elements`. | positive integer
 `thrifty` | Use thrifty caching (copy data into a cache only if the cached data differs from the original active block).  | `bool`
 `location` | The type of memory used to store the cache. | `MemorySpace`
 `double_buffer` | Whether to make this cache a double-buffering cache. Only valid on INPUT and CONST arrays. | `bool`
 `double_buffer_location` | Which memory space to put the double buffer temp array in. Requires that double_buffer is set to True. Defaults to `AUTO`. | `MemorySpace` or `AUTO`
-`vectorize` | Whether to vectorize the cache operations. Defaults to `AUTO`, which will behave like `vectorize=True` if the loopnest has any vectorized loop via `plan.vectorize(index)` or `vectorize=False` if the loopnest has no vectorized loops. | `bool`
-
+`vectorize` | Whether to vectorize the cache operations. Defaults to `AUTO`, which will behave like `vectorize=True` if the loop-nest has any vectorized loop via `plan.vectorize(index)` or `vectorize=False` if the loop-nest has no vectorized loops. | `bool`
 
 `AUTO` will configure the double buffering location based on the following:
 `location` | `double_buffer` | `double_buffer_location` = `AUTO`
@@ -68,3 +67,5 @@ AA = plan.cache(A, i, location=v100.MemorySpace.SHARED)
 ```
 
 <div style="page-break-after: always;"></div>
+
+

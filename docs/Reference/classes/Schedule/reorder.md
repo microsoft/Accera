@@ -14,7 +14,7 @@ These orders are not allowed:
 
 argument | description | type/default
 --- | --- | ---
-`order` | Either the order of indices to set, or the outermost index if using variable arguments | tuple of `Index` or `Index`
+`order` | Either the order of indices to set or the outermost index if using variable arguments | tuple of `Index` or `Index`.
 `*args` | Optional variable arguments containing subsequent indices to set | variable `Index` arguments
 
 ## Examples
@@ -33,3 +33,5 @@ schedule.reorder(order=(k, i, j))
 
 
 <div style="page-break-after: always;"></div>
+
+

@@ -4,7 +4,7 @@
 # Accera v1.2.3 Reference
 
 ## `accera.Schedule.skew(index, reference_index [, unroll_loops_smaller_than])`
-Transform a dimension with respect to a reference dimension into a parallelogram by padding with empty elements.
+Transforms a dimension with respect to a reference dimension into a parallelogram by padding with empty elements.
 
 ## Arguments
 
@@ -29,3 +29,5 @@ schedule.skew(j, i, unroll_loops_smaller_than=3)
 ```
 
 <div style="page-break-after: always;"></div>
+
+

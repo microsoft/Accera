@@ -4,8 +4,7 @@
 # Accera v1.2.3 Reference
 
 ## `accera.Plan.tensorize(indices)`
-Only available for targets that have native matrix multiplication instruction (tensor core) support. Marks the dimensions of the iteration-space for tensorization. Only perfectly nested loops of the following form can be tensorized:
-
+Only available for targets with native matrix multiplication instruction (tensor core) support. Marks the dimensions of the iteration-space for tensorization. Only perfectly nested loops of the following form can be tensorized:
 
 ```python
 for i in range(M):
@@ -29,3 +28,5 @@ plan.tensorize(indices=(ii,jj,kk))
 ```
 
 <div style="page-break-after: always;"></div>
+
+

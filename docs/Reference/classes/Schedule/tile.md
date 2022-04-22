@@ -13,11 +13,11 @@ argument | description | type/default
 `shape` | Mapping of indices to tile sizes | dict of `Index` and non-negative integers
 
 ## Returns
-Tuple of `Index` representing the new inner dimensions
+Tuple of `Index` representing the new inner dimensions.
 
 ## Examples
 
-Tile the `i`, `j`, and `k` dimensions by 8, 2, and 3 respectively
+Tile the `i`, `j`, and `k` dimensions by 8, 2, and 3, respectively.
 
 ```python
 ii, jj, kk = schedule.tile({
@@ -28,3 +28,5 @@ ii, jj, kk = schedule.tile({
 ```
 
 <div style="page-break-after: always;"></div>
+
+

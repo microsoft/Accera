@@ -11,10 +11,10 @@ from typing import Tuple, Union
 class Layout(Enum):
     "Defines a standard Array layout"
 
-    #: Specifies a memory layout where the first major axis is in contiguous memory. For example, in a matrix, this corresponds to "row-major"
+    #: Specifies a memory layout where the first major axis is in contiguous memory. For example, in a matrix, this corresponds to "row-major".
     FIRST_MAJOR = auto()
 
-    #: Specifies a memory layout where the last major axis is in contiguous memory. For example, in a matrix, this corresponds to "column-major"
+    #: Specifies a memory layout where the last major axis is in contiguous memory. For example, in a matrix, this corresponds to "column-major".
     LAST_MAJOR = auto()
 
     #: Defer specifying the memory layout for a `Array.Role.CONST` array until a cache is created.
@@ -22,10 +22,15 @@ class Layout(Enum):
 
     def to_numpy_order(self):
         mapping = {
-            Layout.FIRST_MAJOR: "C", # Numpy uses "C" for C-like arrays where the last logical dimension is the fastest moving in memory
-            Layout.LAST_MAJOR: "F" # Numpy uses "F" for Fortran-like arrays where the first logical dimension is the fastest moving in memory
+            Layout.FIRST_MAJOR:
+                "C",    # Numpy uses "C" for C-like arrays where the last logical dimension is the fastest moving in memory
+            Layout.LAST_MAJOR:
+                "F"    # Numpy uses "F" for Fortran-like arrays where the first logical dimension is the fastest moving in memory
         }
-        return mapping.get(self, None) # All mappings except for first-major and last-major don't have a numpy default setting and must use manually-specified strides
+        return mapping.get(
+            self, None
+        )    # All mappings except for first-major and last-major don't have a numpy default setting and must use manually-specified strides
+
 
 def get_coefficients_for_layout(layout: Layout, shape: Tuple[int]):
     from functools import reduce

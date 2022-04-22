@@ -126,15 +126,15 @@ class Package:
         MLIR_VERBOSE = auto()
         CPP = auto()
         CUDA = auto()
-        DEFAULT = auto()    # HAT_DYNAMIC on HOST targe, HAT_STATIC otherwise
-        HAT_DYNAMIC = HAT_PACKAGE | DYNAMIC_LIBRARY
-        HAT_STATIC = HAT_PACKAGE | STATIC_LIBRARY
-        MLIR_DYNAMIC = HAT_DYNAMIC | MLIR
-        MLIR_STATIC = HAT_STATIC | MLIR
+        DEFAULT = auto()    # HAT_DYNAMIC on HOST targe, HAT_STATIC otherwise.
+        HAT_DYNAMIC = HAT_PACKAGE | DYNAMIC_LIBRARY    #: HAT package format, dynamically linked.
+        HAT_STATIC = HAT_PACKAGE | STATIC_LIBRARY    #: HAT package format, statically linked.
+        MLIR_DYNAMIC = HAT_DYNAMIC | MLIR    #: MLIR (debugging) package format, dynamically linked.
+        MLIR_STATIC = HAT_STATIC | MLIR    #: MLIR (debugging) package format, statically linked.
 
     class Mode(Enum):
-        RELEASE = "Release"    #: Release (maximally optimized)
-        DEBUG = "Debug"    #: Debug mode (automatically tests logical equivalence)
+        RELEASE = "Release"    #: Release (maximally optimized).
+        DEBUG = "Debug"    #: Debug mode (automatically tests logical equivalence).
 
     Platform = Platform
 
@@ -181,7 +181,7 @@ class Package:
 
         Args:
             source: The source which defines the function's implementation.
-            args: The order of external-scope arrays to use in the function signature.
+            args: The order of external-scope arrays used in the function signature.
             base_name: A base name for the function. The full name for the function will be the
                 base name followed by an automatically-generated unique identifier.
             parameters: A mapping of parameter to values for each parameter used by the function implementation (if any).
@@ -214,14 +214,16 @@ class Package:
             function_opts: A dictionary of advanced options to set on the function, e.g. {"no_inline" : True}
             auxiliary: A dictionary of auxiliary metadata to include in the HAT package.
         """
-        
+
         # Auxiliary data should be one copy per function
         auxiliary_metadata = auxiliary.copy()
         param_value_dict = {}
         for delayed_param, value in parameters.items():
             delayed_param.set_value(value)
             param_value_dict[delayed_param._name] = value if isinstance(value, int) else str(value)
-        auxiliary_metadata['accera'] = {'parameters': param_value_dict}
+        auxiliary_metadata['accera'] = {
+            'parameters': param_value_dict
+        }
 
         def validate_target(target: Target):
             # can't use set because targets are mutable (therefore unhashable)
@@ -314,7 +316,7 @@ class Package:
         else:
             raise ValueError("Invalid type for source")
 
-    def _add_functions_to_module(self, module, fail_on_error = False):
+    def _add_functions_to_module(self, module, fail_on_error=False):
         with SetActiveModule(module):
             to_pop = []
             for name, wrapped_func in self._fns.items():
@@ -416,7 +418,7 @@ class Package:
         platform: Platform = Platform.HOST,
         tolerance: float = 1e-5,
         output_dir: str = None,
-        fail_on_error:bool = False,
+        fail_on_error: bool = False,
         _quiet=True
     ):
         """Builds a HAT package.
@@ -425,7 +427,7 @@ class Package:
             name: The package name.
             format: The format of the package.
             mode: The package mode, such as whether it is optimized or used for debugging.
-            platform: The platform where the package will run.
+            platform: The platform where the package runs.
             tolerance: The tolerance for correctness checking when `mode = Package.Mode.DEBUG`.
             output_dir: The path to an output directory. Defaults to the current directory if unspecified.
         """
@@ -558,7 +560,7 @@ class Package:
                         # TODO: Remove this when the header is emitted as part of the compilation
                         gpu_source = proj.module_file_sets[0].translated_source_filepath
                         gpu_device_func = fn_name + "__gpu__"
-                        with open(gpu_source) as gpu_source_f: 
+                        with open(gpu_source) as gpu_source_f:
                             s = re.search(gpu_device_func + _R_GPU_LAUNCH, gpu_source_f.read())
                             if not s:
                                 raise RuntimeError("Couldn't parse emitted source code")

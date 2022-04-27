@@ -18,7 +18,7 @@ A good case study should have these components and characteristics:
 
 2. Includes working Accera Python code implementing that task. At the end of the case study, the code should produce a HAT package using [`accera.Package.build()`](../Manual/10%20Packages.md).
 
-3. Describes the thought process, considerations, pros and cons of your implementation.
+3. Describes the thought process, considerations, pros and cons of your implementation in a `README.md`.
 
 4. If the case study generates several implementations (for example, using [Parameter Grids](../Manual/09%20Parameters.md)), include the following:
   - Benchmark results on a target machine (for example, your laptop). You can run `hatlib.run_benchmark` on your HAT package.
@@ -35,8 +35,8 @@ All community case studies are published directly from the author's GitHub repos
 Once you are ready to publish your case study:
 1. Make your case study GitHub repository public (if you haven't done so already).
 
-2. Edit [Case Studies/README.md](https://github.com/microsoft/Accera/blob/main/docs/Case%20Studies/README.md) to add your case study to the Table of Contents. The link should point to the git hash for your latest commit. For example, https://github.com/*USER*/*REPO*/blob/*GIT_SHA*/README.md
+2. Edit [Case Studies/README.md](https://github.com/microsoft/Accera/blob/main/docs/Case%20Studies/README.md) to add your case study to the Table of Contents. The link should point to the git SHA for your latest commit. The format to use is: https://github.com/*USER*/*REPO*/blob/*GIT_SHA*/*PATH_TO_CASE_STUDY*/README.md.
 
 3. Create a [Pull Request](https://github.com/microsoft/Accera/compare) to submit your edits to [Case Studies/README.md](https://github.com/microsoft/Accera/blob/main/docs/Case%20Studies/README.md).
 
-You can refer to the example Case Studies in the [Table of Contents](README.md).
+You can refer to the example case studies in the [Table of Contents](README.md).

@@ -4,7 +4,7 @@ Accera case studies are community-provided samples that showcase the Accera lang
 
 ### MatMul Grid Search
 
-- [MatMul Grid Search](https://github.com/marina-neseem/Accera-High-Perf-DL/blob/be5957f2126d0921617df320e41b6961e8beff7d/README.md)
+- [MatMul Grid Search](https://github.com/marina-neseem/Accera-High-Perf-DL/blob/a1253b2bc1913f745db53ca7286d8f05dbb1ac55/case_studies/matmul_gridsearch_on_avx2/README.md)
 
 ### Convolution
 

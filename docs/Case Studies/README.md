@@ -8,8 +8,8 @@ This is a collection of Accera case studies that you can learn about how to use 
 
 ### Convolution
 
-- [Convolution](https://github.com/marina-neseem/Accera-High-Perf-DL/blob/main/case_studies/matmul_gridsearch_on_avx2/README.md)
+- (Coming soon)
 
 ### Three Matrix Multiplication
 
-- [Three Matrix Multiplication](https://github.com/marina-neseem/Accera-High-Perf-DL/blob/main/case_studies/matmul_gridsearch_on_avx2/README.md)
+- (Coming soon)

@@ -6,7 +6,7 @@
 ####################################################################################################
 
 # I will host a local web server to host the tool written in JS (three.js) and provide
-# some APIs which create/manage folders for the vizualization tool, i may also be used to store images and combine them into a
+# some APIs which create/manage folders for the visualization tool, i may also be used to store images and combine them into a
 # video vis FFMPEG bindings wooooo!
 
 import webbrowser

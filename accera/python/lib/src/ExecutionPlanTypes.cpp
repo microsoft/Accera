@@ -220,7 +220,7 @@ namespace
                 "double_buffer"_a,
                 "double_buffer_location"_a,
                 "vectorization_info"_a)
-            .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a)
+            .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a, "useStaticOffsets"_a)
             .def("map_index_to_processor", &value::GPUPlan::MapIndexToProcessor, "index"_a, "proc"_a);
     }
 

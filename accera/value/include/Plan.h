@@ -218,8 +218,9 @@ namespace value
 
         /// <summary> Tensorize three iteration space dimensions </summary>
         /// <param name="indices"> The scalar indices to tensorize. Three indices must be specified whose dimensions must be contiguous in the iteration space dimension order. </param>
-        /// <param name="numThreads"> The dimension of the tensor operation. </param>
-        void Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims);
+        /// <param name="dims"> The dimension of the tensor operation. </param>
+        /// <param name="useStaticOffsets"> Use precomputed index offsets for address calculation (potential optimization). </param>
+        void Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims, bool useStaticOffsets = false);
 
     private:
         friend class Schedule;

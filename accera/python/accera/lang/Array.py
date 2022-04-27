@@ -205,6 +205,10 @@ class Array:
         return id(self) == id(other)
 
     def _create_native_array(self):
+        self._shape = [x.get_value() if isinstance(x, DelayedParameter) else x for x in self._shape]
+        self._offset = self._offset.get_value() if isinstance(self._offset, DelayedParameter) else self._offset
+        self._layout = self._layout.get_value() if isinstance(self._layout, DelayedParameter) else self._layout
+
         mm_layout = MemoryMapLayout(self._layout, self._shape, self._offset)
         memory_layout = _MemoryLayout(self._shape, order=mm_layout.order)
 

@@ -98,23 +98,24 @@ KNOWN_CPUS = [
 
     # Xeon desktop processors (Skylake-W)
     # ref: https://en.wikipedia.org/wiki/List_of_Intel_Skylake-based_Xeon_microprocessors#%22Skylake-W%22_(14_nm)
-    ["Intel W-2102", "Skylake-W", "Xeon", 2.9, 0.0, 4, 4, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel W-2104", "Skylake-W", "Xeon", 3.2, 0.0, 4, 4, [32, 1024, 24.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel W-2123", "Skylake-W", "Xeon", 3.6, 3.9, 4, 8, [32, 1024, 22.00 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel W-2125", "Skylake-W", "Xeon", 4.0, 4.5, 4, 8, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel W-2133", "Skylake-W", "Xeon", 3.6, 3.9, 6, 12, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel W-2135", "Skylake-W", "Xeon", 3.7, 4.5, 6, 12, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel W-2140B","Skylake-W", "Xeon", 3.2, 4.2, 8, 16, [32, 1024, 16.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2102", "Skylake-W", "Xeon", 2.9, 0.0, 4,  4,  [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2104", "Skylake-W", "Xeon", 3.2, 0.0, 4,  4,  [32, 1024, 24.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2123", "Skylake-W", "Xeon", 3.6, 3.9, 4,  8,  [32, 1024, 22.00 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2125", "Skylake-W", "Xeon", 4.0, 4.5, 4,  8,  [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2133", "Skylake-W", "Xeon", 3.6, 3.9, 6,  12, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2135", "Skylake-W", "Xeon", 3.7, 4.5, 6,  12, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2140B","Skylake-W", "Xeon", 3.2, 4.2, 8,  16, [32, 1024, 16.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel W-2150B","Skylake-W", "Xeon", 3.0, 4.5, 10, 20, [32, 1024, 27.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
 
     # TODO: Fill in Mobile, Workstation, Server, Skylake-SP Processors
 
     # Xeon Skylake-SP
     # ref: https://en.wikipedia.org/wiki/List_of_Intel_Skylake-based_Xeon_microprocessors
-    ["Intel 4108",  "Skylake", "Xeon Silver", 1.8, 3.0, 8, 16, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel 4109T", "Skylake", "Xeon Silver", 2.0, 3.0, 8, 16, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel 4110",  "Skylake", "Xeon Silver", 2.1, 3.0, 8, 16, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-    ["Intel 4112",  "Skylake", "Xeon Silver", 2.6, 3.0, 4, 8,  [32, 1024, 16.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
-
+    ["Intel 4108",  "Skylake", "Xeon Silver", 1.8, 3.0, 8,  16, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 4109T", "Skylake", "Xeon Silver", 2.0, 3.0, 8,  16, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 4110",  "Skylake", "Xeon Silver", 2.1, 3.0, 8,  16, [32, 1024, 19.25 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 4112",  "Skylake", "Xeon Silver", 2.6, 3.0, 4,  8,  [32, 1024, 16.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
+    ["Intel 4114",  "Skylake", "Xeon Silver", 2.2, 3.0, 10, 20, [32, 1024, 27.50 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512"], "X86_64", "OPENMP"],
     # Intel Kaby Lake
     # ref: https://en.wikipedia.org/wiki/Kaby_Lake
     # Desktop processors

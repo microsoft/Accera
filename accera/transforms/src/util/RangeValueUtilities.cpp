@@ -133,42 +133,27 @@ DictionaryAttr RangeValue::asAttr(MLIRContext* ctx) const
     return DictionaryAttr::get(ctx, entries);
 }
 
-RangeValueAnalysis::RangeValueAnalysis(Operation* rootOp)
+RangeValueAnalysis::RangeValueAnalysis(mlir::Operation* rootOp)
 {
-    llvm::SmallPtrSet<Operation*, 16> worklist;
-    rootOp->walk([&](Operation* op) {
+    rootOp->walk([&](mlir::Operation* op) {
         if (!op->hasTrait<OpTrait::SymbolTable>())
         {
-            worklist.insert(op);
+            addOperation(op);
         }
     });
+}
 
-    while (!worklist.empty())
+RangeValueAnalysis::RangeValueAnalysis(const std::vector<mlir::Operation*>& ops)
+{
+    for (auto op : ops)
     {
-        auto nextOp = llvm::find_if(worklist, [&, this](Operation* op) {
-            return allOperandsHaveRanges(op);
-        });
-        if (nextOp == worklist.end())
-            break;
-        Operation* op = *nextOp;
-        worklist.erase(op);
-
-        auto range = resolveRangeValue(op);
-        mlir::TypeSwitch<Operation*>(op)
-            .Case([&](scf::ForOp op) { rangeMap.insert({ op.getInductionVar(), range }); })
-            .Case([&](AffineForOp op) { rangeMap.insert({ op.getInductionVar(), range }); })
-            .Default([&](Operation* op) {
-                for (auto res : op->getResults())
-                {
-                    rangeMap.insert({ res, range });
-                }
-            });
+        addOperation(op);
     }
 }
 
 bool RangeValueAnalysis::hasRange(Value value) const
 {
-    return rangeMap.find(value) != rangeMap.end();
+    return _rangeMap.find(value) != _rangeMap.end();
 }
 
 RangeValue RangeValueAnalysis::getRange(Value value) const
@@ -177,15 +162,63 @@ RangeValue RangeValueAnalysis::getRange(Value value) const
     {
         return RangeValue();
     }
-    auto it = rangeMap.find(value);
-    assert(it != rangeMap.end());
+    auto it = _rangeMap.find(value);
+    assert(it != _rangeMap.end());
     return it->second;
+}
+
+RangeValue RangeValueAnalysis::addOperation(mlir::Operation* op)
+{
+    if (op->getNumResults() > 1)
+    {
+        // Only operations with 0 or 1 results can have their ranges tracked successfully currently
+        return RangeValue();
+    }
+    // Don't re-add ops we already have
+    bool allResultsTracked = op->getNumResults() > 0;
+    RangeValue existingRV;
+    for (auto res : op->getResults())
+    {
+        if (hasRange(res))
+        {
+            existingRV = getRange(res);
+        }
+        else
+        {
+            allResultsTracked = false;
+        }
+    }
+    if (allResultsTracked)
+    {
+        return existingRV;
+    }
+
+    // Ensure this op's operands are part of this analysis before resolving this op range
+    for (auto operand : op->getOperands())
+    {
+        if (auto definingOp = GetDefiningOpOrForLoop(operand))
+        {
+            addOperation(definingOp);
+        }
+    }
+
+    auto range = resolveRangeValue(op);
+    mlir::TypeSwitch<Operation*>(op)
+        .Case([&](scf::ForOp op) { _rangeMap.insert({ op.getInductionVar(), range }); })
+        .Case([&](AffineForOp op) { _rangeMap.insert({ op.getInductionVar(), range }); })
+        .Default([&](Operation* op) {
+            for (auto res : op->getResults())
+            {
+                _rangeMap.insert({ res, range });
+            }
+        });
+    return range;
 }
 
 bool RangeValueAnalysis::allOperandsHaveRanges(Operation* op)
 {
     return llvm::all_of(op->getOperands(), [&, this](Value operand) {
-        return rangeMap.find(operand) != rangeMap.end();
+        return _rangeMap.find(operand) != _rangeMap.end();
     });
 }
 
@@ -195,7 +228,7 @@ SmallVector<RangeValue, 3> RangeValueAnalysis::resolveOperands(Operation* op)
     transform(op->getOperands(), std::back_inserter(operands), [&](Value operand) {
         if (hasRange(operand))
         {
-            return rangeMap[operand];
+            return _rangeMap[operand];
         }
         return RangeValue();
     });
@@ -270,7 +303,7 @@ RangeValue RangeValueAnalysis::resolveRangeValue(Instruction::BinaryOps binOp, m
 }
 RangeValue RangeValueAnalysis::resolveRangeValue(AffineForOp op)
 {
-    return op.hasConstantBounds() ? RangeValue(op.getConstantLowerBound(), op.getConstantUpperBound()) : RangeValue();
+    return op.hasConstantBounds() ? RangeValue(op.getConstantLowerBound(), op.getConstantUpperBound() - op.getStep()) : RangeValue();
 }
 RangeValue RangeValueAnalysis::resolveRangeValue(scf::ForOp op)
 {

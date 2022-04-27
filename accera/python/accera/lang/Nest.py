@@ -138,9 +138,6 @@ class Nest:
             logic_fn(**captures_to_replace)
 
         logic = _Logic(logic_fn.__name__, logic_fn_wrapper)
-        logging.debug(
-            f"Detected logic function {logic_fn.__name__} uses indices {','.join([i.name for i in logic._get_indices()])}"
-        )
 
         context.schedule.add_kernel(logic, pred, placement)
 
@@ -175,8 +172,8 @@ class Nest:
 
     def _replay_delayed_calls(self):
         '''
-        This method is called once per adding function, so it can be called multiple times when  
-        multiple functions get added. In order for the functions to be added correctly, we need to make sure all 
+        This method is called once per adding function, so it can be called multiple times when
+        multiple functions get added. In order for the functions to be added correctly, we need to make sure all
         the residual states are cleared between different method calls.
 
         For example, in Schedule class, we identify that Schedule._index_map can have residual states, so we need to reset self._index_map

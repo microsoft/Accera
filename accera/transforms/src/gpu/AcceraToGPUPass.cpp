@@ -296,25 +296,160 @@ struct ValueBarrierToGPUBarrierConversion final : public OpRewritePattern<vir::B
     }
 };
 
-auto GetRowColOffsetForCLoadStore(ConversionPatternRewriter& rewriter, const int64_t warpSize, const int64_t leadingDim)
+template <typename PostMFMAOp>
+void ApplyMFMAOperands(Location& loc, OpBuilder& loopBuilder, AffineMap& blockOffsetMap, AffineMap& warpOffsetMap, const std::vector<Value>& symbolOperands, ValueRange indices, PostMFMAOp&& doAfterFn)
 {
-    constexpr auto subGroupSize = 4;
+    auto composedMap = warpOffsetMap.compose(blockOffsetMap);
+
+    LLVM_DEBUG(llvm::dbgs()
+               << "blockOffsetMap: " << blockOffsetMap << "\n"
+               << "warpOffsetMap: " << warpOffsetMap << "\n"
+               << "matrixLayoutMap: " << composedMap << "\n");
+
+    std::vector<Value> mapOperands;
+    // d0, d1 from MFMALoadOp/MFMAStoreOp (dimension exprs)
+    for (size_t i = 0; i < blockOffsetMap.getNumDims(); i++)
+    {
+        mapOperands.push_back(indices[i]);
+    }
+
+    // symbol exprs
+    mapOperands.insert(mapOperands.end(), symbolOperands.begin(), symbolOperands.end());
+
+    // symbol exprs from MFMALoadOp/MFMAStoreOp
+    for (size_t i = blockOffsetMap.getNumDims(); i < blockOffsetMap.getNumInputs(); i++)
+    {
+        mapOperands.push_back(indices[i]);
+    }
+
+    LLVM_DEBUG(llvm::dbgs() << "mapOperands: ["
+                            << "\n";
+               for (auto op
+                    : mapOperands) {
+                   llvm::dbgs() << "  " << op << "\n";
+               } llvm::dbgs()
+               << "]\n");
+
+    auto&& operands = utilir::MultiDimAffineApply(loopBuilder, loc, composedMap, mapOperands);
+    doAfterFn(operands);
+}
+
+template <typename PostMFMAOp>
+void MFMALoadStoreAccumulator(Operation* op, ConversionPatternRewriter& rewriter, vir::MFMAMatrixType mfmaMatrixType, AffineMap affineMap, ValueRange indices, PostMFMAOp&& doAfterFn, ValueRange iterArgs = llvm::None)
+{
+    const auto numBlocks = mfmaMatrixType.getNumBlocks();
+    const auto leadingDim = mfmaMatrixType.getLeadingDim();
+    const auto vecSize = mfmaMatrixType.getThreadTileSize() / mfmaMatrixType.getNumBlocks();
+    const auto&& [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(op).value();
+    const auto warpSize = warpSizeX * warpSizeY;
+
+    auto d0 = rewriter.getAffineDimExpr(0);
+    auto d1 = rewriter.getAffineDimExpr(1);
     auto iElem = rewriter.getAffineSymbolExpr(0);
     auto threadIdxX = rewriter.getAffineSymbolExpr(1);
     auto threadIdxY = rewriter.getAffineSymbolExpr(2);
     auto blockDimX = rewriter.getAffineSymbolExpr(3);
     auto blockTid = threadIdxY * blockDimX + threadIdxX;
     auto warpTid = blockTid % warpSize;
-    auto m = warpTid % leadingDim;
-    auto ks = warpTid.floorDiv(leadingDim);
-    const auto warpStride = warpSize / leadingDim;
-    const auto rowsPerSet = warpStride * subGroupSize;
-    const auto setsPerCol = leadingDim / rowsPerSet;
-    const auto itemGroup = iElem.floorDiv(subGroupSize);
-    const auto itemOffset = iElem % subGroupSize;
-    const auto itemGroupRowOffset = (itemGroup % setsPerCol) * rowsPerSet;
-    const auto itemGroupColOffset = itemGroup.floorDiv(setsPerCol) * leadingDim;
-    return std::make_pair(ks * subGroupSize + itemGroupRowOffset + itemOffset, m + itemGroupColOffset);
+    const auto blockWidth = leadingDim / numBlocks;
+    const auto subGroupId = warpTid.floorDiv(blockWidth);
+    const auto colOffset = warpTid % blockWidth;
+
+    auto loc = op->getLoc();
+    auto threadIdxXOp = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x");
+    auto threadIdxYOp = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y");
+    auto blockDimXOp = rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x");
+    auto&& offsetMapSize = mfmaMatrixType.getOffsetMapSize();
+    const auto globalBufferType = utilir::GetMFMAThreadOffsetMapType(rewriter, offsetMapSize).first;
+    auto globalRef = rewriter.create<memref::GetGlobalOp>(loc, globalBufferType, vir::MFMAThreadBufferMapName);
+
+    auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, vecSize, 1, iterArgs);
+    auto loopBuilder = utilir::MakeBodyBuilder(loop);
+    auto inductionVar = loop.getInductionVar();
+    AffineExpr row, col;
+    Value staticRowOffset;
+    if (SymbolTable::lookupNearestSymbolFrom<memref::GlobalOp>(globalRef, vir::MFMAThreadBufferMapName))
+    {
+        // Since we have found the symbol this means we need to optimize from the precomputed index maps
+        auto rowIdx0 = iElem % offsetMapSize[0];
+        auto mfmaPrecompOffsetMap = AffineMap::get(0, 4, { rowIdx0, subGroupId }, rewriter.getContext());
+        std::vector<Value> mfmaPrecompOffsetMapOperands;
+        mfmaPrecompOffsetMapOperands.push_back(inductionVar);
+        mfmaPrecompOffsetMapOperands.push_back(threadIdxXOp);
+        mfmaPrecompOffsetMapOperands.push_back(threadIdxYOp);
+        mfmaPrecompOffsetMapOperands.push_back(blockDimXOp);
+        auto&& mfmaPrecompOffsetOperands = utilir::MultiDimAffineApply(loopBuilder, loc, mfmaPrecompOffsetMap, mfmaPrecompOffsetMapOperands);
+        auto rowOff = loopBuilder.create<memref::LoadOp>(loc, globalRef, mfmaPrecompOffsetOperands);
+        staticRowOffset = loopBuilder.create<IndexCastOp>(loc, rowOff, rewriter.getIndexType());
+        row = rewriter.getAffineSymbolExpr(4);
+        col = colOffset + (iElem.floorDiv(offsetMapSize[0]) * vecSize);
+    }
+    else
+    {
+        // First remove the global ref since we could not find the symbol
+        rewriter.eraseOp(globalRef);
+
+        constexpr auto subGroupSize = 4;
+        const auto warpStride = warpSize / blockWidth;
+        const auto rowsPerSet = warpStride * subGroupSize;
+        const auto setsPerCol = blockWidth / rowsPerSet;
+        const auto itemGroup = iElem.floorDiv(subGroupSize);
+        const auto itemOffset = iElem % subGroupSize;
+        const auto itemGroupRowOffset = (itemGroup % setsPerCol) * rowsPerSet;
+        const auto itemGroupColOffset = itemGroup.floorDiv(setsPerCol) * blockWidth;
+        staticRowOffset = loopBuilder.create<ConstantOp>(loc, rewriter.getIndexType(), rewriter.getIndexAttr(0));
+        row = subGroupId * subGroupSize + itemGroupRowOffset + itemOffset;
+        col = colOffset + itemGroupColOffset;
+    }
+
+    auto offsetMap = AffineMap::get(2, 5, { d0 + row, d1 + col }, rewriter.getContext());
+    const std::vector<Value> symOperands{ inductionVar, threadIdxXOp, threadIdxYOp, blockDimXOp, staticRowOffset };
+    ApplyMFMAOperands(loc, loopBuilder, affineMap, offsetMap, symOperands, indices, [&](ValueRange mappedOperands){
+        doAfterFn(loc, loop, loopBuilder, mappedOperands);
+    });
+}
+
+LogicalResult MFMALoadAccumulator(vir::MFMALoadOp op,
+                                  ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter& rewriter)
+{
+    auto mfmaMatrixType = op.getMFMAMatrixType();
+    if (!mfmaMatrixType.isValidShape())
+    {
+        return rewriter.notifyMatchFailure(op, "unhandled matrix shape");
+    }
+
+    vir::MFMALoadOp::Adaptor MFMALoadOpAdaptor(operands, op->getAttrDictionary());
+    auto memref = MFMALoadOpAdaptor.memref();
+
+    // For FP16 output, we need to load C in FP32 mode before passing to MFMA
+    auto elementType = mfmaMatrixType.getElementType();
+    if (elementType.isF16())
+        elementType = rewriter.getF32Type();
+
+    auto zero = rewriter.create<ConstantOp>(op.getLoc(), elementType, rewriter.getZeroAttr(elementType));
+    auto vecSize = mfmaMatrixType.getThreadTileSize() / mfmaMatrixType.getNumBlocks();
+    auto vecTy = mlir::VectorType::get({ vecSize }, elementType);
+    mlir::Value vec = rewriter.create<vector::BroadcastOp>(op.getLoc(), vecTy, zero);
+
+    MFMALoadStoreAccumulator(
+        op, rewriter, op.getMFMAMatrixType(), MFMALoadOpAdaptor.map().getValue(), MFMALoadOpAdaptor.indices(), [&](Location& loc, AffineForOp& loop, OpBuilder& loopBuilder, ValueRange mappedOperands) {
+            auto load = loopBuilder.create<memref::LoadOp>(loc, memref, mappedOperands);
+            auto laneIndex = loopBuilder.create<mlir::IndexCastOp>(loc, loop.getInductionVar(), rewriter.getI32Type());
+            if (elementType.isF32() && mfmaMatrixType.getElementType().isF16())
+            {
+                auto castedElem = loopBuilder.create<mlir::FPExtOp>(loc, load, rewriter.getF32Type());
+                vec = loopBuilder.create<vector::InsertElementOp>(loc, castedElem, loop.getRegionIterArgs()[0], laneIndex);
+            }
+            else
+            {
+                vec = loopBuilder.create<vector::InsertElementOp>(loc, load, loop.getRegionIterArgs()[0], laneIndex);
+            }
+            loopBuilder.create<AffineYieldOp>(loc, ValueRange{ vec });
+        },
+        vec);
+
+    return success();
 }
 
 struct ValueMFMALoadOpToRocDLConversion final : public OpConversionPattern<vir::MFMALoadOp>
@@ -325,12 +460,17 @@ struct ValueMFMALoadOpToRocDLConversion final : public OpConversionPattern<vir::
                                   ArrayRef<mlir::Value> operands,
                                   ConversionPatternRewriter& rewriter) const final
     {
+        auto mfmaMatrixType = op.getMFMAMatrixType();
+        auto mfmaMatrixOperand = mfmaMatrixType.getOperand();
+        if (mfmaMatrixOperand.str() == "COp")
+        {
+            return MFMALoadAccumulator(op, operands, rewriter);
+        }
+
         auto ctx = rewriter.getContext();
         auto loc = op.getLoc();
         vir::MFMALoadOp::Adaptor MFMALoadOpAdaptor(operands, op->getAttrDictionary());
         auto memref = MFMALoadOpAdaptor.memref();
-        auto mfmaMatrixType = op.getMFMAMatrixType();
-        auto mfmaMatrixOperand = mfmaMatrixType.getOperand();
         auto elementType = mfmaMatrixType.getElementType();
         auto loadAffineMap = MFMALoadOpAdaptor.map().getValue(); // [d0, d1, d2, sa, sb]
 
@@ -350,121 +490,45 @@ struct ValueMFMALoadOpToRocDLConversion final : public OpConversionPattern<vir::
         AffineMap matrixLayoutMap;
         auto d0 = rewriter.getAffineDimExpr(0);
         auto d1 = rewriter.getAffineDimExpr(1);
-        if (mfmaMatrixOperand.str() == "COp")
-        {
-            ////////////////////////////////////////
-            // For COp load
-            //
-            // for COp this transformation is equivalent to:
-            // float4 result;
-            // memrefView = &memred[loadOperands]
-            // for (int i = 0; i < 4; i++) {
-            //    result[i] = memrefView[ks * 4 + i, m];
-            // }
-            //
-            const auto& [rowOff, colOff] = GetRowColOffsetForCLoadStore(rewriter, warpSize, leadingDim / mfmaMatrixType.getNumBlocks());
-            matrixLayoutMap = AffineMap::get(2, 4, { d0 + rowOff, d1 + colOff }, ctx);
-            vecSize /= mfmaMatrixType.getNumBlocks();
+        auto iElem = rewriter.getAffineSymbolExpr(0);
+        auto threadIdxX = rewriter.getAffineSymbolExpr(0);
+        auto threadIdxY = rewriter.getAffineSymbolExpr(1);
+        auto blockDimX = rewriter.getAffineSymbolExpr(2);
+        auto blockTid = threadIdxX + threadIdxY * blockDimX;
+        auto warpTid = blockTid % warpSize;
+        auto m = warpTid % leadingDim;
+        auto ks = warpTid.floorDiv(leadingDim);
+        const auto warpStride = warpSize / leadingDim;
 
-            // For FP16 output, we need to load C in FP32 mode before passing to MFMA
-            if (elementType.isF16())
-                elementType = rewriter.getF32Type();
-        }
-        else
-        {
-            // For AOp load from the input memref with a column stride of 4
-            //
-            // for AOp this transformation is equivalent to:
-            // float4 result;
-            // memrefView = &memred[loadOperands]
-            // for (int i = 0; i < 4; i++) {
-            //    result[i] = memrefView[m, ks + 4*i];
-            // }
-            ////////////////////////////////////////
-            // For BOp load from the input memref with a row stride of 4
-            //
-            // for BOp this transformation is equivalent to:
-            // float4 result;
-            // memrefView = &memred[loadOperands]
-            // for (int i = 0; i < 4; i++) {
-            //    result[i] = memrefView[ks + 4*i, m];
-            // }
-            //
-            auto iElem = rewriter.getAffineSymbolExpr(0);
-            auto threadIdxX = rewriter.getAffineSymbolExpr(0);
-            auto threadIdxY = rewriter.getAffineSymbolExpr(1);
-            auto blockDimX = rewriter.getAffineSymbolExpr(2);
-            auto blockTid = threadIdxX + threadIdxY * blockDimX;
-            auto warpTid = blockTid % warpSize;
-            auto m = warpTid % leadingDim;
-            auto ks = warpTid.floorDiv(leadingDim);
-            const auto warpStride = warpSize / leadingDim;
+        auto offsetAOpMap = AffineMap::get(2, 3, { d0 + m, d1 + ks }, ctx); // [d0, d1, sx, sy, sz]
+        auto strideAOpMap = AffineMap::get(2, 1, { d0, d1 + iElem * warpStride }, ctx); // [d0, d1, s0]
+        auto offsetBOpMap = AffineMap::get(2, 3, { d0 + ks, d1 + m }, ctx); // [d0, d1, sx, sy, sz]
+        auto strideBOpMap = AffineMap::get(2, 1, { d0 + iElem * warpStride, d1 }, ctx); // [d0, d1, s0]
+        matrixLayoutMap = ::llvm::StringSwitch<AffineMap>(mfmaMatrixOperand.str())
+                              .Case("AOp", strideAOpMap.compose(offsetAOpMap))
+                              .Case("BOp", strideBOpMap.compose(offsetBOpMap))
+                              .Default(/*this is really an error */ AffineMap());
 
-            auto offsetAOpMap = AffineMap::get(2, 3, { d0 + m, d1 + ks }, ctx); // [d0, d1, sx, sy, sz]
-            auto strideAOpMap = AffineMap::get(2, 1, { d0, d1 + iElem * warpStride }, ctx); // [d0, d1, s0]
-            auto offsetBOpMap = AffineMap::get(2, 3, { d0 + ks, d1 + m }, ctx); // [d0, d1, sx, sy, sz]
-            auto strideBOpMap = AffineMap::get(2, 1, { d0 + iElem * warpStride, d1 }, ctx); // [d0, d1, s0]
-            matrixLayoutMap = ::llvm::StringSwitch<AffineMap>(mfmaMatrixOperand.str())
-                                  .Case("AOp", strideAOpMap.compose(offsetAOpMap))
-                                  .Case("BOp", strideBOpMap.compose(offsetBOpMap))
-                                  .Default(/*this is really an error */ AffineMap());
-
-            LLVM_DEBUG(llvm::dbgs() << "op: " << *op << "\n"
-                                    << "loadAffineMap: " << loadAffineMap << "\n"
-                                    << "offsetAOpMap: " << offsetAOpMap << "\n"
-                                    << "strideAOpMap: " << strideAOpMap << "\n"
-                                    << "offsetBOpMap: " << offsetBOpMap << "\n"
-                                    << "strideBOpMap: " << strideBOpMap << "\n"
-                                    << "matrixLayoutMap: " << matrixLayoutMap << "\n");
-        }
-
-        auto composedMap = matrixLayoutMap.compose(loadAffineMap); // [d0, d1, d2, s0, sx, sy, sz, sa, sb]
-        auto indices = MFMALoadOpAdaptor.indices();
-        for (size_t i = 0; i < loadAffineMap.getNumDims(); i++)
-        {
-            mapOperands.push_back(indices[i]);
-        }
-        mapOperands.push_back(rewriter.create<ConstantIndexOp>(loc, 0));
-        mapOperands.push_back(rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x"));
-        mapOperands.push_back(rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y"));
-        mapOperands.push_back(rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x"));
-        for (size_t i = loadAffineMap.getNumDims(); i < loadAffineMap.getNumInputs(); i++)
-        {
-            mapOperands.push_back(indices[i]);
-        }
+        auto threadIdxXOp = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x");
+        auto threadIdxYOp = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y");
+        auto blockDimXOp = rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x");
 
         auto zero = rewriter.create<ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
         auto vecTy = mlir::VectorType::get({ vecSize }, elementType);
         mlir::Value vec = rewriter.create<vector::BroadcastOp>(loc, vecTy, zero);
 
-        auto i32Ty = rewriter.getI32Type();
         auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, vecSize, 1, vec);
         auto loopBuilder = utilir::MakeBodyBuilder(loop);
         auto inductionVar = loop.getInductionVar();
-        auto destVec = loop.getRegionIterArgs()[0];
-        auto laneIndex = loopBuilder.create<mlir::IndexCastOp>(loc, inductionVar, i32Ty);
-        mapOperands[loadAffineMap.getNumDims()] = inductionVar; // we override the iElem symbol with the current index value
 
-        LLVM_DEBUG(llvm::dbgs() << "mapOperands: ["
-                                << "\n";
-                   for (auto op
-                        : mapOperands) {
-                       llvm::dbgs() << "  " << op << "\n";
-                   } llvm::dbgs()
-                   << "]\n");
-
-        auto mappedOperands = utilir::MultiDimAffineApply(loopBuilder, loc, composedMap, mapOperands);
-        auto load = loopBuilder.create<memref::LoadOp>(loc, memref, mappedOperands);
-        if (elementType.isF32() && mfmaMatrixType.getElementType().isF16())
-        {
-            auto castedElem = loopBuilder.create<mlir::FPExtOp>(loc, load, rewriter.getF32Type());
-            vec = loopBuilder.create<vector::InsertElementOp>(loc, castedElem, destVec, laneIndex);
-        }
-        else
-        {
+        const std::vector<Value> symOperands{ inductionVar, threadIdxXOp, threadIdxYOp, blockDimXOp };
+        ApplyMFMAOperands(loc, loopBuilder, loadAffineMap, matrixLayoutMap, symOperands, MFMALoadOpAdaptor.indices(), [&](ValueRange mappedOperands) {
+            auto destVec = loop.getRegionIterArgs()[0];
+            auto laneIndex = loopBuilder.create<mlir::IndexCastOp>(loc, inductionVar, rewriter.getI32Type());
+            auto load = loopBuilder.create<memref::LoadOp>(loc, memref, mappedOperands);
             vec = loopBuilder.create<vector::InsertElementOp>(loc, load, destVec, laneIndex);
-        }
-        loopBuilder.create<AffineYieldOp>(loc, ValueRange{ vec });
+            loopBuilder.create<AffineYieldOp>(loc, ValueRange{ vec });
+        });
 
         return success();
     }
@@ -478,63 +542,31 @@ struct ValueMFMAStoreOpToRocDLConversion final : public OpConversionPattern<vir:
                                   ArrayRef<mlir::Value> operands,
                                   ConversionPatternRewriter& rewriter) const final
     {
-        auto ctx = rewriter.getContext();
-        auto loc = op.getLoc();
-        vir::MFMAStoreOp::Adaptor mfmaStoreOpAdaptor(operands, op->getAttrDictionary());
-        auto value = mfmaStoreOpAdaptor.value();
-        auto memref = mfmaStoreOpAdaptor.memref();
-        auto indices = mfmaStoreOpAdaptor.indices();
         auto mfmaMatrixType = op.getMFMAMatrixType();
-
         if (!mfmaMatrixType.isValidShape())
         {
             return rewriter.notifyMatchFailure(op, "unhandled matrix shape");
         }
 
-        const auto& [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(op).value();
-        auto d0 = rewriter.getAffineDimExpr(0);
-        auto d1 = rewriter.getAffineDimExpr(1);
-        auto leadingDim = mfmaMatrixType.getLeadingDim();
-        auto vecSize = mfmaMatrixType.getThreadTileSize() / mfmaMatrixType.getNumBlocks();
-        const auto& [rowOff, colOff] = GetRowColOffsetForCLoadStore(rewriter, warpSizeX * warpSizeY, leadingDim / mfmaMatrixType.getNumBlocks());
-        auto offsetMap = AffineMap::get(2, 4, { d0 + rowOff, d1 + colOff }, ctx);
+        vir::MFMAStoreOp::Adaptor mfmaStoreOpAdaptor(operands, op->getAttrDictionary());
+        auto value = mfmaStoreOpAdaptor.value();
+        auto memref = mfmaStoreOpAdaptor.memref();
 
-        auto storeAffineMap = op.getAffineMap();
-        auto composedMap = offsetMap.compose(storeAffineMap);
+        MFMALoadStoreAccumulator(op, rewriter, op.getMFMAMatrixType(), op.getAffineMap(), mfmaStoreOpAdaptor.indices(), [&](Location& loc, AffineForOp& loop, OpBuilder& loopBuilder, ValueRange mappedOperands) {
+            auto laneIndex = loopBuilder.create<IndexCastOp>(loc, loop.getInductionVar(), rewriter.getI32Type());
+            auto elem = loopBuilder.create<vector::ExtractElementOp>(loc, value, laneIndex);
 
-        std::vector<Value> mapOperands;
-        for (size_t i = 0; i < storeAffineMap.getNumDims(); i++)
-        {
-            mapOperands.push_back(indices[i]);
-        }
-        mapOperands.push_back(rewriter.create<ConstantIndexOp>(loc, 0));
-        mapOperands.push_back(rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x"));
-        mapOperands.push_back(rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y"));
-        mapOperands.push_back(rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x"));
-        for (size_t i = storeAffineMap.getNumDims(); i < storeAffineMap.getNumInputs(); i++)
-        {
-            mapOperands.push_back(indices[i]);
-        }
-
-        auto i32Ty = rewriter.getI32Type();
-        auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, vecSize, 1);
-        auto loopBuilder = utilir::MakeBodyBuilder(loop);
-        auto inductionVar = loop.getInductionVar();
-        auto laneIndex = loopBuilder.create<mlir::IndexCastOp>(loc, inductionVar, i32Ty);
-        mapOperands[storeAffineMap.getNumDims()] = inductionVar; // we override the iElem symbol with the current index value
-        auto mappedOperands = utilir::MultiDimAffineApply(loopBuilder, loc, composedMap, mapOperands);
-        auto elem = loopBuilder.create<vector::ExtractElementOp>(loc, value, laneIndex);
-
-        // Check if we need to cast before storing back the result
-        if (value.getType().cast<VectorType>().getElementType().isF32() && mfmaMatrixType.getElementType().isF16())
-        {
-            auto castedElem = loopBuilder.create<mlir::FPTruncOp>(loc, elem, mfmaMatrixType.getElementType());
-            loopBuilder.create<memref::StoreOp>(loc, castedElem, memref, mappedOperands);
-        }
-        else
-        {
-            loopBuilder.create<memref::StoreOp>(loc, elem, memref, mappedOperands);
-        }
+            // Check if we need to cast before storing back the result
+            if (value.getType().cast<VectorType>().getElementType().isF32() && mfmaMatrixType.getElementType().isF16())
+            {
+                auto castedElem = loopBuilder.create<mlir::FPTruncOp>(loc, elem, mfmaMatrixType.getElementType());
+                loopBuilder.create<memref::StoreOp>(loc, castedElem, memref, mappedOperands);
+            }
+            else
+            {
+                loopBuilder.create<memref::StoreOp>(loc, elem, memref, mappedOperands);
+            }
+        });
 
         return success();
     }

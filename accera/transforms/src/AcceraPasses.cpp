@@ -71,7 +71,7 @@ struct PassManagerAdaptor
     template <typename PassManagerGeneratorFn>
     NestedPassAdaptor<PassManagerGeneratorFn> nestPassManager(PassManagerGeneratorFn&& pmGeneratorFn)
     {
-        return NestedPassAdaptor<PassManagerGeneratorFn>(*this, std::move(pmGeneratorFn), _dumpPasses);
+        return NestedPassAdaptor<PassManagerGeneratorFn>(*this, std::forward<PassManagerGeneratorFn>(pmGeneratorFn), _dumpPasses);
     }
 
     void addLocationSnapshot(llvm::StringRef passName)
@@ -102,7 +102,7 @@ struct NestedPassAdaptor
                       PassManagerGeneratorFn&& pmGeneratorFn,
                       bool dumpPasses) :
         _parent(parent),
-        _pmGeneratorFn(std::move(pmGeneratorFn)),
+        _pmGeneratorFn(std::forward<PassManagerGeneratorFn>(pmGeneratorFn)),
         _dumpPasses(dumpPasses)
     {
         if (!_dumpPasses)
@@ -161,6 +161,8 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     funcOpPM.addPass(createSimplifyAffineStructuresPass());
     funcOpPM.addPass(createCanonicalizerPass());
     funcOpPM.addPass(createLowerAffinePass());
+    funcOpPM.addPass(createLoopInvariantCodeMotionPass());
+    funcOpPM.addPass(createCSEPass());
     funcOpPM.addPass(createConvertSCFToOpenMPPass());
 
     pmAdaptor.addPass(value::createValueToStdPass(options.enableProfile));

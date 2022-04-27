@@ -349,20 +349,21 @@ namespace cpp_printer
     {
         auto globalName = getGlobalOp.name();
         auto result = getGlobalOp.getResult();
-        
+
         auto symTableOp = mlir::SymbolTable::getNearestSymbolTable(getGlobalOp);
         auto globalOp = dyn_cast<memref::GlobalOp>(mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, globalName));
 
         // if the global was nested, then create the instance of the global here
-        if (globalOp && globalOp.sym_visibilityAttr() == StringAttr::get(getGlobalOp->getContext(), "nested")) {
-            MemRefType memrefType = globalOp.type().dyn_cast<MemRefType>(); 
+        if (globalOp && globalOp.sym_visibilityAttr() == StringAttr::get(getGlobalOp->getContext(), "nested"))
+        {
+            MemRefType memrefType = globalOp.type().dyn_cast<MemRefType>();
 
             if (memrefType.getMemorySpaceAsInt() == gpu::GPUDialect::getWorkgroupAddressSpace())
                 os << printer->sharedAttrIfCuda();
 
             auto varName = state.nameState.getOrCreateName(
                 result, SSANameState::SSANameKind::Variable);
-            return printer->printArrayDeclaration(memrefType, varName); 
+            return printer->printArrayDeclaration(memrefType, varName);
         }
 
         os << "auto";
@@ -612,19 +613,18 @@ namespace cpp_printer
 
     LogicalResult StdDialectCppPrinter::printHeaderFiles()
     {
-        llvm::SmallVector<llvm::StringRef, 2> system_header_files = { "math.h",
-                                                                      "stdint.h" };
-
         // TODO: Another instance of information leaking across boundaries. Seems that each source file should have
         // an "operation mode" and that determines the contents of preamble to the source body
-        if (state.hasRuntime(Runtime::ROCM)) os << "#if !defined(__HIP_PLATFORM_AMD__)\n";
-        for (auto& headerFile : system_header_files)
-        {
-            os << "#include <" << headerFile << ">\n";
-        }
-        if (state.hasRuntime(Runtime::ROCM)) os << "#endif // !defined(__HIP_PLATFORM_AMD__)\n";
+        if (state.hasRuntime(Runtime::ROCM))
+            return success();
 
-        os << "\n";
+        os << "#if defined(__cplusplus)\n";
+        os << "#include <cstdint>\n";
+        os << "#include <cmath>\n";
+        os << "#else\n";
+        os << "#include <stdint.h>\n";
+        os << "#include <math.h>\n";
+        os << "#endif // defined(__cplusplus)\n";
 
         return success();
     }
@@ -640,7 +640,6 @@ namespace cpp_printer
 #endif // __forceinline__
 
 )STD";
-
         }
         else if (!state.hasRuntime(Runtime::CUDA))
         {

@@ -181,7 +181,8 @@ namespace cpp_printer
         for (int resIdx = 0; resIdx < (int)(map.getNumResults()); resIdx++)
         {
             os << "__forceinline__ " << printer->deviceAttrIfCuda() << "\n";
-            os << affineIdxTypeStr << " " << makeAffineIdxFuncName(funcBaseName, resIdx)
+            printer->printIndexType();
+            os << " " << makeAffineIdxFuncName(funcBaseName, resIdx)
                << "(";
             int numDims = (int)(map.getNumDims());
             int numSyms = (int)(map.getNumSymbols());
@@ -190,9 +191,11 @@ namespace cpp_printer
                 int dimIdx = 0;
                 for (; dimIdx < numDims - 1; dimIdx++)
                 {
-                    os << affineIdxTypeStr << " " << makeAffineDimName(dimIdx) << ", ";
+                    printer->printIndexType();
+                    os << " " << makeAffineDimName(dimIdx) << ", ";
                 }
-                os << affineIdxTypeStr << " " << makeAffineDimName(dimIdx);
+                printer->printIndexType();
+                os << " " << makeAffineDimName(dimIdx);
                 if (numSyms > 0)
                     os << ", ";
             }
@@ -202,15 +205,18 @@ namespace cpp_printer
                 int symIdx = 0;
                 for (; symIdx < numSyms - 1; symIdx++)
                 {
-                    os << affineIdxTypeStr << " " << makeAffineSymName(symIdx) << ", ";
+                    printer->printIndexType();
+                    os << " " << makeAffineSymName(symIdx) << ", ";
                 }
-                os << affineIdxTypeStr << " " << makeAffineSymName(symIdx);
+                printer->printIndexType();
+                os << " " << makeAffineSymName(symIdx);
             }
 
             os << ") {\n";
 
             const char* idxName = "idx";
-            os << affineIdxTypeStr << " " << idxName << " = ";
+            printer->printIndexType();
+            os << " " << idxName << " = ";
             RETURN_IF_FAILED(printAffineExpr(map.getResult(resIdx)));
             os << ";\n";
             os << "return " << idxName << ";\n";
@@ -265,7 +271,8 @@ namespace cpp_printer
         {
             std::string idxFuncName = makeAffineIdxFuncName(funcBaseName, idx);
             auto idxVarName = state.nameState.getTempName();
-            os << affineIdxTypeStr << " " << idxVarName << " = " << idxFuncName << "("
+            printer->printIndexType();
+            os << " " << idxVarName << " = " << idxFuncName << "("
                << affineFuncArgs << ");\n";
             memIdxVars.push_back(idxVarName);
         }

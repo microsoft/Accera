@@ -209,6 +209,25 @@ def ConvertRangeValueOptimize : Pass<"optimize-range-value"> {
 }
 
 //===----------------------------------------------------------------------===//
+// AffineSimplification
+//===----------------------------------------------------------------------===//
+
+// use Accera / acc- prefix to distinguish from the built-in MLIR SimplifyAffineStructures pass
+def AcceraAffineSimplification : Pass<"acc-affine-simplify"> {
+  let summary = "Simplify affine expressions using Range Value analysis";
+  let constructor = "accera::transforms::affine::createAffineSimplificationPass()";
+  let dependentDialects = [
+    "mlir::StandardOpsDialect",
+    "mlir::AffineDialect",
+    "mlir::linalg::LinalgDialect",
+    "mlir::memref::MemRefDialect",
+    "mlir::math::MathDialect",
+    "mlir::scf::SCFDialect",
+    "mlir::gpu::GPUDialect"
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // BarrierOpt
 //===----------------------------------------------------------------------===//
 

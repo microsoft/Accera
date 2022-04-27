@@ -5,6 +5,7 @@
 
 import sys
 import importlib.resources
+from platform import machine
 from enum import Enum, unique
 from hatlib import LibraryReference as HATLibraryReference
 
@@ -16,6 +17,7 @@ class Platform(Enum):
     WINDOWS = "windows"
     LINUX = "linux"
     MACOS = "mac"
+    MACOS_ARM64 = "mac_arm64"
     ANDROID = "android"
     IOS = "ios"
     RASPBIAN = "raspbian"
@@ -61,6 +63,10 @@ platform_libraries = {
             "target_file": "-lomp",
             "version": ""
         },
+        Platform.MACOS_ARM64: {
+            "target_file": "/opt/homebrew/lib/libomp.dylib",
+            "version": ""
+        },
     # best effort: assumes lib will be in the current working dir,
     # because the install location is non-deterministic
         Platform.WINDOWS: {
@@ -77,7 +83,10 @@ def get_library_reference(dependency: LibraryDependency, platform: Platform):
         if sys.platform.startswith("win"):
             platform = Platform.WINDOWS
         elif sys.platform.startswith("darwin"):
-            platform = Platform.MACOS
+            if machine() == "arm64":
+                platform = Platform.MACOS_ARM64
+            else:
+                platform = Platform.MACOS
         else:
             platform = Platform.LINUX
 

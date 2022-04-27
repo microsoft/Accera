@@ -2022,7 +2022,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
                                                                              f"{test_name}.hat"]) as v:
             package.build(
                 name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
                 mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
                 output_dir=output_dir
             )
@@ -2450,7 +2450,6 @@ class DSLTest_09Parameters(unittest.TestCase):
             C[i, j] += A[i, k] * B[k, j]
 
         target = Target("HOST", num_threads=16)
-        assert target.architecture == Target.Architecture.HOST
 
         # disable correctness checking on windows because the
         # install location of libomp.dll is non-standard as of now
@@ -2939,6 +2938,55 @@ class DSLTest_09Parameters(unittest.TestCase):
                 self.assertIn(int(data_point["P2"]), [16])
                 self.assertIn(float(data_point["P3"]), [1.0, 2.0])
                 self.assertIn(int(data_point["P4"]), [3, 5, 7])
+
+    def test_parameterization_arithmetic_operation(self) -> None:
+        from accera import create_parameters, Nest
+
+        P0, P1, P2, P3 = create_parameters(4)
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(P0, P1))
+
+        nest = Nest(shape=(P0, P1, P2))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += P3 * A[i, k] * B[k, j]
+
+        package = Package()
+        package_name = "test_parameterization_arithmetic_operation"
+
+        fma_unit_count, vector_size, multiplier = create_parameters(3)
+
+        # Create a parameterized schedule, the parameter arithmetic operation is just made up for testing purpose
+        schedule = nest.create_schedule()
+        schedule.split(i, size=fma_unit_count * vector_size * multiplier)
+        schedule.split(j, size=vector_size + multiplier * fma_unit_count)
+        schedule.split(k, size=(vector_size + multiplier) * fma_unit_count)
+
+        # Create a parameterized plan
+        plan = schedule.create_plan()
+
+        # Add another function to the package
+        package.add(
+            plan,
+            args=(A, B, C),
+            parameters={
+                P0: 256,
+                P1: 256,
+                P2: 256,
+                P3: 1.0,
+                fma_unit_count: 2,
+                vector_size: 16,
+                multiplier: 2
+            },
+            base_name="matmul_256_256_256"
+        )
+
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
+            package.build(name=package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
 
 class DSLTest_10Packages(unittest.TestCase):

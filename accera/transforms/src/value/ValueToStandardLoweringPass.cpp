@@ -641,6 +641,9 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
 
     void rewrite(FuncOp funcOp, PatternRewriter& rewriter) const final
     {
+        std::vector<mlir::Operation*> opsToErase;
+        opsToErase.push_back(funcOp);
+
         auto gpuRuntime = utilir::ResolveExecutionRuntime(funcOp).value_or(vir::ExecutionRuntime::NONE);
 
         auto loc = rewriter.getFusedLoc({ funcOp.getLoc(), RC_FILE_LOC(rewriter) });
@@ -660,9 +663,11 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
         OpBuilder::InsertionGuard gpuScopeGuard(rewriter);
         rewriter.restoreInsertionPoint(insertPt);
 
+        // Copy the global ops into the gpu module and remove the original ones.
         for (auto op : module.getOps<vir::GlobalOp>())
         {
             rewriter.clone(*op);
+            opsToErase.push_back(op);
         }
 
         SmallVector<mlir::NamedAttribute, 4> fnAttrs;
@@ -714,7 +719,9 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
 
         rewriter.inlineRegionBefore(funcOp.getBody(), &newFuncOp.back());
 
-        rewriter.eraseOp(funcOp);
+        // Cleanup ops
+        for (auto op : opsToErase)
+            rewriter.eraseOp(op);
     }
 };
 
@@ -935,16 +942,14 @@ LogicalResult BinOpLowering::matchAndRewrite(
             {
             case BinaryOpPredicate::ADD:
                 return rewriter.create<AddIOp>(loc, lhs, rhs);
-            case BinaryOpPredicate::DIV:
-            {
+            case BinaryOpPredicate::DIV: {
                 if (elementType.isUnsignedInteger())
                 {
                     return rewriter.create<UnsignedDivIOp>(loc, lhs, rhs);
                 }
                 return rewriter.create<SignedDivIOp>(loc, lhs, rhs);
             }
-            case BinaryOpPredicate::MOD:
-            {
+            case BinaryOpPredicate::MOD: {
                 if (elementType.isUnsignedInteger())
                 {
                     return rewriter.create<UnsignedRemIOp>(loc, lhs, rhs);
@@ -1016,8 +1021,6 @@ LogicalResult GlobalOpLowering::matchAndRewrite(
     ValueGlobalOp op,
     PatternRewriter& rewriter) const
 {
-    auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
-
     ValueGlobalOp::Adaptor adaptor(op);
     rewriter.replaceOpWithNewOp<memref::GlobalOp>(
         op,

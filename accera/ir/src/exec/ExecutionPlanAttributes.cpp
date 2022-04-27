@@ -35,7 +35,7 @@ namespace executionPlan
 
     mlir::DialectAsmPrinter& operator<<(mlir::DialectAsmPrinter& printer, TensorizationInfo tensorizationInfo)
     {
-        printer << "{" << tensorizationInfo.dim[0]  << "," << tensorizationInfo.dim[1] << "," << tensorizationInfo.dim[2] << "}";
+        printer << "{{" << tensorizationInfo.dim[0] << "," << tensorizationInfo.dim[1] << "," << tensorizationInfo.dim[2] << "}," << tensorizationInfo.useStaticOffsets << "}";
         return printer;
     }
 
@@ -162,6 +162,9 @@ namespace executionPlan
     TensorizationInfoAttr parseTensorizationInfo(mlir::DialectAsmParser& parser)
     {
         int dim0, dim1, dim2;
+        bool useStaticOffsets;
+        if (failed(parser.parseLBrace()))
+            return {};
         if (failed(parser.parseLBrace()))
             return {};
         if (failed(parser.parseInteger(dim0)))
@@ -176,7 +179,15 @@ namespace executionPlan
             return {};
         if (failed(parser.parseRBrace()))
             return {};
-        return TensorizationInfoAttr::get(TensorizationInfo{std::array<int64_t, 3>{dim0, dim1, dim2}}, parser.getBuilder().getContext());
+        if (failed(parser.parseComma()))
+            return {};
+        if (failed(parser.parseInteger(useStaticOffsets)))
+            return {};
+        if (failed(parser.parseRBrace()))
+            return {};
+        if (useStaticOffsets != 0 && useStaticOffsets != 1)
+            return {};
+        return TensorizationInfoAttr::get(TensorizationInfo{ std::array<int64_t, 3>{ dim0, dim1, dim2 }, useStaticOffsets }, parser.getBuilder().getContext());
     }
 
     void print(TensorizationInfoAttr attr, mlir::DialectAsmPrinter& printer)

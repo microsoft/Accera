@@ -33,6 +33,7 @@ namespace tr = accera::transforms;
 namespace lntr = accera::transforms::loopnest;
 namespace vtr = accera::transforms::value;
 namespace xptr = accera::transforms::executionPlan;
+namespace affinetr = accera::transforms::affine;
 
 namespace
 {
@@ -73,7 +74,7 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
                 (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("RangeResolution", vFuncOp);
             }
-            
+
             {
                 OwningRewritePatternList patterns(context);
                 tr::populateScheduledOperationsPatterns(patterns);
@@ -269,6 +270,20 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
 
         {
             OwningRewritePatternList patterns(context);
+            utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            snapshotter.Snapshot("Canonicalize", vFuncOp);
+        }
+
+        {
+            OwningRewritePatternList patterns(context);
+            affinetr::populateAcceraAffineSimplificationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            snapshotter.Snapshot("AcceraAffineSimplification", vFuncOp);
+        }
+
+        {
+            OwningRewritePatternList patterns(context);
             xptr::populateOutOfBoundsAccessHandlingPatterns(patterns);
             (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
             snapshotter.Snapshot("OutOfBoundsAccessHandling", vFuncOp);
@@ -279,14 +294,6 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
             tr::populateGPUIndexMappingRewritePatterns(patterns);
             (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
             snapshotter.Snapshot("GPUIndexMapping", vFuncOp);
-        }
-
-        {
-            OwningRewritePatternList patterns(context);
-            xptr::populateExecutionPlanTensorizePatterns(patterns);
-            utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
-            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
-            snapshotter.Snapshot("ExecutionPlanTensorize", vFuncOp);
         }
 
         {

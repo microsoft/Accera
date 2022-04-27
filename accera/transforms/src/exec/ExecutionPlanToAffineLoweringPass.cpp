@@ -17,6 +17,7 @@
 #include <ir/include/value/ValueDialect.h>
 #include <ir/include/value/ValueEnums.h>
 
+#include <mlir/Support/LLVM.h>
 #include <utilities/include/Boolean.h>
 #include <utilities/include/MathUtil.h>
 #include <utilities/include/TypeTraits.h>
@@ -97,6 +98,14 @@ const std::string ThreadZIndexName = "accxp_thread_z_loop_index";
 // Attribute names used for partially unrolling loops
 const std::string UnswitchPrefixItersName = "accxp_unswitch_prefix_iters";
 const std::string UnswitchSuffixItersName = "accxp_unswitch_suffix_iters";
+
+// #### TODO: move this somewhere that makes sense
+enum class GPUIndexDimension
+{
+    X,
+    Y,
+    Z
+};
 
 struct MakeCacheOpLowering : public OpRewritePattern<MakeCacheOp>
 {
@@ -5565,8 +5574,172 @@ LogicalResult InPlaceUnrollAffineForOpConversion::matchAndRewrite(AffineForOp af
     return success();
 }
 
+SmallVector<AffineForOp, 4> GetLoopOpsForOperands(mlir::Operation::operand_range operands)
+{
+    SmallVector<mlir::AffineForOp, 4> operandLoops;
+    std::transform(operands.begin(), operands.end(), std::back_inserter(operandLoops), [](mlir::Value operand) {
+        return mlir::getForInductionVarOwner(operand);
+    });
+
+    return operandLoops;
+}
+
+std::optional<GPUIndexDimension> GetGPUIndexForLoop(AffineForOp loop)
+{
+    if (auto gpuMapAttr = loop->getAttrOfType<StringAttr>("accv_gpu_map"))
+    {
+        auto attrVal = gpuMapAttr.getValue();
+        if (attrVal == "ThreadX")
+            return GPUIndexDimension::X;
+        else if (attrVal == "BlockX")
+            return GPUIndexDimension::X;
+        else if (attrVal == "ThreadY")
+            return GPUIndexDimension::Y;
+        else if (attrVal == "BlockY")
+            return GPUIndexDimension::Y;
+    }
+    return std::nullopt;
+}
+
+std::set<GPUIndexDimension> GetGPUIndexDimensionsInExpr(const AffineExpr& expr, ArrayRef<AffineForOp> loops)
+{
+    std::set<GPUIndexDimension> result;
+    expr.walk([&](AffineExpr subExpr) {
+        if (auto dimExpr = subExpr.dyn_cast<AffineDimExpr>())
+        {
+            auto pos = dimExpr.getPosition();
+            if (auto indexLoop = loops[pos])
+            {
+                if (auto gpuIndex = GetGPUIndexForLoop(indexLoop))
+                {
+                    result.insert(*gpuIndex);
+                }
+            }
+        }
+    });
+    return result;
+}
+
+std::vector<int64_t> GetLoopStepsInExpr(const AffineExpr& expr, ArrayRef<AffineForOp> loops)
+{
+    std::vector<int64_t> result;
+    expr.walk([&](AffineExpr subExpr) {
+        if (auto dimExpr = subExpr.dyn_cast<AffineDimExpr>())
+        {
+            auto pos = dimExpr.getPosition();
+            if (auto indexLoop = loops[pos])
+            {
+                result.push_back(indexLoop.getStep());
+            }
+            else
+            {
+                result.push_back(-1);
+            }
+        }
+    });
+
+    // Add outermost loop bounds if there is only 1
+    if (result.size() == 1)
+    {
+        std::vector<AffineExpr> loopDims;
+        std::transform(loops.begin(), loops.end(), std::back_inserter(loopDims), [&](mlir::AffineForOp loop) {
+            return mlir::getAffineConstantExpr(loop.getConstantUpperBound(), expr.getContext());
+        });
+        // get extent of expr by replacing all dims with upper loop bounds
+        auto boundsExpr = simplifyAffineExpr(expr.replaceDims(loopDims), loops.size(), 0);
+        if (boundsExpr.isa<mlir::AffineConstantExpr>())
+        {
+            result.push_back(boundsExpr.cast<mlir::AffineConstantExpr>().getValue());
+        }
+        else
+        {
+            result.push_back(-1);
+        }
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+template <typename OpT>
+std::vector<std::set<GPUIndexDimension>> GetGPUIndexDimensionsInAffineMemOp(OpT op)
+{
+    std::vector<std::set<GPUIndexDimension>> result;
+    auto map = op.getAffineMap();
+    auto loops = GetLoopOpsForOperands(op.getMapOperands());
+    for (unsigned r = 0; r < map.getNumResults(); ++r)
+    {
+        auto expr = map.getResult(r);
+        auto exprDims = GetGPUIndexDimensionsInExpr(expr, loops);
+        result.push_back(exprDims);
+    }
+    return result;
+}
+
+std::optional<GPUIndexDimension> GetSingleGPUDimension(std::set<GPUIndexDimension>& indexDimensions)
+{
+    if (indexDimensions.size() != 1)
+        return std::nullopt;
+    return *indexDimensions.begin();
+}
+
+std::optional<GPUIndexDimension> GetSingleGPUDimension(const std::vector<std::set<GPUIndexDimension>>& indexDimensions)
+{
+    std::set<GPUIndexDimension> unionSet;
+    for (const auto& dimSet : indexDimensions)
+    {
+        unionSet.insert(dimSet.begin(), dimSet.end());
+    }
+
+    return GetSingleGPUDimension(unionSet);
+}
+
+template <typename OpT>
+std::vector<std::vector<int64_t>> GetIndexLoopStepSizesInAffineMemOp(OpT op)
+{
+    std::vector<std::vector<int64_t>> result;
+    auto map = op.getAffineMap();
+    auto loops = GetLoopOpsForOperands(op.getMapOperands());
+    for (unsigned r = 0; r < map.getNumResults(); ++r)
+    {
+        auto expr = map.getResult(r);
+        result.push_back(GetLoopStepsInExpr(expr, loops));
+    }
+    return result;
+}
+
+template <typename OpT1, typename OpT2>
+bool AreSameElement(OpT1 memOp1, OpT2 memOp2)
+{
+    if (memOp1.getAffineMap() != memOp2.getAffineMap())
+    {
+        return false;
+    }
+    AffineValueMap memOp2ValueMap(memOp2.getAffineMap(), memOp2.getMapOperands());
+    AffineValueMap memOp1ValueMap(memOp1.getAffineMap(), memOp1.getMapOperands());
+    AffineValueMap differenceMap;
+    AffineValueMap::difference(memOp2ValueMap, memOp1ValueMap, &differenceMap);
+    if (!differenceMap.getAffineMap().isConstant())
+    {
+        return false;
+    }
+    auto constantResults = differenceMap.getAffineMap().getConstantResults();
+    for (unsigned i = 0; i < differenceMap.getNumResults(); ++i)
+    {
+        if (constantResults[i] != 0)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affineForOp, PatternRewriter& rewriter) const
 {
+    auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
+        llvm::dbgs() << "While processing " << *op << ". " << message << "\n";
+        return rewriter.notifyMatchFailure(op, message);
+    };
+
     if (!HasTensorizationInfo(affineForOp))
     {
         // This isn't an AffineForOp marked for tensorization so just return without modifying it
@@ -5612,7 +5785,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         }
     }
 
-    auto innerLoop = loops[2]; // the inner most loop
+    auto innerLoop = loops[2]; // the innermost loop
     auto innerLoopBodyIter = innerLoop.getBody()->begin();
     auto innerLoopBodyEnd = innerLoop.getBody()->end();
 
@@ -5621,83 +5794,210 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     // 1. load from A matrix
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<mlir::AffineLoadOp>(*innerLoopBodyIter))
     {
-        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the load from A Op\n";
-        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the load from A Op");
+        return reportMatchFailure(affineForOp, "Failed to match the load from A Op");
     }
-    auto loadAOp = cast<mlir::AffineLoadOp>(innerLoopBodyIter);
+    auto loadAOp = cast<mlir::AffineLoadOp>(*innerLoopBodyIter);
+
+    // Get indexing info for A
+    auto aRank = loadAOp.getMemRefType().getRank();
+    if (aRank != 2)
+    {
+        return reportMatchFailure(loadAOp.getOperation(), "A array has rank != 2");
+    }
+    if (aRank != loadAOp.getAffineMap().getNumResults())
+    {
+        return reportMatchFailure(loadAOp.getOperation(), "Failed to match the load from A Op");
+    }
+
+    // scan loadAOperands and note which ones are loop vars that refer to GPU block/thread IDs (or are affine expressions of them)
+    // get each affine expr from the loadMap and scan it for loops which are bound to GPU block/thread IDs
+    // One of the result exprs must depend on a single GPU index dimension, and the other must not depend on any
+    auto gpuDimsPerDimA = GetGPUIndexDimensionsInAffineMemOp(loadAOp);
+    auto maybeGpuDimA = GetSingleGPUDimension(gpuDimsPerDimA);
+    if (!maybeGpuDimA)
+    {
+        return reportMatchFailure(loadAOp.getOperation(), "Failed to match the load from A Op");
+    }
+
+    // Keep A's index dimension
+    auto gpuDimA = *maybeGpuDimA;
+    if (gpuDimA == GPUIndexDimension::Z)
+    {
+        return reportMatchFailure(loadAOp.getOperation(), "Failed to match: A op uses GPU Z dimension");
+    }
+
     opsToErase.push(loadAOp);
 
-    innerLoopBodyIter++;
     // 2. load from B matrix
+    innerLoopBodyIter++;
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<mlir::AffineLoadOp>(*innerLoopBodyIter))
     {
-        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the load from B Op\n";
-        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the load from B Op");
+        return reportMatchFailure(affineForOp, "Failed to match the load from B Op");
     }
     auto loadBOp = cast<mlir::AffineLoadOp>(innerLoopBodyIter);
+
+    // Get indexing info for B
+    auto bRank = loadBOp.getMemRefType().getRank();
+    if (bRank != 2)
+    {
+        return reportMatchFailure(loadBOp.getOperation(), "B array has rank != 2");
+    }
+
+    if (bRank != loadBOp.getAffineMap().getNumResults())
+    {
+        return reportMatchFailure(loadBOp.getOperation(), "Failed to match the load from B Op");
+    }
+
+    // scan loadBOperands and note which ones are loop vars that refer to GPU block/thread IDs (or are affine expressions of them)
+    // get each affine expr from the loadMap and scan it for loops which are bound to GPU block/thread IDs
+    // One of the result exprs must depend on a single GPU index dimension, and the other must not depend on any
+    auto gpuDimsPerDimB = GetGPUIndexDimensionsInAffineMemOp(loadBOp);
+    auto maybeGpuDimB = GetSingleGPUDimension(gpuDimsPerDimB);
+    if (!maybeGpuDimB)
+    {
+        return reportMatchFailure(loadBOp.getOperation(), "Failed to match the load from B Op");
+    }
+
+    // Keep B's index dimension
+    auto gpuDimB = *(maybeGpuDimB);
+    if (gpuDimB == GPUIndexDimension::Z)
+    {
+        return reportMatchFailure(loadBOp.getOperation(), "Failed to match: B op uses GPU Z dimension");
+    }
+
     opsToErase.push(loadBOp);
 
-    (void)innerLoopBodyIter++;
+    if (gpuDimA == gpuDimB)
+    {
+        return reportMatchFailure(loadBOp.getOperation(), "Failed to match the indexing between A and B Ops");
+    }
+
+    // Canonicalize load ops: 'A' load op is the one that uses BlockY/ThreadY, and 'B' load op uses BlockX/ThreadX
+    if (gpuDimA == GPUIndexDimension::X)
+    {
+        std::swap(loadAOp, loadBOp);
+        std::swap(gpuDimA, gpuDimB); // unnecessary since these vars aren't used any more
+        std::swap(gpuDimsPerDimA, gpuDimsPerDimB);
+    }
+
+    assert(gpuDimsPerDimA.size() == 2);
+    int loadAGPUIndexPos = gpuDimsPerDimA[0].empty() ? 1 : 0;
+    assert(gpuDimsPerDimA[1 - loadAGPUIndexPos].empty());
+    assert(gpuDimsPerDimB.size() == 2);
+    int loadBGPUIndexPos = gpuDimsPerDimB[0].empty() ? 1 : 0;
+    assert(gpuDimsPerDimB[1 - loadBGPUIndexPos].empty());
+
     // 3. muliply A * B
+    (void)innerLoopBodyIter++;
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<v::BinOp>(*innerLoopBodyIter))
     {
-        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the binary A*C multiplication op\n";
-        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the binary A*C multiplication op");
+        return reportMatchFailure(affineForOp, "Failed to match the binary A*C multiplication op");
     }
     auto mulAB = cast<v::BinOp>(*innerLoopBodyIter);
     if (mulAB.predicate() != v::BinaryOpPredicate::MUL)
     {
-        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the multiplication op\n";
-        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the multiplication op");
+        return reportMatchFailure(mulAB, "Failed to match the multiplication op");
+    }
+    // Check that the operands for the multiply op are in fact the loads from A and B
+    if (!((mulAB.lhs() == loadAOp && mulAB.rhs() == loadBOp) || (mulAB.rhs() == loadAOp && mulAB.lhs() == loadBOp)))
+    {
+        return reportMatchFailure(mulAB, "Failed to match the multiplication operands");
     }
     opsToErase.push(mulAB);
 
-    (void)innerLoopBodyIter++;
     // 4. load C
+    (void)innerLoopBodyIter++;
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<mlir::AffineLoadOp>(*innerLoopBodyIter))
     {
-        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the load from C Op\n";
-        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the load from C Op");
+        return reportMatchFailure(affineForOp, "Failed to match the load from C Op");
     }
-    auto loadCOp = cast<mlir::AffineLoadOp>(innerLoopBodyIter);
+    auto loadCOp = cast<mlir::AffineLoadOp>(*innerLoopBodyIter);
+
+    // Get indexing info for C
+    auto cType = loadCOp.getMemRefType();
+    auto cRank = cType.getRank();
+    auto loadCMap = loadCOp.getAffineMap();
+    if (cRank != 2)
+    {
+        return reportMatchFailure(loadCOp.getOperation(), "C array has rank != 2");
+    }
+    if (cRank != loadCMap.getNumResults())
+    {
+        return reportMatchFailure(loadCOp.getOperation(), "Failed to match the load from C Op");
+    }
+
+    // scan loadCOperands and note which ones are loop vars that refer to GPU block/thread IDs (or are affine expressions of them)
+    // get each affine expr from the loadMap and scan it for loops which are bound to GPU block/thread IDs
+    // One of the result exprs must depend on a single GPU index dimension, and the other must not depend on any
+    auto gpuDimsPerDimC = GetGPUIndexDimensionsInAffineMemOp(loadCOp);
+
+    if (gpuDimsPerDimC.size() != 2 || gpuDimsPerDimC[0].size() != 1 || gpuDimsPerDimC[1].size() != 1)
+    {
+        return reportMatchFailure(loadCOp.getOperation(), "Failed to match the load from C Op");
+    }
+
+    std::vector<GPUIndexDimension> gpuDimsC = { *GetSingleGPUDimension(gpuDimsPerDimC[0]), *GetSingleGPUDimension(gpuDimsPerDimC[1]) };
+    if (gpuDimsC[0] == GPUIndexDimension::Z || gpuDimsC[1] == GPUIndexDimension::Z)
+    {
+        return reportMatchFailure(loadCOp.getOperation(), "Failed to match: C op uses GPU Z dimension");
+    }
+
     opsToErase.push(loadCOp);
 
-    (void)innerLoopBodyIter++;
     // 5. add A * B + C
+    (void)innerLoopBodyIter++;
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<v::BinOp>(*innerLoopBodyIter))
     {
-        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the binary C accumulation op\n";
-        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the binary C accumulation op");
+        return reportMatchFailure(affineForOp, "Failed to match the binary C accumulation op");
     }
     auto accumC = cast<v::BinOp>(*innerLoopBodyIter);
     if (accumC.predicate() != v::BinaryOpPredicate::ADD)
     {
-        llvm::dbgs() << "While processing " << accumC << ". Failed to match the accumulation op\n";
-        return rewriter.notifyMatchFailure(accumC, "Failed to match the accumulation op");
+        return reportMatchFailure(accumC, "Failed to match the accumulation op");
     }
+    // Check that the operands for the addition op are in fact (A*B) and the load from C
+    if (!((accumC.lhs() == mulAB && accumC.rhs() == loadCOp) || (accumC.rhs() == mulAB && accumC.lhs() == loadCOp)))
+    {
+        return reportMatchFailure(accumC, "Failed to match the accumulation operands");
+    }
+
     opsToErase.push(accumC);
 
-    (void)innerLoopBodyIter++;
     // 6. store C
-    auto storeC = cast<mlir::AffineStoreOp>(*innerLoopBodyIter);
-    if (innerLoopBodyIter == innerLoopBodyEnd || !storeC)
+    (void)innerLoopBodyIter++;
+    auto storeCOp = cast<mlir::AffineStoreOp>(*innerLoopBodyIter);
+    if (innerLoopBodyIter == innerLoopBodyEnd || !storeCOp)
     {
-        llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". Failed to match the store into C\n";
-        return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "Failed to match the store into C");
+        return reportMatchFailure(affineForOp, "Failed to match the store into C");
     }
-    opsToErase.push(storeC);
+    // Check that we are in fact storing the (A*B)+C value, and that we're storing back to the same array
+    if (storeCOp.getValueToStore() != accumC || storeCOp.getMemRef() != loadCOp.getMemRef())
+    {
+        return reportMatchFailure(storeCOp, "Failed to match the store into C");
+    }
+    // Check that we are in fact storing the (A*B)+C value, and that we're storing back to the same place in the array
+    if (!AreSameElement(storeCOp, loadCOp))
+    {
+        return reportMatchFailure(storeCOp, "Failed to match the store into C");
+    }
+
+    opsToErase.push(storeCOp);
 
     (void)innerLoopBodyIter++;
 
-    // for some reason there sometimes is an extra AffineStoreOp / AffineLoadOp pair being redundantly generated, we need to ignore those
+    // for some reason there sometimes is an extra AffineLoadOp / AffineStoreOp pair being redundantly generated, we need to ignore those
     if (innerLoopBodyIter != innerLoopBodyEnd && isa<mlir::AffineLoadOp>(*innerLoopBodyIter))
     {
-        auto loadOp = cast<mlir::AffineLoadOp>(*innerLoopBodyIter); // TODO: check this is still a load from the C matrix
+        auto loadOp = cast<mlir::AffineLoadOp>(*innerLoopBodyIter);
         opsToErase.push(loadOp);
         (void)innerLoopBodyIter++;
         if (innerLoopBodyIter != innerLoopBodyEnd && isa<mlir::AffineStoreOp>(*innerLoopBodyIter))
         {
-            auto storeOp = cast<mlir::AffineStoreOp>(*innerLoopBodyIter); // TODO: check this is still a store into the C matrix
+            auto storeOp = cast<mlir::AffineStoreOp>(*innerLoopBodyIter);
+            if (!AreSameElement(loadOp, storeOp))
+            {
+                return reportMatchFailure(storeOp, "Failed to match extraneous load/store");
+            }
             opsToErase.push(storeOp);
             (void)innerLoopBodyIter++;
         }
@@ -5719,14 +6019,14 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     // A * B + C is valid only if A and B are FP32 and C is FP32 or if A and B are FP16 and C is FP32
     if (!((loadAOp.getMemRefType().getElementType().isF32() &&
            loadBOp.getMemRefType().getElementType().isF32() &&
-           storeC.getMemRefType().getElementType().isF32()) ||
+           storeCOp.getMemRefType().getElementType().isF32()) ||
           (loadAOp.getMemRefType().getElementType().isF16() &&
            loadBOp.getMemRefType().getElementType().isF16() &&
-           (storeC.getMemRefType().getElementType().isF32() || storeC.getMemRefType().getElementType().isF16()))))
+           (storeCOp.getMemRefType().getElementType().isF32() || storeCOp.getMemRefType().getElementType().isF16()))))
     {
         return rewriter.notifyMatchFailure(&*innerLoopBodyIter,
                                            "Invalid data types. "
-                                           "A * B + C is valid only if A and B are FP32 and C is FP32 or if A and B are FP16 and C is FP32/FP16");
+                                           "A * B + C is valid only if A, B, and C are FP32, or if A and B are FP16 and C is FP32");
     }
 
     mlir::OpBuilder::InsertionGuard guard(rewriter);
@@ -5741,12 +6041,54 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     };
 
     const auto mfmaType = getMatrixTypeOfMemref(loadAOp.getMemRefType(), tensorizationInfo.dim, "AOp"); // A, B and C have same mfma type
-    const auto& [warpSizeX, warpSizeY] = util::ResolveWarpSize(affineForOp).value();
+
+    // Verify the step sizes of the 'i', 'j', and 'k' loop induction vars
+    auto stepsA = GetIndexLoopStepSizesInAffineMemOp(loadAOp);
+    auto iStepsA = stepsA[loadAGPUIndexPos];
+    auto kStepsA = stepsA[1 - loadAGPUIndexPos];
+    if (iStepsA[0] != 1 || iStepsA[1] != tensorizationInfo.dim[0] || kStepsA[0] != 1 || kStepsA[1] != mfmaType.getLeadingDim())
+    {
+        return reportMatchFailure(loadAOp, "Failed to match load A step sizes");
+    }
+
+    auto stepsB = GetIndexLoopStepSizesInAffineMemOp(loadBOp);
+    auto kStepsB = stepsB[1 - loadBGPUIndexPos];
+    auto jStepsB = stepsB[loadBGPUIndexPos];
+    if (kStepsB[0] != 1 || kStepsB[1] != mfmaType.getLeadingDim() || jStepsB[0] != 1 || jStepsB[1] != tensorizationInfo.dim[1])
+    {
+        return reportMatchFailure(loadBOp, "Failed to match load B step sizes");
+    }
+
+    auto stepsC = GetIndexLoopStepSizesInAffineMemOp(loadCOp);
+    auto iStepsC = stepsC[gpuDimsC[0] == GPUIndexDimension::Y ? 0 : 1];
+    auto jStepsC = stepsC[gpuDimsC[1] == GPUIndexDimension::X ? 1 : 0];
+    if (iStepsC[0] != 1 || iStepsC[1] != tensorizationInfo.dim[0] || jStepsC[0] != 1 || jStepsC[1] != tensorizationInfo.dim[1])
+    {
+        return reportMatchFailure(loadCOp, "Failed to match load C step sizes");
+    }
+
+    if (tensorizationInfo.useStaticOffsets)
+    {
+        std::vector<uint8_t> threadGroupOffsets = mfmaType.getOffsetMap();
+        auto&& [memrefType, dataType] = util::GetMFMAThreadOffsetMapType(rewriter, mfmaType.getOffsetMapSize());
+        auto dataAttribute = mlir::DenseElementsAttr::get(dataType, llvm::makeArrayRef(threadGroupOffsets));
+
+        // Create a static offset map (unless one already exists)
+        if(auto module = util::CastOrGetParentOfType<v::ValueModuleOp>(affineForOp.getOperation()))
+        {
+            if( auto existingStaticBuffer =  util::FindOpWithSymbolName(v::MFMAThreadBufferMapName, module.getOperation()); !existingStaticBuffer)
+            {
+                [[maybe_unused]] auto globalOp = util::CreateGlobalBufferOp(rewriter, affineForOp, memrefType, v::MFMAThreadBufferMapName, true, dataAttribute, true, false);
+            }
+        }
+    }
+
+    const auto [warpSizeX, warpSizeY] = util::ResolveWarpSize(affineForOp).value();
     auto warpSize = rewriter.create<ConstantIndexOp>(loc, warpSizeX * warpSizeY);
     auto i32Ty = rewriter.getI32Type();
     auto int0 = rewriter.create<ConstantOp>(loc, i32Ty, rewriter.getZeroAttr(i32Ty));
-    auto leadingDim = rewriter.create<ConstantIndexOp>(loc, mfmaType.getLeadingDim());
-    auto tileFactor = rewriter.create<ConstantIndexOp>(loc, mfmaType.getTileFactor());
+    auto leadingDim = rewriter.create<ConstantIndexOp>(loc, mfmaType.getLeadingDim()); // #### == 16 for 2x2x16
+    auto tileFactor = rewriter.create<ConstantIndexOp>(loc, mfmaType.getTileFactor()); // #### == 1 for 2x2x16
     auto tidX = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x");
     auto tidY = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y");
     auto bidX = rewriter.create<gpu::BlockIdOp>(loc, rewriter.getIndexType(), "x");
@@ -5774,60 +6116,52 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     auto loadMatrixOp = [&](AffineLoadOp loadOp, StringRef kind, auto mfma_block_offset) {
         auto mfmaMatrixType = getMatrixTypeOfMemref(loadOp.getMemRefType(), tensorizationInfo.dim, kind);
+        AffineMap offsetMap;
+        SmallVector<mlir::Value, 4> loadOpOperands(loadOp.getMapOperands());
+        auto d0 = rewriter.getAffineDimExpr(0);
+        auto d1 = rewriter.getAffineDimExpr(1);
         if (kind == "AOp")
         {
-            [[maybe_unused]] auto d0 = rewriter.getAffineDimExpr(0);
-            auto d1 = rewriter.getAffineDimExpr(1);
             auto rowOffsetSym = rewriter.getAffineSymbolExpr(0);
-            auto offsetMap = AffineMap::get(2, 1, { rowOffsetSym, d1 }, ctx);
-            SmallVector<mlir::Value, 4> loadOpOperands(loadOp.getMapOperands());
+            if (loadAGPUIndexPos == 0)
+                offsetMap = AffineMap::get(2, 1, { rowOffsetSym, d1 }, ctx);
+            else
+                offsetMap = AffineMap::get(2, 1, { d0, rowOffsetSym }, ctx);
             loadOpOperands.push_back(rowOffset);
-            // llvm::dbgs() << "AOp with offset " << offsetMap << " with load "
-            //              << loadOp.getAffineMap() << " and composed = " << offsetMap.compose(loadOp.getAffineMap()) << "\n";
-            return rewriter.create<MFMALoadOp>(loc,
-                                               mfmaMatrixType,
-                                               loadOp.memref(),
-                                               offsetMap.compose(loadOp.getAffineMap()),
-                                               loadOpOperands);
         }
-
-        if (kind == "BOp")
+        else if (kind == "BOp")
         {
-            auto d0 = rewriter.getAffineDimExpr(0);
-            [[maybe_unused]] auto d1 = rewriter.getAffineDimExpr(1);
             auto colOffsetSym = rewriter.getAffineSymbolExpr(0);
-            auto offsetMap = AffineMap::get(2, 1, { d0, colOffsetSym }, ctx);
-            SmallVector<mlir::Value, 4> loadOpOperands(loadOp.getMapOperands());
+            if (loadBGPUIndexPos == 1)
+                offsetMap = AffineMap::get(2, 1, { d0, colOffsetSym }, ctx);
+            else
+                offsetMap = AffineMap::get(2, 1, { colOffsetSym, d1 }, ctx);
             loadOpOperands.push_back(colOffset);
-            // llvm::dbgs() << "BOp with offset " << offsetMap << " with load "
-            //              << loadOp.getAffineMap() << " and composed = " << offsetMap.compose(loadOp.getAffineMap()) << "\n";
-            return rewriter.create<MFMALoadOp>(loc,
-                                               mfmaMatrixType,
-                                               loadOp.memref(),
-                                               offsetMap.compose(loadOp.getAffineMap()),
-                                               loadOpOperands);
         }
-
-        if (kind == "COp")
+        else if (kind == "COp")
         {
-            [[maybe_unused]] auto d0 = rewriter.getAffineDimExpr(0);
-            [[maybe_unused]] auto d1 = rewriter.getAffineDimExpr(1);
             auto rowOffsetSym = rewriter.getAffineSymbolExpr(0);
             auto colOffsetSym = rewriter.getAffineSymbolExpr(1);
-            auto offsetMap = AffineMap::get(2, 2, { rowOffsetSym, colOffsetSym }, ctx);
-            SmallVector<mlir::Value, 4> loadOpOperands(loadOp.getMapOperands());
+            if (gpuDimsC[0] == GPUIndexDimension::Y)
+                offsetMap = AffineMap::get(2, 2, { rowOffsetSym, colOffsetSym }, ctx);
+            else
+                offsetMap = AffineMap::get(2, 2, { colOffsetSym, rowOffsetSym }, ctx);
             loadOpOperands.push_back(rewriter.create<AddIOp>(loc, rowOffset, mfma_block_offset));
             loadOpOperands.push_back(colOffset);
-            // llvm::dbgs() << "COp with offset " << offsetMap << " with load "
-            //              << loadOp.getAffineMap() << " and composed = " << offsetMap.compose(loadOp.getAffineMap()) << "\n";
-            return rewriter.create<MFMALoadOp>(loc,
-                                               mfmaMatrixType,
-                                               loadOp.memref(),
-                                               offsetMap.compose(loadOp.getAffineMap()),
-                                               loadOpOperands);
+        }
+        else
+        {
+            llvm::report_fatal_error("Unknown kind of matrix");
         }
 
-        llvm::report_fatal_error("Unknown kind of matrix");
+        // llvm::dbgs() << "COp with offset " << offsetMap << " with load "
+        //              << loadOp.getAffineMap() << " and composed = " << offsetMap.compose(loadOp.getAffineMap()) << "\n";
+
+        return rewriter.create<MFMALoadOp>(loc,
+                                           mfmaMatrixType,
+                                           loadOp.memref(),
+                                           offsetMap.compose(loadOp.getAffineMap()),
+                                           loadOpOperands);
     };
 
     auto StoreOp = [&](AffineStoreOp storeOp, Value value, auto mfma_block_offset) {
@@ -5835,7 +6169,11 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         [[maybe_unused]] auto d1 = rewriter.getAffineDimExpr(1);
         auto rowOffsetSym = rewriter.getAffineSymbolExpr(0);
         auto colOffsetSym = rewriter.getAffineSymbolExpr(1);
-        auto offsetMap = AffineMap::get(2, 2, { rowOffsetSym, colOffsetSym }, ctx);
+        AffineMap offsetMap;
+        if (gpuDimsC[0] == GPUIndexDimension::Y)
+            offsetMap = AffineMap::get(2, 2, { rowOffsetSym, colOffsetSym }, ctx);
+        else
+            offsetMap = AffineMap::get(2, 2, { colOffsetSym, rowOffsetSym }, ctx);
         SmallVector<mlir::Value, 4> storeOpOperands(storeOp.getMapOperands());
         storeOpOperands.push_back(rewriter.create<AddIOp>(loc, rowOffset, mfma_block_offset));
         storeOpOperands.push_back(colOffset);
@@ -5852,12 +6190,12 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     auto bMfmaMatrix = loadMatrixOp(loadBOp, "BOp", int0);
     const auto numBlocks = mfmaType.getNumBlocks();
     const auto cbsz = numBlocks / 2;
-    for (int iBlock = 0, rowOffset = 0; iBlock < numBlocks; ++iBlock, rowOffset += tensorizationInfo.dim[1])
+    for (int iBlock = 0, blockRowOffset = 0; iBlock < numBlocks; ++iBlock, blockRowOffset += tensorizationInfo.dim[1])
     {
-        auto offset = rewriter.create<ConstantIndexOp>(loc, rowOffset);
+        auto offset = rewriter.create<ConstantIndexOp>(loc, blockRowOffset);
         auto cMfmaMatrix = loadMatrixOp(loadCOp, "COp", offset);
         auto destMfmaMatrix = rewriter.create<MFMAComputeOp>(loc, cMfmaMatrix.getType(), aMfmaMatrix, bMfmaMatrix, cMfmaMatrix, cbsz, iBlock, 0);
-        [[maybe_unused]] auto mfmaStoreOp = StoreOp(storeC, destMfmaMatrix, offset);
+        [[maybe_unused]] auto mfmaStoreOp = StoreOp(storeCOp, destMfmaMatrix, offset);
     }
 
     while (!opsToErase.empty())

@@ -49,13 +49,16 @@ struct RangeValue
 class RangeValueAnalysis
 {
 public:
+    RangeValueAnalysis() = default;
     RangeValueAnalysis(mlir::Operation* rootOp);
+    RangeValueAnalysis(const std::vector<mlir::Operation*>& ops);
 
     bool hasRange(mlir::Value value) const;
     RangeValue getRange(mlir::Value value) const;
+    RangeValue addOperation(mlir::Operation* op);
 
 private:
-    mlir::DenseMap<mlir::Value, RangeValue> rangeMap;
+    mlir::DenseMap<mlir::Value, RangeValue> _rangeMap;
 
     bool allOperandsHaveRanges(mlir::Operation* op);
     llvm::SmallVector<RangeValue, 3> resolveOperands(mlir::Operation* op);

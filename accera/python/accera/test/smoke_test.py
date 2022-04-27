@@ -41,6 +41,7 @@ from accera import Package, ScalarType, Nest, Array, Constants, Scalar, fuse, cr
 from accera._lang_python._lang import _MemorySpace
 from accera.samples import MatrixMultiplication
 from accera.test import verifiers
+from accera.Targets import GridUnits
 
 TEST_PACKAGE_DIR = "test_acccgen"
 
@@ -2181,7 +2182,7 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
             package.build(
                 name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
                 mode=Package.Mode.RELEASE,
                 output_dir=output_dir
             )
@@ -2226,7 +2227,7 @@ class SmokeTest(unittest.TestCase):
                                                                              f"{test_name}.hat"]) as v:
             package.build(
                 name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
                 mode=Package.Mode.RELEASE,
                 output_dir=output_dir
             )
@@ -2291,7 +2292,7 @@ class SmokeTest(unittest.TestCase):
                                                                              f"{test_name}.hat"]) as v:
             package.build(
                 name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
                 mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
                 output_dir=output_dir
             )
@@ -2321,7 +2322,7 @@ class SmokeTest(unittest.TestCase):
                                                                              f"{test_name}.hat"]) as v:
             package.build(
                 name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
                 mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
                 output_dir=output_dir
             )
@@ -2391,7 +2392,7 @@ class SmokeTest(unittest.TestCase):
                                                                              f"{test_name}.hat"]) as v:
             package.build(
                 name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
                 mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
                 output_dir=output_dir
             )
@@ -2421,7 +2422,7 @@ class SmokeTest(unittest.TestCase):
                                                                              f"{test_name}.hat"]) as v:
             package.build(
                 name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
                 mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
                 output_dir=output_dir
             )
@@ -2435,7 +2436,7 @@ class SmokeTest(unittest.TestCase):
 
                     v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_ref, Output_ref))
 
-    def _rocm_tensorize(self, M, N, K, outer_tile_x, outer_tile_y, mfma_tile, tolerance=1e-5, intype=ScalarType.float32, outtype=ScalarType.float32, verify=True) -> None:
+    def _rocm_tensorize(self, M, N, K, outer_tile_x, outer_tile_y, mfma_tile, tolerance=1e-5, intype=ScalarType.float32, outtype=ScalarType.float32, use_static_offsets=False, verify=True) -> None:
         from accera import Target
         A = Array(role=Array.Role.INPUT, element_type=intype, shape=(M, K))
         B = Array(role=Array.Role.INPUT, element_type=intype, shape=(K, N))
@@ -2473,7 +2474,7 @@ class SmokeTest(unittest.TestCase):
                 jj: target.GridUnit.THREAD_X
             }
         )
-        plan.tensorize(indices=(iii, jjj, kk))
+        plan.tensorize(indices=(iii, jjj, kk), use_static_offsets=use_static_offsets)
 
         package = Package()
         num_blocks = M * N / outer_tile_x / outer_tile_y
@@ -2485,16 +2486,24 @@ class SmokeTest(unittest.TestCase):
         test_name += "_fp32_t" if outtype == ScalarType.float32 else "_fp16_t"
         test_name += str(mfma_tile[2]) + "_w"
         test_name += str(mfma_tile[1])
+        if use_static_offsets:
+            test_name += "_tensormap"
         function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        def file_check_fn(v):
+            checker = v.file_checker(f"{test_name}.cu")
+            checker.check("constexpr int8_t threadOffsetsMFMA")
+            checker.run()
 
         self._verify_matrix_multiplication_function(
             function,
             package,
             test_name,
+            file_check_fn=file_check_fn if use_static_offsets else None,
             check_correctness=ROCM_AVAILABLE and verify,
             tolerance=tolerance,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+            package_format=Package.Format.DEFAULT
         )
 
     def test_rocm_tensorize_single_block_single_warp_output_fp32_fp32_t16_w2(self) -> None:
@@ -2588,12 +2597,44 @@ class SmokeTest(unittest.TestCase):
     def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp16_t64_w16(self) -> None:
         self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 16, 64), 1e-2, ScalarType.float16, ScalarType.float16)
 
+
+    # Testing precomputed index map optimization
+    def test_rocm_tensorize_single_block_single_warp_output_fp32_fp32_t16_w2_tensormap(self) -> None:
+        self._rocm_tensorize(16, 16, 16, 16, 16, (2, 2, 16), 1e-2, ScalarType.float32, ScalarType.float32, True)
+
+    def test_rocm_tensorize_single_block_single_warp_output_fp32_fp32_t32_w4_tensormap(self) -> None:
+        self._rocm_tensorize(32, 32, 32, 32, 32, (4, 4, 32), 1e-2, ScalarType.float32, ScalarType.float32, True)
+
+    def test_rocm_tensorize_single_block_single_warp_output_fp32_fp32_t64_w32_tensormap(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), 1e-2, ScalarType.float32, ScalarType.float32, True)
+
+    def test_rocm_tensorize_single_block_single_warp_output_fp32_fp32_t64_w16_tensormap(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (4, 16, 64), 1e-2, ScalarType.float32, ScalarType.float32, True)
+
+    def test_rocm_tensorize_single_block_multi_warp_output_fp32_fp32_t16_w2_tensormap(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 2, 16), 1e-3, ScalarType.float16, ScalarType.float32, True)
+
+    def test_rocm_tensorize_single_block_multi_warp_output_fp16_fp32_t32_w4_tensormap(self) -> None:
+        self._rocm_tensorize(64, 64, 64, 64, 64, (4, 4, 32), 1e-3, ScalarType.float16, ScalarType.float32, True)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp16_t16_w2_tensormap(self) -> None:
+        self._rocm_tensorize(1024, 1024, 1024, 64, 64, (2, 2, 16), 1e-2, ScalarType.float16, ScalarType.float16, True)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp16_t32_w4_tensormap(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 4, 32), 1e-2, ScalarType.float16, ScalarType.float16, True)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp32_t64_w32_tensormap(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 64, (2, 32, 64), 1e-3, ScalarType.float16, ScalarType.float32, True)
+
+    def test_rocm_tensorize_multi_block_multi_warp_output_fp16_fp16_t64_w16_tensormap(self) -> None:
+        self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 16, 64), 1e-2, ScalarType.float16, ScalarType.float16, True)
+
     @expectedFailure(FailedReason.INVALID, "the hardware does not support the requested tensorcore shape")
     def test_rocm_tensorize_invalid_shape_output(self) -> None:
         self._rocm_tensorize(256, 256, 256, 64, 64, (64, 64, 64),
                              "test_rocm_tensorize_invalid_shape_output", False)
 
-    def _gpu_cache(self, M, N, K, m_tile_size, n_tile_size, k_tile_size, test_name, dBuffer=False, dBufferLoacation = Constants.AUTO) -> None:
+    def _gpu_cache(self, M, N, K, m_tile_size, n_tile_size, k_tile_size, test_name, double_buffer=False, double_buffer_location = Constants.AUTO) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
@@ -2634,10 +2675,10 @@ class SmokeTest(unittest.TestCase):
             }
         )
 
-        plan.cache(A, index=ii, double_buffer=dBuffer,
-                   location=_MemorySpace.SHARED, double_buffer_location=dBufferLoacation, layout=Array.Layout.FIRST_MAJOR)
-        plan.cache(B, index=ii, double_buffer=dBuffer,
-                   location=_MemorySpace.SHARED, double_buffer_location=dBufferLoacation, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(A, index=ii, double_buffer=double_buffer,
+                   location=_MemorySpace.SHARED, double_buffer_location=double_buffer_location, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(B, index=ii, double_buffer=double_buffer,
+                   location=_MemorySpace.SHARED, double_buffer_location=double_buffer_location, layout=Array.Layout.FIRST_MAJOR)
 
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
@@ -2648,7 +2689,7 @@ class SmokeTest(unittest.TestCase):
             test_name,
             check_correctness=ROCM_AVAILABLE,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+            package_format=Package.Format.DEFAULT
         )
 
     def test_gpu_cache_simple(self) -> None:
@@ -2738,7 +2779,7 @@ class SmokeTest(unittest.TestCase):
             test_name,
             check_correctness=ROCM_AVAILABLE,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+            package_format=Package.Format.DEFAULT
         )
 
     def test_gpu_cache_double_buffering_mem_space(self) -> None:
@@ -2851,7 +2892,7 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu"]) as v:
             package.build(
                 name=test_name,
-                format=Package.Format.MLIR | Package.Format.CUDA,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
                 mode=Package.Mode.RELEASE,
                 output_dir=output_dir
             )
@@ -2918,8 +2959,8 @@ class SmokeTest(unittest.TestCase):
             checker = v.file_checker(f"{test_name}.cu")
 
             # check the affine map function
-            checker.check_label("int64_t affine_map_func_0_i0(int64_t d0, int64_t d1) {")
-            checker.check("int64_t idx = ((d0 * 16) + d1);")
+            checker.check_label("uint32_t affine_map_func_0_i0(uint32_t d0, uint32_t d1) {")
+            checker.check("uint32_t idx = ((d0 * 16) + d1);")
             checker.check("return idx;")
 
             # check the gemm function
@@ -2936,7 +2977,7 @@ class SmokeTest(unittest.TestCase):
             file_check_fn=file_check_fn,
             check_correctness=ROCM_AVAILABLE,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+            package_format=Package.Format.DEFAULT
         )
 
     # Thrifty caching
@@ -3675,7 +3716,7 @@ class SmokeTest(unittest.TestCase):
     #     output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
     #     shutil.rmtree(output_dir, ignore_errors=True)
 
-    #     gpu_package_format = Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE
+    #     gpu_package_format = Package.Format.MLIR | Package.Format.DEFAULT
     #     with verifiers.VerifyPackage(self, package_name, output_dir) as v:
     #         package.build(name=package_name, format=gpu_package_format, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
@@ -3728,7 +3769,7 @@ class SmokeTest(unittest.TestCase):
     #     output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
     #     shutil.rmtree(output_dir, ignore_errors=True)
 
-    #     gpu_package_format = Package.Format.MLIR | Package.Format.CUDA | Package.Format.HAT_PACKAGE
+    #     gpu_package_format = Package.Format.MLIR | Package.Format.DEFAULT
     #     with verifiers.VerifyPackage(self, package_name, output_dir) as v:
     #         package.build(name=package_name, format=gpu_package_format, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
 
@@ -4002,8 +4043,9 @@ class SmokeTest(unittest.TestCase):
             checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
             checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
-            checker.check('%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][(%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32 + symbol(%[[Block_X]]) * 16 - (((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) floordiv 16) * 16, %[[lpt_iv]] * 256 + %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - ((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) * 32] : memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>')
-            checker.check('affine.store %[[Loaded_A_Val]], %[[Cache_A]][((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) mod 16, (%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) mod 32] : memref<16x32xf32, 3>')
+            checker.check('%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][%[[lpt_iv]] * 8 + symbol(%[[Block_X]]) * 16 + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16, %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32] : memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>')
+            # Note: (16*thread_y) % 32 == (16*thread_y) - 32((16*thread_y) floordiv 32) == (16*thread_y) - 32(thread_y floordiv 2)
+            checker.check('affine.store %[[Loaded_A_Val]], %[[Cache_A]][(%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) mod 16, symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32] : memref<16x32xf32, 3>')
 
             # check the B matrix load / store
             checker.check('"accv.lambda"() ( {')
@@ -4012,8 +4054,8 @@ class SmokeTest(unittest.TestCase):
             checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
             checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
-            checker.check('%[[Loaded_B_Val:[0-9_]+]] = affine.load %[[Array_B]][%[[k_iv]] + %[[kk_iv]] + %[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - ((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) * 32, (%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32 + symbol(%[[Block_Y]]) * 16 - (((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) floordiv 16) * 16] : memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>')
-            checker.check('affine.store %[[Loaded_B_Val]], %[[Cache_B]][(%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) mod 32, ((%[[lpt_iv]] * 256 + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]])) floordiv 32) mod 16] : memref<32x16xf32, 3>')
+            checker.check('%[[Loaded_B_Val:[0-9_]+]] = affine.load %[[Array_B]][%[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, %[[lpt_iv]] * 8 + symbol(%[[Block_Y]]) * 16 + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16] : memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>')
+            checker.check('affine.store %[[Loaded_B_Val]], %[[Cache_B]][symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, (%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) mod 16] : memref<32x16xf32, 3>')
 
             checker.run()
 
@@ -4024,7 +4066,7 @@ class SmokeTest(unittest.TestCase):
             file_check_fn=file_check_fn,
             check_correctness=ROCM_AVAILABLE,
             file_list=[f"{package_name}.cu", f"{package_name}.hat"],
-            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+            package_format=Package.Format.DEFAULT
         )
 
 
@@ -4079,7 +4121,10 @@ class SmokeTest(unittest.TestCase):
 
         self._verify_matrix_multiplication_function(function, package, f"test_vectorized_and_unvectorized_cpu_caches")
 
-    def _rocm_cache_tensorize(self, M, N, K, outer_tile_x, outer_tile_y, outer_tile_k, test_name, tensorize=True, cache=True, dBuffer = False, dBufferLocation = Constants.AUTO, vectorize=False) -> None:
+    def _rocm_cache_tensorize(self, M, N, K, outer_tile_m, outer_tile_n, outer_tile_k, test_name,
+                              tensorize=True, tensor_splits=[2, 2, 16], cache=True, cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
+                              double_buffer=False, double_buffer_location=Constants.AUTO, vectorize=False, use_static_offsets=False,
+                              bind_order=[GridUnits.BLOCK_Y, GridUnits.BLOCK_X, GridUnits.THREAD_Y, GridUnits.THREAD_X]) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
@@ -4101,38 +4146,42 @@ class SmokeTest(unittest.TestCase):
         schedule = nest.create_schedule()
 
         ii, jj, kk = schedule.tile({
-            i: outer_tile_x,
-            j: outer_tile_y,
+            i: outer_tile_m,
+            j: outer_tile_n,
             k: outer_tile_k
         })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
 
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
+        if tensor_splits:
+            iii, jjj, kkk = schedule.tile({
+                ii: tensor_splits[0],
+                jj: tensor_splits[1],
+                kk: tensor_splits[2]
+            })
+            schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
+        else:
+            schedule.reorder(i, j, k, ii, jj, kk)
+
 
         target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
             mapping={
-                i: target.GridUnit.BLOCK_Y,
-                j: target.GridUnit.BLOCK_X,
-                ii: target.GridUnit.THREAD_Y,
-                jj: target.GridUnit.THREAD_X
+                i: bind_order[0],
+                j: bind_order[1],
+                ii: bind_order[2],
+                jj: bind_order[3]
             }
         )
 
         if tensorize:
-            plan.tensorize(indices=(iii, jjj, kkk))
+            plan.tensorize(indices=(iii, jjj, kkk), use_static_offsets=use_static_offsets)
 
         if cache:
             plan.cache(
-                A, index=ii, double_buffer=dBuffer, double_buffer_location=dBufferLocation, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
+                A, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[0]
             )
             plan.cache(
-                B, index=ii, double_buffer=dBuffer, double_buffer_location=dBufferLocation, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR
+                B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1]
             )
 
         package = Package()
@@ -4144,32 +4193,74 @@ class SmokeTest(unittest.TestCase):
             test_name,
             check_correctness=ROCM_AVAILABLE,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+            package_format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT
         )
 
     def test_rocm_cache_tensorize(self) -> None:
-        self._rocm_cache_tensorize(1024, 1024, 1024, 64, 64, 64, "test_rocm_cache_tensorize")
+        self._rocm_cache_tensorize(M=1024, N=1024, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64, test_name="test_rocm_cache_tensorize")
 
     def test_rocm_cache_double_buffering_tensorize(self) -> None:
-        self._rocm_cache_tensorize(1024, 1024, 1024, 64, 64, 64, "test_rocm_cache_double_buffering_tensorize", True, True, True, _MemorySpace.PRIVATE)
+        self._rocm_cache_tensorize(M=1024, N=1024, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64, test_name="test_rocm_cache_double_buffering_tensorize", tensorize=True, cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE)
 
     def test_rocm_non_square(self) -> None:
-        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_non_square", False, False)
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64, test_name="test_rocm_non_square", tensorize=False, cache=False)
 
     def test_rocm_tensorize_non_square(self) -> None:
-        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_tensorize_non_square", True, False)
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64, test_name="test_rocm_tensorize_non_square", tensorize=True, cache=False)
 
     def test_rocm_cache_non_square(self) -> None:
-        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_cache_non_square", False)
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64, test_name="test_rocm_cache_non_square", tensorize=False)
 
     def test_rocm_cache_double_buffering_non_square(self) -> None:
-        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_cache_double_buffering_non_square", False, True, True, _MemorySpace.PRIVATE)
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64, test_name="test_rocm_cache_double_buffering_non_square", tensorize=False, cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE)
 
     def test_rocm_cache_double_buffering_tensorize_non_square(self) -> None:
-        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_cache_double_buffering_tensorize_non_square", True, True, True, _MemorySpace.PRIVATE)
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64, test_name="test_rocm_cache_double_buffering_tensorize_non_square", tensorize=True, cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE)
 
     def test_rocm_vectorized_cache_double_buffering_tensorize_non_square(self) -> None:
-        self._rocm_cache_tensorize(2560, 1536, 2048, 64, 64, 64, "test_rocm_vectorized_cache_double_buffering_tensorize_non_square", True, True, True, _MemorySpace.PRIVATE, True)
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64, test_name="test_rocm_vectorized_cache_double_buffering_tensorize_non_square", tensorize=True, cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True)
+
+    def test_rocm_vectorized_cache_non_square(self) -> None:
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_rocm_vectorized_cache_non_square", tensorize=False, tensor_splits=None,
+                                   cache=True, vectorize=True,
+                                   bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+
+    def test_rocm_vectorized_cache_non_square_small_tiles(self) -> None:
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=16, outer_tile_n=16, outer_tile_k=32,
+                                   test_name="test_rocm_vectorized_cache_non_square_small_tiles", tensorize=False, tensor_splits=None,
+                                   cache=True, vectorize=True,
+                                   bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+
+    def test_rocm_vectorized_cache_non_square_transpose(self) -> None:
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_rocm_vectorized_cache_non_square_transpose", tensorize=False, tensor_splits=None,
+                                   cache=True, cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR],
+                                   vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+
+    def test_rocm_vectorized_cache_non_square_double_buffer(self) -> None:
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_rocm_vectorized_cache_non_square_double_buffer", tensorize=False, tensor_splits=None,
+                                   cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
+                                   vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+
+    def test_rocm_vectorized_cache_non_square_double_buffer_small_tiles(self) -> None:
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=16, outer_tile_n=16, outer_tile_k=32,
+                                   test_name="test_rocm_vectorized_cache_non_square_double_buffer_small_tiles", tensorize=False, tensor_splits=None,
+                                   cache=True, vectorize=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
+                                   bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+
+    def test_rocm_vectorized_cache_non_square_double_buffer_transpose(self) -> None:
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_rocm_vectorized_cache_non_square_double_buffer_transpose", tensorize=False, tensor_splits=None,
+                                   cache=True, cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR],
+                                   double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
+                                   vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+
+    def test_rocm_vectorized_cache_double_buffering_tensorize_non_square_tensormap(self) -> None:
+        self._rocm_cache_tensorize(M=2560, N=1536, K=2048, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
+                                    test_name="test_rocm_vectorized_cache_double_buffering_tensorize_non_square_tensormap", tensorize=True,
+                                    cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, use_static_offsets=True)
 
     # @expectedFailure(FailedReason.BUG, "3d loads are not supported by tensorization")
     # def test_rocm_cache_double_buffering_tensorize_batched(self) -> None:
@@ -4254,7 +4345,7 @@ class SmokeTest(unittest.TestCase):
     #                                                                          f"{test_name}.hat"]) as v:
     #         package.build(
     #             name=test_name,
-    #             format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+    #             format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT,
     #             mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
     #             output_dir=output_dir,
     #             _quiet=False
@@ -4347,7 +4438,7 @@ class SmokeTest(unittest.TestCase):
     #                                                                          f"{test_name}.hat"]) as v:
     #         package.build(
     #             name=test_name,
-    #             format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+    #             format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT,
     #             mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
     #             output_dir=output_dir,
     #             _quiet=False
@@ -4440,7 +4531,7 @@ class SmokeTest(unittest.TestCase):
     #                                                                          f"{test_name}.hat"]) as v:
     #         package.build(
     #             name=test_name,
-    #             format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+    #             format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT,
     #             mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
     #             output_dir=output_dir,
     #             _quiet=False
@@ -4510,7 +4601,7 @@ class SmokeTest(unittest.TestCase):
     #                                                                          f"{test_name}.hat"]) as v:
     #         package.build(
     #             name=test_name,
-    #             format=Package.Format.MLIR_VERBOSE | Package.Format.CUDA | Package.Format.HAT_PACKAGE,
+    #             format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT,
     #             mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
     #             output_dir=output_dir,
     #             _quiet=False
@@ -4686,10 +4777,10 @@ class SmokeTest(unittest.TestCase):
         plan = schedule.create_plan(target=target)
         plan.bind(
             mapping={
-                i: target.GridUnit.BLOCK_X,
-                j: target.GridUnit.BLOCK_Y,
-                ii: target.GridUnit.THREAD_X,
-                jj: target.GridUnit.THREAD_Y
+                i: target.GridUnit.BLOCK_Y,
+                j: target.GridUnit.BLOCK_X,
+                ii: target.GridUnit.THREAD_Y,
+                jj: target.GridUnit.THREAD_X
             }
         )
         plan.tensorize(indices=(iii, jjj, kkk))
@@ -4705,7 +4796,7 @@ class SmokeTest(unittest.TestCase):
             check_correctness=ROCM_AVAILABLE,
             tolerance=0.2, # Higher tolerance for fp16
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+            package_format=Package.Format.DEFAULT
         )
 
     def test_rocm_cache_double_buffering_tensorize_fp16(self) -> None:
@@ -4786,7 +4877,7 @@ class SmokeTest(unittest.TestCase):
             check_correctness=ROCM_AVAILABLE,
             tolerance=0.2, # Higher tolerance for fp16
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.CUDA | Package.Format.HAT_PACKAGE
+            package_format=Package.Format.DEFAULT
         )
 
 

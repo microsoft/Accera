@@ -82,8 +82,12 @@ namespace ir
             os << "//\n";
             os << "// Header for Accera library " << libraryName << "\n";
             os << "//\n\n";
+            os << "#if defined(__cplusplus)\n";
+            os << "#include <cstdint>\n";
+            os << "#else\n";
             os << "#include <stdint.h>\n";
-            os << "#include <stdbool.h>\n\n";
+            os << "#include <stdbool.h>\n";
+            os << "#endif // defined(__cplusplus)\n";
 
             // for float16_t
             os << "#if !defined(ACCERA_FLOAT)\n";

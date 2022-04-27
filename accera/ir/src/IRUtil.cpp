@@ -17,6 +17,7 @@
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/BlockAndValueMapping.h>
@@ -130,33 +131,46 @@ namespace util
         return tmpBuffer;
     }
 
-    mlir::Value CreateGlobalBuffer(mlir::OpBuilder& builder, mlir::MemRefType bufferType, const std::string& namePrefix)
+    mlir::Value CreateGlobalBuffer(mlir::OpBuilder& builder, mlir::MemRefType bufferType, const std::string& namePrefix, const bool constant, Attribute attr, bool isExternal, bool appendUniqueSuffix)
     {
         auto insertionBlock = builder.getInsertionBlock();
         auto parentOp = insertionBlock->getParentOp();
-        return CreateGlobalBuffer(builder, parentOp, bufferType, namePrefix);
+        return CreateGlobalBuffer(builder, parentOp, bufferType, namePrefix, constant, attr, isExternal, appendUniqueSuffix);
     }
 
-    ir::value::GlobalOp CreateGlobalBufferOp(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, const std::string& namePrefix)
+    ir::value::GlobalOp CreateGlobalBufferOp(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, std::string globalName, const bool constant, Attribute attr, bool isExternal, bool appendUniqueSuffix)
     {
-        int64_t counterVal = GetUniqueId();
         auto loc = anchorOp->getLoc();
-        std::string globalName = namePrefix + "_" + std::to_string(counterVal);
+        if (appendUniqueSuffix)
+            globalName += "_" + std::to_string(GetUniqueId());
+
         mlir::OpBuilder::InsertionGuard guard(builder);
 
-        auto module = util::CastOrGetParentOfType<ir::value::ValueModuleOp>(anchorOp);
-        assert(module && "Expected to be inside a ValueModuleOp");
-        auto body = module.getBody();
+        mlir::Block* body;
+        if (auto moduleValue = util::CastOrGetParentOfType<ir::value::ValueModuleOp>(anchorOp))
+        {
+            body = moduleValue.getBody();
+        }
+        else if (auto moduleGPU = util::CastOrGetParentOfType<mlir::gpu::GPUModuleOp>(anchorOp))
+        {
+            body = moduleGPU.getBody();
+        }
+        else
+        {
+            auto moduleBase = util::CastOrGetParentOfType<mlir::ModuleOp>(anchorOp);
+            assert(moduleBase && "Expected to be inside a ValueModuleOp");
+            body = moduleBase.getBody();
+        }
 
         // Lock before accessing the global scope so that multi-threaded lowerings all access the appropriate global insert position
         std::lock_guard<std::mutex> lock(_globalInsertMutex);
         builder.setInsertionPoint(body, body->begin());
-        return builder.create<accera::ir::value::GlobalOp>(loc, bufferType, /* isConstant= */ false, globalName, Attribute{});
+        return builder.create<accera::ir::value::GlobalOp>(loc, bufferType, constant, globalName, attr, /*addrSpace*/ 0, isExternal);
     }
 
-    mlir::Value CreateGlobalBuffer(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, const std::string& namePrefix)
+    mlir::Value CreateGlobalBuffer(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, const std::string& namePrefix, const bool constant, Attribute attr, bool isExternal, bool appendUniqueSuffix)
     {
-        auto globalOp = CreateGlobalBufferOp(builder, anchorOp, bufferType, namePrefix);
+        auto globalOp = CreateGlobalBufferOp(builder, anchorOp, bufferType, namePrefix, constant, attr, isExternal, appendUniqueSuffix);
 
         auto insertionBlock = anchorOp->getBlock();
         auto it = insertionBlock->begin();
@@ -212,6 +226,12 @@ namespace util
     {
         // Todo: implement this method later
         return CreateGlobalBuffer(builder, anchorOp, bufferType, namePrefix);
+    }
+
+    std::pair<mlir::MemRefType, mlir::RankedTensorType> GetMFMAThreadOffsetMapType(mlir::OpBuilder& builder, const std::vector<int64_t>& vecSize)
+    {
+        auto mlirElemType = builder.getIntegerType(8);
+        return std::make_pair(mlir::MemRefType::get(vecSize, mlirElemType, {}, /*Private*/ 5), mlir::RankedTensorType::get(vecSize, mlirElemType));
     }
 
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string tag)
@@ -616,7 +636,6 @@ namespace util
     {
         auto symTableOp = mlir::SymbolTable::getNearestSymbolTable(rootOp);
         auto symbolOp = mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, id);
-        assert(symbolOp && "Op with given symbol name not found");
         return symbolOp;
     }
 
@@ -882,6 +901,22 @@ namespace util
             return builder.create<mlir::UnrealizedConversionCastOp>(value.getLoc(), signlessType, value).getResult(0);
         }
         return value; // pass-through, no signless change
+    }
+
+    mlir::Operation* GetDefiningOpOrForLoop(mlir::Value val)
+    {
+        if (mlir::isForInductionVar(val)) // AffineForOp
+        {
+            return mlir::getForInductionVarOwner(val);
+        }
+        else if (auto scfForOp = mlir::scf::getForInductionVarOwner(val)) // SCFForOp
+        {
+            return scfForOp;
+        }
+        else // Arbitrary other op
+        {
+            return val.getDefiningOp();
+        }
     }
 } // namespace util
 } // namespace accera::ir

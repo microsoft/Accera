@@ -942,7 +942,7 @@ namespace cpp_printer
             return failure();
         }
         auto rank = memrefType.getRank();
-
+        os << "constexpr "; // since we only support constant buffers
         RETURN_IF_FAILED(printType(memrefType.getElementType()));
         os << " ";
         os << globalOp.getName();

@@ -17,7 +17,7 @@ static std::atomic<size_t> _nextPipeIdx = 0;
 void IRSnapshot(const std::string& filename, mlir::Operation* op, const std::string& fileExtension)
 {
     auto fullFileNameStr = filename + fileExtension;
-    (void)generateLocationsFromIR(fullFileNameStr, op, mlir::OpPrintingFlags{}.printGenericOpForm());
+    (void)generateLocationsFromIR(fullFileNameStr, op, mlir::OpPrintingFlags{});
 }
 
 IRSnapshotter::IRSnapshotter(const IRSnapshotter& other)

@@ -17,7 +17,7 @@ Accera requires the following tools and libraries:
 Homebrew is a package manager that makes it easy to install the prerequisites. Homebrew can be downloaded and installed by:
 
 ```
-/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
 If you already have Homebrew installed, update it to the latest version by typing:
@@ -28,9 +28,9 @@ brew update
 
 Install the dependencies:
 
-```
-brew install cmake python@3.7 ninja-build ccache libomp
-```
+Intel MacOS|Apple Silicon|
+|--|--|
+|`brew install cmake python ninja-build ccache libomp pkg-config`|`brew install cmake python ninja ccache libomp pkg-config`
 
 #### Clang
 
@@ -102,5 +102,3 @@ ctest -C Release
 ```shell
 cmake --build . --config Release --target install
 ```
-
-

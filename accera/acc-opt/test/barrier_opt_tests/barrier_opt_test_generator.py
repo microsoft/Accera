@@ -10,7 +10,7 @@ import accera as acc
 def build_package(plan, args, name):
     package = acc.Package()
     package.add(plan, args=args, base_name=name)
-    package.build(name, format=acc.Package.Format.MLIR_VERBOSE | acc.Package.Format.CUDA, output_dir="build")
+    package.build(name, format=acc.Package.Format.MLIR_VERBOSE | acc.Package.Format.DEFAULT, output_dir="build")
 
 
 def barrier():
@@ -31,7 +31,7 @@ def barrier_trivial_test_1():
     @nest.iteration_logic
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         shA[i] = A[i]
         A[i] *= 2.0
         B[i] = shA[i]
@@ -55,7 +55,7 @@ def barrier_single_warp_test_1():
     @nest.iteration_logic
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([N]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         barrier()
         shA[i] = A[i]
         barrier()
@@ -85,7 +85,7 @@ def barrier_single_warp_test_2():
     @nest.iteration_logic
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([N]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         barrier()
         shA[i] = A[i]
         barrier()
@@ -117,7 +117,7 @@ def barrier_single_warp_test_3():
     @nest.iteration_logic
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([N]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         barrier()
         shA[i] = A[i]
         barrier()
@@ -150,7 +150,7 @@ def barrier_multi_warp_test_1():
     @nest.iteration_logic
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([N]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         barrier()
         shA[i] = A[i]
         barrier()
@@ -182,9 +182,9 @@ def barrier_seq_test_1():
 
     @nest.iteration_logic
     def _():
-        # Performs excessive barriers. 
+        # Performs excessive barriers.
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         barrier()
         shA[i] = A[i]
         barrier()
@@ -214,10 +214,10 @@ def barrier_seq_test_2():
 
     @nest.iteration_logic
     def _():
-        # Performs excessive barriers. 
+        # Performs excessive barriers.
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
         shB = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         barrier()
         shA[i] = A[i]
         barrier()
@@ -247,10 +247,10 @@ def barrier_seq_test_3():
 
     @nest.iteration_logic
     def _():
-        # Performs excessive barriers. 
+        # Performs excessive barriers.
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
         shB = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         shB[i] = A[i]
         barrier()
         shA[i] = A[i]
@@ -317,7 +317,7 @@ def barrier_if_test_2():
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
         shB = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         def if_block():
             barrier()
             shB[i] = A[i]
@@ -416,9 +416,9 @@ def barrier_if_test_4():
         barrier()
         shB[i] = B[i]
         barrier()
-        
+
         acc._lang_python._lang._If(i < acc._lang_python._lang.as_index(N), if_block).Else(else_block)
-        
+
         barrier()
         shA[i] = A[i]
         barrier()
@@ -448,7 +448,7 @@ def barrier_loop_test_1():
     @nest.iteration_logic
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         start = acc.Scalar(0)
         stop = acc.Scalar(32)
         step = acc.Scalar(1)
@@ -490,7 +490,7 @@ def barrier_loop_test_2():
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
         shB = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         start = acc.Scalar(0)
         stop = acc.Scalar(32)
         step = acc.Scalar(1)
@@ -533,7 +533,7 @@ def barrier_loop_test_3():
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
         shB = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         start = acc.Scalar(0)
         stop = acc.Scalar(32)
         step = acc.Scalar(1)
@@ -594,7 +594,7 @@ def barrier_loop_test_4():
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
         shB = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         start = acc.Scalar(0)
         stop = acc.Scalar(32)
         step = acc.Scalar(1)
@@ -650,7 +650,7 @@ def barrier_loop_test_5():
     @nest.iteration_logic
     def _():
         shA = acc.NativeArray(acc.Allocate(type=acc.ScalarType.float32, layout=acc._lang_python._MemoryLayout([blocksize]).set_memory_space(acc._lang_python._lang._MemorySpace.SHARED)))
-        
+
         start = acc.Scalar(0)
         stop = acc.Scalar(32)
         step = acc.Scalar(1)

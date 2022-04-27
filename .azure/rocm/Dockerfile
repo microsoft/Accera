@@ -7,7 +7,9 @@
 
 # https://docs.docker.com/engine/reference/builder/#understand-how-arg-and-from-interact
 ARG ROCMVER=5.1.1-ub20
-FROM amddcgpuce/rocm:${ROCMVER}
+
+# cf: amddcgpuce/rocm:${ROCMVER}
+FROM acceracontainers.azurecr.io/rocm:${ROCMVER}
 
 ARG ROCMVER
 RUN echo "ROCm Version: " ${ROCMVER}

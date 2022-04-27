@@ -51,6 +51,7 @@ namespace value
 
         // Triples
         std::string c_macTriple = "x86_64-apple-macosx10.12.0"; // alternate: "x86_64-apple-darwin16.0.0"
+        std::string c_macArm64Triple = "arm64-apple-darwin21.4.0";
         std::string c_linuxTriple = "x86_64-pc-linux-gnu";
         std::string c_windowsTriple = "x86_64-pc-win32";
         std::string c_armv6Triple = "armv6--linux-gnueabihf"; // raspberry pi 0
@@ -77,6 +78,10 @@ namespace value
         const std::map<std::string, std::function<void(TargetDevice&)>> KnownTargetDeviceNameMap = {
             { "mac", [](TargetDevice& targetDevice) {
                  targetDevice.triple = c_macTriple;
+                 targetDevice.dataLayout = c_macDataLayout;
+             } },
+            { "mac_arm64", [](TargetDevice& targetDevice) {
+                 targetDevice.triple = c_macArm64Triple;
                  targetDevice.dataLayout = c_macDataLayout;
              } },
             { "linux", [](TargetDevice& targetDevice) {
@@ -231,7 +236,10 @@ namespace value
                 throw EmitterException(EmitterError::targetNotSupported, "Couldn't create target " + error);
             }
             const OutputRelocationModel relocModel = OutputRelocationModel::Static;
-            const llvm::CodeModel::Model codeModel = llvm::CodeModel::Medium;
+
+            // Aarch64 only supports Tiny, Small, Large
+            const llvm::CodeModel::Model codeModel = (targetDevice.architecture == "aarch64") ? llvm::CodeModel::Small : llvm::CodeModel::Medium;
+
             const llvm::TargetOptions options;
             std::unique_ptr<llvm::TargetMachine> targetMachine(target->createTargetMachine(targetDevice.triple,
                                                                                            targetDevice.cpu,

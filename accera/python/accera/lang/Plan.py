@@ -138,7 +138,7 @@ class Plan:
             idxs, num_threads, _ParallelizationPolicy.DYNAMIC if policy == "dynamic" else _ParallelizationPolicy.STATIC
         )
 
-    def tensorize(self, indices: Union[LoopIndex, Tuple[LoopIndex]]):
+    def tensorize(self, indices: Union[LoopIndex, Tuple[LoopIndex]], use_static_offsets: bool = False):
         """Only available for targets with native matrix multiplication instruction (tensor core) support. 
         Marks the dimensions of the iteration-space for tensorization. 
         Only perfectly nested loops of the following form can be tensorized:
@@ -168,9 +168,9 @@ class Plan:
         for index in indices:
             self._add_index_attr(index, "tensorized")
 
-        self._commands.append(partial(self._tensorize, indices))
+        self._commands.append(partial(self._tensorize, indices, use_static_offsets))
 
-    def _tensorize(self, indices, context: NativeLoopNestContext):
+    def _tensorize(self, indices, use_static_offsets, context: NativeLoopNestContext):
         from .._lang_python import ScalarType
 
         tensorize_dims = []
@@ -186,14 +186,15 @@ class Plan:
                 raise ValueError("The tensorization index stride must be contiguous")
             tensorize_dims.append(stop)
         if not self._target.tensor_core.supports(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=tensorize_dims) and \
-            not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=tensorize_dims):
+            not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=tensorize_dims) and \
+            not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=tensorize_dims):
             raise ValueError(
                 "The target does not support the given tensorization dimensions with shape=", tensorize_dims
             )
 
         idxs = [context.mapping[id(index)] for index in indices]
 
-        context.plan.tensorize(indices=idxs, dims=tensorize_dims)
+        context.plan.tensorize(indices=idxs, dims=tensorize_dims, useStaticOffsets=use_static_offsets)
 
     def cache(
         self,

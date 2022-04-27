@@ -58,6 +58,9 @@ add_test(NAME ${library_name}_unittests COMMAND python test/unit_tests.py)
 configure_file("accera/test/dsl_tests.py" "test/dsl_tests.py" @ONLY)
 add_test(NAME ${library_name}_dsltests COMMAND python test/dsl_tests.py)
 
+configure_file("accera/test/mfma_tests.py" "test/mfma_tests.py" @ONLY)
+add_test(NAME ${library_name}_mfmatests COMMAND python test/mfma_tests.py)
+
 # sub-packages
 add_subdirectory(compilers)
 add_subdirectory(gpu)

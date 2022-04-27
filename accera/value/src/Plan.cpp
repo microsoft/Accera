@@ -201,11 +201,11 @@ namespace value
             }
         }
 
-        void Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims)
+        void Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims, bool useStaticOffsets)
         {
             auto& builder = GetBuilder();
 
-            TensorizationInfo tensorizationInfo{ dims };
+            TensorizationInfo tensorizationInfo{ dims, useStaticOffsets };
             auto tensorizationInfoIdentifier = builder.getIdentifier(TensorizationInfoAttr::getKeyName());
             auto tensorizationInfoAttr = TensorizationInfoAttr::get(tensorizationInfo, builder.getContext());
 
@@ -408,9 +408,9 @@ namespace value
         return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace);
     }
 
-    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims)
+    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims, bool useStaticOffsets)
     {
-        _impl->Tensorize(indices, dims);
+        _impl->Tensorize(indices, dims, useStaticOffsets);
     }
 
     void GPUPlan::MapIndexToProcessor(ScalarIndex index, Processor proc)

@@ -88,6 +88,8 @@ set(PACKAGE_ROOT ${ACCERA_EXTERNAL_DIR})
 # Set up install location in build directory
 set(CMAKE_INSTALL_PREFIX ${CMAKE_BINARY_DIR}/install)
 
+include(BuildTargetSetup)
+
 if(USE_MKL)
   include(MKLSetup)
 else()
@@ -174,11 +176,14 @@ else()
   else() # GCC
     add_compile_options(-Wno-ignored-attributes)
     add_compile_options(-fdiagnostics-color=always)
-    # Set options for Control Flow Integrity
-    add_compile_options(-fcf-protection)
     add_compile_options(-Wl,dynamicbase)
     # Enable Shadow Stack mitigation
     add_compile_options(-Wshadow)
+
+    if(NOT ${OSX_NATIVE_ARCH} STREQUAL "arm64")
+      # Set options for Control Flow Integrity (not supported on macos/arm64)
+      add_compile_options(-fcf-protection)
+    endif()
   endif()
 endif()
 

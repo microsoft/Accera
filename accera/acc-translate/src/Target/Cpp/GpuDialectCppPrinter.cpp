@@ -314,25 +314,34 @@ namespace cpp_printer
         if (state.hasRuntime(Runtime::CUDA))
         {
             os << R"CUDA(
-
-#if defined(__HIP_PLATFORM_AMD__)
-using vhalf = __fp16;
-using vfloatx2_t = float __attribute__((ext_vector_type(2)));
-using vfloatx4_t = float __attribute__((ext_vector_type(4)));
-using vfloatx8_t = float __attribute__((ext_vector_type(8)));
-using vfloatx16_t = float __attribute__((ext_vector_type(16)));
-using vfloatx32_t = float __attribute__((ext_vector_type(32)));
-using vfloatx64_t = float __attribute__((ext_vector_type(64)));
+#if defined(__HIP_PLATFORM_HCC__)
+#include <hip/hip_runtime.h>
+#elif defined(__HIP_PLATFORM_NVCC__)
+#include <cuda_runtime.h>
+#endif
+using vhalf = _Float16;
 using vhalfx2_t = vhalf __attribute__((ext_vector_type(2)));
 using vhalfx4_t = vhalf __attribute__((ext_vector_type(4)));
 using vhalfx8_t = vhalf __attribute__((ext_vector_type(8)));
 using vhalfx16_t = vhalf __attribute__((ext_vector_type(16)));
 using vhalfx32_t = vhalf __attribute__((ext_vector_type(32)));
 using vhalfx64_t = vhalf __attribute__((ext_vector_type(64)));
-#elif defined(__CUDA__)
-#include "cuda_fp16.h"
-#endif // !defined(__HIP_PLATFORM_AMD__)
-
+using vfloatx2_t = float __attribute__((ext_vector_type(2)));
+using vfloatx4_t = float __attribute__((ext_vector_type(4)));
+using vfloatx8_t = float __attribute__((ext_vector_type(8)));
+using vfloatx16_t = float __attribute__((ext_vector_type(16)));
+using vfloatx32_t = float __attribute__((ext_vector_type(32)));
+using vfloatx64_t = float __attribute__((ext_vector_type(64)));
+using int8_t = char;
+using int16_t = short;
+using uint8_t = unsigned char;
+using uint16_t = unsigned short;
+namespace std {
+using ::uint8_t;
+using ::uint16_t;
+using ::int8_t;
+using ::int16_t;
+}
 )CUDA";
         }
 

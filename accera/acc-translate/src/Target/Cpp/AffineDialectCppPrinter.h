@@ -55,8 +55,6 @@ namespace cpp_printer
             return affineMapToFuncBaseName;
         }
 
-        static constexpr const char* affineIdxTypeStr = "int64_t";
-
         static constexpr const char* affineCeilDivStr = "affine_ceildiv";
 
         static constexpr const char* affineMapFuncPrefix = "affine_map_func_";

@@ -21,6 +21,8 @@ using llvm::StringRef;
 using mlir::LogicalResult;
 using mlir::Type;
 
+constexpr auto MFMAThreadBufferMapName = "threadOffsetsMFMA";
+
 /// MFMAMatrixType storage and uniquing. Array is uniqued based on its shape,
 /// type, and operand.
 struct MFMAMatrixStorageType : public mlir::TypeStorage
@@ -158,6 +160,9 @@ public:
     int64_t getNumBlocks() const;
 
     int64_t getTileFactor() const;
+
+    std::vector<uint8_t> getOffsetMap() const;
+    std::vector<int64_t> getOffsetMapSize() const;
 
 private:
     static Shape getShapeType(const ArrayRef<int64_t>& mfmaShape);

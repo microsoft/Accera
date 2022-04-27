@@ -586,6 +586,43 @@ int64_t MFMAMatrixType::getTileFactor() const
     }
 }
 
+std::vector<uint8_t> MFMAMatrixType::getOffsetMap() const
+{
+    // These index offsets are calculated based on the data layout in which
+    // AMD mfma operation maps them to different threads.
+    switch (getShapeType())
+    {
+    case Shape::T2x32x64:
+        [[fallthrough]];
+    case Shape::T4x4x32:
+        return { 0, 4, 1, 5, 2, 6, 3, 7, 8, 12, 9, 13, 10, 14, 11, 15, 16, 20, 17, 21, 18, 22, 19, 23, 24, 28, 25, 29, 26, 30, 27, 31 };
+    case Shape::T4x16x64:
+        [[fallthrough]];
+    case Shape::T2x2x16:
+        return { 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15 };
+    default:
+        return {};
+    }
+}
+
+std::vector<int64_t> MFMAMatrixType::getOffsetMapSize() const
+{
+    // The offset map is organised in this layout so that it can be indexed by thread id.
+    switch (getShapeType())
+    {
+    case Shape::T2x32x64:
+        [[fallthrough]];
+    case Shape::T4x4x32:
+        return { 16, 2 };
+    case Shape::T4x16x64:
+        [[fallthrough]];
+    case Shape::T2x2x16:
+        return { 4, 4 };
+    default:
+        return {};
+    }
+}
+
 LogicalResult
 MFMAMatrixType::verify(llvm::function_ref<InFlightDiagnostic()> emitError,
                        ArrayRef<int64_t> shape,

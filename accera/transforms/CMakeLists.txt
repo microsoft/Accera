@@ -63,6 +63,14 @@ set(rcgpu_include
   include/gpu/AcceraVulkanPasses.h
 )
 
+set(accaffine_src
+  src/affine/AffineSimplifications.cpp
+)
+
+set(accaffine_include
+  include/affine/AffineSimplifications.h
+)
+
 set(util_src
   src/util/MathUtilities.cpp
   src/util/RangeValueUtilities.cpp
@@ -93,6 +101,7 @@ set(src
     ${rcnest_src}
     ${rcexec_src}
     ${rcgpu_src}
+    ${accaffine_src}
     ${util_src}
 )
 
@@ -102,6 +111,7 @@ set(include
     ${rcnest_include}
     ${rcexec_include}
     ${rcgpu_include}
+    ${accaffine_include}
     ${util_include}
 )
 

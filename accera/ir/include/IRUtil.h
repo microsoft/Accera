@@ -234,15 +234,17 @@ namespace util
 
     mlir::OpBuilder MakeBodyBuilder(mlir::AffineForOp forOp);
 
-    ir::value::GlobalOp CreateGlobalBufferOp(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, const std::string& namePrefix);
+    ir::value::GlobalOp CreateGlobalBufferOp(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, std::string globalName, bool constant = false, Attribute attr = {}, bool isExternal = false, bool appendUniqueSuffix = true);
 
     mlir::Value CreateStackBuffer(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, int64_t alignment);
-    mlir::Value CreateGlobalBuffer(mlir::OpBuilder& builder, mlir::MemRefType bufferType, const std::string& namePrefix);
-    mlir::Value CreateGlobalBuffer(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, const std::string& namePrefix);
+    mlir::Value CreateGlobalBuffer(mlir::OpBuilder& builder, mlir::MemRefType bufferType, const std::string& namePrefix, bool constant = false, Attribute attr = {}, bool isExternal = false, bool appendUniqueSuffix = true);
+    mlir::Value CreateGlobalBuffer(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, const std::string& namePrefix, bool constant = false, Attribute attr = {}, bool isExternal = false, bool appendUniqueSuffix = true);
     mlir::Value CreateSharedBuffer(mlir::OpBuilder& builder, mlir::MemRefType bufferType, const std::string& namePrefix);
     mlir::Value CreateSharedBuffer(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, const std::string& namePrefix);
     mlir::Value CreatePrivateBuffer(mlir::OpBuilder& builder, mlir::MemRefType bufferType, const std::string& namePrefix);
     mlir::Value CreatePrivateBuffer(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, const std::string& namePrefix);
+
+    std::pair<mlir::MemRefType, mlir::RankedTensorType> GetMFMAThreadOffsetMapType(mlir::OpBuilder& rewriter, const std::vector<int64_t>& vecSize);
 
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string tag);
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string tag, mlir::Location opLocation);
@@ -384,6 +386,13 @@ namespace util
 
     mlir::Value ToSignlessMLIRValue(mlir::OpBuilder& builder, mlir::Value value);
     mlir::Type ToSignlessMLIRType(mlir::OpBuilder& builder, mlir::Type type);
+
+    // Returns:
+    // a) The AffineForOp if the given value is an AffineForOp induction variable
+    // b) The SCFForOp if the given value is an SCFForOp induction variable
+    // c) The given value's defining op if it is an op result
+    // d) nullptr otherwise (e.g. if it is a block argument for a non-for-loop op)
+    mlir::Operation* GetDefiningOpOrForLoop(mlir::Value val);
 
 } // namespace util
 } // namespace accera::ir

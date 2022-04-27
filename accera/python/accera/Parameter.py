@@ -2,35 +2,137 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
-
-from typing import List, Callable
+import operator as ops
+from typing import Any, List, Callable, Union
 from varname import varname
 
+
 class DelayedParameter:
-    def __init__(self, name=None):
+
+    def __init__(
+        self,
+        name: str = None,
+        operand1: Union["DelayedParameter", int, float] = None,
+        operand2: Union["DelayedParameter", int, float] = None,
+        operation: Callable[["DelayedParameter", "DelayedParameter"], Any] = None,
+    ):
         self._value = None
         self._name = name
+        self._operand1 = operand1
+        self._operand2 = operand2
+        self._operation = operation
 
     def get_value(self):
+        """
+        get_value method either returns the value of a normal DelayedParameter if it has been set, 
+        or works as the delay evaluation of resultant DelayedParameter calculated from arithmetic operation,
+        it recusively calls the operand's get_value method, then does arithmetic operation with the value of the operands.
+        """
+        if self._operation:
+            operand1 = self._operand1.get_value() if isinstance(self._operand1, DelayedParameter) else self._operand1
+            operand2 = self._operand2.get_value() if self._operand2 and isinstance(self._operand2, DelayedParameter) else self._operand2
+            self._value = self._operation(operand1, operand2) if operand2 else self._operation(operand1)
+
         return self._value
+    
+    def __hash__(self):
+        return id(self)
+
+    def __eq__(self, other):
+        return id(self) == id(other)
 
     def set_value(self, value):
         self._value = value
 
+    def __add__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__add__)
+
+    def __sub__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__sub__)
+
+    def __mul__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__mul__)
+
+    def __matmul__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__matmul__)
+
+    def __truediv__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__truediv__)
+
+    def __floordiv__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__floordiv__)
+
+    def __mod__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__mod__)
+    
+    def __rmul__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__mul__)
+
+    # TODO: __pow__ accepts an optional arg for modulo
+    def __pow__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__pow__)
+
+    def __lshift__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__lshift__)
+
+    def __rshift__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__rshift__)
+
+    def __and__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__and__)
+
+    def __xor__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__xor__)
+
+    def __or__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__or__)
+
+    def __lt__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__lt__)
+
+    def __le__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__le__)
+
+    def __ne__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__ne__)
+
+    def __ge__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__ge__)
+
+    def __gt__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=ops.__gt__)
+
+    def __divmod__(self, other):
+        return DelayedParameter(operand1=self, operand2=other, operation=divmod)
+
+    def __abs__(self):
+        return DelayedParameter(operand1=self, operand2=None, operation=ops.__abs__)
+
+    def __neg__(self):
+        return DelayedParameter(operand1=self, operand2=None, operation=ops.__neg__)
+
+    def __pos__(self):
+        return DelayedParameter(operand1=self, operand2=None, operation=ops.__pos__)
+
+    def __invert__(self):
+        return DelayedParameter(operand1=self, operand2=None, operation=ops.__invert__)
+
+    def __abs__(self):
+        return DelayedParameter(operand1=self, operand2=None, operation=ops.__abs__)
+
 
 def create_parameters(count: int):
+    """
+    Create objects of DelayedParameter.
+    TODO: count as an argument is not needed any more, can be removed later
+    """
     if count < 1:
         raise ValueError("Invalid parameters count")
     names = varname(multi_vars=True)
-    return (tuple([DelayedParameter(name) for name in names])
-            if count > 1 else DelayedParameter(names[0]))
+    return (tuple([DelayedParameter(name) for name in names]) if count > 1 else DelayedParameter(names[0]))
 
 
-def create_parameter_grid(
-    parameter_choices: dict, 
-    filter_func: Callable = None, 
-    sample: int = 0
-) -> List[dict]:
+def create_parameter_grid(parameter_choices: dict, filter_func: Callable = None, sample: int = 0) -> List[dict]:
     """
     Create a parameter grid from a dictionary that maps each parameter to its possible values,
     with/without a self-defined filter and the number of sample.
@@ -38,7 +140,7 @@ def create_parameter_grid(
         Returns a list of a dictionary or a dictionary of {DelayedParameter: value}.
 
         Args:
-            parameter_choices: A dictionary that maps each parameter to its possible values, e.g. 
+            parameter_choices: A dictionary that maps each parameter to its possible values, e.g.
                                         P0, P1, P2, P3, P4 = create_parameters(5)
                                         parameter_choices = {
                                             P0: [8, 16],

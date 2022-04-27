@@ -42,7 +42,9 @@ def _(arg: lang.Array):
 
 @singledispatch
 def _resolve_array_shape(source, arr: lang.Array):
-    if arr.shape[-1] == inf:
+    is_infinite_value = arr.shape[-1].get_value() == inf if isinstance(arr.shape[-1],
+                                                                       DelayedParameter) else arr.shape[-1] == inf
+    if is_infinite_value:
         # TODO: support shape inference for lang.Function, Callable if needed
         raise NotImplementedError(f"Array shape cannot be resolved for {type(source)}")
     return
@@ -51,8 +53,9 @@ def _resolve_array_shape(source, arr: lang.Array):
 @_resolve_array_shape.register(lang.Nest)
 def _(source, arr: lang.Array):
     from .lang.IntrospectionUtilities import get_array_access_indices
-
-    if arr.shape[-1] == inf:
+    is_infinite_value = arr.shape[-1].get_value() == inf if isinstance(arr.shape[-1],
+                                                                       DelayedParameter) else arr.shape[-1] == inf
+    if is_infinite_value:
         # introspect array access index to determine dimensions of the array
         logic_fns = source.get_logic()
         # TODO: support multiple logic fns if needed
@@ -124,13 +127,14 @@ class Package:
         HAT_PACKAGE = auto()
         MLIR = auto()
         MLIR_VERBOSE = auto()
-        CPP = auto()
-        CUDA = auto()
-        DEFAULT = auto()    # HAT_DYNAMIC on HOST targe, HAT_STATIC otherwise.
+        SOURCE = auto()
+        DEFAULT = auto()    # HAT_DYNAMIC on HOST target, HAT_STATIC otherwise
         HAT_DYNAMIC = HAT_PACKAGE | DYNAMIC_LIBRARY    #: HAT package format, dynamically linked.
-        HAT_STATIC = HAT_PACKAGE | STATIC_LIBRARY    #: HAT package format, statically linked.
+        HAT_STATIC = HAT_PACKAGE | STATIC_LIBRARY    #: HAT package format, statically linked
+        HAT_SOURCE = HAT_PACKAGE | SOURCE
         MLIR_DYNAMIC = HAT_DYNAMIC | MLIR    #: MLIR (debugging) package format, dynamically linked.
         MLIR_STATIC = HAT_STATIC | MLIR    #: MLIR (debugging) package format, statically linked.
+        MLIR_SOURCE = HAT_SOURCE | MLIR
 
     class Mode(Enum):
         RELEASE = "Release"    #: Release (maximally optimized).
@@ -271,7 +275,6 @@ class Package:
 
             # due to the fall-through, we only need to validate here
             validate_target(source.target)
-            logging.debug("Adding wrapped function")
 
             native_array_args = [arg._get_native_array() for arg in args]
 
@@ -295,7 +298,6 @@ class Package:
                 source(*map(_convert_arg, args))
 
             name = get_function_name(Target.HOST)
-            logging.debug(f"[API] Added {name}")
 
             wrapped_func = lang.Function(
                 name=name,
@@ -320,13 +322,12 @@ class Package:
         with SetActiveModule(module):
             to_pop = []
             for name, wrapped_func in self._fns.items():
-                print(f"Building function {name}")
                 try:
                     wrapped_func._emit()
                 except Exception as e:
                     to_pop.append(name)
-                    print(f"Compiler error when trying to build function {name}")
-                    print(e)
+                    logging.error(f"Compiler error when trying to build function {name}")
+                    logging.error(e)
                     if fail_on_error:
                         raise
                     else:
@@ -446,7 +447,11 @@ class Package:
         )    # store it as a boolean because we're going to turn off the actual flag
         if format_is_default:
             format &= ~Package.Format.DEFAULT    # Turn off "DEFAULT"
-            format |= (Package.Format.HAT_STATIC if cross_compile else Package.Format.HAT_DYNAMIC)
+
+            if target.runtime in [Target.Runtime.CUDA, Target.Runtime.ROCM]:
+                format |= Package.Format.HAT_SOURCE
+            else:
+                format |= (Package.Format.HAT_STATIC if cross_compile else Package.Format.HAT_DYNAMIC)
 
         dynamic_link = bool(format & Package.Format.DYNAMIC_LIBRARY)
         if cross_compile and dynamic_link:
@@ -470,11 +475,8 @@ class Package:
             package_module.EmitDebugFunction(fn_name, utilities)
 
         # Emit the package module
-        # TODO: Update Format enum to use SOURCE instead and then this should take runtime into consideration
-        if format & Package.Format.CPP:
-            output_type = accc.ModuleOutputType.CPP
-        elif format & Package.Format.CUDA:
-            output_type = accc.ModuleOutputType.CUDA
+        if format & Package.Format.SOURCE:
+            output_type = accc.ModuleOutputType.CUDA if compiler_options.gpu_only else accc.ModuleOutputType.CPP
         else:
             output_type = accc.ModuleOutputType.OBJECT
 
@@ -508,7 +510,7 @@ class Package:
         path_root = os.path.join(output_dir, name)
         extension = ".hat"
 
-        if format & (Package.Format.CUDA | Package.Format.CPP):
+        if format & Package.Format.SOURCE:
             shutil.copy(proj.module_file_sets[0].translated_source_filepath, output_dir)
 
         if format & (Package.Format.DYNAMIC_LIBRARY | Package.Format.STATIC_LIBRARY):

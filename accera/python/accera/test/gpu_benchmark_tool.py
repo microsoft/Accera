@@ -158,13 +158,13 @@ def create_gemm_nest_args(opts:GemmOpts):
 
     @nest.iteration_logic
     def _():
-        C[i, k] += Scalar(alpha) * A[i, j] * B[j, k] + Scalar(beta) * C[i, k]
+        C[i, j] += A[i, k] * B[k, j]
 
     return nest, (A, B, C)
 
 
-
 def benchmark_gemm(f: TextIOWrapper, opts:GemmOpts, target:Target, output_dir:str, suffix:str):
+    FLOAT_BYTES = 4
     M = opts.M
     N = opts.N
     K = opts.K
@@ -179,9 +179,12 @@ def benchmark_gemm(f: TextIOWrapper, opts:GemmOpts, target:Target, output_dir:st
 
     if target.runtime == Target.Runtime.ROCM:
         outer_tiles = [16, 32, 64, 128]
-        mfma_tiles = [(2, 2, 16), (4, 4, 32), (2, 32, 64), (4, 16, 64), (2, 2, 16), (4, 4, 32)]
+        mfma_tiles = [(2, 2, 16), (4, 4, 32), (2, 32, 64), (4, 16, 64)]
 
-        variants = product(combinations_with_replacement(outer_tiles, 3), mfma_tiles)
+        def valid_variant(outer_t, mfma_t):
+            return (outer_t[0] % mfma_t[2] == 0) and (outer_t[1] % mfma_t[2] == 0) and \
+                (2 * outer_t[0] * outer_t[1] * FLOAT_BYTES <= target.max_shared_memory_per_block)
+        variants = filter(lambda v:valid_variant(v[0], v[1]), product(combinations_with_replacement(outer_tiles, 3), mfma_tiles))
         func_def_headers += ["outer_tiles", "mfma_tiles"]
 
     elif target.runtime == Target.Runtime.CUDA:
@@ -202,6 +205,9 @@ def benchmark_gemm(f: TextIOWrapper, opts:GemmOpts, target:Target, output_dir:st
         package = Package()
 
         try:
+            assert opts.alpha == 1., "alpha must be 1"
+            assert opts.beta == 0, "beta must be 0"
+
             if target.runtime == Target.Runtime.ROCM:
                 (outer_tile_x, outer_tile_y, outer_tile_k), mfma_tile = variant
 
@@ -225,7 +231,6 @@ def benchmark_gemm(f: TextIOWrapper, opts:GemmOpts, target:Target, output_dir:st
             package.add(plan, args=(A, B, C), base_name=fn_name)
             package.build(
                 package_name,
-                Package.Format.CUDA | Package.Format.HAT_PACKAGE,
                 output_dir=output_dir,
                 fail_on_error=True,
                 _quiet=False
@@ -243,9 +248,9 @@ def benchmark_gemm(f: TextIOWrapper, opts:GemmOpts, target:Target, output_dir:st
             except:
                 entry['executable'] = False
             else:
-                entry['executable'] = True
-
-                entry.update(results[0])
+                entry['executable'] = len(results) > 0
+                if len(results) > 0:
+                    entry.update(results[0])
 
         w.writerow(entry)
 

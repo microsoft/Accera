@@ -130,6 +130,8 @@ class VerifyPackage():
             if not self.correctness_checker:
                 self.correctness_checker = CorrectnessChecker(hat_file)
             self.correctness_checker.run(function_name, before, after, tolerance)
+        else:
+            print("Warning: check_correctness was called but no hat file was generated. Correctness check skipped.")
 
     def file_checker(self, filename):
         """Returns a checker for applying FileCheck directives

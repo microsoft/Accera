@@ -8,7 +8,7 @@ six<=1.14
 conan
 lit
 packaging
-hatlib
+hatlib>=0.0.12
 varname
 py-cpuinfo
 termcolor

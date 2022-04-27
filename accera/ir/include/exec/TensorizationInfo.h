@@ -14,10 +14,11 @@ namespace executionPlan
     struct TensorizationInfo
     {
         std::array<int64_t, 3> dim{0,0,0};
+        bool useStaticOffsets{};
     private:
         friend inline bool operator==(const TensorizationInfo& p1, const TensorizationInfo& p2)
         {
-            return p1.dim == p2.dim;
+            return p1.dim == p2.dim && p1.useStaticOffsets == p2.useStaticOffsets;
         }
         friend inline bool operator!=(const TensorizationInfo& p1, const TensorizationInfo& p2)
         {

@@ -21,7 +21,7 @@ jobs:
 
     runs-on: ubuntu-latest
     container:
-        image: ${{ secrets.AZ_ACR_NAME }}/accera-llvm-ubuntu:main-llvmorg-13.0.1
+        image: acceracontainers.azurecr.io/accera-llvm-ubuntu:main-llvmorg-13.0.1
         credentials:
             username: ${{ secrets.AZ_SP_CLIENT_ID }}
             password: ${{ secrets.AZ_SP_CLIENT_SECRET }}

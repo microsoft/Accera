@@ -28,6 +28,8 @@ A good case study should have these components and characteristics:
     python -m cpuinfo
     ```
 
+For some examples, refer to the published case studies in the [Table of Contents](README.md).
+
 ## Publishing your case study
 
 All community case studies are published directly from the author's GitHub repository and linked to from the Accera GitHub repository.
@@ -38,5 +40,3 @@ Once you are ready to publish your case study:
 2. Edit [Case Studies/README.md](https://github.com/microsoft/Accera/blob/main/docs/Case%20Studies/README.md) to add your case study to the Table of Contents. The link should point to the git SHA for your latest commit. The format to use is: https://github.com/*USER*/*REPO*/blob/*GIT_SHA*/*PATH_TO_CASE_STUDY*/README.md.
 
 3. Create a [Pull Request](https://github.com/microsoft/Accera/compare) to submit your edits to [Case Studies/README.md](https://github.com/microsoft/Accera/blob/main/docs/Case%20Studies/README.md).
-
-You can refer to the example case studies in the [Table of Contents](README.md).

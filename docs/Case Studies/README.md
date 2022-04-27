@@ -1,10 +1,10 @@
 # Accera Case Studies
 
-This is a collection of Accera case studies that you can learn about how to use Accera DSL to write high performance code.
+Accera case studies are community-provided samples that showcase the Accera language and programming model. To contribute a case study of your own, follow [these instructions](CONTRIBUTING.md).
 
 ### MatMul Grid Search
 
-- [MatMul Grid Search](https://github.com/marina-neseem/Accera-High-Perf-DL/blob/main/case_studies/matmul_gridsearch_on_avx2/README.md)
+- [MatMul Grid Search](https://github.com/marina-neseem/Accera-High-Perf-DL/blob/be5957f2126d0921617df320e41b6961e8beff7d/README.md)
 
 ### Convolution
 

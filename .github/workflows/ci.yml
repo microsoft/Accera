@@ -21,7 +21,10 @@ jobs:
 
     runs-on: ubuntu-latest
     container:
-        image: acceracontainers/accera-llvm-ubuntu:main-llvmorg-13.0.1
+        image: ${{ secrets.AZ_ACR_NAME }}/accera-llvm-ubuntu:main-llvmorg-13.0.1
+        credentials:
+            username: ${{ secrets.AZ_SP_CLIENT_ID }}
+            password: ${{ secrets.AZ_SP_CLIENT_SECRET }}
     steps:
     - uses: actions/checkout@v2
       with:

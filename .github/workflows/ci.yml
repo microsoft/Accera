@@ -12,6 +12,9 @@ on:
       - '*.md'
       - 'docs/**'
 
+env:
+  CONTAINER_REGISTRY: ${{ secrets.AZ_ACR_NAME }}
+
 jobs:
   build:
     strategy:
@@ -21,7 +24,7 @@ jobs:
 
     runs-on: ubuntu-latest
     container:
-        image: acceracontainers.azurecr.io/accera-llvm-ubuntu:main-llvmorg-13.0.1
+        image: ${{ env.CONTAINER_REGISTRY }}/accera-llvm-ubuntu:main-llvmorg-13.0.1
         credentials:
             username: ${{ secrets.AZ_SP_CLIENT_ID }}
             password: ${{ secrets.AZ_SP_CLIENT_SECRET }}

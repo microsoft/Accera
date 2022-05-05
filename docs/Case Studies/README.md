@@ -8,7 +8,7 @@ Accera case studies are community-provided samples that showcase the Accera lang
 
 ### Convolution
 
-- (Coming soon)
+- [NCHWc 2D Convolution Grid Search](https://github.com/marina-neseem/Accera-High-Perf-DL/blob/a0afaca5077cb211c3abdc617a408de35162d13f/case_studies/nchwc_convolution_gridsearch/README.md)
 
 ### Three Matrix Multiplication
 

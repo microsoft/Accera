@@ -50,16 +50,16 @@ InstallAcceraDirectory(samples accera "accera/samples")
 
 # tests
 configure_file("accera/test/smoke_test.py" "test/smoke_test.py" @ONLY)
-add_test(NAME ${library_name}_smoketest COMMAND python test/smoke_test.py)
+add_test(NAME ${library_name}_smoketest COMMAND python -m pytest -v --junitxml=test/test-smoke_test.xml test/smoke_test.py)
 
 configure_file("accera/test/unit_tests.py" "test/unit_tests.py" @ONLY)
-add_test(NAME ${library_name}_unittests COMMAND python test/unit_tests.py)
+add_test(NAME ${library_name}_unittests COMMAND python -m pytest -v --junitxml=test/test-unit_tests.xml test/unit_tests.py)
 
 configure_file("accera/test/dsl_tests.py" "test/dsl_tests.py" @ONLY)
-add_test(NAME ${library_name}_dsltests COMMAND python test/dsl_tests.py)
+add_test(NAME ${library_name}_dsltests COMMAND python -m pytest -v --junitxml=test/test-dsl_tests.xml test/dsl_tests.py)
 
 configure_file("accera/test/mfma_tests.py" "test/mfma_tests.py" @ONLY)
-add_test(NAME ${library_name}_mfmatests COMMAND python test/mfma_tests.py)
+add_test(NAME ${library_name}_mfmatests COMMAND python -m pytest -v --junitxml=test/test-mfma_tests.xml test/mfma_tests.py)
 
 # sub-packages
 add_subdirectory(compilers)

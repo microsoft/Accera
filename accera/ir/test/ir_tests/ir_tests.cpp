@@ -20,6 +20,7 @@
 #include <value/include/Nest.h>
 #include <value/include/Plan.h>
 #include <value/include/Schedule.h>
+#include <value/include/MatrixFragment.h>
 
 #include <transforms/include/AcceraPasses.h>
 
@@ -2778,11 +2779,14 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_mfma_rocm", "[gpu][nest][ca
                     Scalar tidX = GPU::ThreadId().X();
                     Scalar tidY = GPU::ThreadId().Y();
 
-                    auto mfmaAMatrix = MFMALoad(A.GetValue(), { 2, 2, 16 }, "AOp");
-                    auto mfmaBMatrix = MFMALoad(B.GetValue(), { 2, 2, 16 }, "BOp");
-                    auto mfmaCMatrix = MFMALoad(C.GetValue(), { 2, 2, 16 }, "COp");
-                    auto mfmaDMatrix = MFMACompute(mfmaAMatrix, mfmaBMatrix, mfmaCMatrix);
-                    MFMAStore(mfmaDMatrix, C.GetValue());
+                    MatrixFragment mfmaAMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::A);
+                    MatrixFragment mfmaBMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::B);
+                    MatrixFragment mfmaCMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::Acc);
+                    mfmaAMatrix.LoadSync(A);
+                    mfmaBMatrix.LoadSync(B);
+                    mfmaCMatrix.LoadSync(C);
+                    auto mfmaDMatrix = mfmaAMatrix.MultiplyAccumulateSync(mfmaBMatrix, mfmaCMatrix);
+                    mfmaDMatrix.StoreSync(C);
                 });
 
                 auto sched = matmul.CreateSchedule();
@@ -2925,11 +2929,14 @@ TEST_CASE_METHOD(Fixture, "test_rocm_cache", "[gpu][nest][cache][main]")
                     Scalar tidX = GPU::ThreadId().X();
                     Scalar tidY = GPU::ThreadId().Y();
 
-                    auto mfmaAMatrix = MFMALoad(A.GetValue(), { 2, 2, 16 }, "AOp");
-                    auto mfmaBMatrix = MFMALoad(B.GetValue(), { 2, 2, 16 }, "BOp");
-                    auto mfmaCMatrix = MFMALoad(C.GetValue(), { 2, 2, 16 }, "COp");
-                    auto mfmaDMatrix = MFMACompute(mfmaAMatrix, mfmaBMatrix, mfmaCMatrix);
-                    MFMAStore(mfmaDMatrix, C.GetValue());
+                    MatrixFragment mfmaAMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::A);
+                    MatrixFragment mfmaBMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::B);
+                    MatrixFragment mfmaCMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::Acc);
+                    mfmaAMatrix.LoadSync(A);
+                    mfmaBMatrix.LoadSync(B);
+                    mfmaCMatrix.LoadSync(C);
+                    auto mfmaDMatrix = mfmaAMatrix.MultiplyAccumulateSync(mfmaBMatrix, mfmaCMatrix);
+                    mfmaDMatrix.StoreSync(C);
                 });
 
                 auto sched = matmul.CreateSchedule();

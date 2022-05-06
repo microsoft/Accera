@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.3)
+[//]: # (Version: v1.2.4)
 
-# Accera v1.2.3 Reference
+# Accera v1.2.4 Reference
 
 ## `accera.Plan.tensorize(indices)`
 Only available for targets with native matrix multiplication instruction (tensor core) support. Marks the dimensions of the iteration-space for tensorization. Only perfectly nested loops of the following form can be tensorized:

@@ -1,10 +1,25 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.3)
+[//]: # (Version: v1.2.4)
 
-# Accera v1.2.3 Reference
+# Accera v1.2.4 Reference
 ## `accera.Target.Model`
 
 Defines constants for some well-known CPU models.
+
+<!--
+# To generate the table entries, run this from build/lib.xxx:
+
+from accera.Targets import KNOWN_DEVICES, _MODEL_TRANSLATION_DICT, Target
+
+devices = KNOWN_DEVICES[Target.Category.CPU]
+for d in sorted(devices): 
+    print(f"`accera.Target.Model.{d.upper().translate(_MODEL_TRANSLATION_DICT)}` | {d}")
+
+print("\n\n")
+devices = KNOWN_DEVICES[Target.Category.GPU]
+for d in sorted(devices): 
+    print(f"`accera.Target.Model.{d.upper().translate(_MODEL_TRANSLATION_DICT)}` | {d}")
+-->
 
 type | description
 --- | ---
@@ -252,6 +267,9 @@ type | description
 `accera.Target.Model.AMD_V2546` | AMD V2546
 `accera.Target.Model.AMD_V2718` | AMD V2718
 `accera.Target.Model.AMD_V2748` | AMD V2748
+`accera.Target.Model.ARM_CORTEX_M4` | ARM Cortex-M4
+`accera.Target.Model.ARM_CORTEX_M4F` | ARM Cortex-M4F
+`accera.Target.Model.APPLE_M1_MAX` | Apple M1 Max
 `accera.Target.Model.INTEL_1000G1` | Intel 1000G1
 `accera.Target.Model.INTEL_1000G4` | Intel 1000G4
 `accera.Target.Model.INTEL_1005G1` | Intel 1005G1
@@ -290,39 +308,37 @@ type | description
 `accera.Target.Model.INTEL_10900KF` | Intel 10900KF
 `accera.Target.Model.INTEL_10900T` | Intel 10900T
 `accera.Target.Model.INTEL_10910` | Intel 10910
+`accera.Target.Model.INTEL_11100B` | Intel 11100B
+`accera.Target.Model.INTEL_1115G7` | Intel 1115G7
+`accera.Target.Model.INTEL_1125G7` | Intel 1125G7
+`accera.Target.Model.INTEL_1135G7` | Intel 1135G7
 `accera.Target.Model.INTEL_11400` | Intel 11400
 `accera.Target.Model.INTEL_11400F` | Intel 11400F
 `accera.Target.Model.INTEL_11400T` | Intel 11400T
+`accera.Target.Model.INTEL_1145G7` | Intel 1145G7
 `accera.Target.Model.INTEL_11500` | Intel 11500
+`accera.Target.Model.INTEL_11500B` | Intel 11500B
 `accera.Target.Model.INTEL_11500T` | Intel 11500T
+`accera.Target.Model.INTEL_1155G7` | Intel 1155G7
 `accera.Target.Model.INTEL_11600` | Intel 11600
 `accera.Target.Model.INTEL_11600K` | Intel 11600K
 `accera.Target.Model.INTEL_11600KF` | Intel 11600KF
 `accera.Target.Model.INTEL_11600T` | Intel 11600T
+`accera.Target.Model.INTEL_1165G7` | Intel 1165G7
 `accera.Target.Model.INTEL_11700` | Intel 11700
+`accera.Target.Model.INTEL_11700B` | Intel 11700B
 `accera.Target.Model.INTEL_11700F` | Intel 11700F
 `accera.Target.Model.INTEL_11700K` | Intel 11700K
 `accera.Target.Model.INTEL_11700KF` | Intel 11700KF
 `accera.Target.Model.INTEL_11700T` | Intel 11700T
+`accera.Target.Model.INTEL_1185G7` | Intel 1185G7
 `accera.Target.Model.INTEL_11900` | Intel 11900
 `accera.Target.Model.INTEL_11900F` | Intel 11900F
 `accera.Target.Model.INTEL_11900K` | Intel 11900K
+`accera.Target.Model.INTEL_11900KB` | Intel 11900KB
 `accera.Target.Model.INTEL_11900KF` | Intel 11900KF
 `accera.Target.Model.INTEL_11900T` | Intel 11900T
-`accera.Target.Model.INTEL_1250` | Intel 1250
-`accera.Target.Model.INTEL_1250P` | Intel 1250P
-`accera.Target.Model.INTEL_1270` | Intel 1270
-`accera.Target.Model.INTEL_1270P` | Intel 1270P
-`accera.Target.Model.INTEL_1290` | Intel 1290
-`accera.Target.Model.INTEL_1290P` | Intel 1290P
-`accera.Target.Model.INTEL_1290T` | Intel 1290T
-`accera.Target.Model.INTEL_1350` | Intel 1350
-`accera.Target.Model.INTEL_1350P` | Intel 1350P
-`accera.Target.Model.INTEL_1370` | Intel 1370
-`accera.Target.Model.INTEL_1370P` | Intel 1370P
-`accera.Target.Model.INTEL_1390` | Intel 1390
-`accera.Target.Model.INTEL_1390P` | Intel 1390P
-`accera.Target.Model.INTEL_1390T` | Intel 1390T
+`accera.Target.Model.INTEL_1195G7` | Intel 1195G7
 `accera.Target.Model.INTEL_2104G` | Intel 2104G
 `accera.Target.Model.INTEL_2124` | Intel 2124
 `accera.Target.Model.INTEL_2124G` | Intel 2124G
@@ -345,6 +361,11 @@ type | description
 `accera.Target.Model.INTEL_2386G` | Intel 2386G
 `accera.Target.Model.INTEL_2388G` | Intel 2388G
 `accera.Target.Model.INTEL_3204` | Intel 3204
+`accera.Target.Model.INTEL_4108` | Intel 4108
+`accera.Target.Model.INTEL_4109T` | Intel 4109T
+`accera.Target.Model.INTEL_4110` | Intel 4110
+`accera.Target.Model.INTEL_4112` | Intel 4112
+`accera.Target.Model.INTEL_4114` | Intel 4114
 `accera.Target.Model.INTEL_4208` | Intel 4208
 `accera.Target.Model.INTEL_4209T` | Intel 4209T
 `accera.Target.Model.INTEL_4210` | Intel 4210
@@ -369,6 +390,7 @@ type | description
 `accera.Target.Model.INTEL_5220S` | Intel 5220S
 `accera.Target.Model.INTEL_5220T` | Intel 5220T
 `accera.Target.Model.INTEL_5222` | Intel 5222
+`accera.Target.Model.INTEL_6035` | Intel 6035
 `accera.Target.Model.INTEL_6098P` | Intel 6098P
 `accera.Target.Model.INTEL_6100` | Intel 6100
 `accera.Target.Model.INTEL_6100T` | Intel 6100T
@@ -422,6 +444,7 @@ type | description
 `accera.Target.Model.INTEL_6700K` | Intel 6700K
 `accera.Target.Model.INTEL_6700T` | Intel 6700T
 `accera.Target.Model.INTEL_6785R` | Intel 6785R
+`accera.Target.Model.INTEL_6820HQ` | Intel 6820HQ
 `accera.Target.Model.INTEL_7100` | Intel 7100
 `accera.Target.Model.INTEL_7100T` | Intel 7100T
 `accera.Target.Model.INTEL_7101E` | Intel 7101E
@@ -434,6 +457,7 @@ type | description
 `accera.Target.Model.INTEL_7400T` | Intel 7400T
 `accera.Target.Model.INTEL_7500` | Intel 7500
 `accera.Target.Model.INTEL_7500T` | Intel 7500T
+`accera.Target.Model.INTEL_7505` | Intel 7505
 `accera.Target.Model.INTEL_7600` | Intel 7600
 `accera.Target.Model.INTEL_7600K` | Intel 7600K
 `accera.Target.Model.INTEL_7600T` | Intel 7600T
@@ -486,9 +510,11 @@ type | description
 `accera.Target.Model.INTEL_8400T` | Intel 8400T
 `accera.Target.Model.INTEL_8500` | Intel 8500
 `accera.Target.Model.INTEL_8500T` | Intel 8500T
+`accera.Target.Model.INTEL_8550U` | Intel 8550U
 `accera.Target.Model.INTEL_8600` | Intel 8600
 `accera.Target.Model.INTEL_8600K` | Intel 8600K
 `accera.Target.Model.INTEL_8600T` | Intel 8600T
+`accera.Target.Model.INTEL_8650U` | Intel 8650U
 `accera.Target.Model.INTEL_8700` | Intel 8700
 `accera.Target.Model.INTEL_8700K` | Intel 8700K
 `accera.Target.Model.INTEL_8700T` | Intel 8700T
@@ -513,6 +539,9 @@ type | description
 `accera.Target.Model.INTEL_E3_1275_V6` | Intel E3-1275 v6
 `accera.Target.Model.INTEL_E3_1280_V6` | Intel E3-1280 v6
 `accera.Target.Model.INTEL_E3_1285_V6` | Intel E3-1285 v6
+`accera.Target.Model.INTEL_E5_1650V3` | Intel E5-1650v3
+`accera.Target.Model.INTEL_E5_1660V3` | Intel E5-1660v3
+`accera.Target.Model.INTEL_E5_1680V3` | Intel E5-1680v3
 `accera.Target.Model.INTEL_G3900` | Intel G3900
 `accera.Target.Model.INTEL_G3900T` | Intel G3900T
 `accera.Target.Model.INTEL_G3900TE` | Intel G3900TE
@@ -523,6 +552,28 @@ type | description
 `accera.Target.Model.INTEL_G4500` | Intel G4500
 `accera.Target.Model.INTEL_G4500T` | Intel G4500T
 `accera.Target.Model.INTEL_G4520` | Intel G4520
+`accera.Target.Model.INTEL_W_1250` | Intel W-1250
+`accera.Target.Model.INTEL_W_1250P` | Intel W-1250P
+`accera.Target.Model.INTEL_W_1270` | Intel W-1270
+`accera.Target.Model.INTEL_W_1270P` | Intel W-1270P
+`accera.Target.Model.INTEL_W_1290` | Intel W-1290
+`accera.Target.Model.INTEL_W_1290P` | Intel W-1290P
+`accera.Target.Model.INTEL_W_1290T` | Intel W-1290T
+`accera.Target.Model.INTEL_W_1350` | Intel W-1350
+`accera.Target.Model.INTEL_W_1350P` | Intel W-1350P
+`accera.Target.Model.INTEL_W_1370` | Intel W-1370
+`accera.Target.Model.INTEL_W_1370P` | Intel W-1370P
+`accera.Target.Model.INTEL_W_1390` | Intel W-1390
+`accera.Target.Model.INTEL_W_1390P` | Intel W-1390P
+`accera.Target.Model.INTEL_W_1390T` | Intel W-1390T
+`accera.Target.Model.INTEL_W_2102` | Intel W-2102
+`accera.Target.Model.INTEL_W_2104` | Intel W-2104
+`accera.Target.Model.INTEL_W_2123` | Intel W-2123
+`accera.Target.Model.INTEL_W_2125` | Intel W-2125
+`accera.Target.Model.INTEL_W_2133` | Intel W-2133
+`accera.Target.Model.INTEL_W_2135` | Intel W-2135
+`accera.Target.Model.INTEL_W_2140B` | Intel W-2140B
+`accera.Target.Model.INTEL_W_2150B` | Intel W-2150B
 `accera.Target.Model.INTEL_W_3175X` | Intel W-3175X
 `accera.Target.Model.INTEL_W_3223` | Intel W-3223
 `accera.Target.Model.INTEL_W_3225` | Intel W-3225
@@ -541,6 +592,12 @@ The enum also defines constants for some well-known GPU models.
 
 type | description
 --- | ---
+`accera.Target.Model.AMD_MI100` | AMD MI100
+`accera.Target.Model.AMD_MI200` | AMD MI200
+`accera.Target.Model.AMD_MI50` | AMD MI50
+`accera.Target.Model.AMD_RADEON7` | AMD Radeon7
+`accera.Target.Model.NVIDIA_A100` | NVidia A100
+`accera.Target.Model.NVIDIA_P100` | NVidia P100
 `accera.Target.Model.NVIDIA_V100` | NVidia V100
 
 <div style="page-break-after: always;"></div>

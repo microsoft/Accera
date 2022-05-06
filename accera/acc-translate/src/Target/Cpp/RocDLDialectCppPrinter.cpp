@@ -96,12 +96,12 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printBarrierOp(ROCDL::BarrierOp barrierOp)
     {
-        if (!state.hasRuntime(Runtime::CUDA))
+        if (!state.hasRuntime(Runtime::ROCM))
         {
-            return barrierOp.emitError("non-cuda version is not supported yet");
+            return barrierOp.emitError("non-rocm version is not supported yet");
         }
 
-        os << "__syncthreads()";
+        os << "__builtin_amdgcn_s_barrier()";
         return success();
     }
 
@@ -146,40 +146,43 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printBlockIdXOp(ROCDL::BlockIdXOp op)
     {
-        if (!state.hasRuntime(Runtime::CUDA))
+        if (!state.hasRuntime(Runtime::ROCM))
         {
-            return op.emitError("non-cuda version is not supported yet");
+            return op.emitError("non-rocm version is not supported yet");
         }
 
         auto idx = state.nameState.getOrCreateName(
             op.getResult(), SSANameState::SSANameKind::Variable);
-        os << "int " << idx << " = blockIdx.x";
+        RETURN_IF_FAILED(printer->printType(op.res().getType()));
+        os << " " << idx << " = __builtin_amdgcn_workgroup_id_x()";
         return success();
     }
 
     LogicalResult RocDLDialectCppPrinter::printBlockIdYOp(ROCDL::BlockIdYOp op)
     {
-        if (!state.hasRuntime(Runtime::CUDA))
+        if (!state.hasRuntime(Runtime::ROCM))
         {
-            return op.emitError("non-cuda version is not supported yet");
+            return op.emitError("non-rocm version is not supported yet");
         }
 
         auto idx = state.nameState.getOrCreateName(
             op.getResult(), SSANameState::SSANameKind::Variable);
-        os << "int " << idx << " = blockIdx.y";
+        RETURN_IF_FAILED(printer->printType(op.res().getType()));
+        os << " " << idx << " = __builtin_amdgcn_workgroup_id_y()";
         return success();
     }
 
     LogicalResult RocDLDialectCppPrinter::printBlockIdZOp(ROCDL::BlockIdZOp op)
     {
-        if (!state.hasRuntime(Runtime::CUDA))
+        if (!state.hasRuntime(Runtime::ROCM))
         {
-            return op.emitError("non-cuda version is not supported yet");
+            return op.emitError("non-rocm version is not supported yet");
         }
 
         auto idx = state.nameState.getOrCreateName(
             op.getResult(), SSANameState::SSANameKind::Variable);
-        os << "int " << idx << " = blockIdx.z";
+        RETURN_IF_FAILED(printer->printType(op.res().getType()));
+        os << " " << idx << " = __builtin_amdgcn_workgroup_id_z()";
         return success();
     }
 
@@ -224,40 +227,43 @@ namespace cpp_printer
 
     LogicalResult RocDLDialectCppPrinter::printThreadIdXOp(ROCDL::ThreadIdXOp op)
     {
-        if (!state.hasRuntime(Runtime::CUDA))
+        if (!state.hasRuntime(Runtime::ROCM))
         {
-            return op.emitError("non-cuda version is not supported yet");
+            return op.emitError("non-rocm version is not supported yet");
         }
 
         auto idx = state.nameState.getOrCreateName(
             op.getResult(), SSANameState::SSANameKind::Variable);
-        os << "int " << idx << " = threadIdx.x";
+        RETURN_IF_FAILED(printer->printType(op.res().getType()));
+        os << " " << idx << " = __builtin_amdgcn_workitem_id_x()";
         return success();
     }
 
     LogicalResult RocDLDialectCppPrinter::printThreadIdYOp(ROCDL::ThreadIdYOp op)
     {
-        if (!state.hasRuntime(Runtime::CUDA))
+        if (!state.hasRuntime(Runtime::ROCM))
         {
-            return op.emitError("non-cuda version is not supported yet");
+            return op.emitError("non-rocm version is not supported yet");
         }
 
         auto idx = state.nameState.getOrCreateName(
             op.getResult(), SSANameState::SSANameKind::Variable);
-        os << "int " << idx << " = threadIdx.y";
+        RETURN_IF_FAILED(printer->printType(op.res().getType()));
+        os << " " << idx << " = __builtin_amdgcn_workitem_id_y()";
         return success();
     }
 
     LogicalResult RocDLDialectCppPrinter::printThreadIdZOp(ROCDL::ThreadIdZOp op)
     {
-        if (!state.hasRuntime(Runtime::CUDA))
+        if (!state.hasRuntime(Runtime::ROCM))
         {
-            return op.emitError("non-cuda version is not supported yet");
+            return op.emitError("non-rocm version is not supported yet");
         }
 
         auto idx = state.nameState.getOrCreateName(
             op.getResult(), SSANameState::SSANameKind::Variable);
-        os << "int " << idx << " = threadIdx.z";
+        RETURN_IF_FAILED(printer->printType(op.res().getType()));
+        os << " " << idx << " = __builtin_amdgcn_workitem_id_z()";
         return success();
     }
 

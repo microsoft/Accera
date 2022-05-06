@@ -7,6 +7,7 @@
 #include "EmitterContext.h"
 #include "FunctionDeclaration.h"
 #include "Matrix.h"
+#include "MatrixFragment.h"
 #include "Scalar.h"
 #include "TargetDevice.h"
 #include "Value.h"
@@ -221,33 +222,28 @@ namespace value
         return LogicalOperationImpl(op, source1, source2);
     }
 
-    Matrix EmitterContext::MFMALoad(Value source, const std::vector<int64_t>& shape, const std::string& operand)
+    Value EmitterContext::MMALoadSync(const Matrix& source, const int64_t rowOffset, const int64_t colOffset, const MatrixFragment& target)
     {
-        if (operand != "AOp" && operand != "BOp" && operand != "COp")
-        {
-            throw InputException(InputExceptionErrors::invalidArgument);
-        }
-        return MFMALoadImpl(source, shape, operand);
+        return MMALoadSyncImpl(source, rowOffset, colOffset, target);
     }
 
-    void EmitterContext::MFMAStore(Matrix source, Value target)
+    void EmitterContext::MMAStoreSync(const MatrixFragment& source, Matrix& target, const int64_t rowOffset, const int64_t colOffset)
     {
-        if (source.GetType() != target.GetBaseType())
+        if (source.GetType() != target.GetValue().GetBaseType() || source.GetFragmentType() != MatrixFragment::Type::Acc)
         {
-            throw InputException(InputExceptionErrors::invalidArgument);
+            throw InputException(InputExceptionErrors::invalidArgument, "Invalid argument passed for MMA store.");
         }
-        MFMAStoreImpl(source, target);
+        MMAStoreSyncImpl(source, target, rowOffset, colOffset);
     }
 
-    Matrix EmitterContext::MFMACompute(Matrix A, Matrix B, Matrix C)
+    Value EmitterContext::MMAComputeSync(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, uint32_t cbsz, uint32_t abid, uint32_t blgp)
     {
-
-        if (A.GetType() != B.GetType())
+        if (A.GetFragmentShape() != B.GetFragmentShape() || A.GetFragmentShape() != C.GetFragmentShape() || A.GetFragmentType() != MatrixFragment::Type::A || B.GetFragmentType() != MatrixFragment::Type::B || C.GetFragmentType() != MatrixFragment::Type::Acc)
         {
-            throw InputException(InputExceptionErrors::invalidArgument);
+            throw InputException(InputExceptionErrors::invalidArgument, "Invalid argument passed for MMA compute.");
         }
 
-        return MFMAComputeImpl(A, B, C);
+        return MMAComputeSyncImpl(A, B, C, cbsz, abid, blgp);
     }
 
     Scalar EmitterContext::Cast(Scalar value, ValueType type)
@@ -481,21 +477,6 @@ namespace value
                 }
             });
         }
-    }
-
-    Matrix MFMALoad(Value source, const std::vector<int64_t>& shape, const std::string& operand)
-    {
-        return GetContext().MFMALoad(source, shape, operand);
-    }
-
-    void MFMAStore(Matrix source, Value target)
-    {
-        GetContext().MFMAStore(source, target);
-    }
-
-    Matrix MFMACompute(Matrix A, Matrix B, Matrix C)
-    {
-        return GetContext().MFMACompute(A, B, C);
     }
 
     void DebugBreak()

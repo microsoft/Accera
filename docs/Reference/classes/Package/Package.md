@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.3)
+[//]: # (Version: v1.2.4)
 
-# Accera v1.2.3 Reference
+# Accera v1.2.4 Reference
 
 ## `accera.Package.Package()`
 A package of functions that can be built and linked with client code.

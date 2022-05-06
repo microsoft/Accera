@@ -16,6 +16,7 @@
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/ROCDLDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
@@ -228,12 +229,6 @@ namespace util
         return CreateGlobalBuffer(builder, anchorOp, bufferType, namePrefix);
     }
 
-    std::pair<mlir::MemRefType, mlir::RankedTensorType> GetMFMAThreadOffsetMapType(mlir::OpBuilder& builder, const std::vector<int64_t>& vecSize)
-    {
-        auto mlirElemType = builder.getIntegerType(8);
-        return std::make_pair(mlir::MemRefType::get(vecSize, mlirElemType, {}, /*Private*/ 5), mlir::RankedTensorType::get(vecSize, mlirElemType));
-    }
-
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string tag)
     {
         return mlir::FileLineColLoc::get(mlir::Identifier::get(tag, builder.getContext()), 0, 0);
@@ -392,9 +387,8 @@ namespace util
         return execRuntimeAttr.getValue();
     }
 
-    std::optional<std::pair<int, int>> ResolveWarpSize(mlir::Operation* op)
+    std::optional<std::pair<int, int>> ResolveWarpSize(const vir::ExecutionRuntime runtime)
     {
-        auto runtime = ResolveExecutionRuntime(op);
         if (runtime == vir::ExecutionRuntime::CUDA)
             return std::make_pair(8, 4); // 32
 
@@ -916,6 +910,85 @@ namespace util
         else // Arbitrary other op
         {
             return val.getDefiningOp();
+        }
+    }
+
+    template <typename _TyOp>
+    auto GetROCDLGPUIndex(mlir::OpBuilder& builder, mlir::Location& loc)
+    {
+        return builder.create<mlir::IndexCastOp>(loc, builder.create<_TyOp>(loc, builder.getI32Type()), builder.getIndexType());
+    }
+
+    mlir::Value GetGPUIndex(mlir::Operation* op, const value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc)
+    {
+        const auto runtime = ResolveExecutionRuntime(op).value();
+        if (runtime == value::ExecutionRuntime::ROCM)
+        {
+            switch (idxType)
+            {
+            case value::Processor::ThreadX:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::ThreadIdXOp>(builder, loc);
+            case value::Processor::ThreadY:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::ThreadIdYOp>(builder, loc);
+            case value::Processor::ThreadZ:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::ThreadIdZOp>(builder, loc);
+            case value::Processor::BlockX:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockIdXOp>(builder, loc);
+            case value::Processor::BlockY:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockIdYOp>(builder, loc);
+            case value::Processor::BlockZ:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockIdZOp>(builder, loc);
+            case value::Processor::BlockDimX:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockDimXOp>(builder, loc);
+            case value::Processor::BlockDimY:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockDimYOp>(builder, loc);
+            case value::Processor::BlockDimZ:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockDimZOp>(builder, loc);
+            case value::Processor::GridDimX:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::GridDimXOp>(builder, loc);
+            case value::Processor::GridDimY:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::GridDimYOp>(builder, loc);
+            case value::Processor::GridDimZ:
+                return util::GetROCDLGPUIndex<mlir::ROCDL::GridDimZOp>(builder, loc);
+            case value::Processor::Sequential:
+                [[fallthrough]];
+            default:
+                llvm_unreachable("Unexpected");
+            }
+        }
+        else
+        {
+            switch (idxType)
+            {
+            case value::Processor::ThreadX:
+                return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "x");
+            case value::Processor::ThreadY:
+                return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "y");
+            case value::Processor::ThreadZ:
+                return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "z");
+            case value::Processor::BlockX:
+                return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "x");
+            case value::Processor::BlockY:
+                return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "y");
+            case value::Processor::BlockZ:
+                return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "z");
+            case value::Processor::BlockDimX:
+                return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "x");
+            case value::Processor::BlockDimY:
+                return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "y");
+            case value::Processor::BlockDimZ:
+                return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "z");
+            case value::Processor::GridDimX:
+                return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "x");
+            case value::Processor::GridDimY:
+                return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "y");
+            case value::Processor::GridDimZ:
+                return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "z");
+            case value::Processor::Sequential:
+                [[fallthrough]];
+            default:
+                llvm_unreachable("Unexpected");
+            }
         }
     }
 } // namespace util

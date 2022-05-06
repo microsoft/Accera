@@ -36,6 +36,7 @@ namespace value
     class FunctionDeclaration;
     class Array;
     class Matrix;
+    class MatrixFragment;
     class Vector;
     enum class PrefetchType;
     enum class PrefetchLocality;
@@ -319,25 +320,28 @@ namespace value
 
         /// <summary> Performs matrix multiply load operation.
         /// There are restrictions on the input types and sizes. </summary>
-        /// <param name="source"> The input memref </param>
-        /// <param name="shape"> The shape of the load </param>
-        /// <param name="operand"> The kind of the mfma matrix </param>
-        Matrix MFMALoad(Value source, const std::vector<int64_t> & shape, const std::string & operand);
+        /// <param name="source"> The input matrix </param>
+        /// <param name="rowOffset"> The row offset within the source matrix. </param>
+        /// <param name="colOffset"> The column offset within the source matrix. </param>
+        /// <param name="target"> The matrix fragment to load the data into </param>
+        Value MMALoadSync(const Matrix& source, int64_t rowOffset, int64_t colOffset, const MatrixFragment& target);
 
         /// <summary> Performs matrix multiply store operation.
         /// There are restrictions on the source type. </summary>
         /// <param name="source"> The input mfma matrix </param>
         /// <param name="target"> The target memref </param>
-        void MFMAStore(Matrix source, Value target);
+        /// <param name="rowOffset"> The row offset within the target matrix. </param>
+        /// <param name="colOffset"> The column offset within the target matrix. </param>
+        void MMAStoreSync(const MatrixFragment& source, Matrix& target, int64_t rowOffset, int64_t colOffset);
 
         /// <summary> Performs matrix multiply accumulate compute operation D = A.B + C.
-        /// This operation assumes that A, B, C, and D have been loaded using the MFMALoad operation.
+        /// This operation assumes that A, B, C, and D have been loaded using the MMALoadSync operation.
         /// There are restrictions on the input types and sizes. </summary>
         /// <param name="A"> The input A mfma matrix </param>
         /// <param name="B"> The input B mfma matrix </param>
         /// <param name="C"> The input C mfma matrix </param>
         /// <returns> The result destination mfma matrix </returns>
-        Matrix MFMACompute(Matrix A, Matrix B, Matrix C); 
+        Value MMAComputeSync(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, uint32_t cbsz = 0, uint32_t abid = 0, uint32_t blgp = 0);
 
         Scalar Max(Vector input);
 
@@ -467,11 +471,9 @@ namespace value
 
         virtual Value LogicalOperationImpl(ValueLogicalOperation op, Value source1, Value source2) = 0;
 
-        virtual Matrix MFMALoadImpl(Value source, const std::vector<int64_t> & shape, const std::string & operand) = 0;
-
-        virtual void MFMAStoreImpl(Matrix source, Value target) = 0;
-
-        virtual Matrix MFMAComputeImpl(Matrix A, Matrix B, Matrix C) = 0;
+        virtual Value MMALoadSyncImpl(const Matrix& source, const int64_t rowOffset, const int64_t colOffset, const MatrixFragment& target) = 0;
+        virtual void MMAStoreSyncImpl(const MatrixFragment& source, Matrix& target, const int64_t rowOffset, const int64_t colOffset) = 0;
+        virtual Value MMAComputeSyncImpl(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, uint32_t cbsz, uint32_t abid, uint32_t blgp) = 0;
 
         virtual Scalar MaxImpl(Vector input) = 0;
 
@@ -777,10 +779,6 @@ namespace value
     void ForRange(Scalar start, Scalar end, Scalar step, std::function<void(Scalar)> fn);
 
     void ForRanges(std::vector<Scalar> range_ends, std::function<void(std::vector<Scalar>)> fn);
-
-    Matrix MFMALoad(Value source, const std::vector<int64_t> & shape, const std::string & operand);
-    void MFMAStore(Matrix source, Value target);
-    Matrix MFMACompute(Matrix A, Matrix B, Matrix C); 
 
     /// <summary> Runs the provided function, in parallel if possible </summary>
     /// <typeparam name="Tys..."> The types that represent the captured values. Must be `Value` or types that provide a member

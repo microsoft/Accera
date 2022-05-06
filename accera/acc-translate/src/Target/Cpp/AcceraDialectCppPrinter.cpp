@@ -66,7 +66,7 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult AcceraDialectCppPrinter::printOp(vir::MFMAComputeOp mfmaOp)
+    LogicalResult AcceraDialectCppPrinter::printOp(vir::MMAComputeSyncOp mfmaOp)
     {
         return failure();
         // assert(mfmaOp);
@@ -105,7 +105,7 @@ namespace cpp_printer
         };
 
         TypeSwitch<Operation*>(op)
-            //.Case<vir::MFMAComputeOp>(handler)
+            //.Case<vir::MMAComputeSyncOp>(handler)
             .Case<vir::CallOp>(handler)
             .Case<vir::ReturnOp>(handler)
             .Default([&](Operation*) { *consumed = false; });

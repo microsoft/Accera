@@ -43,10 +43,16 @@ def BlockZ : I64EnumAttrCase<"BlockZ", 2>;
 def ThreadX : I64EnumAttrCase<"ThreadX", 3>;
 def ThreadY : I64EnumAttrCase<"ThreadY", 4>;
 def ThreadZ : I64EnumAttrCase<"ThreadZ", 5>;
-def Sequential : I64EnumAttrCase<"Sequential", 6>;
+def BlockDimX : I64EnumAttrCase<"BlockDimX", 6>;
+def BlockDimY : I64EnumAttrCase<"BlockDimY", 7>;
+def BlockDimZ : I64EnumAttrCase<"BlockDimZ", 8>;
+def GridDimX : I64EnumAttrCase<"GridDimX", 9>;
+def GridDimY : I64EnumAttrCase<"GridDimY", 10>;
+def GridDimZ : I64EnumAttrCase<"GridDimZ", 11>;
+def Sequential : I64EnumAttrCase<"Sequential", 12>;
 
 def ProcessorAttr : I64EnumAttr<"Processor", "processor for loop mapping", [
-        BlockX, BlockY, BlockZ, ThreadX, ThreadY, ThreadZ, Sequential]> {
+        BlockX, BlockY, BlockZ, ThreadX, ThreadY, ThreadZ, BlockDimX, BlockDimY, BlockDimZ, GridDimX, GridDimY, GridDimZ, Sequential]> {
     let cppNamespace = "::accera::ir::value";
 }
 

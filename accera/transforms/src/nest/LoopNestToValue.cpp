@@ -21,6 +21,7 @@
 #include <mlir/Analysis/LoopAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
+#include <mlir/Dialect/LLVMIR/ROCDLDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/AffineMap.h>
@@ -802,28 +803,8 @@ LogicalResult GPUMappedAffineForOpRewrite::matchAndRewrite(mlir::AffineForOp aff
         rewriter.setInsertionPoint(&firstBlock, firstBlock.begin());
         loc = affineForOp.getLoc();
 
-        namespace vir = accera::ir::value;
-        using Processor = vir::Processor;
         auto gpuValue = [&]() -> mlir::Value {
-            switch (processor)
-            {
-            case Processor::ThreadX:
-                return rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x");
-            case Processor::ThreadY:
-                return rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y");
-            case Processor::ThreadZ:
-                return rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "z");
-            case Processor::BlockX:
-                return rewriter.create<gpu::BlockIdOp>(loc, rewriter.getIndexType(), "x");
-            case Processor::BlockY:
-                return rewriter.create<gpu::BlockIdOp>(loc, rewriter.getIndexType(), "y");
-            case Processor::BlockZ:
-                return rewriter.create<gpu::BlockIdOp>(loc, rewriter.getIndexType(), "z");
-            case Processor::Sequential:
-                [[fallthrough]];
-            default:
-                llvm_unreachable("Unexpected");
-            }
+            return util::GetGPUIndex(affineForOp, processor, rewriter, loc);
         }();
         // We're going to replace all uses of the affine loop's induction variable with GPU hardware mapping instead, so
         // make the AffineForOp effectively a no-op

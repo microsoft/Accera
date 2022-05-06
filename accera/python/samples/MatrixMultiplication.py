@@ -79,7 +79,7 @@ def MLAS_with_bias_and_alpha_scaling(
     inner_dim_block = opts.BMatrixTileSize[0]
     num_rows_in_kernel = opts.NumRowsInKernel
     num_cols_in_kernel = opts.NumColumnsInKernelScaleFactor * (
-        target.vector_bytes // 4
+        target.vector_bytes // 4 or 8
     )    # target.vector_bytes // 4 is how many 32-bit float elements can fit into the vector register
 
     # Apply a simple stretching to the kernel size to fit the output shape
@@ -259,7 +259,7 @@ def MLAS_with_bias(
     inner_dim_block = opts.BMatrixTileSize[0]
     num_rows_in_kernel = opts.NumRowsInKernel
     num_cols_in_kernel = opts.NumColumnsInKernelScaleFactor * (
-        target.vector_bytes // 4
+        target.vector_bytes // 4 or 8
     )    # target.vector_bytes // 4 is how many 32-bit float elements can fit into the vector register
 
     # Apply a simple stretching to the kernel size to fit the output shape
@@ -345,7 +345,7 @@ def MLAS_with_bias(
     kkk = fused_schedule.split(kk, opts.KUnroll)
     jjj = fused_schedule.split(jj, num_cols_in_kernel)
     jjjj = fused_schedule.split(
-        jjj, target.vector_bytes // 4
+        jjj, target.vector_bytes // 4 or 8
     )    # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
     ii = fused_schedule.split(fused_i, num_rows_in_kernel)
 

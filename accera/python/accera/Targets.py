@@ -10,7 +10,9 @@ from typing import List, Union
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
 from ._lang_python import ScalarType, _GetKnownDeviceNames
-from ._lang_python._lang import (BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z, _MemorySpace, _ExecutionRuntime as Runtime)
+from ._lang_python._lang import (
+    BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z, _MemorySpace, _ExecutionRuntime as Runtime
+)
 
 
 class Category(Enum):
@@ -23,7 +25,7 @@ class Architecture(Enum):
     ARM = auto()
     X86 = auto()
     X86_64 = auto()
-    # AARCH64 = auto()
+    AARCH64 = auto()
 
 
 # Branding is currently unused
@@ -40,6 +42,9 @@ KNOWN_CPUS = [
     ["Intel 6785R", "Skylake", "Core i7", 3.3, {1: 3.9, 2: 3.8, 4: 3.5}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"], # Has 128 MB L4, unaccounted/untested
     ["Intel 6700",  "Skylake", "Core i7", 3.4, {1: 4.0, 2: 3.9, 4: 3.7}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["Intel 6700T", "Skylake", "Core i7", 2.8, {1: 3.6, 2: 3.5, 4: 3.4}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+
+    # ref: https://www.cpu-world.com/CPUs/Core_i7/Intel-Core%20i7-6820HQ%20Mobile%20processor.html
+    ["Intel 6820HQ", "Skylake", "Core i7", 2.7, {1: 3.6, 2: 3.4, 4: 3.2}, 4, 8, [32, 256, 8 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP" ],
 
     ["Intel 6600K", "Skylake", "Core i5", 3.5, {1: 3.9, 2: 3.8, 4: 3.6}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["Intel 6685R", "Skylake", "Core i5", 3.2, {1: 3.8, 2: 3.7, 4: 3.3}, 4, 4, [32, 256, 6 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
@@ -699,6 +704,10 @@ KNOWN_CPUS = [
     ["AMD 7713", "Zen3", "Milan", 2, {1: 3.675}, 64, 128, [32, 512, 256 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["AMD 7763", "Zen3", "Milan", 2.45, {1: 3.5}, 64, 128, [32, 512, 256 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
 
+    # Apple
+    # ref: https://en.wikipedia.org/wiki/Apple_M1_Pro_and_M1_Max (incomplete information)
+    ["Apple M1 Max", "M1 Max", "M1 Max", 2.0, {1: 3.2}, 10, 10, [24*1024, 48*1024], [], 0, 0, [], "AARCH64", "OPENMP"],
+
     # Raspberry Pi
     # ref: https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
     # ref: http://sandsoftwaresound.net/raspberry-pi/raspberry-pi-gen-1/memory-hierarchy/
@@ -713,51 +722,70 @@ KNOWN_CPUS = [
 ]
 # yapf: enable
 
+
 @dataclass(frozen=True, eq=True)
 class TensorCoreInformationEntry:
-    input_type : ScalarType
-    output_type : ScalarType
-    shape : List[int]
+    input_type: ScalarType
+    output_type: ScalarType
+    shape: List[int]
+
 
 @dataclass(frozen=True)
 class TensorCoreInformation:
-    entries : List[TensorCoreInformationEntry] = field(default_factory=list)
+    entries: List[TensorCoreInformationEntry] = field(default_factory=list)
 
-    def supports(self, input_type : ScalarType, output_type : ScalarType, shape : List[int]) -> bool:
+    def supports(self, input_type: ScalarType, output_type: ScalarType, shape: List[int]) -> bool:
         return TensorCoreInformationEntry(input_type, output_type, shape) in self.entries
 
 
 MI100_TENSORCORE_INFO = TensorCoreInformation([
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=[2,2,16]), # maps to the 16x16x16 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=[4,4,32]), # maps to the 32x32x8 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=[2,32,64]), # maps to the 32x32x4 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=[4,16,64]), # maps to the 16x16x4 mfma instruction
-
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=[2,2,16]), # maps to the 16x16x16 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=[4,4,32]), # maps to the 32x32x8 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=[2,32,64]), # maps to the 32x32x4 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=[4,16,64]), # maps to the 16x16x4 mfma instruction
-
-    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=[2,2,16]), # maps to the 16x16x4 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=[4,4,32]), # maps to the 32x32x2 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=[2,32,64]), # maps to the 32x32x1 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=[4,16,64]) # maps to the 16x16x1 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16,
+                               shape=[2, 2, 16]),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16,
+                               shape=[4, 4, 32]),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16,
+                               shape=[2, 32, 64]),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16,
+                               shape=[4, 16, 64]),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32,
+                               shape=[2, 2, 16]),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32,
+                               shape=[4, 4, 32]),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32,
+                               shape=[2, 32, 64]),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32,
+                               shape=[4, 16, 64]),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32,
+                               shape=[2, 2, 16]),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32,
+                               shape=[4, 4, 32]),    # maps to the 32x32x2 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32,
+                               shape=[2, 32, 64]),    # maps to the 32x32x1 mfma instruction
+    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32,
+                               shape=[4, 16, 64])    # maps to the 16x16x1 mfma instruction
 ])
 
 # Tensor Cores is current unused
-KNOWN_GPUS_HEADER = ["Runtime", "Model", "Branding", "Family", "Cores", "MaxThreadsPerBlock", "MaxBlockSize", "MaxSharedMemoryPerBlock", "WarpSize", "Base Freq", "MaxRegistersPerBlock", "Vector Bytes", "TensorCoreInformation"]
+KNOWN_GPUS_HEADER = [
+    "Runtime", "Model", "Branding", "Family", "Cores", "MaxThreadsPerBlock", "MaxBlockSize", "MaxSharedMemoryPerBlock",
+    "WarpSize", "Base Freq", "MaxRegistersPerBlock", "Vector Bytes", "TensorCoreInformation"
+]
 KNOWN_GPUS = [
     # NVIDIA
-    ["CUDA", "NVidia P100", "Pascal", "sm60",  56, 1024, [1024, 1024, 64], 49152, 32, 1.328500, 65536, 0, None], # TODO : get the real values for the vector register sizes in bytes
-    ["CUDA", "NVidia V100", "Volta",  "sm70",  80, 1024, [1024, 1024, 64], 49152, 32, 1.380000, 65536, 0, None],
+    ["CUDA", "NVidia P100", "Pascal", "sm60", 56, 1024, [1024, 1024, 64], 49152, 32, 1.328500, 65536, 0,
+     None],    # TODO : get the real values for the vector register sizes in bytes
+    ["CUDA", "NVidia V100", "Volta", "sm70", 80, 1024, [1024, 1024, 64], 49152, 32, 1.380000, 65536, 0, None],
     ["CUDA", "NVidia A100", "Ampere", "sm80", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, 0, None],
     # AMD
-    ["ROCM", "AMD Radeon7", "Vega20",    "gfx906", 60,  1024, [1024, 1024, 1024], 65536, 64, 1.801000, 65536, 0, None],
-    ["ROCM", "AMD MI50",    "Vega20",    "gfx906", 60,  1024, [1024, 1024, 1024], 65536, 64, 1.725000, 65536, 0, None],
+    ["ROCM", "AMD Radeon7", "Vega20", "gfx906", 60, 1024, [1024, 1024, 1024], 65536, 64, 1.801000, 65536, 0, None],
+    ["ROCM", "AMD MI50", "Vega20", "gfx906", 60, 1024, [1024, 1024, 1024], 65536, 64, 1.725000, 65536, 0, None],
 
     # The MI100 can move up to Up to 4 DWORDs per instruction, so we set the vector size to 16 bytes - https://developer.amd.com/wp-content/resources/CDNA1_Shader_ISA_14December2020.pdf
-    ["ROCM", "AMD MI100",   "Arcturus",  "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, 16, MI100_TENSORCORE_INFO],
-    ["ROCM", "AMD MI200",   "Aldebaran", "gfx90a", 220, 1024, [1024, 1024, 1024], 65536, 64, 1.700000, 65536, 0, None]
+    [
+        "ROCM", "AMD MI100", "Arcturus", "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, 16,
+        MI100_TENSORCORE_INFO
+    ],
+    ["ROCM", "AMD MI200", "Aldebaran", "gfx90a", 220, 1024, [1024, 1024, 1024], 65536, 64, 1.700000, 65536, 0, None]
 ]
 # yapf: enable
 
@@ -776,7 +804,7 @@ class _TargetContainer:
     name: str = ""
     num_cores: int = 0
     num_threads: int = 0
-    tensor_core : TensorCoreInformation = field(default_factory=TensorCoreInformation)
+    tensor_core: TensorCoreInformation = field(default_factory=TensorCoreInformation)
     turbo_frequency_GHz: dict = field(default_factory=dict)    # Dictionary of number of cores needed => Turbo frequency
     vector_bytes: int = 0
     vector_registers: int = 0
@@ -785,7 +813,6 @@ class _TargetContainer:
     max_block_size: List[int] = field(default_factory=list)
     max_shared_memory_per_block: int = 0
     max_registers_per_block: int = 0
-
 
     _device_name: str = "host"    # used internally for emitting known targets
 
@@ -801,7 +828,7 @@ class _TargetContainer:
 
         device_name = \
             self.family.lower() if self.family else (self.name.lower() if self.name else self._device_name)
-        if device_name in  _GetKnownDeviceNames():
+        if device_name in _GetKnownDeviceNames():
             self._device_name = device_name
 
         self._full_extensions = self.extensions
@@ -830,6 +857,7 @@ _MODEL_TRANSLATION_DICT = str.maketrans({c: '_'
 
 
 class _Models_enum_str:
+
     def __str__(self):
         return self.value
 
@@ -879,7 +907,8 @@ def _recompute_known_devices():
             max_registers_per_block=device["MaxRegistersPerBlock"],
             tensor_core=device["TensorCoreInformation"],
             vector_bytes=device["Vector Bytes"],
-            vector_registers=1, # Setting this to 1 will enable vectorization but prevents unroll-and-jamming cache filling. TODO : get the right value for this
+            vector_registers=
+            1,    # Setting this to 1 will enable vectorization but prevents unroll-and-jamming cache filling. TODO : get the right value for this
         )
         KNOWN_DEVICES[target.category][target.name] = target
         model_names.append((target.name, target.name))
@@ -927,7 +956,7 @@ class Target(_TargetContainer):
         vector_bytes: int = 0,
         vector_registers: int = None,
         frequency_GHz: float = None,
-        tensor_core : TensorCoreInformation = None,
+        tensor_core: TensorCoreInformation = None,
         turbo_frequency_GHz: float = None,
         cache_sizes: List[int] = None,
         cache_lines: List[int] = None
@@ -969,7 +998,7 @@ class Target(_TargetContainer):
                     device = KNOWN_DEVICES[category].get(known_name)
 
                 if not device:
-                    if category != Category.GPU: # TODO: GPUs characteristics are not fully fleshed out
+                    if category != Category.GPU:    # TODO: GPUs characteristics are not fully fleshed out
                         raise Exception(
                             f"Unknown device name for {category}. If a new device has been added at runtime, _recompute_known_devices must be called"
                         )

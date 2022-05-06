@@ -165,11 +165,9 @@ namespace value
 
         Value LogicalOperationImpl(ValueLogicalOperation op, Value source1, Value source2) override;
 
-        Matrix MFMALoadImpl(Value source, const std::vector<int64_t>& shape, const std::string& operand) override;
-
-        void MFMAStoreImpl(Matrix source, Value target) override;
-
-        Matrix MFMAComputeImpl(Matrix A, Matrix B, Matrix C) override;
+        Value MMALoadSyncImpl(const Matrix& source, const int64_t rowOffset, const int64_t colOffset, const MatrixFragment& target) override;
+        void MMAStoreSyncImpl(const MatrixFragment& source, Matrix& target, const int64_t rowOffset, const int64_t colOffset) override;
+        Value MMAComputeSyncImpl(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, uint32_t cbsz, uint32_t abid, uint32_t blgp) override;
 
         Scalar CastImpl(Scalar value, ValueType type, bool doSignedCast);
         Scalar CastImpl(Scalar value, ValueType type) override;

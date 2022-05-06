@@ -979,8 +979,7 @@ class TensorizeTest(unittest.TestCase):
                 self._verify_matmul(function, A, B, C, v)
 
 
-    # This should (maybe) ultimately succeed
-    @unittest.skip("Binding syntax not supported (yet?)")
+    @unittest.skip("Binding syntax not supported")
     def test_rocm_tensorize_new_binding(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
 

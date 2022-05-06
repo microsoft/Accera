@@ -1,3 +1,6 @@
+[//]: # (Project: Accera)
+[//]: # (Version: v1.2.4)
+
 # Accera Case Studies
 
 Accera case studies are community-provided samples that showcase the Accera language and programming model. To contribute a case study of your own, follow [these instructions](CONTRIBUTING.md).

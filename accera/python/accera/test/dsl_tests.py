@@ -2183,7 +2183,7 @@ class DSLTest_09Parameters(unittest.TestCase):
     def test_parameterization_1(self) -> None:
         from accera import create_parameters, Nest
 
-        P0, P1, P2, P3 = create_parameters(4)
+        P0, P1, P2, P3 = create_parameters()
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
@@ -2217,13 +2217,13 @@ class DSLTest_09Parameters(unittest.TestCase):
             }, base_name="matmul_32_32_32_2"
         )
 
-        P4, P5 = create_parameters(2)
+        P4, P5 = create_parameters()
 
         # Create a parameterized schedule
         schedule = nest.create_schedule()
         ii = schedule.split(i, size=P4)
 
-        P6 = create_parameters(1)
+        P6 = create_parameters()
         schedule.reorder(order=P6)
 
         # Create a parameterized plan
@@ -2252,7 +2252,7 @@ class DSLTest_09Parameters(unittest.TestCase):
     def test_parameterization_2(self) -> None:
         from accera import create_parameters, Nest
 
-        P0, P1, P2, P3 = create_parameters(4)
+        P0, P1, P2, P3 = create_parameters()
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
@@ -2268,7 +2268,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         package = Package()
         package_name = "test_parameterization_2"
 
-        P4, P5 = create_parameters(2)
+        P4, P5 = create_parameters()
 
         # Create a parameterized schedule
         schedule = nest.create_schedule()
@@ -2276,7 +2276,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         jj = schedule.split(j, size=P4)
         kk = schedule.split(k, size=P4)
 
-        P6, P7, P8 = create_parameters(3)
+        P6, P7, P8 = create_parameters()
         schedule.reorder(order=P6)
 
         # Create a parameterized plan
@@ -2312,7 +2312,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             for K in [1, 3, 5]:    # filter sizes
                 M = N - K + 1    # output size
 
-                P = create_parameters(1)
+                P = create_parameters()
 
                 A = Array(role=Array.Role.INPUT, shape=(N, ))
                 B = Array(role=Array.Role.INPUT, shape=(K, ))
@@ -2377,7 +2377,7 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         schedule = nest.create_schedule()
 
-        P1, P2, P3, P4, P5, P6 = create_parameters(6)
+        P1, P2, P3, P4, P5, P6 = create_parameters()
 
         # Adds empty elements to the beginning of dimension i, j, k
         schedule.pad(i, P1)
@@ -2469,7 +2469,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         # set the index (k) that cannot be parallelized as innermost
         schedule.reorder(i, ii, j, k)
 
-        P1, P2, P3, P4, P5, P6, P7, P8 = create_parameters(8)
+        P1, P2, P3, P4, P5, P6, P7, P8 = create_parameters()
 
         for policy in ["static", "dynamic"]:
             plan = schedule.create_plan(target)
@@ -2576,7 +2576,7 @@ class DSLTest_09Parameters(unittest.TestCase):
     def test_parameterization_grid(self) -> None:
         from accera import create_parameters, create_parameter_grid, Nest, Schedule
 
-        P0, P1, P2, P3, P4 = create_parameters(5)
+        P0, P1, P2, P3, P4 = create_parameters()
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
@@ -2643,7 +2643,7 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         s1 = n1.create_schedule()
 
-        P0 = create_parameters(1)
+        P0 = create_parameters()
         jj0 = s0.split(j0, P0)
 
         jj0_up = s0_up.split(j0_up, 16)
@@ -2712,7 +2712,7 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         s1 = n1.create_schedule()
 
-        P0 = create_parameters(1)
+        P0 = create_parameters()
         jj0 = s0.split(j0, P0)
 
         fs = fuse((s0, s1), partial=1)
@@ -2768,7 +2768,7 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         s1 = n1.create_schedule()
 
-        P0, P1 = create_parameters(2)
+        P0, P1 = create_parameters()
         jj0 = s0.split(j0, P0)
 
         fs = fuse((s0, s1), partial=1)
@@ -2820,7 +2820,7 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         s1 = n1.create_schedule()
 
-        P0, P1, P2 = create_parameters(3)
+        P0, P1, P2 = create_parameters()
         jj0 = s0.split(j0, P0)
 
         fs = fuse((s0, s1), partial=1)
@@ -2895,7 +2895,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         from accera import create_parameters, create_parameter_grid, Nest, Schedule
         from hatlib import HATPackage
 
-        P0, P1, P2, P3, P4 = create_parameters(5)
+        P0, P1, P2, P3, P4 = create_parameters()
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
@@ -2942,8 +2942,8 @@ class DSLTest_09Parameters(unittest.TestCase):
     def test_parameterization_arithmetic_operation(self) -> None:
         from accera import create_parameters, Nest
 
-        P0, P1, P2, P3 = create_parameters(4)
-
+        P0, P1, P2, P3 = create_parameters()
+        
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(P0, P1))
@@ -2958,7 +2958,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         package = Package()
         package_name = "test_parameterization_arithmetic_operation"
 
-        fma_unit_count, vector_size, multiplier = create_parameters(3)
+        fma_unit_count, vector_size, multiplier = create_parameters()
 
         # Create a parameterized schedule, the parameter arithmetic operation is just made up for testing purpose
         schedule = nest.create_schedule()

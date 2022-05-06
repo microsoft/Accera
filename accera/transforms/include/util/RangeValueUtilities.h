@@ -9,6 +9,7 @@
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/ROCDLDialect.h>
 #include <mlir/Dialect/Linalg/IR/LinalgOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/SCF.h>
@@ -67,7 +68,13 @@ private:
     RangeValue resolveRangeValue(mlir::ConstantIntOp op);
     RangeValue resolveRangeValue(mlir::IndexCastOp op);
     RangeValue resolveRangeValue(mlir::gpu::ThreadIdOp op);
+    RangeValue resolveRangeValue(mlir::ROCDL::ThreadIdXOp op);
+    RangeValue resolveRangeValue(mlir::ROCDL::ThreadIdYOp op);
+    RangeValue resolveRangeValue(mlir::ROCDL::ThreadIdZOp op);
     RangeValue resolveRangeValue(mlir::gpu::BlockIdOp op);
+    RangeValue resolveRangeValue(mlir::ROCDL::BlockIdXOp op);
+    RangeValue resolveRangeValue(mlir::ROCDL::BlockIdYOp op);
+    RangeValue resolveRangeValue(mlir::ROCDL::BlockIdZOp op);
     RangeValue resolveRangeValue(llvm::Instruction::BinaryOps binOp, mlir::Operation* op);
     RangeValue resolveRangeValue(mlir::AffineForOp op);
     RangeValue resolveRangeValue(mlir::scf::ForOp op);

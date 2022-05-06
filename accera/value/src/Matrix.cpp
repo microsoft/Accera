@@ -148,6 +148,11 @@ namespace value
         return _value.GetName();
     }
 
+    void Matrix::SetValue(Value value)
+    {
+        _value = value;
+    }
+
     Matrix& Matrix::operator+=(Matrix m)
     {
         if (m.Rows() != Rows() && m.Columns() != Columns())

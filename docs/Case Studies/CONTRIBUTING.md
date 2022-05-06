@@ -1,3 +1,6 @@
+[//]: # (Project: Accera)
+[//]: # (Version: v1.2.4)
+
 # Contributing Guide
 
 Thank you for investing your time contributing a community case study!

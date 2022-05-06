@@ -1,9 +1,9 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.30)
+[//]: # (Version: v1.2.40)
 
-# Accera v1.2.3 Reference
+# Accera v1.2.4 Reference
 
-## `accera.Target([architecture, cache_lines, cache_sizes, category, extensions, family, frequency_GHz, model, name, num_cores, num_threads, turbo_frequency_GHz])`
+## `accera.Target([architecture, cache_lines, cache_sizes, category, extensions, family, frequency_GHz, known_name, model, name, num_cores, num_threads, runtime, tensor_core, turbo_frequency_GHz, vector_bytes, vector_registers)`
 
 Defines the capabilities of a target processor.
 
@@ -11,7 +11,6 @@ Defines the capabilities of a target processor.
 
 argument | description | type/default
 --- | --- | ---
-`known_name` | A name of a device known to Accera | string \| accera.Target.Model / "HOST"
 `architecture` | The processor architecture | accera.Target.Architecture
 `cache_lines` | Cache lines (kilobytes) | list of positive integers
 `cache_sizes` | Cache sizes (bytes) | list of positive integers
@@ -19,10 +18,13 @@ argument | description | type/default
 `extensions` | Supported processor extensions | list of extension codes
 `family` | The processor family | string
 `frequency_GHz` | The processor frequency (GHz) | positive number
+`known_name` | A name of a device known to Accera | string \| accera.Target.Model / "HOST"
 `model` | The processor model | accera.Target.Model
 `name` | The processor name | string
 `num_cores` | Number of cores | positive integer
 `num_threads` | Number of threads | positive integer
+`runtime` | The runtime | accera.Target.Runtime
+`tensor_core` | The tensor core capabilities, such as the supported input type, output type, and shapes | accera.Targets.TensorCoreInformation
 `turbo_frequency_GHz` | Turbo frequency (GHz) | positive number
 `vector_bytes` | Bytes per vector register | positive number
 `vector_registers` | total number of SIMD registers | positive number

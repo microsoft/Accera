@@ -19,6 +19,7 @@ set(src
     src/KernelPredicate.cpp
     src/MLIREmitterContext.cpp
     src/Matrix.cpp
+    src/MatrixFragment.cpp
     src/MatrixOperations.cpp
     src/MLOperations.cpp
     src/Nest.cpp
@@ -57,6 +58,7 @@ set(include
     include/LLVMUtilities.h
     include/LoopNests.h
     include/Matrix.h
+    include/MatrixFragment.h
     include/MatrixOperations.h
     include/MLIREmitterContext.h
     include/MLOperations.h

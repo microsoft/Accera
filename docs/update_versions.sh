@@ -7,7 +7,8 @@
 pip install bump2version
 
 # Usage: bump2version <part>, where <part> is major, minor, or patch
+# Note: Run this from the docs folder
 # Note: This will override .bumpversion.cfg
 # TODO: tie the version with git tags
 
-bump2version patch
+bump2version patch --allow-dirty

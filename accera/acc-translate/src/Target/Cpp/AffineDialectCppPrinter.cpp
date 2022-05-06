@@ -468,8 +468,16 @@ namespace cpp_printer
                 StringRef iterVarName = state.nameState.getOrCreateName(
                     iterVar, SSANameState::SSANameKind::Variable);
 
-                RETURN_IF_FAILED(printer->printType(resultVar.getType()));
-                os << " " << iterVarName << " = " << state.nameState.getName(initVal) << ";\n";
+                if (auto memRefType = resultVar.getType().dyn_cast<MemRefType>())
+                {
+                    RETURN_IF_FAILED(printer->printDecayedArrayDeclaration(memRefType, iterVarName));
+                }
+                else
+                {
+                    RETURN_IF_FAILED(printer->printType(resultVar.getType()));
+                    os << " " << iterVarName;
+                }
+                os << " = " << state.nameState.getName(initVal) << ";\n";
             }
         }
 
@@ -514,8 +522,16 @@ namespace cpp_printer
             {
                 StringRef resultName = state.nameState.getOrCreateName(
                     resultVar, SSANameState::SSANameKind::Variable);
-                RETURN_IF_FAILED(printer->printType(resultVar.getType()));
-                os << " " << resultName << " = " << state.nameState.getName(iterVar) << ";\n";
+                if (auto memRefType = resultVar.getType().dyn_cast<MemRefType>())
+                {
+                    RETURN_IF_FAILED(printer->printDecayedArrayDeclaration(memRefType, resultName));
+                }
+                else
+                {
+                    RETURN_IF_FAILED(printer->printType(resultVar.getType()));
+                    os << " " << resultName;
+                }
+                os << " = " << state.nameState.getName(iterVar) << ";\n";
             }
         }
 

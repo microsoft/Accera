@@ -1,16 +1,10 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.3)
+[//]: # (Version: v1.2.4)
 
-# Accera v1.2.3 Reference
+# Accera v1.2.4 Reference
 
-## `accera.create_parameters(number)`
+## `accera.create_parameters()`
 Creates placeholder parameters.
-
-## Arguments
-
-argument | description | type/default
---- | --- | ---
-`number` | number of parameters to create | positive integer
 
 ## Returns
 Tuple of `Parameter`
@@ -20,7 +14,7 @@ Tuple of `Parameter`
 Create 3 parameters `m`, `n`, `k`. Use them to parameterize the nest shape:
 
 ```python
-m, n, k = acc.create_parameters(3)
+m, n, k = acc.create_parameters()
 nest = acc.Nest(shape=(m, n, k))
 ```
 

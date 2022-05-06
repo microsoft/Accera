@@ -4,10 +4,11 @@ pandas
 tomlkit
 wheel
 pybind11>=2.6.0
-six<=1.14
+six
 conan
 lit
 packaging
+pytest
 hatlib>=0.0.12
 varname
 py-cpuinfo

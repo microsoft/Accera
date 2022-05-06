@@ -18,6 +18,7 @@
 #include "value/ValueDialect.h"
 #include "value/ValueEnums.h"
 
+#include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -244,8 +245,6 @@ namespace util
     mlir::Value CreatePrivateBuffer(mlir::OpBuilder& builder, mlir::MemRefType bufferType, const std::string& namePrefix);
     mlir::Value CreatePrivateBuffer(mlir::OpBuilder& builder, mlir::Operation* anchorOp, mlir::MemRefType bufferType, const std::string& namePrefix);
 
-    std::pair<mlir::MemRefType, mlir::RankedTensorType> GetMFMAThreadOffsetMapType(mlir::OpBuilder& rewriter, const std::vector<int64_t>& vecSize);
-
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string tag);
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string tag, mlir::Location opLocation);
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string filename, int64_t lineNumber);
@@ -261,7 +260,7 @@ namespace util
 
     std::optional<ir::value::ExecutionTarget> ResolveExecutionTarget(mlir::Operation* op, bool exact = false);
     std::optional<ir::value::ExecutionRuntime> ResolveExecutionRuntime(mlir::Operation* op, bool exact = false);
-    std::optional<std::pair<int, int>> ResolveWarpSize(mlir::Operation* op);
+    std::optional<std::pair<int, int>> ResolveWarpSize(value::ExecutionRuntime runtime);
 
     mlir::Operation* CreateGPUControlBarrier(mlir::OpBuilder& builder, const std::string scope, std::optional<mlir::Location> loc = std::nullopt);
 
@@ -394,5 +393,6 @@ namespace util
     // d) nullptr otherwise (e.g. if it is a block argument for a non-for-loop op)
     mlir::Operation* GetDefiningOpOrForLoop(mlir::Value val);
 
+    mlir::Value GetGPUIndex(mlir::Operation* op, value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc);
 } // namespace util
 } // namespace accera::ir

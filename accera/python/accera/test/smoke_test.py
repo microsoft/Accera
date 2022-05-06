@@ -914,7 +914,7 @@ class SmokeTest(unittest.TestCase):
         f, i, j, k0, j1 = schedule.get_indices()
 
         # TODO: support parameters
-        # m, n = acc.create_parameters(2)
+        # m, n = acc.create_parameters()
         # ii, jj = schedule.tile({
         #     i: m,
         #     j: n
@@ -971,7 +971,7 @@ class SmokeTest(unittest.TestCase):
         schedule1 = nest1.create_schedule()
 
         # TODO: support parameters
-        # n = acc.create_parameters(1)
+        # n = acc.create_parameters()
         # jj0 = schedule0.split(j0, n)
         # kk1 = schedule1.split(k1, n)
         jj0 = schedule0.split(j0, 8)
@@ -984,7 +984,7 @@ class SmokeTest(unittest.TestCase):
         f, i, j, jj0, k0, j1, kk1 = schedule.get_indices()
 
         # TODO: support parameters
-        # m, s = acc.create_parameters(2)
+        # m, s = acc.create_parameters()
         # ii, jj1 = schedule.tile({
         #     i: m,
         #     j1: s
@@ -1042,7 +1042,7 @@ class SmokeTest(unittest.TestCase):
         schedule1 = nest1.create_schedule()
 
         # TODO: support parameters
-        # n = acc.create_parameters(1)
+        # n = acc.create_parameters()
         # jj0 = schedule0.split(j0, n)
         # kk1 = schedule1.split(k1, n)
         jj0 = schedule0.split(j0, 8)
@@ -1056,7 +1056,7 @@ class SmokeTest(unittest.TestCase):
         f, i, j, jj0, k0, j1, kk1 = schedule.get_indices()
 
         # TODO: support parameters
-        # m, t = acc.create_parameters(2)
+        # m, t = acc.create_parameters()
         # ii, kk0 = schedule.tile({
         #     i: m,
         #     k0: t
@@ -1436,7 +1436,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_parameter_grid(self) -> None:
 
-        P0, P1, P2, P3, P4, P5 = create_parameters(6)
+        P0, P1, P2, P3, P4, P5 = create_parameters()
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
@@ -1876,9 +1876,9 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         K = 1024
 
-        a_level_1, a_level_2, a_trigger_1, a_trigger_2 = acc.create_parameters(4)
-        b_level_1, b_level_2, b_trigger_1, b_trigger_2 = acc.create_parameters(4)
-        c_level_1, c_level_2 = acc.create_parameters(2)
+        a_level_1, a_level_2, a_trigger_1, a_trigger_2 = acc.create_parameters()
+        b_level_1, b_level_2, b_trigger_1, b_trigger_2 = acc.create_parameters()
+        c_level_1, c_level_2 = acc.create_parameters()
 
         a_caches = [(a_level_1, a_trigger_1, acc.Array.Layout.FIRST_MAJOR),
                     (a_level_2, a_trigger_2, acc.Array.Layout.LAST_MAJOR)]
@@ -3993,7 +3993,7 @@ class SmokeTest(unittest.TestCase):
         kkk = schedule.split(kk, k_inner_tile_size)
         schedule.reorder(i, j, k, kk, ii, jj, kkk)
 
-        target = Target(Target.Model.AMD_MI100)
+        target = Target(category=Target.Category.GPU, runtime=Target.Runtime.CUDA)
         plan = schedule.create_plan(target=target)
         plan.bind(
             mapping={
@@ -4064,7 +4064,7 @@ class SmokeTest(unittest.TestCase):
             package,
             package_name,
             file_check_fn=file_check_fn,
-            check_correctness=ROCM_AVAILABLE,
+            check_correctness=False, #Turn this on when we have ability to test on CUDA capable devices
             file_list=[f"{package_name}.cu", f"{package_name}.hat"],
             package_format=Package.Format.DEFAULT
         )

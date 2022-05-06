@@ -971,7 +971,7 @@ struct MultiCacheInfo
 
 std::pair<mlir::Value, mlir::ValueRange> GetAccessValueAndIndices(Operation* loadOrStoreOp)
 {
-    bool isLoadOrStore = isa<memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MFMAStoreOp, mlir::memref::LoadOp, mlir::AffineLoadOp, v::LoadOp, v::MFMALoadOp>(loadOrStoreOp);
+    bool isLoadOrStore = isa<memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MMAStoreSyncOp, mlir::memref::LoadOp, mlir::AffineLoadOp, v::LoadOp, v::MMALoadSyncOp>(loadOrStoreOp);
     assert(isLoadOrStore);
     if (auto stdStoreOp = dyn_cast_or_null<memref::StoreOp>(loadOrStoreOp))
     {
@@ -988,9 +988,9 @@ std::pair<mlir::Value, mlir::ValueRange> GetAccessValueAndIndices(Operation* loa
         v::StoreOp::Adaptor adaptor{ valueStoreOp };
         return std::make_pair(adaptor.memref(), adaptor.indices());
     }
-    else if (auto valueMFMAStoreOp = dyn_cast_or_null<v::MFMAStoreOp>(loadOrStoreOp))
+    else if (auto valueMMAStoreSyncOp = dyn_cast_or_null<v::MMAStoreSyncOp>(loadOrStoreOp))
     {
-        v::MFMAStoreOp::Adaptor adaptor{ valueMFMAStoreOp };
+        v::MMAStoreSyncOp::Adaptor adaptor{ valueMMAStoreSyncOp };
         return std::make_pair(adaptor.memref(), adaptor.indices());
     }
     else if (auto stdLoadOp = dyn_cast_or_null<memref::LoadOp>(loadOrStoreOp))
@@ -1003,14 +1003,14 @@ std::pair<mlir::Value, mlir::ValueRange> GetAccessValueAndIndices(Operation* loa
         mlir::AffineLoadOp::Adaptor adaptor{ affineLoadOp };
         return std::make_pair(adaptor.memref(), adaptor.indices());
     }
-    else if (auto valueMFMALoadOp = dyn_cast_or_null<v::LoadOp>(loadOrStoreOp))
+    else if (auto valueMMALoadSyncOp = dyn_cast_or_null<v::LoadOp>(loadOrStoreOp))
     {
-        v::LoadOp::Adaptor adaptor{ valueMFMALoadOp };
+        v::LoadOp::Adaptor adaptor{ valueMMALoadSyncOp };
         return std::make_pair(adaptor.memref(), adaptor.indices());
     }
-    else if (auto valueMFMALoadOp = dyn_cast_or_null<v::MFMALoadOp>(loadOrStoreOp))
+    else if (auto valueMMALoadSyncOp = dyn_cast_or_null<v::MMALoadSyncOp>(loadOrStoreOp))
     {
-        v::MFMALoadOp::Adaptor adaptor{ valueMFMALoadOp };
+        v::MMALoadSyncOp::Adaptor adaptor{ valueMMALoadSyncOp };
         return std::make_pair(adaptor.memref(), adaptor.indices());
     }
     assert(false && "Unhandled load/store case");
@@ -1022,7 +1022,7 @@ bool ComputeRegionAccessedByOp(PatternRewriter& rewriter, mlir::MemRefRegion& ac
     rewriter.setInsertionPoint(op);
     auto loc = op->getLoc();
 
-    if (isa<mlir::AffineLoadOp, mlir::AffineStoreOp, v::MFMALoadOp, v::MFMAStoreOp>(op))
+    if (isa<mlir::AffineLoadOp, mlir::AffineStoreOp, v::MMALoadSyncOp, v::MMAStoreSyncOp>(op))
     {
         auto result = activeBlockRegion.compute(op, loopDepth, nullptr, false);
         assert(succeeded(result));
@@ -1066,11 +1066,11 @@ ArrayAccessInfo ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir
             mlir::MemRefRegion activeBlockRegion(loc);
 
             // TODO : make value load/store implement load/store interfaces from std dialect
-            if (isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MFMAStoreOp>(arrayUserOp))
+            if (isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MMAStoreSyncOp>(arrayUserOp))
             {
                 result.valueWritten = true;
             }
-            if (isa<mlir::memref::LoadOp, mlir::AffineLoadOp, v::LoadOp, v::MFMALoadOp>(arrayUserOp))
+            if (isa<mlir::memref::LoadOp, mlir::AffineLoadOp, v::LoadOp, v::MMALoadSyncOp>(arrayUserOp))
             {
                 result.valueRead = true;
                 if (result.onlyReadsAreAccumulates)
@@ -1102,7 +1102,7 @@ ArrayAccessInfo ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir
 
                             for (auto addedValueUser : addResult.getUsers())
                             {
-                                if (!isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MFMAStoreOp>(addedValueUser))
+                                if (!isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MMAStoreSyncOp>(addedValueUser))
                                 {
                                     result.onlyReadsAreAccumulates = false;
                                     break;
@@ -1121,7 +1121,7 @@ ArrayAccessInfo ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir
                                 break;
                             }
                         }
-                        else if (isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MFMAStoreOp>(loadedValueUser))
+                        else if (isa<mlir::memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MMAStoreSyncOp>(loadedValueUser))
                         {
                             // If it is just a load-and-store without any other uses of the loaded value, then treat that as a simple accumulate equivalent to accumulating the value 0
                             auto dstValueAndIndices = GetAccessValueAndIndices(loadedValueUser);
@@ -1570,22 +1570,43 @@ mlir::AffineLoadOp CreateLoad(mlir::OpBuilder& builder,
     }
 }
 
-// Create an MFMALoadOp that understands how to access caches
-v::MFMALoadOp CreateMFMALoad(mlir::OpBuilder& builder,
-                             mlir::Location loc,
-                             v::MFMAMatrixType resultType,
-                             mlir::Value src,
-                             const std::vector<mlir::Value>& baseArrayPosition,
-                             const std::vector<std::pair<Index, mlir::Value>>& unrealizedLoopNestIndices = {})
+// Create an MMALoadSyncOp that understands how to access caches
+v::MMALoadSyncOp CreateMFMALoad(mlir::OpBuilder& builder,
+                                mlir::Location loc,
+                                mlir::Type resultType,
+                                mlir::Value src,
+                                MMAShapeType mmaShapeType,
+                                MMAOperandType operandType,
+                                const std::vector<mlir::Value>& baseArrayPosition,
+                                const std::vector<std::pair<Index, mlir::Value>>& unrealizedLoopNestIndices = {})
 {
     if (auto srcCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(src.getDefiningOp()))
     {
         mlir::AffineValueMap loadAccessInfo = srcCacheOp.insertCachePosition(builder.getInsertionBlock(), baseArrayPosition, unrealizedLoopNestIndices);
-        return builder.create<v::MFMALoadOp>(loc, resultType, src, loadAccessInfo.getAffineMap(), loadAccessInfo.getOperands());
+        return builder.create<v::MMALoadSyncOp>(loc, resultType, src, mmaShapeType, operandType, loadAccessInfo.getAffineMap(), loadAccessInfo.getOperands());
     }
     else
     {
-        return builder.create<v::MFMALoadOp>(loc, resultType, src, baseArrayPosition);
+        return builder.create<v::MMALoadSyncOp>(loc, resultType, src, mmaShapeType, operandType, baseArrayPosition);
+    }
+}
+
+v::MMAStoreSyncOp CreateMFMAStore(mlir::OpBuilder& builder,
+                                  mlir::Location loc,
+                                  mlir::Value value,
+                                  mlir::Value dst,
+                                  MMAShapeType mmaShapeType,
+                                  const std::vector<mlir::Value>& baseArrayPosition,
+                                  const std::vector<std::pair<Index, mlir::Value>>& unrealizedLoopNestIndices = {})
+{
+    if (auto dstCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(dst.getDefiningOp()))
+    {
+        mlir::AffineValueMap storeAccessInfo = dstCacheOp.insertCachePosition(builder.getInsertionBlock(), baseArrayPosition, unrealizedLoopNestIndices);
+        return builder.create<v::MMAStoreSyncOp>(loc, value, dst, mmaShapeType, storeAccessInfo.getAffineMap(), storeAccessInfo.getOperands());
+    }
+    else
+    {
+        return builder.create<v::MMAStoreSyncOp>(loc, value, dst, mmaShapeType, baseArrayPosition);
     }
 }
 
@@ -3898,13 +3919,15 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                     rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
                 }
             })
-            .Case([&](v::MFMALoadOp loadOp) {
-                v::MFMALoadOp::Adaptor loadAdaptor{ loadOp };
+            .Case([&](v::MMALoadSyncOp loadOp) {
+                v::MMALoadSyncOp::Adaptor loadAdaptor{ loadOp };
                 rewriter.setInsertionPoint(loadOp);
+                const v::MMAShapeType mmaShapeType{ static_cast<v::MMAShapeType>(loadOp.mmaShapeType()) };
+                const v::MMAOperandType operandType{ loadOp.operandType() };
                 if (isActiveBlockCache)
                 {
                     auto baseArrayPosition = GetBaseArrayPosition(rewriter, loc, loadOp);
-                    auto newLoadOp = CreateMFMALoad(rewriter, loc, loadOp.getMFMAMatrixType(), toValue, baseArrayPosition);
+                    auto newLoadOp = CreateMFMALoad(rewriter, loc, loadOp.result().getType(), toValue, mmaShapeType, operandType, baseArrayPosition);
                     loadOp.replaceAllUsesWith(newLoadOp.getResult());
                     TransferOrSetAccessAttrs(loadOp, newLoadOp);
                     rewriter.eraseOp(loadOp);
@@ -3912,23 +3935,24 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 else
                 {
                     llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
-                    rewriter.replaceOpWithNewOp<v::MFMALoadOp>(loadOp, loadOp.getMFMAMatrixType(), toValueAccessContext.value, cacheMap, accessIndices);
+                    rewriter.replaceOpWithNewOp<v::MMALoadSyncOp>(loadOp, loadOp.result().getType(), toValueAccessContext.value, mmaShapeType, operandType, cacheMap, accessIndices);
                 }
             })
-            .Case([&](v::MFMAStoreOp storeOp) {
-                v::MFMAStoreOp::Adaptor storeAdaptor{ storeOp };
+            .Case([&](v::MMAStoreSyncOp storeOp) {
+                v::MMAStoreSyncOp::Adaptor storeAdaptor{ storeOp };
                 rewriter.setInsertionPoint(storeOp);
+                const v::MMAShapeType mmaShapeType{ static_cast<v::MMAShapeType>(storeOp.mmaShapeType()) };
                 if (isActiveBlockCache)
                 {
                     auto baseArrayPosition = GetBaseArrayPosition(rewriter, loc, storeOp);
-                    auto newStoreOp = CreateStore<v::MFMAStoreOp>(rewriter, loc, storeAdaptor.value(), toValue, baseArrayPosition);
+                    auto newStoreOp = CreateMFMAStore(rewriter, loc, storeAdaptor.src(), toValue, mmaShapeType, baseArrayPosition);
                     TransferOrSetAccessAttrs(storeOp, newStoreOp);
                     rewriter.eraseOp(storeOp);
                 }
                 else
                 {
                     llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
-                    rewriter.replaceOpWithNewOp<v::MFMAStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
+                    rewriter.replaceOpWithNewOp<v::MMAStoreSyncOp>(storeOp, storeAdaptor.src(), toValueAccessContext.value, mmaShapeType, cacheMap, accessIndices);
                 }
             })
             .Case([&](ActiveElementCacheCopyOp cacheCopyOp) {
@@ -6036,11 +6060,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     auto loc = innerLoop.getLoc();
     auto ctx = rewriter.getContext();
 
-    auto getMatrixTypeOfMemref = [](mlir::MemRefType memrefType, const auto& shape, llvm::StringRef operand) -> v::MFMAMatrixType {
-        return v::MFMAMatrixType::get(shape, memrefType.getElementType(), operand);
-    };
-
-    const auto mfmaType = getMatrixTypeOfMemref(loadAOp.getMemRefType(), tensorizationInfo.dim, "AOp"); // A, B and C have same mfma type
+    const v::MMAOp mfmaType(tensorizationInfo.dim);
 
     // Verify the step sizes of the 'i', 'j', and 'k' loop induction vars
     auto stepsA = GetIndexLoopStepSizesInAffineMemOp(loadAOp);
@@ -6070,98 +6090,75 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     if (tensorizationInfo.useStaticOffsets)
     {
         std::vector<uint8_t> threadGroupOffsets = mfmaType.getOffsetMap();
-        auto&& [memrefType, dataType] = util::GetMFMAThreadOffsetMapType(rewriter, mfmaType.getOffsetMapSize());
+        auto&& [memrefType, dataType] = mfmaType.GetMFMAThreadOffsetMapType(rewriter.getIntegerType(8));
         auto dataAttribute = mlir::DenseElementsAttr::get(dataType, llvm::makeArrayRef(threadGroupOffsets));
 
         // Create a static offset map (unless one already exists)
-        if(auto module = util::CastOrGetParentOfType<v::ValueModuleOp>(affineForOp.getOperation()))
+        if (auto module = util::CastOrGetParentOfType<v::ValueModuleOp>(affineForOp.getOperation()))
         {
-            if( auto existingStaticBuffer =  util::FindOpWithSymbolName(v::MFMAThreadBufferMapName, module.getOperation()); !existingStaticBuffer)
+            if (auto existingStaticBuffer = util::FindOpWithSymbolName(v::MFMAThreadBufferMapName, module.getOperation()); !existingStaticBuffer)
             {
                 [[maybe_unused]] auto globalOp = util::CreateGlobalBufferOp(rewriter, affineForOp, memrefType, v::MFMAThreadBufferMapName, true, dataAttribute, true, false);
             }
         }
     }
 
-    const auto [warpSizeX, warpSizeY] = util::ResolveWarpSize(affineForOp).value();
-    auto warpSize = rewriter.create<ConstantIndexOp>(loc, warpSizeX * warpSizeY);
-    auto i32Ty = rewriter.getI32Type();
-    auto int0 = rewriter.create<ConstantOp>(loc, i32Ty, rewriter.getZeroAttr(i32Ty));
-    auto leadingDim = rewriter.create<ConstantIndexOp>(loc, mfmaType.getLeadingDim()); // #### == 16 for 2x2x16
-    auto tileFactor = rewriter.create<ConstantIndexOp>(loc, mfmaType.getTileFactor()); // #### == 1 for 2x2x16
-    auto tidX = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "x");
-    auto tidY = rewriter.create<gpu::ThreadIdOp>(loc, rewriter.getIndexType(), "y");
-    auto bidX = rewriter.create<gpu::BlockIdOp>(loc, rewriter.getIndexType(), "x");
-    auto bidY = rewriter.create<gpu::BlockIdOp>(loc, rewriter.getIndexType(), "y");
-    auto bdimX = rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x");
-    auto bdimY = rewriter.create<gpu::BlockDimOp>(loc, rewriter.getIndexType(), "y");
-    // We reshape the physical block dimensions to compute the correct offsets.
-    // Multiplying blockDim.x and dividing blockDim.y by tile factor to keep the size same.
-    auto reshapedBlockDimX = rewriter.create<MulIOp>(loc, bdimX, tileFactor);
-    auto reshapedBlockDimY = rewriter.create<UnsignedDivIOp>(loc, bdimY, tileFactor);
-    auto blockTid = rewriter.create<AddIOp>(loc, tidX, rewriter.create<MulIOp>(loc, tidY, bdimX));
-    auto warpId = rewriter.create<UnsignedDivIOp>(loc, blockTid, warpSize);
-    auto warpsX = rewriter.create<UnsignedDivIOp>(loc, reshapedBlockDimX, rewriter.create<ConstantIndexOp>(loc, warpSizeX));
-    auto warpsY = rewriter.create<UnsignedDivIOp>(loc, reshapedBlockDimY, rewriter.create<ConstantIndexOp>(loc, warpSizeY));
-    auto warpIdX = rewriter.create<UnsignedRemIOp>(loc, warpId, warpsX);
-    auto warpIdY = rewriter.create<UnsignedDivIOp>(loc, warpId, warpsX);
-    auto singleBlockOffsetCol = rewriter.create<MulIOp>(loc, warpsX, leadingDim);
-    auto singleBlockOffsetRow = rewriter.create<MulIOp>(loc, warpsY, leadingDim);
-    auto rowOffset = rewriter.create<AddIOp>(loc,
-                                             rewriter.create<MulIOp>(loc, warpIdY, leadingDim),
-                                             rewriter.create<MulIOp>(loc, bidY, singleBlockOffsetRow));
-    auto colOffset = rewriter.create<AddIOp>(loc,
-                                             rewriter.create<MulIOp>(loc, warpIdX, leadingDim),
-                                             rewriter.create<MulIOp>(loc, bidX, singleBlockOffsetCol));
+    auto&& rowcol = mfmaType.GetThreadBlockOffsets(affineForOp, rewriter, loc);
+    auto rowOffset = rowcol.first;
+    auto colOffset = rowcol.second;
 
-    auto loadMatrixOp = [&](AffineLoadOp loadOp, StringRef kind, auto mfma_block_offset) {
-        auto mfmaMatrixType = getMatrixTypeOfMemref(loadOp.getMemRefType(), tensorizationInfo.dim, kind);
+    auto loadMatrixOp = [&](AffineLoadOp loadOp, MMAOperandType kind, auto mfma_block_offset) {
         AffineMap offsetMap;
         SmallVector<mlir::Value, 4> loadOpOperands(loadOp.getMapOperands());
-        auto d0 = rewriter.getAffineDimExpr(0);
-        auto d1 = rewriter.getAffineDimExpr(1);
-        if (kind == "AOp")
+        auto elementType = loadOp.getMemRefType().getElementType();
+        MemRefType vecTy;
+        [[maybe_unused]] auto d0 = rewriter.getAffineDimExpr(0);
+        [[maybe_unused]] auto d1 = rewriter.getAffineDimExpr(1);
+        switch (kind)
         {
-            auto rowOffsetSym = rewriter.getAffineSymbolExpr(0);
+        case MMAOperandType::A:
+            vecTy = mlir::MemRefType::get({ mfmaType.getThreadTileSize() }, elementType);
             if (loadAGPUIndexPos == 0)
-                offsetMap = AffineMap::get(2, 1, { rowOffsetSym, d1 }, ctx);
+                offsetMap = AffineMap::get(2, 1, { rewriter.getAffineSymbolExpr(0), d1 }, ctx);
             else
-                offsetMap = AffineMap::get(2, 1, { d0, rowOffsetSym }, ctx);
+                offsetMap = AffineMap::get(2, 1, { d0, rewriter.getAffineSymbolExpr(0) }, ctx);
             loadOpOperands.push_back(rowOffset);
-        }
-        else if (kind == "BOp")
-        {
-            auto colOffsetSym = rewriter.getAffineSymbolExpr(0);
+            break;
+        case MMAOperandType::B:
+            vecTy = mlir::MemRefType::get({ mfmaType.getThreadTileSize() }, elementType);
             if (loadBGPUIndexPos == 1)
-                offsetMap = AffineMap::get(2, 1, { d0, colOffsetSym }, ctx);
+                offsetMap = AffineMap::get(2, 1, { d0, rewriter.getAffineSymbolExpr(0) }, ctx);
             else
-                offsetMap = AffineMap::get(2, 1, { colOffsetSym, d1 }, ctx);
+                offsetMap = AffineMap::get(2, 1, { rewriter.getAffineSymbolExpr(0), d1 }, ctx);
             loadOpOperands.push_back(colOffset);
-        }
-        else if (kind == "COp")
-        {
-            auto rowOffsetSym = rewriter.getAffineSymbolExpr(0);
-            auto colOffsetSym = rewriter.getAffineSymbolExpr(1);
+            break;
+        case MMAOperandType::Acc:
+            // For FP16 output, we need to load C in FP32 mode before passing to MFMA
+            if (elementType.isF16())
+                elementType = rewriter.getF32Type();
+
+            vecTy = mlir::MemRefType::get({ mfmaType.getThreadTileSize() / mfmaType.getNumBlocks() }, elementType);
             if (gpuDimsC[0] == GPUIndexDimension::Y)
-                offsetMap = AffineMap::get(2, 2, { rowOffsetSym, colOffsetSym }, ctx);
+                offsetMap = AffineMap::get(2, 2, { rewriter.getAffineSymbolExpr(0), rewriter.getAffineSymbolExpr(1) }, ctx);
             else
-                offsetMap = AffineMap::get(2, 2, { colOffsetSym, rowOffsetSym }, ctx);
+                offsetMap = AffineMap::get(2, 2, { rewriter.getAffineSymbolExpr(1), rewriter.getAffineSymbolExpr(0) }, ctx);
             loadOpOperands.push_back(rewriter.create<AddIOp>(loc, rowOffset, mfma_block_offset));
             loadOpOperands.push_back(colOffset);
-        }
-        else
-        {
+            break;
+        default:
             llvm::report_fatal_error("Unknown kind of matrix");
         }
 
         // llvm::dbgs() << "COp with offset " << offsetMap << " with load "
         //              << loadOp.getAffineMap() << " and composed = " << offsetMap.compose(loadOp.getAffineMap()) << "\n";
 
-        return rewriter.create<MFMALoadOp>(loc,
-                                           mfmaMatrixType,
-                                           loadOp.memref(),
-                                           offsetMap.compose(loadOp.getAffineMap()),
-                                           loadOpOperands);
+        return rewriter.create<MMALoadSyncOp>(loc,
+                                              vecTy,
+                                              loadOp.memref(),
+                                              mfmaType.getShapeType(),
+                                              kind,
+                                              offsetMap.compose(loadOp.getAffineMap()),
+                                              loadOpOperands);
     };
 
     auto StoreOp = [&](AffineStoreOp storeOp, Value value, auto mfma_block_offset) {
@@ -6179,23 +6176,25 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         storeOpOperands.push_back(colOffset);
         // llvm::dbgs() << "COpOut with offset " << offsetMap << " with load "
         //              << storeOp.getAffineMap() << " and composed = " << offsetMap.compose(storeOp.getAffineMap()) << "\n";
-        return rewriter.create<MFMAStoreOp>(loc,
-                                            value,
-                                            storeOp.memref(),
-                                            offsetMap.compose(storeOp.getAffineMap()),
-                                            storeOpOperands);
+        return rewriter.create<MMAStoreSyncOp>(loc,
+                                               value,
+                                               storeOp.memref(),
+                                               mfmaType.getShapeType(),
+                                               offsetMap.compose(storeOp.getAffineMap()),
+                                               storeOpOperands);
     };
 
-    auto aMfmaMatrix = loadMatrixOp(loadAOp, "AOp", int0);
-    auto bMfmaMatrix = loadMatrixOp(loadBOp, "BOp", int0);
+    auto int0 = rewriter.create<ConstantIntOp>(loc, 0, rewriter.getI32Type());
+    auto aMfmaMatrix = loadMatrixOp(loadAOp, MMAOperandType::A, int0);
+    auto bMfmaMatrix = loadMatrixOp(loadBOp, MMAOperandType::B, int0);
     const auto numBlocks = mfmaType.getNumBlocks();
     const auto cbsz = numBlocks / 2;
     for (int iBlock = 0, blockRowOffset = 0; iBlock < numBlocks; ++iBlock, blockRowOffset += tensorizationInfo.dim[1])
     {
         auto offset = rewriter.create<ConstantIndexOp>(loc, blockRowOffset);
-        auto cMfmaMatrix = loadMatrixOp(loadCOp, "COp", offset);
-        auto destMfmaMatrix = rewriter.create<MFMAComputeOp>(loc, cMfmaMatrix.getType(), aMfmaMatrix, bMfmaMatrix, cMfmaMatrix, cbsz, iBlock, 0);
-        [[maybe_unused]] auto mfmaStoreOp = StoreOp(storeCOp, destMfmaMatrix, offset);
+        auto cMfmaMatrix = loadMatrixOp(loadCOp, MMAOperandType::Acc, offset);
+        auto destMfmaMatrix = rewriter.create<MMAComputeSyncOp>(loc, cMfmaMatrix.getType(), aMfmaMatrix, bMfmaMatrix, cMfmaMatrix, uint32_t(mfmaType.getShapeType()), cbsz, iBlock, 0);
+        [[maybe_unused]] auto MMAStoreSyncOp = StoreOp(storeCOp, destMfmaMatrix, offset);
     }
 
     while (!opsToErase.empty())

@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.3)
+[//]: # (Version: v1.2.4)
 
 # Section 9: Parameters
 
@@ -10,7 +10,7 @@ Recall that a `Nest` represents the loop-nest logic. We can parameterize the nes
 
 ```python
 # Create parameters
-P0, P1, P2, P3 = acc.create_parameters(4)
+P0, P1, P2, P3 = acc.create_parameters()
 
 A = acc.Array(role=acc.Array.Role.INPUT, shape=(P0, P2))
 B = acc.Array(role=acc.Array.Role.INPUT, shape=(P2, P1))
@@ -38,7 +38,7 @@ In the above scenario, the shape of the nest is parameterized by (`P0`, `P1`, `P
 Parameters can also appear in schedules and plans. For example, we can add the following code snippet:
 
 ```python
-P4, P5 = acc.create_parameters(2)
+P4, P5 = acc.create_parameters()
 
 # Create a parameterized schedule
 schedule = nest.create_schedule()
@@ -52,10 +52,76 @@ plan.cache(A, level=P5)
 package.add(plan, args=(A, B, C), parameters={P0:16, P1:16, P2:16, P3:1.0, P4:4, P5:2}, base_name="alternative_matmul_16_16_16")
 ```
 
+## Supported operations
+Accera's parameters support the basic arithmetic operations and other relational/bitwise/intrinsics operations. For example, we can add the following code snippet instead:
+
+```python
+fma_unit_count, vector_size, P5 = acc.create_parameters()
+
+# Create a parameterized schedule
+schedule = nest.create_schedule()
+ii = schedule.split(i, size=fma_unit_count * vector_size)
+iii = schedule.split(ii, size=vector_size)
+
+# Create a parameterized plan
+plan = schedule.create_plan()
+plan.cache(A, level=P5)
+
+# Add another function to the package
+package.add(plan, args=(A, B, C), parameters={P0:16, P1:16, P2:16, P3:1.0, fma_unit_count:4, vector_size:16, P5:2}, base_name="alternative_matmul_16_16_16")
+```
+
+The supported operations include the following operations:
+
+
+### Arithmetic operators
+
+| Operation | Types | Description  |
+|----------|----------|--------------|
+| `a + b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the sum of parameters (or parameter and scalar) *a* and *b* |
+| `a - b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the difference between parameters (or parameter and scalar) *a* and *b* |
+| `a * b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the product of parameters (or parameter and scalar) *a* and *b* |
+| `a / b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the quotient of parameters (or parameter and scalar) *a* and *b* |
+| `a ** b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the *b*'th power of parameter *a* |
+| `a // b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the floor of the quotient of parameters (or parameter and scalar) *a* and *b* |
+| `a % b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the signed remainder after dividing parameter *a* by parameter or scalar *b* |
+| `-a` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns the additive inverse of parameter *a* |
+
+
+### Comparison Operations
+
+| Operation | Types | Description  |
+|----------|----------|--------------|
+| `a == b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if parameter or scalar *a* equals parameter or scalar *b*, else False |
+| `a != b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if parameter or scalar *a* is not equal to parameter or scalar *b*, else False |
+| `a < b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if parameter or scalar *a* is strictly smaller than parameter or scalar *b*, else False |
+| `a <= b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if parameter or scalar *a* is smaller than or equal to parameter or scalar *b*, else False |
+| `a > b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if parameter or scalar *a* is strictly greater than parameter or scalar *b*, else False |
+| `a >= b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64, acc.ScalarType.float16/32/64` | Returns True if parameter or scalar *a* is greater than or equal to parameter or scalar *b*, else False |
+
+### Bitwise operators
+
+| Operation  | Types | Description  |
+|----------|----------|--------------|
+| `a & b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns the bitwise AND of the bits in parameters (or parameter and scalar) *a* and *b* |
+| `a \| b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns the bitwise OR of the bits in parameters (or parameter and scalar) *a* and *b* |
+| `a ^ b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns the bitwise XOR of the bits in parameters (or parameter and scalar) *a* and *b* |
+| `~a` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns the bitwise inverse of the bits in parameter *a* |
+| `a << b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns parameter *a* whose bitwise representation is shifted left by *b* bits |
+| `a >> b` | `acc.DelayedParameter, acc.ScalarType.int8/16/32/64, acc.ScalarType.uint8/16/32/64` | Returns parameter *a* whose bitwise representation is shifted right by *b* bits |
+
+
+### Intrinsics
+
+| Operation  | Types | Description  |
+|----------|----------|--------------|
+| `acc.abs(a)` | `acc.ScalarType.float16/32/64` | Returns the absolute value of parameter *a* |
+
+
 ## Tuple parameter values
 Parameters can be used as placeholders for tuples, specifically for tuples of indices. For example, assume that we want to parameterize the order of the iteration space dimensions. We can then write:
 ```python
-P6 = acc.create_parameters(1)
+P6 = acc.create_parameters()
 schedule.reorder(order=P6)
 ```
 Later, we can set the value of `P6` to the index tuple `(j,k,i)`.

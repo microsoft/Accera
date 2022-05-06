@@ -14,6 +14,7 @@
 #include "IRUtil.h"
 
 #include <mlir/Dialect/GPU/GPUDialect.h>
+#include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/AffineMap.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/FunctionImplementation.h>
@@ -37,66 +38,7 @@ void ValueDialect::initialize()
 #define GET_OP_LIST
 #include "value/ValueOps.cpp.inc"
         >();
-    addTypes<MFMAMatrixType>();
 }
-
-mlir::Type ValueDialect::parseType(mlir::DialectAsmParser& parser) const
-{
-    StringRef keyword;
-    if (parser.parseKeyword(&keyword))
-        return Type();
-    if (keyword != "mfma_matrix")
-    {
-
-        parser.emitError(parser.getNameLoc(), "unknown value type: " + keyword);
-        return Type();
-    }
-    llvm::SMLoc beginLoc = parser.getNameLoc();
-
-    if (parser.parseLess())
-        return nullptr;
-
-    // Parse the size and elementType.
-    llvm::SmallVector<int64_t> shape;
-    Type elementType;
-    if (parser.parseDimensionList(shape, /*allowDynamic=*/false) ||
-        parser.parseType(elementType))
-        return nullptr;
-
-    // Parse ','
-    if (parser.parseComma())
-        return nullptr;
-
-    // Parse operand.
-    StringRef operand;
-    if (failed(parser.parseOptionalString(&operand)))
-        return nullptr;
-
-    // Parse '>'.
-    if (parser.parseGreater())
-        return nullptr;
-
-    return MFMAMatrixType::getChecked(mlir::detail::getDefaultDiagnosticEmitFn(
-                                          parser.getEncodedSourceLoc(beginLoc)),
-                                      shape,
-                                      elementType,
-                                      operand);
-}
-
-void ValueDialect::printType(Type type, mlir::DialectAsmPrinter& os) const
-{
-    mlir::TypeSwitch<Type>(type)
-        .Case<MFMAMatrixType>([&](MFMAMatrixType fragTy) {
-            os << "mfma_matrix<";
-            auto shape = fragTy.getShape();
-            for (auto dim = shape.begin(), e = shape.end() - 1; dim != e; ++dim)
-                os << *dim << 'x';
-            os << shape.back() << 'x' << fragTy.getElementType();
-            os << ", \"" << fragTy.getOperand() << "\"" << '>';
-        })
-        .Default([](Type) { llvm_unreachable("unexpected 'value' type kind"); });
-}
-
 } // namespace accera::ir::value
 
 using namespace llvm;
@@ -355,7 +297,7 @@ GlobalOp ReferenceGlobalOp::getGlobal()
         mlir::SymbolTable::lookupSymbolIn(module, global_name()));
 }
 
-FunctionType CallOp::getCalleeType()
+FunctionType accera::ir::value::CallOp::getCalleeType()
 {
     SmallVector<Type, 8> argTypes(getOperandTypes());
     return FunctionType::get(getContext(), argTypes, getResultTypes());
@@ -459,187 +401,206 @@ void MapReduceOp::build(OpBuilder& builder, OperationState& result, Value input,
     }
 }
 
-//===----------------------------------------------------------------------===//
-// MFMAMatrixType
-//===----------------------------------------------------------------------===//
-
-MFMAMatrixType MFMAMatrixType::get(ArrayRef<int64_t> shape, Type elementType, StringRef operand)
+int64_t MMAOp::getLeadingDim() const
 {
-    return Base::get(elementType.getContext(), shape, elementType, operand);
+    switch (shape)
+    {
+    case MMAShapeType::T4x16x64:
+        [[fallthrough]];
+    case MMAShapeType::T2x32x64:
+        return 64;
+    case MMAShapeType::T4x4x32:
+        return 32;
+    case MMAShapeType::T2x2x16:
+        return 16;
+    default:
+        return 0;
+    }
 }
 
-MFMAMatrixType
-MFMAMatrixType::getChecked(llvm::function_ref<InFlightDiagnostic()> emitError,
-                           ArrayRef<int64_t> shape,
-                           Type elementType,
-                           StringRef operand)
-{
-    return Base::getChecked(emitError, elementType.getContext(), shape, elementType, operand);
-}
-
-unsigned MFMAMatrixType::getNumDims() const
-{
-    return getImpl()->numDims;
-}
-
-ArrayRef<int64_t> MFMAMatrixType::getShape() const
-{
-    return getImpl()->getShape();
-}
-
-Type MFMAMatrixType::getElementType() const
-{
-    return getImpl()->elementType;
-}
-
-StringRef MFMAMatrixType::getOperand() const
-{
-    return getImpl()->getOperand();
-}
-
-bool MFMAMatrixType::isValidElementType(Type elementType)
-{
-    return elementType.isF16() || elementType.isF32();
-}
-
-int64_t MFMAMatrixType::getLeadingDim() const
-{
-    return getShape().back();
-}
-
-MFMAMatrixType::Shape MFMAMatrixType::getShapeType(const ArrayRef<int64_t>& mfmaShape)
+MMAOp::MMAOp(const std::array<int64_t, 3>& mfmaShape)
 {
     if (mfmaShape[0] == 4 && mfmaShape[1] == 16 && mfmaShape[2] == 64)
-        return Shape::T4x16x64;
-
-    if (mfmaShape[0] == 2 && mfmaShape[1] == 32 && mfmaShape[2] == 64)
-        return Shape::T2x32x64;
-
-    if (mfmaShape[0] == 4 && mfmaShape[1] == 4 && mfmaShape[2] == 32)
-        return Shape::T4x4x32;
-
-    if (mfmaShape[0] == 2 && mfmaShape[1] == 2 && mfmaShape[2] == 16)
-        return Shape::T2x2x16;
-
-    assert(false && "Invalid MFMA op.");
-    return Shape::Invalid;
-}
-
-MFMAMatrixType::Shape MFMAMatrixType::getShapeType() const
-{
-    return getShapeType(getShape());
-}
-
-int64_t MFMAMatrixType::getThreadTileSize() const
-{
-    switch (getShapeType())
     {
-    case Shape::T4x16x64:
+        shape = MMAShapeType::T4x16x64;
+    }
+    else if (mfmaShape[0] == 2 && mfmaShape[1] == 32 && mfmaShape[2] == 64)
+    {
+        shape = MMAShapeType::T2x32x64;
+    }
+    else if (mfmaShape[0] == 4 && mfmaShape[1] == 4 && mfmaShape[2] == 32)
+    {
+        shape = MMAShapeType::T4x4x32;
+    }
+    else if (mfmaShape[0] == 2 && mfmaShape[1] == 2 && mfmaShape[2] == 16)
+    {
+        shape = MMAShapeType::T2x2x16;
+    }
+    else
+    {
+        assert(false && "Invalid MFMA op.");
+        shape = MMAShapeType::Invalid;
+    }
+}
+
+MMAOp::MMAOp(MMAShapeType shape_) :
+    shape{ shape_ }
+{
+}
+
+MMAShapeType MMAOp::getShapeType() const
+{
+    return shape;
+}
+
+int64_t MMAOp::getThreadTileSize() const
+{
+    switch (shape)
+    {
+    case MMAShapeType::T4x16x64:
         [[fallthrough]];
-    case Shape::T2x32x64:
+    case MMAShapeType::T2x32x64:
         return 64;
-    case Shape::T4x4x32:
+    case MMAShapeType::T4x4x32:
         return 16;
-    case Shape::T2x2x16:
+    case MMAShapeType::T2x2x16:
         return 4;
     default:
         return 0;
     }
 }
 
-bool MFMAMatrixType::isValidShape() const
+bool MMAOp::isValidShape() const
 {
-    return getShapeType() != Shape::Invalid;
+    return shape != MMAShapeType::Invalid;
 }
 
-int64_t MFMAMatrixType::getNumBlocks() const
+int64_t MMAOp::getNumBlocks() const
 {
-    switch (getShapeType())
+    switch (shape)
     {
-    case Shape::T4x16x64:
+    case MMAShapeType::T4x16x64:
         return 4;
-    case Shape::T2x32x64:
+    case MMAShapeType::T2x32x64:
         return 2;
-    case Shape::T4x4x32:
+    case MMAShapeType::T4x4x32:
         [[fallthrough]];
-    case Shape::T2x2x16:
+    case MMAShapeType::T2x2x16:
         return 1;
     default:
         return 0;
     }
 }
 
-int64_t MFMAMatrixType::getTileFactor() const
+int64_t MMAOp::getTileFactor() const
 {
-    switch (getShapeType())
+    switch (shape)
     {
-    case Shape::T4x16x64:
+    case MMAShapeType::T4x16x64:
         return 2;
-    case Shape::T2x32x64:
+    case MMAShapeType::T2x32x64:
         return 4;
-    case Shape::T4x4x32:
+    case MMAShapeType::T4x4x32:
         [[fallthrough]];
-    case Shape::T2x2x16:
+    case MMAShapeType::T2x2x16:
         return 1;
     default:
         return 0;
     }
 }
 
-std::vector<uint8_t> MFMAMatrixType::getOffsetMap() const
+std::pair<int, int> MMAOp::getTileShape() const
+{
+    switch (shape)
+    {
+    case MMAShapeType::T4x16x64:
+        [[fallthrough]];
+    case MMAShapeType::T2x32x64:
+        return { 8, 8 };
+    case MMAShapeType::T4x4x32:
+        return { 4, 4 };
+    case MMAShapeType::T2x2x16:
+        return { 2, 2 };
+    default:
+        return { 0, 0 };
+    }
+}
+
+std::vector<uint8_t> MMAOp::getOffsetMap() const
 {
     // These index offsets are calculated based on the data layout in which
     // AMD mfma operation maps them to different threads.
     switch (getShapeType())
     {
-    case Shape::T2x32x64:
+    case MMAShapeType::T2x32x64:
         [[fallthrough]];
-    case Shape::T4x4x32:
+    case MMAShapeType::T4x4x32:
         return { 0, 4, 1, 5, 2, 6, 3, 7, 8, 12, 9, 13, 10, 14, 11, 15, 16, 20, 17, 21, 18, 22, 19, 23, 24, 28, 25, 29, 26, 30, 27, 31 };
-    case Shape::T4x16x64:
+    case MMAShapeType::T4x16x64:
         [[fallthrough]];
-    case Shape::T2x2x16:
+    case MMAShapeType::T2x2x16:
         return { 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15 };
     default:
         return {};
     }
 }
 
-std::vector<int64_t> MFMAMatrixType::getOffsetMapSize() const
+std::array<int64_t, 2> MMAOp::getOffsetMapSize() const
 {
     // The offset map is organised in this layout so that it can be indexed by thread id.
     switch (getShapeType())
     {
-    case Shape::T2x32x64:
+    case MMAShapeType::T2x32x64:
         [[fallthrough]];
-    case Shape::T4x4x32:
+    case MMAShapeType::T4x4x32:
         return { 16, 2 };
-    case Shape::T4x16x64:
+    case MMAShapeType::T4x16x64:
         [[fallthrough]];
-    case Shape::T2x2x16:
+    case MMAShapeType::T2x2x16:
         return { 4, 4 };
     default:
-        return {};
+        return { 0, 0 };
     }
 }
 
-LogicalResult
-MFMAMatrixType::verify(llvm::function_ref<InFlightDiagnostic()> emitError,
-                       ArrayRef<int64_t> shape,
-                       Type elementType,
-                       StringRef operand)
+std::pair<mlir::MemRefType, mlir::RankedTensorType> MMAOp::GetMFMAThreadOffsetMapType(IntegerType mlirElemType) const
 {
-    if (!operand.equals("AOp") && !operand.equals("BOp") &&
-        !operand.equals("COp"))
-        return emitError() << "operand expected to be one of AOp, BOp or COp";
+    auto vecSize = getOffsetMapSize();
+    return std::make_pair(mlir::MemRefType::get(vecSize, mlirElemType, {}, mlir::gpu::GPUDialect::getPrivateAddressSpace()), mlir::RankedTensorType::get(vecSize, mlirElemType));
+}
 
-    if (!isValidElementType(elementType))
-        return emitError() << "MFMAMatrixType elements must be F16 or F32";
+std::pair<mlir::Value, mlir::Value> MMAOp::GetThreadBlockOffsets(mlir::Operation* op, mlir::OpBuilder& builder, mlir::Location& loc) const
+{
+    const auto [warpSizeX, warpSizeY] = util::ResolveWarpSize(util::ResolveExecutionRuntime(op).value()).value();
+    auto warpSize = builder.create<mlir::ConstantIndexOp>(loc, warpSizeX * warpSizeY);
+    auto leadingDim = builder.create<mlir::ConstantIndexOp>(loc, getLeadingDim());
+    auto tileFactor = builder.create<mlir::ConstantIndexOp>(loc, getTileFactor());
+    auto tidX = util::GetGPUIndex(op, value::Processor::ThreadX, builder, loc);
+    auto tidY = util::GetGPUIndex(op, value::Processor::ThreadY, builder, loc);
+    auto bidX = util::GetGPUIndex(op, value::Processor::BlockX, builder, loc);
+    auto bidY = util::GetGPUIndex(op, value::Processor::BlockY, builder, loc);
+    auto bdimX = util::GetGPUIndex(op, value::Processor::BlockDimX, builder, loc);
+    auto bdimY = util::GetGPUIndex(op, value::Processor::BlockDimY, builder, loc);
 
-    if (getShapeType(shape) == Shape::Invalid)
-        return emitError() << "MFMAMatrixType has an invalid shape";
-
-    return success();
+    // We reshape the physical block dimensions to compute the correct offsets.
+    // Multiplying blockDim.x and dividing blockDim.y by tile factor to keep the size same.
+    auto reshapedBlockDimX = builder.create<mlir::MulIOp>(loc, bdimX, tileFactor);
+    auto reshapedBlockDimY = builder.create<mlir::UnsignedDivIOp>(loc, bdimY, tileFactor);
+    auto blockTid = builder.create<mlir::AddIOp>(loc, tidX, builder.create<mlir::MulIOp>(loc, tidY, bdimX));
+    auto warpId = builder.create<mlir::UnsignedDivIOp>(loc, blockTid, warpSize);
+    auto warpsX = builder.create<mlir::UnsignedDivIOp>(loc, reshapedBlockDimX, builder.create<mlir::ConstantIndexOp>(loc, warpSizeX));
+    auto warpsY = builder.create<mlir::UnsignedDivIOp>(loc, reshapedBlockDimY, builder.create<mlir::ConstantIndexOp>(loc, warpSizeY));
+    auto warpIdX = builder.create<mlir::UnsignedRemIOp>(loc, warpId, warpsX);
+    auto warpIdY = builder.create<mlir::UnsignedDivIOp>(loc, warpId, warpsX);
+    auto singleBlockOffsetCol = builder.create<mlir::MulIOp>(loc, warpsX, leadingDim);
+    auto singleBlockOffsetRow = builder.create<mlir::MulIOp>(loc, warpsY, leadingDim);
+    auto rowOffset = builder.create<mlir::AddIOp>(loc,
+                                                  builder.create<mlir::MulIOp>(loc, warpIdY, leadingDim),
+                                                  builder.create<mlir::MulIOp>(loc, bidY, singleBlockOffsetRow));
+    auto colOffset = builder.create<mlir::AddIOp>(loc,
+                                                  builder.create<mlir::MulIOp>(loc, warpIdX, leadingDim),
+                                                  builder.create<mlir::MulIOp>(loc, bidX, singleBlockOffsetCol));
+    return std::make_pair(rowOffset, colOffset);
 }
 
 //===----------------------------------------------------------------------===//
@@ -650,57 +611,41 @@ static const auto kGenericMemorySpace = 0;
 static const auto kGlobalMemorySpace = 1;
 static const auto kSharedMemorySpace = mlir::gpu::GPUDialect::getWorkgroupAddressSpace();
 
-static LogicalResult verify(MFMAComputeOp op)
+static LogicalResult verify(MMAComputeSyncOp op)
 {
-    enum OperandMap
-    {
-        A,
-        B,
-        C
-    };
-    SmallVector<MFMAMatrixType, 3> opTypes{
-        op.opA().getType().cast<MFMAMatrixType>(),
-        op.opB().getType().cast<MFMAMatrixType>(),
-        op.opC().getType().cast<MFMAMatrixType>()
-    };
+    MMAShapeType mfmaShape{ static_cast<MMAShapeType>(op.mmaShapeType()) };
 
-    if (!opTypes[A].getOperand().equals("AOp") ||
-        !opTypes[B].getOperand().equals("BOp") ||
-        !opTypes[C].getOperand().equals("COp"))
-        return op.emitError("operands must be in the order AOp, BOp, COp");
+    if (mfmaShape == MMAShapeType::Invalid)
+        return op.emitError("Invalid tensor shape used");
 
-    auto aShape = opTypes[A].getShapeType();
-    auto bShape = opTypes[B].getShapeType();
-    auto cShape = opTypes[C].getShapeType();
-
-    if (aShape != bShape || aShape != cShape)
-        return op.emitError("operand shapes do not satisfy matmul constraints");
+    auto opAType = op.opA().getType().cast<MemRefType>().getElementType();
+    auto opBType = op.opB().getType().cast<MemRefType>().getElementType();
+    auto opCType = op.opC().getType().cast<MemRefType>().getElementType();
+    if (!(opAType.isF32() && opBType.isF32() && opCType.isF32()) || (opAType.isF16() && opBType.isF16() && opCType.isF32()))
+        return op.emitError("Invalid data types for arguments.");
 
     return success();
 }
 
-static LogicalResult verify(MFMAConstantOp op)
+static LogicalResult verify(MMAFillSyncOp op)
 {
     auto value = op.value();
     auto valueType = value.getType();
-    auto resMatrixType = op.getMFMAMatrixType();
-    auto operand = resMatrixType.getOperand();
+    MMAShapeType mfmaShape{ static_cast<MMAShapeType>(op.mmaShapeType()) };
 
-    if (!operand.equals("AOp") && !operand.equals("BOp") &&
-        !operand.equals("COp"))
-        return op.emitError("only AOp, BOp and COp can be constant filled");
+    if (mfmaShape == MMAShapeType::Invalid)
+        return op.emitError("Invalid tensor shape used");
 
-    if (valueType != resMatrixType.getElementType())
+    if (valueType != op.result().getType().cast<MemRefType>().getElementType())
         return op.emitError("value type must match matrix element type");
 
     return success();
 }
 
-static LogicalResult verify(MFMALoadOp op)
+static LogicalResult verify(MMALoadSyncOp op)
 {
     auto srcType = op.getMemRefType();
-    auto resMatrixType = op.getMFMAMatrixType();
-    auto operand = resMatrixType.getOperand();
+    MMAOperandType operand{ op.operandType() };
     auto srcMemSpace = srcType.getMemorySpaceAsInt();
 
     if (srcMemSpace != kGenericMemorySpace && srcMemSpace != kSharedMemorySpace &&
@@ -709,16 +654,16 @@ static LogicalResult verify(MFMALoadOp op)
             "source memorySpace kGenericMemorySpace, kSharedMemorySpace or "
             "kGlobalMemorySpace only allowed");
 
-    if (!operand.equals("AOp") && !operand.equals("BOp") &&
-        !operand.equals("COp"))
+    if (operand != MMAOperandType::A && operand != MMAOperandType::B &&
+        operand != MMAOperandType::Acc)
         return op.emitError("only AOp, BOp and COp can be loaded");
 
     return success();
 }
 
-static LogicalResult verify(MFMAStoreOp op)
+static LogicalResult verify(MMAStoreSyncOp op)
 {
-    auto srcMatrixType = op.getMFMAMatrixType();
+    MMAShapeType mfmaShape{ static_cast<MMAShapeType>(op.mmaShapeType()) };
     auto dstMemrefType = op.getMemRefType();
     auto dstMemSpace = dstMemrefType.getMemorySpaceAsInt();
 
@@ -728,9 +673,9 @@ static LogicalResult verify(MFMAStoreOp op)
             "destination memorySpace of kGenericMemorySpace, "
             "kGlobalMemorySpace or kSharedMemorySpace only allowed");
 
-    if (!srcMatrixType.getOperand().equals("COp"))
+    if (mfmaShape == MMAShapeType::Invalid)
         return op.emitError(
-            "expected the operand matrix being stored to have 'COp' operand type");
+            "Invalid tensor shape used");
 
     return success();
 }

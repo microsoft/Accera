@@ -65,7 +65,25 @@ void HoistGPUBlockThreadIds(vir::ValueModuleOp vModule)
     vModule.walk([](mlir::gpu::ThreadIdOp op) {
         HoistOpToParentAffineScope(op.getOperation());
     });
+    vModule.walk([](mlir::ROCDL::ThreadIdXOp op) {
+        HoistOpToParentAffineScope(op.getOperation());
+    });
+    vModule.walk([](mlir::ROCDL::ThreadIdYOp op) {
+        HoistOpToParentAffineScope(op.getOperation());
+    });
+    vModule.walk([](mlir::ROCDL::ThreadIdZOp op) {
+        HoistOpToParentAffineScope(op.getOperation());
+    });
     vModule.walk([](mlir::gpu::BlockIdOp op) {
+        HoistOpToParentAffineScope(op.getOperation());
+    });
+    vModule.walk([](mlir::ROCDL::BlockIdXOp op) {
+        HoistOpToParentAffineScope(op.getOperation());
+    });
+    vModule.walk([](mlir::ROCDL::BlockIdYOp op) {
+        HoistOpToParentAffineScope(op.getOperation());
+    });
+    vModule.walk([](mlir::ROCDL::BlockIdZOp op) {
         HoistOpToParentAffineScope(op.getOperation());
     });
 }

@@ -1135,21 +1135,10 @@ def accv_PrintProfileResultsOp : accv_Op<"print_profile"> {
 
 // matrix-fuse-multiply-add
 
-// Predicate to check if type is accv::MMAMatrixType.
-def IsMMFAMatrixTypePred : CPred<"$_self.isa<accera::ir::value::MFMAMatrixType>()">;
-
-def accv_MFMAMatrix : DialectType<Value_Dialect,
-                                        IsMMFAMatrixTypePred,
-                                        "MFMAMatrix type">;
-class MFMAMatrixOf<list<Type> allowedTypes> :
-  ContainerType<AnyTypeOf<allowedTypes>, IsMMFAMatrixTypePred,
-  "$_self.cast<::accera::ir::value::MFMAMatrixType>().getElementType()",
-  "accv.mfma_matrix", "::accera::ir::value::MFMAMatrixType">;
-
-def accv_MFMAComputeOp: accv_Op<"mfma_compute", [NoSideEffect, AllTypesMatch<["opC", "result"]>]> {
+def accv_MMAComputeSyncOp: accv_Op<"wmma_compute_sync", [NoSideEffect, AllTypesMatch<["opC", "result"]>]> {
   let summary = "MFMA Compute";
   let description = [{
-    The `accv.mfma_compute` op is an abstraction of TensorCore ops (currently GPU centric).
+    The `accv.wmma_compute_sync` op is an abstraction of TensorCore ops (currently GPU centric).
     cbsz: Defines the number of blocks that can do a broadcast within a group. Legal values = 0-4. The block ID of this group comes from ABID.
     abid: Block ID of block to broadcast during matrix multiply (MFMA ops).
     blgp: “B”-Matrix Lane-Group Pattern. Controls how to swizzle the matrix lane groups (LG) in VGPRs when doing matrix multiplication by controlling the swizzle muxes.
@@ -1157,73 +1146,57 @@ def accv_MFMAComputeOp: accv_Op<"mfma_compute", [NoSideEffect, AllTypesMatch<["o
   }];
 
   let arguments = (ins
-                  Arg<MFMAMatrixOf<[I8, F16, F32]>>:$opA,
-                  Arg<MFMAMatrixOf<[I8, F16, F32]>>:$opB,
-                  Arg<MFMAMatrixOf<[I32, F32]>>:$opC,
+                  Arg<MemRefRankOf<[I8, F16, F32], [1]>>:$opA,
+                  Arg<MemRefRankOf<[I8, F16, F32], [1]>>:$opB,
+                  Arg<MemRefRankOf<[I32, F32], [1]>>:$opC,
+                  I32Attr:$mmaShapeType,
                   I32Attr:$cbsz,
                   I32Attr:$abid,
                   I32Attr:$blgp);
 
-  let results = (outs accv_MFMAMatrix:$result);
-
-  code extraClassDeclaration = [{  
-    MFMAMatrixType getMFMAMatrixType() {
-      return result().getType().template cast<MFMAMatrixType>();
-    }
-    ArrayRef<int64_t> getMFMAMatrixShape() {
-      return getMFMAMatrixType().getShape();
-    }
-  }];
+  let results = (outs MemRefRankOf<[I32, F32], [1]>:$result);
 
   let assemblyFormat = [{
-    $opA `,` $opB`,` $opC `,` $cbsz `,` $abid `,` $blgp attr-dict `:` type($opA) `,` type($opB) `,` type($opC) `->` type($result)
+    $opA `,` $opB`,` $opC `,` $cbsz `,` $abid `,` $blgp attr-dict `:` type($opA) `,` type($opB) `,` type($opC) `->` type($result) `[` $mmaShapeType `]`
   }];
 
   let verifier = [{ return ::verify(*this); }];
 }
 
 
-def accv_MFMAConstantOp : accv_Op<"mfma_constant_matrix",
+def accv_MMAFillSyncOp : accv_Op<"wmma_fill_sync",
   [
     NoSideEffect,
     TypesMatchWith<"value type matches element type of mfma_matrix",
                     "result", "value",
-                    "$_self.cast<MFMAMatrixType>().getElementType()">
+                    "$_self.cast<MemRefType>().getElementType()">
   ]>{
 
   let summary = "creates a constant MFMA matrix";
 
   let description = [{
-    The `accv.mfma_constant_matrix` creates a constant MFMA matrix that can be subsequently
-    used within an accv.mfma_compute operation.
+    The `accv.wmma_fill_sync` creates a constant MFMA matrix that can be subsequently
+    used within an accv.wmma_compute_sync operation.
 
-    This operation takes a constant as its operand. The op returns a `!accv.mfma_matrix`.
+    This operation takes a constant as its operand. The op returns a memref.
   }];
 
   let arguments = (ins
-    AnyTypeOf<[I8, F16, F32]>:$value
+    AnyTypeOf<[I8, I32, F16, F32]>:$value,
+    I32Attr:$mmaShapeType
   );
 
-  let results = (outs accv_MFMAMatrix:$result);
-
-  code extraClassDeclaration = [{  
-    MFMAMatrixType getMFMAMatrixType() {
-      return result().getType().template cast<MFMAMatrixType>();
-    }
-    ArrayRef<int64_t> getMFMAMatrixShape() {
-      return getMFMAMatrixType().getShape();
-    }
-  }];
+  let results = (outs MemRefRankOf<[I8, I32, F16, F32], [1]>:$result);
 
   let assemblyFormat = [{
-    $value attr-dict `:` type($value) `->` type($result)
+    $value attr-dict `:` type($value) `->` type($result) `[` $mmaShapeType `]`
   }]; 
   let verifier = [{ return ::verify(*this); }];
 }
 
 // load and store submatrix
 
-def accv_MFMALoadOp : accv_Op<"mfma_load_matrix",
+def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
   [
     MemoryEffects<[MemRead]>,
     DeclareOpInterfaceMethods<AffineReadOpInterface>,
@@ -1233,47 +1206,44 @@ def accv_MFMALoadOp : accv_Op<"mfma_load_matrix",
   let summary = "matrix load";
 
   let description = [{
-    The `accv.mfma_load_matrix` operation loads a sub-matrix to be used by the accv.mfma_compute operation.
+    The `accv.wmma_load_sync` operation loads a sub-matrix to be used by the accv.wmma_compute_sync operation.
 
     This operation takes a memref as its first operand: it is the source matrix
-    from which data is to be loaded. The op returns a `!accv.mfma_matrix`.
+    from which data is to be loaded. The op returns a memref.
   }];
 
   let arguments = (ins
     Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "", [MemRead]>:$memref,
+    UI32Attr:$mmaShapeType,
+    I8Attr:$operandType,
     Variadic<acc_Indexlike>:$indices,
     OptionalAttr<AffineMapAttr>:$map
   );
 
-  let results = (outs accv_MFMAMatrix:$result);
+  let results = (outs MemRefRankOf<[I8, I32, F16, F32], [1]>:$result);
 
   let builders = [
-    OpBuilder<(ins "Type":$resultType, "Value":$memref, "AffineMap":$map, "ValueRange":$mapOperands), [{
+    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShapeType":$mmaShapeType, "MMAOperandType":$operandType, "AffineMap":$map, "ValueRange":$mapOperands), [{
         assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
         $_state.addOperands(memref);
         $_state.addOperands(mapOperands);
+        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
+        $_state.addAttribute("operandType", $_builder.getI8IntegerAttr((int8_t)operandType));
         $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
         $_state.addTypes(resultType);
     }]>,
-    OpBuilder<(ins "Type":$resultType, "Value":$memref, "ValueRange":$indices), [{
+    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShapeType":$mmaShapeType, "MMAOperandType":$operandType, "ValueRange":$indices), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> ()
         // for zero-dimensional memrefs.
         auto map =
             rank ? $_builder.getMultiDimIdentityMap(rank) : $_builder.getEmptyAffineMap();
-        return build($_builder, $_state, resultType, memref, map, indices);
+        return build($_builder, $_state, resultType, memref, mmaShapeType, operandType, map, indices);
     }]>
   ];
 
-  code extraClassDeclaration = [{  
-    MFMAMatrixType getMFMAMatrixType() {
-      return result().getType().template cast<MFMAMatrixType>();
-    }
-    ArrayRef<int64_t> getMFMAMatrixShape() {
-      return getMFMAMatrixType().getShape();
-    }
-    
+  code extraClassDeclaration = [{
     /// Returns the operand index of the memref.
     unsigned getMemRefOperandIndex() { return 0; }
 
@@ -1288,12 +1258,12 @@ def accv_MFMALoadOp : accv_Op<"mfma_load_matrix",
   }];
 
   let assemblyFormat = [{
-    $memref `[` $indices `]` attr-dict `:` type($memref) `[` type($indices) `]` `->` type($result)
+    $memref `[` $indices `]` attr-dict `:` type($memref) `[` type($indices) `]` `->` type($result) `[` $mmaShapeType `]` `[` $operandType `]`
   }]; 
   let verifier = [{ return ::verify(*this); }];
 }
 
-def accv_MFMAStoreOp : accv_Op<"mfma_store_matrix", [
+def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
     MemoryEffects<[MemWrite]>,
     DeclareOpInterfaceMethods<AffineWriteOpInterface>,
     DeclareOpInterfaceMethods<AffineMapAccessInterface>
@@ -1302,46 +1272,40 @@ def accv_MFMAStoreOp : accv_Op<"mfma_store_matrix", [
   let summary = "matrix store";
 
   let description = [{
-    The `accv.mfma_store_matrix` operation stores an mfma matrix into a matrix.
+    The `accv.wmma_store_sync` operation stores an mfma matrix into a matrix.
 
-    This operation takes a `accv.mfma_matrix` and a memref as operands.
-    `!accv.mfma_matrix` is the source value containing the data to be stored into the
+    This operation takes a source memref containing the data to be stored into the
     destination memref which can be in global or shared memory.
   }];
 
   let arguments = (ins 
-        Arg<MFMAMatrixOf<[I32, F32]>>:$value,
+        Arg<MemRefRankOf<[I32, F32], [1]>>:$src,
         Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "",[MemWrite]>:$memref,
+        UI32Attr:$mmaShapeType,
         Variadic<acc_Indexlike>:$indices,
         OptionalAttr<AffineMapAttr>:$map);
 
   let builders = [
-    OpBuilder<(ins "Value":$value, "Value":$memref, "AffineMap":$map, "ValueRange":$mapOperands), [{
+    OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShapeType":$mmaShapeType, "AffineMap":$map, "ValueRange":$mapOperands), [{
         assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
-        $_state.addOperands(value);
+        $_state.addOperands(src);
         $_state.addOperands(memref);
         $_state.addOperands(mapOperands);
+        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
         $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
     }]>,
-    OpBuilder<(ins "Value":$value, "Value":$memref, "ValueRange":$indices), [{
+    OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShapeType":$mmaShapeType, "ValueRange":$indices), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> ()
         // for zero-dimensional memrefs.
         auto map =
             rank ? $_builder.getMultiDimIdentityMap(rank) : $_builder.getEmptyAffineMap();
-        return build($_builder, $_state, value, memref, map, indices);
+        return build($_builder, $_state, src, memref, mmaShapeType, map, indices);
     }]>
   ];
 
-  code extraClassDeclaration = [{ 
-    MFMAMatrixType getMFMAMatrixType() {
-      return value().getType().template cast<MFMAMatrixType>();
-    }
-    ArrayRef<int64_t> getMFMAMatrixShape() {
-      return getMFMAMatrixType().getShape();
-    }
-    
+  code extraClassDeclaration = [{
     /// Returns the operand index of the value to be stored.
     unsigned getStoredValOperandIndex() { return 0; }
 
@@ -1359,7 +1323,7 @@ def accv_MFMAStoreOp : accv_Op<"mfma_store_matrix", [
   }];
 
   let assemblyFormat = [{
-    $value`,` $memref `[` $indices `]` attr-dict `:` type($value)`,` type($memref) `[` type($indices) `]`
+    $src`,` $memref `[` $indices `]` attr-dict `:` type($src)`,` type($memref) `[` type($indices) `]` `[` $mmaShapeType `]`
   }];
 
   let verifier = [{ return ::verify(*this); }];

@@ -264,38 +264,63 @@ RangeValue RangeValueAnalysis::resolveRangeValue(IndexCastOp op)
     // otherwise this is a BlockArgument which conservatively we assume has no range
     return RangeValue();
 }
+
+RangeValue resolveThreadIdRange(Operation* op, StringRef parentDim, const int parentDimIdx)
+{
+    auto gpuMod = op->getParentOfType<gpu::GPUFuncOp>();
+    if (!gpuMod)
+    {
+        return RangeValue();
+    }
+    auto blockIdxAttr = gpuMod->getAttrOfType<ArrayAttr>(parentDim);
+    if (!blockIdxAttr || parentDimIdx == -1)
+    {
+        return RangeValue();
+    }
+    auto upperBound = blockIdxAttr.getValue()[parentDimIdx].cast<IntegerAttr>().getInt();
+    return RangeValue(0, upperBound);
+}
+
 RangeValue RangeValueAnalysis::resolveRangeValue(gpu::ThreadIdOp op)
 {
-    auto gpuMod = op->getParentOfType<gpu::GPUFuncOp>();
-    if (!gpuMod)
-    {
-        return RangeValue();
-    }
-    auto blockIdxAttr = gpuMod->getAttrOfType<ArrayAttr>("blockSize");
-    auto blockDimIdx = dimIndexToInteger(op.dimension());
-    if (!blockIdxAttr || blockDimIdx == -1)
-    {
-        return RangeValue();
-    }
-    auto upperBound = blockIdxAttr.getValue()[blockDimIdx].cast<IntegerAttr>().getInt();
-    return RangeValue(0, upperBound);
+    return resolveThreadIdRange(op, "blockSize", dimIndexToInteger(op.dimension()));
 }
+
+RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::ThreadIdXOp op)
+{
+    return resolveThreadIdRange(op, "blockSize", 0);
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::ThreadIdYOp op)
+{
+    return resolveThreadIdRange(op, "blockSize", 1);
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::ThreadIdZOp op)
+{
+    return resolveThreadIdRange(op, "blockSize", 2);
+}
+
 RangeValue RangeValueAnalysis::resolveRangeValue(gpu::BlockIdOp op)
 {
-    auto gpuMod = op->getParentOfType<gpu::GPUFuncOp>();
-    if (!gpuMod)
-    {
-        return RangeValue();
-    }
-    auto gridIdxAttr = gpuMod->getAttrOfType<ArrayAttr>("gridSize");
-    auto gridDimIdx = dimIndexToInteger(op.dimension());
-    if (!gridIdxAttr || gridDimIdx == -1)
-    {
-        return RangeValue();
-    }
-    auto upperBound = gridIdxAttr.getValue()[gridDimIdx].cast<IntegerAttr>().getInt();
-    return RangeValue(0, upperBound);
+    return resolveThreadIdRange(op, "gridSize", dimIndexToInteger(op.dimension()));
 }
+
+RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::BlockIdXOp op)
+{
+    return resolveThreadIdRange(op, "gridSize", 0);
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::BlockIdYOp op)
+{
+    return resolveThreadIdRange(op, "gridSize", 1);
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::BlockIdZOp op)
+{
+    return resolveThreadIdRange(op, "gridSize", 2);
+}
+
 RangeValue RangeValueAnalysis::resolveRangeValue(Instruction::BinaryOps binOp, mlir::Operation* op)
 {
     auto operands = resolveOperands(op);
@@ -320,7 +345,13 @@ RangeValue RangeValueAnalysis::resolveRangeValue(mlir::Operation* op)
         .Case([&](ConstantIntOp op) { return resolveRangeValue(op); })
         .Case([&](IndexCastOp op) { return resolveRangeValue(op); })
         .Case([&](gpu::ThreadIdOp op) { return resolveRangeValue(op); })
+        .Case([&](ROCDL::ThreadIdXOp op) { return resolveRangeValue(op); })
+        .Case([&](ROCDL::ThreadIdYOp op) { return resolveRangeValue(op); })
+        .Case([&](ROCDL::ThreadIdZOp op) { return resolveRangeValue(op); })
         .Case([&](gpu::BlockIdOp op) { return resolveRangeValue(op); })
+        .Case([&](ROCDL::BlockIdXOp op) { return resolveRangeValue(op); })
+        .Case([&](ROCDL::BlockIdYOp op) { return resolveRangeValue(op); })
+        .Case([&](ROCDL::BlockIdZOp op) { return resolveRangeValue(op); })
         .Case([&](AddIOp op) { return resolveRangeValue(Instruction::BinaryOps::Add, op); })
         .Case([&](SubIOp op) { return resolveRangeValue(Instruction::BinaryOps::Sub, op); })
         .Case([&](MulIOp op) { return resolveRangeValue(Instruction::BinaryOps::Mul, op); })

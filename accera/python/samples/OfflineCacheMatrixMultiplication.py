@@ -49,7 +49,7 @@ def RuntimeInitCacheMLAS(
     inner_dim_block = opts.BMatrixTileSize[0]
     num_rows_in_kernel = opts.NumRowsInKernel
     num_cols_in_kernel = opts.NumColumnsInKernelScaleFactor * (
-        target.vector_bytes // 4
+        target.vector_bytes // 4 or 8
     )    # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
 
     # Apply a simple stretching to the kernel size to fit the output shape
@@ -96,7 +96,7 @@ def RuntimeInitCacheMLAS(
     kkk = schedule.split(kk, opts.KUnroll)
     jjj = schedule.split(jj, num_cols_in_kernel)
     jjjj = schedule.split(
-        jjj, target.vector_bytes // 4
+        jjj, target.vector_bytes // 4 or 8
     )    # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
     ii = schedule.split(i, num_rows_in_kernel)
 
@@ -139,7 +139,7 @@ def EmitTimeCacheMLAS(A: Array, B: Array, C: Array, opts=Options(), wrapper_fn_n
     inner_dim_block = opts.BMatrixTileSize[0]
     num_rows_in_kernel = opts.NumRowsInKernel
     num_cols_in_kernel = opts.NumColumnsInKernelScaleFactor * (
-        target.vector_bytes // 4
+        target.vector_bytes // 4 or 8
     )    # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
 
     # Apply a simple stretching to the kernel size to fit the output shape
@@ -186,7 +186,7 @@ def EmitTimeCacheMLAS(A: Array, B: Array, C: Array, opts=Options(), wrapper_fn_n
     kkk = schedule.split(kk, opts.KUnroll)
     jjj = schedule.split(jj, num_cols_in_kernel)
     jjjj = schedule.split(
-        jjj, target.vector_bytes // 4
+        jjj, target.vector_bytes // 4 or 8
     )    # (target.vector_bytes // 4) is how many 32-bit float elements can fit into the vector register
     ii = schedule.split(i, num_rows_in_kernel)
 

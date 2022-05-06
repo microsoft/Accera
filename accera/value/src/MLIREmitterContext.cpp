@@ -24,6 +24,7 @@
 #include <utilities/include/ZipIterator.h>
 
 #include <value/include/Debugging.h>
+#include <value/include/MatrixFragment.h>
 
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
@@ -296,7 +297,7 @@ mlir::FunctionType ToMLIRType(mlir::OpBuilder& builder, const FunctionDeclaratio
     return v;
 }
 
-[[nodiscard]] mlir::Value ToMLIRValue(mlir::OpBuilder& builder, ViewAdapter view)
+[[nodiscard]] mlir::Value ToMLIRValue(mlir::OpBuilder& builder, const ViewAdapter& view)
 {
     auto value = view.GetValue();
     if (value.IsEmpty() || value.IsUndefined() || value.IsConstant())
@@ -1871,45 +1872,49 @@ Value MLIRContext::LogicalOperationImpl(ValueLogicalOperation op, Value source1,
     return { emittable, ScalarLayout };
 }
 
-static ir::value::MFMAMatrixType getMatrixTypeOfMemref(mlir::Value val, const std::vector<int64_t>& shape, llvm::StringRef operand)
-{
-    auto memrefType = val.getType().cast<mlir::MemRefType>();
-    return ir::value::MFMAMatrixType::get(shape, memrefType.getElementType(), operand);
-};
-
-Matrix MLIRContext::MFMALoadImpl(Value source, const std::vector<int64_t>& shape, const std::string& operand)
+Value MLIRContext::MMALoadSyncImpl(const Matrix& source, const int64_t rowOffset, const int64_t colOffset, const MatrixFragment& target)
 {
     auto& builder = _impl->builder;
     auto loc = builder.getUnknownLoc();
 
     auto matValue = ToMLIRValue(builder, source);
-    auto mfmaMatTy = getMatrixTypeOfMemref(matValue, shape, operand);
-    auto mfmaMatShape = mfmaMatTy.getShape();
-    auto mfmaMatLayout = MemoryLayout(mfmaMatShape[0], mfmaMatShape[1]);
+    const auto mfmaShape = static_cast<ir::value::MMAShapeType>(target.GetFragmentShape());
+    const ir::value::MMAOp mfmaType(mfmaShape);
 
-    auto zeroIdx = builder.create<mlir::ConstantIndexOp>(loc, 0);
+    auto rowOff = builder.create<mlir::ConstantIndexOp>(loc, rowOffset);
+    auto colOff = builder.create<mlir::ConstantIndexOp>(loc, colOffset);
+    const ir::value::MMAOperandType operandType{ static_cast<ir::value::MMAOperandType>(target.GetFragmentType()) };
+    const auto isAcc = operandType == ir::value::MMAOperandType::Acc;
+    auto elementType = (source.GetValue().IsFloat32() || isAcc) ? builder.getF32Type() : builder.getF16Type();
+    const auto vecSize = mfmaType.getThreadTileSize() / (isAcc ? mfmaType.getNumBlocks() : 1);
+    auto vecTy = mlir::MemRefType::get({ vecSize }, elementType);
 
-    mlir::Value result = builder.create<ir::value::MFMALoadOp>(loc, mfmaMatTy, matValue, mlir::ValueRange{ zeroIdx, zeroIdx });
-
-    EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { source.GetBaseType(), 1 } });
+    mlir::Value result = builder.create<ir::value::MMALoadSyncOp>(loc, vecTy, matValue, mfmaShape, operandType, mlir::ValueRange{ rowOff, colOff });
+    EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { source.GetValue().GetBaseType(), 1 } });
     Emittable emittable{ &emittableInfo };
 
-    return Matrix(Value(emittable, mfmaMatLayout));
+    auto&& mfmaMatShape = mfmaType.getTileShape();
+    auto mfmaMatLayout = MemoryLayout(mfmaMatShape.first, mfmaMatShape.second);
+    return Value(emittable, mfmaMatLayout);
 }
 
-void MLIRContext::MFMAStoreImpl(Matrix source, Value target)
+void MLIRContext::MMAStoreSyncImpl(const MatrixFragment& source, Matrix& target, const int64_t rowOffset, const int64_t colOffset)
 {
     auto& builder = _impl->builder;
     auto loc = builder.getUnknownLoc();
 
     auto sourceValue = ToMLIRValue(builder, source);
     auto targetValue = ToMLIRValue(builder, target);
-    auto zeroIdx = builder.create<mlir::ConstantIndexOp>(loc, 0);
+    auto rowOff = builder.create<mlir::ConstantIndexOp>(loc, rowOffset);
+    auto colOff = builder.create<mlir::ConstantIndexOp>(loc, colOffset);
 
-    builder.create<ir::value::MFMAStoreOp>(loc, sourceValue, targetValue, mlir::ValueRange{ zeroIdx, zeroIdx });
+    const auto mfmaShape = static_cast<ir::value::MMAShapeType>(source.GetFragmentShape());
+    const ir::value::MMAOp mfmaType(mfmaShape);
+    const ir::value::MMAOperandType operandType{ static_cast<ir::value::MMAOperandType>(source.GetFragmentType()) };
+    builder.create<ir::value::MMAStoreSyncOp>(loc, sourceValue, targetValue, mfmaShape, mlir::ValueRange{ rowOff, colOff });
 }
 
-Matrix MLIRContext::MFMAComputeImpl(Matrix A, Matrix B, Matrix C)
+Value MLIRContext::MMAComputeSyncImpl(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, const uint32_t cbsz, const uint32_t abid, const uint32_t blgp)
 {
     auto& builder = _impl->builder;
     auto loc = builder.getUnknownLoc();
@@ -1917,17 +1922,13 @@ Matrix MLIRContext::MFMAComputeImpl(Matrix A, Matrix B, Matrix C)
     auto aValue = ToMLIRValue(builder, A);
     auto bValue = ToMLIRValue(builder, B);
     auto cValue = ToMLIRValue(builder, C);
-    // TODO: plumbing
-    auto cbsz = 0;
-    auto abid = 0;
-    auto blgp = 0;
 
-    mlir::Value result = builder.create<ir::value::MFMAComputeOp>(loc, cValue.getType(), aValue, bValue, cValue, cbsz, abid, blgp);
+    mlir::Value result = builder.create<ir::value::MMAComputeSyncOp>(loc, cValue.getType(), aValue, bValue, cValue, uint32_t(A.GetFragmentShape()), cbsz, abid, blgp);
 
     EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { C.GetType(), 1 } });
     Emittable emittable{ &emittableInfo };
 
-    return Matrix(Value(emittable, C.GetValue().GetLayout()));
+    return Value(emittable, C.GetValue().GetLayout());
 }
 
 Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)

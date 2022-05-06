@@ -121,15 +121,12 @@ class DelayedParameter:
         return DelayedParameter(operand1=self, operand2=None, operation=ops.__abs__)
 
 
-def create_parameters(count: int):
-    """
-    Create objects of DelayedParameter.
-    TODO: count as an argument is not needed any more, can be removed later
-    """
-    if count < 1:
-        raise ValueError("Invalid parameters count")
-    names = varname(multi_vars=True)
-    return (tuple([DelayedParameter(name) for name in names]) if count > 1 else DelayedParameter(names[0]))
+def create_parameters():
+    try:
+        names = varname(multi_vars=True)
+        return (tuple([DelayedParameter(name) for name in names]) if len(names) > 1 else DelayedParameter(names[0]))
+    except Exception as e:
+        raise RuntimeError("Caller didn't assign the return value(s) of create_parameters() directly to any variable(s)")
 
 
 def create_parameter_grid(parameter_choices: dict, filter_func: Callable = None, sample: int = 0) -> List[dict]:
@@ -141,7 +138,7 @@ def create_parameter_grid(parameter_choices: dict, filter_func: Callable = None,
 
         Args:
             parameter_choices: A dictionary that maps each parameter to its possible values, e.g.
-                                        P0, P1, P2, P3, P4 = create_parameters(5)
+                                        P0, P1, P2, P3, P4 = create_parameters()
                                         parameter_choices = {
                                             P0: [8, 16],
                                             P1: [16, 32],

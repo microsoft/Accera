@@ -127,6 +127,9 @@ namespace value
 
         Matrix& operator/=(Scalar);
 
+    protected:
+        void SetValue(Value value);
+
     private:
         friend Matrix operator+(Matrix, Matrix);
         friend Matrix operator+(Matrix, Scalar);

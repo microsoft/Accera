@@ -859,7 +859,7 @@ private:
                         prevNode->AddSuccessor(node);
                     prevNode = node;
                 }
-                else if (auto barrierOp = dyn_cast<BarrierOp>(op))
+                else if (auto barrierOp = dyn_cast<ValueBarrierOp>(op))
                 {
                     auto node = std::make_shared<AnalysisNode>(BarrierInfo{ { barrierOp }, barrierWeight }, prevNode);
                     if (prevNode)
@@ -966,7 +966,7 @@ void BarrierOptPass::runOnOperation()
     if (auto launchAttr = op->getAttrOfType<mlir::ArrayAttr>(ValueFuncOp::getGPULaunchAttrName()))
     {
         auto gpuParams = accera::ir::targets::GPU::FromArrayAttr(launchAttr);
-        if (const auto threadsPerWarp = util::ResolveWarpSize(op))
+        if (const auto threadsPerWarp = util::ResolveWarpSize(util::ResolveExecutionRuntime(op).value()))
         {
             auto threadsPerBlock = gpuParams.block.x * gpuParams.block.y * gpuParams.block.z;
             if (threadsPerBlock <= (threadsPerWarp->first * threadsPerWarp->second))

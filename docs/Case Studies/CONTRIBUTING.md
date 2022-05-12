@@ -40,6 +40,6 @@ All community case studies are published directly from the author's GitHub repos
 Once you are ready to publish your case study:
 1. Make your case study GitHub repository public (if you haven't done so already).
 
-2. Edit [Case Studies/README.md](https://github.com/microsoft/Accera/blob/main/docs/Case%20Studies/README.md) to add your case study to the Table of Contents. The link should point to the git SHA for your latest commit. The format to use is: https://github.com/*USER*/*REPO*/blob/*GIT_SHA*/*PATH_TO_CASE_STUDY*/README.md.
+2. Edit [Case Studies/README.md](https://github.com/microsoft/Accera/blob/main/docs/Case%20Studies/README.md) to add your case study to the Table of Contents. The link should point to the git SHA for your latest commit. The format to use is: https://github.com/*user*/*repo*/blob/*git_sha*/*path_to_case_study*/README.md.
 
 3. Create a [Pull Request](https://github.com/microsoft/Accera/compare) to submit your edits to [Case Studies/README.md](https://github.com/microsoft/Accera/blob/main/docs/Case%20Studies/README.md).

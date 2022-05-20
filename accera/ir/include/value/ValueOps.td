@@ -1223,7 +1223,7 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
   let results = (outs MemRefRankOf<[I8, I32, F16, F32], [1]>:$result);
 
   let builders = [
-    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShapeType":$mmaShapeType, "MMAOperandType":$operandType, "AffineMap":$map, "ValueRange":$mapOperands), [{
+    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "AffineMap":$map, "ValueRange":$mapOperands), [{
         assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
         $_state.addOperands(memref);
         $_state.addOperands(mapOperands);
@@ -1232,7 +1232,7 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
         $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
         $_state.addTypes(resultType);
     }]>,
-    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShapeType":$mmaShapeType, "MMAOperandType":$operandType, "ValueRange":$indices), [{
+    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "ValueRange":$indices), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> ()
@@ -1286,7 +1286,7 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
         OptionalAttr<AffineMapAttr>:$map);
 
   let builders = [
-    OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShapeType":$mmaShapeType, "AffineMap":$map, "ValueRange":$mapOperands), [{
+    OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShape":$mmaShapeType, "AffineMap":$map, "ValueRange":$mapOperands), [{
         assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
         $_state.addOperands(src);
         $_state.addOperands(memref);
@@ -1294,7 +1294,7 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
         $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
         $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
     }]>,
-    OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShapeType":$mmaShapeType, "ValueRange":$indices), [{
+    OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShape":$mmaShapeType, "ValueRange":$indices), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> ()

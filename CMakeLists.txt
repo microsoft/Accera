@@ -200,6 +200,8 @@ add_custom_target(tablegen-ir-docs)
 # Include cmake projects for libraries and executables
 add_subdirectory(accera)
 
+add_subdirectory(tools)
+
 # Add user directories to Accera build if requested
 if(EXISTS "${ACCERA_ROOT}/user")
   # Add root user directory if it has a CMakeLists.txt file and

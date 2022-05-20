@@ -6,8 +6,11 @@
 #include "nest/LoopNestPasses.h"
 #include "util/MathUtilities.h"
 
+#include "ir/include/nest/LoopNestAttributes.h"
+#include "ir/include/nest/TransformedDomain.h"
 #include <ir/include/IRUtil.h>
 #include <ir/include/exec/ExecutionPlanOps.h>
+#include <ir/include/nest/AffineExpression.h>
 #include <ir/include/nest/LoopIndexInfo.h>
 #include <ir/include/nest/LoopNestBuilder.h>
 #include <ir/include/nest/LoopNestOps.h>
@@ -16,6 +19,7 @@
 
 #include <utilities/include/Exception.h>
 
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_os_ostream.h>
 
 #include <mlir/Analysis/LoopAnalysis.h>
@@ -27,6 +31,7 @@
 #include <mlir/IR/AffineMap.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BlockAndValueMapping.h>
+#include <mlir/IR/IntegerSet.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/InliningUtils.h>
@@ -119,6 +124,55 @@ mlir::Value FindIndexVariable(Index index, Operation* where)
     }
 
     return {};
+}
+
+SymbolicIndexOp GetOrCreateSymbolicIndex(OpBuilder& builder, Index index, Operation* where)
+{
+    auto parentFuncOp = where->getParentOfType<ValueFuncOp>();
+
+    for (auto& region : parentFuncOp->getRegions())
+    {
+        SymbolicIndexOp result;
+        region.walk([&](Operation* op) {
+            if (auto indexOp = dyn_cast_or_null<SymbolicIndexOp>(op))
+            {
+                if (indexOp.getValue() == index)
+                {
+                    result = indexOp;
+                    return WalkResult::interrupt();
+                }
+            }
+
+            return WalkResult::advance();
+        });
+
+        if (result)
+            return result;
+    }
+
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(&parentFuncOp.body().front());
+    return builder.create<SymbolicIndexOp>(parentFuncOp.getLoc(), index);
+}
+
+mlir::Value EmitIndexExpression(OpBuilder& builder, Location loc, const AffineExpression& expr, const TransformedDomain& domain)
+{
+    std::vector<mlir::Value> symbols;
+    AffineExpr affineExpr = expr.GetAffineExpr();
+    auto exprIndices = expr.GetIndices();
+    std::vector<mlir::Value> indices;
+    auto currBlock = builder.getInsertionBlock();
+    std::transform(exprIndices.begin(), exprIndices.end(), std::back_inserter(indices), [&](auto i) -> mlir::Value {
+        if (auto var = FindIndexVariable(i, currBlock->getParentOp()))
+            return var;
+
+        return GetOrCreateSymbolicIndex(builder, i, currBlock->getParentOp());
+    });
+    auto map = AffineMap::get(indices.size(), symbols.size(), affineExpr);
+    indices.insert(indices.end(), symbols.begin(), symbols.end());
+    auto exprOp = builder.create<AffineApplyOp>(loc, map, indices);
+
+    return exprOp;
 }
 
 struct ScheduleOpDomainResolution : public OpRewritePattern<ScheduleOp>
@@ -406,16 +460,23 @@ LogicalResult ScheduleOpConversion::matchAndRewrite(ScheduleOp op, PatternRewrit
         return failure();
     }
 
-    auto loc = util::GetLocation(rewriter, "ScheduleOpConversion", op.getLoc());
-
     auto domain = op.getDomain().getValue();
     domain.ResolveRangeValues([&](lnir::Range& range) {
         ResolveRange(op, rewriter, range);
     });
     op.setDomain(domain);
 
+    // Copy the domain to the generated loops
+    auto domainAttr = TransformedDomainAttr::get(domain, op->getContext());
     LoopNestBuilder builder(op, rewriter, printLoops);
-    builder.BuildLoopNest();
+    auto loops = builder.BuildLoopNest();
+    for (auto& loop : loops)
+    {
+        loop->setAttr("domain", domainAttr);
+        loop.walk([&](ScheduledLoopOp innerLoop) {
+            innerLoop->setAttr("domain", domainAttr);
+        });
+    }
     rewriter.eraseOp(op);
     return success();
 }
@@ -720,7 +781,7 @@ LogicalResult ScheduledLoopOpRewrite::matchAndRewrite(ScheduledLoopOp op, Patter
     int64_t step = op.stepAttr().getInt();
 
     // First create the body loop and move the nested region into it
-    auto bodyLoop = rewriter.create<AffineForOp>(op.getLoc(), begin, end, step);
+    auto bodyLoop = rewriter.create<AffineForOp>(loc, begin, end, step);
 
     // Transfer attributes
     auto scheduledLoopOpAttrs = op->getAttrs();
@@ -729,18 +790,61 @@ LogicalResult ScheduledLoopOpRewrite::matchAndRewrite(ScheduledLoopOp op, Patter
         bodyLoop->setAttr(identifier, attrValue);
     }
 
+    auto bodyLoopRegion = &bodyLoop.region();
+    auto bodyRegion = bodyLoopRegion;
+
+    // If necessary, add a conditional
+    mlir::AffineIfOp conditional = nullptr;
+    bool useConditional = op->hasAttr("accv_upper_limit");
+    if (useConditional)
+    {
+        auto upperLimit = op->getAttrOfType<IntegerAttr>("accv_upper_limit").getInt();
+        auto upperLimitIndex = op->getAttrOfType<IndexAttr>("accv_upper_limit_index").getValue();
+        TransformedDomain domain = op->getAttrOfType<TransformedDomainAttr>("domain").getValue();
+        // TODO: if the index hasn't been seen yet, replace it with its range begin
+        // if (...)
+        // {
+        //     AffineExpr affineExpr = rewriter.getAffineConstantExpr(domain.GetIndexRange(upperLimitIndex).Begin());
+        //     expr = AffineExpression(affineExpr, {});
+        // }
+        AffineExpression expr;
+        if (!domain.IsComputedIndex(upperLimitIndex))
+        {
+            // TODO: Eventually fix `GetReducedIndexExpr` to work in this case as well
+            expr = domain.GetIndexExpr(upperLimitIndex);
+            if (expr.IsIdentity())
+            {
+                expr = AffineExpression(rewriter.getAffineDimExpr(0), { upperLimitIndex });
+            }
+        }
+        else
+        {
+            expr = domain.GetReducedIndexExpr(upperLimitIndex, rewriter.getContext());
+        }
+
+        rewriter.setInsertionPointToStart(bodyLoop.getBody());
+        auto indexValue = EmitIndexExpression(rewriter, loc, expr, domain);
+
+        mlir::AffineExpr endExpr = rewriter.getAffineConstantExpr(upperLimit - 1) - rewriter.getAffineDimExpr(0);
+        auto inRange = mlir::IntegerSet::get(1, 0, endExpr, false);
+        conditional = rewriter.create<mlir::AffineIfOp>(loc, inRange, ValueRange{ indexValue }, false); // false indicating we do not want an "else" region
+        bodyRegion = &conditional.thenRegion();
+    }
+
     // Insert the prologue in the nested loop before the rest of the body
-    rewriter.inlineRegionBefore(op.prologue(), bodyLoop.region(), bodyLoop.region().end());
+    rewriter.inlineRegionBefore(op.prologue(), *bodyRegion, bodyRegion->end());
 
     // Insert the body in the nested loop after the prologue
-    rewriter.inlineRegionBefore(op.body(), bodyLoop.region(), bodyLoop.region().end());
+    rewriter.inlineRegionBefore(op.body(), *bodyRegion, bodyRegion->end());
 
     // Insert the epilogue in the nested loop after the body
-    rewriter.inlineRegionBefore(op.epilogue(), bodyLoop.region(), bodyLoop.region().end());
+    rewriter.inlineRegionBefore(op.epilogue(), *bodyRegion, bodyRegion->end());
 
     // Now iterate through the newly created blocks and merge them together and erase terminator ops along the way
-    auto blockIter = bodyLoop.region().begin();
-    auto& initialBlock = *blockIter;
+    auto& initialLoopBlock = *bodyLoopRegion->begin();
+    auto& initialBlock = *bodyRegion->begin();
+
+    auto blockIter = bodyRegion->begin();
     ++blockIter;
     auto& prologueBlock = *blockIter;
     ++blockIter;
@@ -749,14 +853,20 @@ LogicalResult ScheduledLoopOpRewrite::matchAndRewrite(ScheduledLoopOp op, Patter
     auto& epilogueBlock = *blockIter;
 
     // Erase terminators
-    Operation* clonedTerminator = initialBlock.getTerminator()->clone();
-    rewriter.eraseOp(initialBlock.getTerminator());
+    Operation* clonedTerminator = initialLoopBlock.getTerminator()->clone();
+    rewriter.eraseOp(initialLoopBlock.getTerminator());
     rewriter.eraseOp(prologueBlock.getTerminator());
     rewriter.eraseOp(bodyBlock.getTerminator());
     rewriter.eraseOp(epilogueBlock.getTerminator());
 
-    mlir::Value bodyBlockArg = initialBlock.getArgument(0);
+    mlir::Operation* clonedConditionalTerminator = nullptr;
+    if (useConditional)
+    {
+        clonedConditionalTerminator = initialBlock.getTerminator()->clone();
+        rewriter.eraseOp(initialBlock.getTerminator());
+    }
 
+    mlir::Value bodyBlockArg = bodyLoopRegion->begin()->getArgument(0);
     std::vector<mlir::Value> replacementArgs = { bodyBlockArg };
 
     // Merge the prologue block into the initial block
@@ -771,6 +881,12 @@ LogicalResult ScheduledLoopOpRewrite::matchAndRewrite(ScheduledLoopOp op, Patter
     // Create an affine terminator
     rewriter.setInsertionPointToEnd(bodyLoop.getBody());
     rewriter.insert(clonedTerminator);
+
+    if (useConditional)
+    {
+        rewriter.setInsertionPointToEnd(&initialBlock);
+        rewriter.insert(clonedConditionalTerminator);
+    }
 
     // Replace usage of the symbolic index op and the body block arg with the body loop's induction variable
     auto symbolicIndexOp = op.getSymbolicIndex();

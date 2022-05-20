@@ -18,10 +18,16 @@ namespace value
     public:
         enum class Shape
         {
-            T4x16x64,
-            T2x32x64,
-            T4x4x32,
-            T2x2x16,
+            M64xN64xK1_B4,
+            M64xM64xK1_B2,
+            M32xN32xK2_B1,
+            M16xN16xK4_B1,
+
+            M64xN64xK4_B4,
+            M64xN64xK4_B2,
+            M32xN32xK8_B1,
+            M16xN16xK16_B1,
+
             Invalid
         };
 
@@ -53,7 +59,7 @@ namespace value
         /// <param name="B"> The RHS operand of the matrix multiplication. </param>
         /// <param name="C"> The intial value of the matrix multiplication accumulator. </param>
         /// <param name="cbsz"> (AMD specific) Defines the number of blocks that can do a broadcast within a group. Legal values = 0-4. The block ID of this group comes from ABID. </param>
-        /// <param name="abid"> (AMD specific) Block ID of block to broadcast during matrix multiply (MFMA ops). </param>
+        /// <param name="abid"> (AMD specific) Block ID of block to broadcast during matrix multiply (MMA ops). </param>
         /// <param name="blgp"> (AMD specific) “B”-Matrix Lane-Group Pattern. Controls how to swizzle the matrix lane groups (LG) in VGPRs when doing matrix multiplication by controlling the swizzle muxes. </param>
         /// <returns> The result of A * B + C. </returns>
         MatrixFragment MultiplyAccumulateSync(const MatrixFragment& B, const MatrixFragment& C, uint32_t cbsz = 0, uint32_t abid = 0, uint32_t blgp = 0) const;

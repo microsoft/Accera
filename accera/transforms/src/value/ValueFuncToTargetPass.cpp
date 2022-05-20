@@ -202,15 +202,22 @@ struct ValueLambdaRewritePattern : mlir::OpRewritePattern<vir::ValueLambdaOp>
 
     void rewrite(vir::ValueLambdaOp op, PatternRewriter& rewriter) const final
     {
+        // We get the arguments of the parent op and insert it into the set so that
+        // their order is preserved in the called lambda. If this order is altered,
+        // gpu functions fail since hiprtc does not call the host launcher function
+        // but instead calls the kernel directly.
+        llvm::SetVector<Value> capturedValuesSet;
+        for (auto&& v : op->getParentOfType<vir::ValueFuncOp>().getArguments())
+        {
+            capturedValuesSet.insert(v);
+        }
+
         // get a list of all values used in the lambda that come from above
         llvm::SetVector<Value> valuesDefinedAbove;
         getUsedValuesDefinedAbove(op.body(), valuesDefinedAbove);
 
         llvm::SmallVector<Operation*, 8> constants;
-        llvm::SmallVector<Value, 4> capturedValues;
-        // This could be a std::partition, but mlir::Value doesn't have swap defined and idk how to work with their
-        // non-owning lists yet
-        for (const Value& v : valuesDefinedAbove)
+        for (auto&& v : valuesDefinedAbove)
         {
             if (auto constantOp = v.getDefiningOp(); constantOp && constantOp->hasTrait<mlir::OpTrait::ConstantLike>())
             {
@@ -218,9 +225,11 @@ struct ValueLambdaRewritePattern : mlir::OpRewritePattern<vir::ValueLambdaOp>
             }
             else
             {
-                capturedValues.push_back(v);
+                capturedValuesSet.insert(v);
             }
         }
+
+        llvm::SmallVector<Value, 4> capturedValues(capturedValuesSet.begin(), capturedValuesSet.end());
 
         // the new function will take all the args that the lambda took, plus all the implicitly captured values
         auto argTypes = llvm::to_vector<4>(op.getArgumentTypes());

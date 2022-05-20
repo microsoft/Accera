@@ -328,7 +328,7 @@ namespace value
 
         /// <summary> Performs matrix multiply store operation.
         /// There are restrictions on the source type. </summary>
-        /// <param name="source"> The input mfma matrix </param>
+        /// <param name="source"> The input mma matrix </param>
         /// <param name="target"> The target memref </param>
         /// <param name="rowOffset"> The row offset within the target matrix. </param>
         /// <param name="colOffset"> The column offset within the target matrix. </param>
@@ -337,10 +337,10 @@ namespace value
         /// <summary> Performs matrix multiply accumulate compute operation D = A.B + C.
         /// This operation assumes that A, B, C, and D have been loaded using the MMALoadSync operation.
         /// There are restrictions on the input types and sizes. </summary>
-        /// <param name="A"> The input A mfma matrix </param>
-        /// <param name="B"> The input B mfma matrix </param>
-        /// <param name="C"> The input C mfma matrix </param>
-        /// <returns> The result destination mfma matrix </returns>
+        /// <param name="A"> The input A mma matrix </param>
+        /// <param name="B"> The input B mma matrix </param>
+        /// <param name="C"> The input C mma matrix </param>
+        /// <returns> The result destination mma matrix </returns>
         Value MMAComputeSync(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, uint32_t cbsz = 0, uint32_t abid = 0, uint32_t blgp = 0);
 
         Scalar Max(Vector input);

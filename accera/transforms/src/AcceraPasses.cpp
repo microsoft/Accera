@@ -190,6 +190,11 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     else
     {
         PassManagerAdaptor gpuModulePM(pm.nest<gpu::GPUModuleOp>(), options.dumpPasses.getValue(), options.basename + "_gpu_module");
+        if (execRuntime == accera::value::ExecutionRuntime::CUDA)
+        {
+            // TODO: enable this codepath when we add nvvm lowering, also enable NVVM translation in DialectRegistry.cpp
+            //gpuModulePM.addPass(createLowerGpuOpsToNVVMOpsPass(32));
+        }
         gpuModulePM.addPass(createStripDebugInfoPass());
         if (options.gpuOnly) return;
     }
@@ -201,8 +206,12 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     if (execRuntime != accera::value::ExecutionRuntime::VULKAN)
     {
         PassManagerAdaptor gpuModulePM(pm.nest<gpu::GPUModuleOp>(), options.dumpPasses.getValue(), options.basename + "_rocm_module");
-        gpuModulePM.addPass(createLowerGpuOpsToROCDLOpsPass(kDeriveIndexBitwidthFromDataLayout));
-        // gpuModulePM.addPass(createSerializeToHSACOPass());
+        if (execRuntime == accera::value::ExecutionRuntime::ROCM)
+        {
+            gpuModulePM.addPass(createLowerGpuOpsToROCDLOpsPass(kDeriveIndexBitwidthFromDataLayout));
+            // TODO: enable this codepath when we add HSACO lowering (for ROCM)
+            // gpuModulePM.addPass(createSerializeToHSACOPass());
+        }
 
         PassManagerAdaptor funcPm(pm.nest<FuncOp>(), options.dumpPasses.getValue(), options.basename + "_fun_op");
         if (options.enableAsync) funcPm.addPass(createGpuAsyncRegionPass());

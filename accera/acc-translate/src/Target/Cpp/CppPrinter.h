@@ -219,6 +219,10 @@ namespace cpp_printer
         /// the value.
         LogicalResult printDeclarationForValue(Value val);
 
+        /// A helper function that prints a variable declaration based on
+        /// the value with the given custom type.
+        LogicalResult printDeclarationForValue(Value val, Type declType);
+
         /// Convert attribute to a string
         llvm::StringRef attributeToString(Attribute attr);
 
@@ -351,7 +355,7 @@ namespace cpp_printer
         {
             if (state.hasRuntime(Runtime::CUDA))
             {
-                return "vhalf";
+                return "float16_t";
             }
             else
             {
@@ -381,7 +385,7 @@ namespace cpp_printer
             const auto sVectorWidth = std::to_string(vectorWidth);
             if constexpr (BitWidth == 16)
             {
-                return std::string("vhalf") + sVectorWidth;
+                return float16T() + sVectorWidth;
             }
             else
             {

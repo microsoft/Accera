@@ -2779,9 +2779,9 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_mfma_rocm", "[gpu][nest][ca
                     Scalar tidX = GPU::ThreadId().X();
                     Scalar tidY = GPU::ThreadId().Y();
 
-                    MatrixFragment mfmaAMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::A);
-                    MatrixFragment mfmaBMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::B);
-                    MatrixFragment mfmaCMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::Acc);
+                    MatrixFragment mfmaAMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::A);
+                    MatrixFragment mfmaBMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::B);
+                    MatrixFragment mfmaCMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::Acc);
                     mfmaAMatrix.LoadSync(A);
                     mfmaBMatrix.LoadSync(B);
                     mfmaCMatrix.LoadSync(C);
@@ -2929,9 +2929,9 @@ TEST_CASE_METHOD(Fixture, "test_rocm_cache", "[gpu][nest][cache][main]")
                     Scalar tidX = GPU::ThreadId().X();
                     Scalar tidY = GPU::ThreadId().Y();
 
-                    MatrixFragment mfmaAMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::A);
-                    MatrixFragment mfmaBMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::B);
-                    MatrixFragment mfmaCMatrix(MatrixFragment::Shape::T2x2x16, MatrixFragment::Type::Acc);
+                    MatrixFragment mfmaAMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::A);
+                    MatrixFragment mfmaBMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::B);
+                    MatrixFragment mfmaCMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::Acc);
                     mfmaAMatrix.LoadSync(A);
                     mfmaBMatrix.LoadSync(B);
                     mfmaCMatrix.LoadSync(C);
@@ -3085,7 +3085,7 @@ TEST_CASE_METHOD(Fixture, "test_rocm_cache_tensorize", "[gpu][nest][cache][tenso
                 plan.MapIndexToProcessor(ii, Processor::ThreadY);
                 plan.MapIndexToProcessor(jj, Processor::ThreadX);
 
-                plan.Tensorize({ iii, jjj, kkk }, { 2, 2, 16 });
+                plan.Tensorize({ iii, jjj, kkk }, v::MMAShape::M16xN16xK4_B1, 4);
                 plan.AddCache(A, ii, ii, accera::utilities::DimensionOrder(2), false, false, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::None);
                 plan.AddCache(B, ii, ii, accera::utilities::DimensionOrder(2), false, false, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::None);
             });

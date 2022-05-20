@@ -9,7 +9,7 @@
 #include "AcceraPasses.h"
 #include "ir/include/value/ValueDialect.h"
 #include "ir/include/value/ValueEnums.h"
-#include "ir/include/value/ValueMFMAOp.h"
+#include "ir/include/value/ValueMMAOp.h"
 
 #include <ir/include/IRUtil.h>
 
@@ -347,7 +347,7 @@ void MFMALoadStoreAccumulator(Operation* op, ConversionPatternRewriter& rewriter
 {
     const auto numBlocks = mfmaMatrixType.getNumBlocks();
     const auto leadingDim = mfmaMatrixType.getLeadingDim();
-    auto&& [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
+    auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
     const auto warpSize = warpSizeX * warpSizeY;
 
     auto d0 = rewriter.getAffineDimExpr(0);
@@ -424,11 +424,7 @@ LogicalResult MFMALoadAccumulator(vir::MMALoadSyncOp op,
                                   ArrayRef<mlir::Value> operands,
                                   ConversionPatternRewriter& rewriter)
 {
-    const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShapeType>(op.mmaShapeType()) };
-    if (!mfmaOpType.isValidShape())
-    {
-        return rewriter.notifyMatchFailure(op, "unhandled matrix shape");
-    }
+    const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(op.mmaShapeType()) };
 
     vir::MMALoadSyncOp::Adaptor MMALoadSyncOpAdaptor(operands, op->getAttrDictionary());
     auto memref = MMALoadSyncOpAdaptor.memref();
@@ -478,16 +474,12 @@ struct ValueMMALoadSyncOpToRocDLConversion final : public OpConversionPattern<vi
         auto ctx = rewriter.getContext();
         auto loc = op.getLoc();
         vir::MMALoadSyncOp::Adaptor MMALoadSyncOpAdaptor(operands, op->getAttrDictionary());
-        const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShapeType>(op.mmaShapeType()) };
+        const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(op.mmaShapeType()) };
 
-        if (!mfmaOpType.isValidShape())
-        {
-            return rewriter.notifyMatchFailure(op, "unhandled matrix shape");
-        }
         mlir::OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPoint(op);
 
-        auto&& [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
+        auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
         const auto warpSize = warpSizeX * warpSizeY;
         auto leadingDim = mfmaOpType.getLeadingDim();
 
@@ -562,13 +554,7 @@ struct ValueMMAStoreSyncOpToRocDLConversion final : public OpConversionPattern<v
                                   ArrayRef<mlir::Value> operands,
                                   ConversionPatternRewriter& rewriter) const final
     {
-        const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShapeType>(op.mmaShapeType()) };
-
-        if (!mfmaOpType.isValidShape())
-        {
-            return rewriter.notifyMatchFailure(op, "unhandled matrix shape");
-        }
-
+        const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(op.mmaShapeType()) };
         vir::MMAStoreSyncOp::Adaptor MMAStoreSyncOpAdaptor(operands, op->getAttrDictionary());
         auto src = MMAStoreSyncOpAdaptor.src();
         auto memref = MMAStoreSyncOpAdaptor.memref();
@@ -603,12 +589,6 @@ struct ValueMMAFillSyncOpToRocDLConversion final : public OpRewritePattern<vir::
 
     LogicalResult matchAndRewrite(vir::MMAFillSyncOp op, PatternRewriter& rewriter) const final
     {
-        vir::MMAOp mfmaOp(static_cast<vir::MMAShapeType>(op.mmaShapeType()));
-        if (!mfmaOp.isValidShape())
-        {
-            return rewriter.notifyMatchFailure(op, "unhandled matrix shape");
-        }
-
         auto loc = op.getLoc();
         auto memRefType = op.result().getType().cast<MemRefType>();
         auto memRefShape = memRefType.getShape();
@@ -657,20 +637,19 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
             return rewriter.notifyMatchFailure(op, "expecting a vector type for OpC");
         }
 
-        const auto outputMemrefType = op.result().getType().cast<MemRefType>();
-        const auto inputType = opA.getType().cast<MemRefType>().getElementType();
-        const auto outputType = outputMemrefType.getElementType();
         mlir::OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPoint(op);
 
-        vir::MMAShapeType mfmaShape{ static_cast<vir::MMAShapeType>(op.mmaShapeType()) };
+        vir::MMAShape mfmaShape{ static_cast<vir::MMAShape>(op.mmaShapeType()) };
         vir::MMAOp mfmaType{ mfmaShape };
-        const auto passIncrements = inputType.isF16() ? 4 : 1;
-        auto zero = rewriter.create<ConstantOp>(loc, outputType, rewriter.getZeroAttr(outputType));
 
-        // Copy C from memref to vector
+        const auto outputMemrefType = op.result().getType().cast<MemRefType>();
+        const auto outputType = outputMemrefType.getElementType();
         auto&& outputShape = outputMemrefType.getShape();
         const auto outputSize = std::accumulate(outputShape.begin(), outputShape.end(), 1, std::multiplies<int64_t>());
+
+        // Copy C from memref to vector
+        auto zero = rewriter.create<ConstantOp>(loc, outputType, rewriter.getZeroAttr(outputType));
         auto vecTy = mlir::VectorType::get({ outputSize }, outputType);
         mlir::Value vecC = rewriter.create<vector::BroadcastOp>(loc, vecTy, zero);
         auto loopInitC = rewriter.create<AffineForOp>(loc, 0, outputSize, 1, vecC);
@@ -681,17 +660,24 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
         vecC = loopBuilderInitC.create<vector::InsertElementOp>(loc, elem, loopInitC.getRegionIterArgs()[0], laneIndex);
         loopBuilderInitC.create<AffineYieldOp>(loc, vecC);
 
-        auto loop = rewriter.create<AffineForOp>(loc, 0, mfmaType.getThreadTileSize(), passIncrements, loopInitC.results());
+        const auto inputMemrefType = opA.getType().cast<MemRefType>();
+        const auto inputType = inputMemrefType.getElementType();
+        auto&& inputShape = inputMemrefType.getShape();
+        const auto inputSize = std::accumulate(inputShape.begin(), inputShape.end(), 1, std::multiplies<int64_t>());
+        auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
+        const auto warpSize = warpSizeX * warpSizeY;
+        const auto inElemsPerThread = mfmaType.getInElementsPerThread(warpSize);
+        auto loop = rewriter.create<AffineForOp>(loc, 0, inputSize, inElemsPerThread, loopInitC.results());
         auto loopBuilder = utilir::MakeBodyBuilder(loop);
         auto matD = loop.getRegionIterArgs()[0];
         auto inductionVar = loop.getInductionVar();
         if (inputType.isF16())
         {
-            auto vecTy = VectorType::get({ passIncrements }, inputType);
+            auto vecTy = VectorType::get({ inElemsPerThread }, inputType);
             auto zero = loopBuilder.create<ConstantOp>(loc, inputType, rewriter.getZeroAttr(inputType));
             mlir::Value vecA = loopBuilder.create<vector::BroadcastOp>(loc, vecTy, zero);
             mlir::Value vecB = loopBuilder.create<vector::BroadcastOp>(loc, vecTy, zero);
-            auto loadAB = loopBuilder.create<AffineForOp>(loc, 0, passIncrements, 1, ValueRange{ vecA, vecB });
+            auto loadAB = loopBuilder.create<AffineForOp>(loc, 0, inElemsPerThread, 1, ValueRange{ vecA, vecB });
             auto loadABbuilder = utilir::MakeBodyBuilder(loadAB);
             auto iElem = loadABbuilder.create<mlir::IndexCastOp>(loc, loadAB.getInductionVar(), i32Ty);
             auto pos = loadABbuilder.create<AddIOp>(loc, loadAB.getInductionVar(), inductionVar);
@@ -705,16 +691,16 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
 
             switch (mfmaShape)
             {
-            case MMAShapeType::T4x16x64:
+            case MMAShape::M64xN64xK4_B4:
                 loopBuilder.create<AffineYieldOp>(loc, ValueRange{ loopBuilder.create<ROCDL::mfma_f32_16x16x4f16>(loc, vecC.getType(), ValueRange{ vecA, vecB, matD, cbsz, abid, blgp }) });
                 break;
-            case MMAShapeType::T2x32x64:
+            case MMAShape::M64xN64xK4_B2:
                 loopBuilder.create<AffineYieldOp>(loc, ValueRange{ loopBuilder.create<ROCDL::mfma_f32_32x32x4f16>(loc, vecC.getType(), ValueRange{ vecA, vecB, matD, cbsz, abid, blgp }) });
                 break;
-            case MMAShapeType::T4x4x32:
+            case MMAShape::M32xN32xK8_B1:
                 loopBuilder.create<AffineYieldOp>(loc, ValueRange{ loopBuilder.create<ROCDL::mfma_f32_32x32x8f16>(loc, vecC.getType(), ValueRange{ vecA, vecB, matD, cbsz, abid, blgp }) });
                 break;
-            case MMAShapeType::T2x2x16:
+            case MMAShape::M16xN16xK16_B1:
                 loopBuilder.create<AffineYieldOp>(loc, ValueRange{ loopBuilder.create<ROCDL::mfma_f32_16x16x16f16>(loc, vecC.getType(), ValueRange{ vecA, vecB, matD, cbsz, abid, blgp }) });
                 break;
             default:
@@ -727,16 +713,16 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
             auto elemB = loopBuilder.create<memref::LoadOp>(loc, opB, inductionVar);
             switch (mfmaShape)
             {
-            case MMAShapeType::T4x16x64:
+            case MMAShape::M64xN64xK1_B4:
                 loopBuilder.create<AffineYieldOp>(loc, ValueRange{ loopBuilder.create<ROCDL::mfma_f32_16x16x1f32>(loc, vecC.getType(), ValueRange{ elemA, elemB, matD, cbsz, abid, blgp }) });
                 break;
-            case MMAShapeType::T2x32x64:
+            case MMAShape::M64xM64xK1_B2:
                 loopBuilder.create<AffineYieldOp>(loc, ValueRange{ loopBuilder.create<ROCDL::mfma_f32_32x32x1f32>(loc, vecC.getType(), ValueRange{ elemA, elemB, matD, cbsz, abid, blgp }) });
                 break;
-            case MMAShapeType::T4x4x32:
+            case MMAShape::M32xN32xK2_B1:
                 loopBuilder.create<AffineYieldOp>(loc, ValueRange{ loopBuilder.create<ROCDL::mfma_f32_32x32x2f32>(loc, vecC.getType(), ValueRange{ elemA, elemB, matD, cbsz, abid, blgp }) });
                 break;
-            case MMAShapeType::T2x2x16:
+            case MMAShape::M16xN16xK4_B1:
                 loopBuilder.create<AffineYieldOp>(loc, ValueRange{ loopBuilder.create<ROCDL::mfma_f32_16x16x4f32>(loc, vecC.getType(), ValueRange{ elemA, elemB, matD, cbsz, abid, blgp }) });
                 break;
             default:
@@ -763,56 +749,6 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
     }
 };
 
-struct ValueMMAStoreSyncOpToGPUConversion final : public OpConversionPattern<vir::MMAStoreSyncOp>
-{
-    using OpConversionPattern<vir::MMAStoreSyncOp>::OpConversionPattern;
-
-    LogicalResult matchAndRewrite(vir::MMAStoreSyncOp op,
-                                  ArrayRef<mlir::Value> operands,
-                                  ConversionPatternRewriter& rewriter) const final
-    {
-        return success();
-    }
-};
-
-struct ValueMMALoadSyncOpToGPUConversion final : public OpConversionPattern<vir::MMALoadSyncOp>
-{
-    using OpConversionPattern<vir::MMALoadSyncOp>::OpConversionPattern;
-
-    LogicalResult matchAndRewrite(vir::MMALoadSyncOp op,
-                                  ArrayRef<mlir::Value> operands,
-                                  ConversionPatternRewriter& rewriter) const final
-    {
-        rewriter.eraseOp(op);
-        return success();
-    }
-};
-
-struct ValueMMAFillSyncOpToGPUConversion final : public OpConversionPattern<vir::MMAFillSyncOp>
-{
-    using OpConversionPattern<vir::MMAFillSyncOp>::OpConversionPattern;
-
-    LogicalResult matchAndRewrite(vir::MMAFillSyncOp op,
-                                  ArrayRef<mlir::Value> operands,
-                                  ConversionPatternRewriter& rewriter) const final
-    {
-        rewriter.eraseOp(op);
-        return success();
-    }
-};
-struct ValueMFMAComputeToGPUConversion final : public OpConversionPattern<vir::MMAComputeSyncOp>
-{
-    using OpConversionPattern<vir::MMAComputeSyncOp>::OpConversionPattern;
-
-    LogicalResult matchAndRewrite(vir::MMAComputeSyncOp op,
-                                  ArrayRef<mlir::Value> operands,
-                                  ConversionPatternRewriter& rewriter) const final
-    {
-        rewriter.replaceOpWithNewOp<gpu::SubgroupMmaComputeOp>(op, operands[2].getType(), operands, op->getAttrs());
-        return success();
-    }
-};
-
 LogicalResult BlockDimMatchAndRewrite(Operation* op, PatternRewriter& rewriter, const int blockDimIdx, const bool indexType)
 {
     auto gpuFunc = op->getParentOfType<gpu::GPUFuncOp>();
@@ -829,7 +765,7 @@ LogicalResult BlockDimMatchAndRewrite(Operation* op, PatternRewriter& rewriter, 
     if (indexType)
         rewriter.replaceOpWithNewOp<mlir::ConstantIndexOp>(op, val);
     else // We need this because the ROCDL gpu indices are generated with i32 type,
-         // and we need to match that, otherwise we are left with invalid cast ops.
+        // and we need to match that, otherwise we are left with invalid cast ops.
         rewriter.replaceOpWithNewOp<mlir::ConstantIntOp>(op, val, rewriter.getI32Type());
     return success();
 }
@@ -1111,11 +1047,7 @@ void populateAcceraToNVVMPatterns(mlir::OwningRewritePatternList& patterns)
     patterns.insert<
         ResolveBlockDimPattern,
         EarlyReturnToGPUReturnPattern,
-        ValueBarrierToGPUBarrierConversion,
-        ValueMMALoadSyncOpToGPUConversion,
-        ValueMFMAComputeToGPUConversion,
-        ValueMMAStoreSyncOpToGPUConversion,
-        ValueMMAFillSyncOpToGPUConversion>(patterns.getContext());
+        ValueBarrierToGPUBarrierConversion>(patterns.getContext());
 }
 
 void populateGPUSimplificationPatterns(mlir::OwningRewritePatternList& patterns)

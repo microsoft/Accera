@@ -51,12 +51,18 @@ namespace cpp_printer
         LogicalResult printOp(gpu::ModuleEndOp);
         LogicalResult printOp(gpu::ReturnOp);
         LogicalResult printOp(gpu::ThreadIdOp);
+        LogicalResult printOp(gpu::SubgroupMmaConstantMatrixOp);
+        LogicalResult printOp(gpu::SubgroupMmaLoadMatrixOp);
+        LogicalResult printOp(gpu::SubgroupMmaComputeOp);
+        LogicalResult printOp(gpu::SubgroupMmaStoreMatrixOp);
 
         LogicalResult printGpuFPVectorType(VectorType vecType, StringRef vecVar);
 
         LogicalResult printGPUIndexType();
 
     private:
+        LogicalResult printAccType(const gpu::MMAMatrixType& mmaMatrix);
+
         llvm::SmallVector<gpu::GPUModuleOp> _gpuModuleOps;
     };
 

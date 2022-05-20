@@ -95,6 +95,7 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
                 (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ScheduledOperations", vFuncOp);
             }
+
             {
                 OwningRewritePatternList patterns(context);
                 tr::populateScheduleToValueRewritePatterns(patterns);
@@ -203,7 +204,7 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
                 //       otherwise attributes on loads will be removed that this pass depends on
                 OwningRewritePatternList patterns(context);
                 xptr::populateExecutionPlanThriftyCachePatterns(patterns);
-                applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
                 snapshotter.Snapshot("ExecutionPlanCheckAndElideThriftyCaches", vFuncOp);
             }
 

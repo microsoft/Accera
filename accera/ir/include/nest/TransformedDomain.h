@@ -113,7 +113,7 @@ namespace loopnest
         struct IndexInfo
         {
             IndexInfo() :
-                expr({}), range(0, 0), padding({}), parents({}) {}
+                expr({}), range(0, 0), parents({}), padding({}) {}
 
             IndexInfo(const AffineExpression& expr, const Range& range, std::vector<int64_t> padding, const std::vector<Index>& parents) :
                 expr(expr), range(range), padding(padding)

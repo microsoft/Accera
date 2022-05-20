@@ -54,6 +54,7 @@ mlir::DialectRegistry& GetDialectRegistry()
                         scf::SCFDialect,
                         vector::VectorDialect>();
         mlir::registerLLVMDialectTranslation(registry);
+        //mlir::registerNVVMDialectTranslation(registry);
         return true;
     }();
     return registry;

@@ -1878,24 +1878,28 @@ Value MLIRContext::MMALoadSyncImpl(const Matrix& source, const int64_t rowOffset
     auto loc = builder.getUnknownLoc();
 
     auto matValue = ToMLIRValue(builder, source);
-    const auto mfmaShape = static_cast<ir::value::MMAShapeType>(target.GetFragmentShape());
-    const ir::value::MMAOp mfmaType(mfmaShape);
+    const auto mmaShape = static_cast<ir::value::MMAShape>(target.GetFragmentShape());
+    const ir::value::MMAOp mmaType(mmaShape);
 
     auto rowOff = builder.create<mlir::ConstantIndexOp>(loc, rowOffset);
     auto colOff = builder.create<mlir::ConstantIndexOp>(loc, colOffset);
     const ir::value::MMAOperandType operandType{ static_cast<ir::value::MMAOperandType>(target.GetFragmentType()) };
     const auto isAcc = operandType == ir::value::MMAOperandType::Acc;
     auto elementType = (source.GetValue().IsFloat32() || isAcc) ? builder.getF32Type() : builder.getF16Type();
-    const auto vecSize = mfmaType.getThreadTileSize() / (isAcc ? mfmaType.getNumBlocks() : 1);
+    auto [warpSizeX, warpSizeY] = ir::util::ResolveWarpSize(ir::value::ExecutionRuntime::ROCM).value();
+
+    // Its correct to use getOutElementsPerThread() for input matrices here since we are going to schedule all the passes.
+    // Therefore, getOutElementsPerThread() == getInElementsPerThread() * numPasses()
+    const auto vecSize = mmaType.getOutElementsPerThread(warpSizeX * warpSizeY) / (isAcc ? mmaType.getNumBlocks() : 1);
     auto vecTy = mlir::MemRefType::get({ vecSize }, elementType);
 
-    mlir::Value result = builder.create<ir::value::MMALoadSyncOp>(loc, vecTy, matValue, mfmaShape, operandType, mlir::ValueRange{ rowOff, colOff });
+    mlir::Value result = builder.create<ir::value::MMALoadSyncOp>(loc, vecTy, matValue, mmaShape, operandType, mlir::ValueRange{ rowOff, colOff });
     EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { source.GetValue().GetBaseType(), 1 } });
     Emittable emittable{ &emittableInfo };
 
-    auto&& mfmaMatShape = mfmaType.getTileShape();
-    auto mfmaMatLayout = MemoryLayout(mfmaMatShape.first, mfmaMatShape.second);
-    return Value(emittable, mfmaMatLayout);
+    auto&& mmaMatShape = mmaType.getTileShape(warpSizeX, warpSizeY);
+    auto mmaMatLayout = MemoryLayout(mmaMatShape.first, mmaMatShape.second);
+    return Value(emittable, mmaMatLayout);
 }
 
 void MLIRContext::MMAStoreSyncImpl(const MatrixFragment& source, Matrix& target, const int64_t rowOffset, const int64_t colOffset)
@@ -1908,10 +1912,10 @@ void MLIRContext::MMAStoreSyncImpl(const MatrixFragment& source, Matrix& target,
     auto rowOff = builder.create<mlir::ConstantIndexOp>(loc, rowOffset);
     auto colOff = builder.create<mlir::ConstantIndexOp>(loc, colOffset);
 
-    const auto mfmaShape = static_cast<ir::value::MMAShapeType>(source.GetFragmentShape());
-    const ir::value::MMAOp mfmaType(mfmaShape);
+    const auto mmaShape = static_cast<ir::value::MMAShape>(source.GetFragmentShape());
+    const ir::value::MMAOp mmaType(mmaShape);
     const ir::value::MMAOperandType operandType{ static_cast<ir::value::MMAOperandType>(source.GetFragmentType()) };
-    builder.create<ir::value::MMAStoreSyncOp>(loc, sourceValue, targetValue, mfmaShape, mlir::ValueRange{ rowOff, colOff });
+    builder.create<ir::value::MMAStoreSyncOp>(loc, sourceValue, targetValue, mmaShape, mlir::ValueRange{ rowOff, colOff });
 }
 
 Value MLIRContext::MMAComputeSyncImpl(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, const uint32_t cbsz, const uint32_t abid, const uint32_t blgp)

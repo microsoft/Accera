@@ -129,7 +129,11 @@ def create_parameters():
         raise RuntimeError("Caller didn't assign the return value(s) of create_parameters() directly to any variable(s)")
 
 
-def create_parameter_grid(parameter_choices: dict, filter_func: Callable = None, sample: int = 0) -> List[dict]:
+def create_parameter_grid(parameter_choices: dict, 
+                        filter_func: Callable = None, 
+                        sample: int = 0, 
+                        seed = None
+) -> List[dict]:
     """
     Create a parameter grid from a dictionary that maps each parameter to its possible values,
     with/without a self-defined filter and the number of sample.
@@ -149,10 +153,11 @@ def create_parameter_grid(parameter_choices: dict, filter_func: Callable = None,
 
             filter_func: A callable to filter parameter_choices which returns a bool to indicate whether a given parameter combination should be included in the grid.
             sample: A number to limit the number of parameter grid.
+            seed: A number as the seed value for the generator to start with to generate a random number.
     """
     import itertools
     import random
-
+    
     choices = []
     keys = []
 
@@ -168,6 +173,8 @@ def create_parameter_grid(parameter_choices: dict, filter_func: Callable = None,
 
     filtered_choice_variants = list(filter(filter_func, choice_variants))
     if sample > 0 and sample < len(filtered_choice_variants):
+        if seed:
+            random.seed(seed)
         filtered_choice_variants = random.sample(filtered_choice_variants, sample)
 
     return [dict(zip(keys, variant)) for variant in filtered_choice_variants]

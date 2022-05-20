@@ -3,7 +3,7 @@
 
 # Accera v1.2.4 Reference
 
-## `accera.create_parameter_grid(parameter_choices, filter_func, sample)`
+## `accera.create_parameter_grid(parameter_choices, filter_func, sample, seed)`
 Create a parameter grid from a dictionary that maps each parameter to its possible values.
 
 ## Arguments
@@ -13,6 +13,7 @@ argument | description | type/default
 `parameter_choices` | A dictionary that maps each parameter to its possible values | dictionary
 `filter_func` | A callable to filter parameter_choices which returns a bool to indicate whether a given parameter combination should be included in the grid | Callable
 `sample` | A number to limit the size of the parameter grid. The grid is randomly sampled. | integer
+`seed` | The seed value for random sampling.  | integer
 
 ## Returns
 List of dictionary

@@ -182,11 +182,189 @@ namespace cpp_printer
         return success();
     }
 
+    LogicalResult GpuDialectCppPrinter::printOp(gpu::SubgroupMmaConstantMatrixOp constantMatrixOp)
+    {
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            return constantMatrixOp.emitError("non-cuda version is not supported.");
+        }
+
+        auto mmaMatrix = constantMatrixOp.res().getType().cast<MMAMatrixType>();
+        auto fragName = state.nameState.getOrCreateName(
+            constantMatrixOp.res(), SSANameState::SSANameKind::Variable, "mmaMatrix_");
+        auto val = state.nameState.getOrCreateName(
+            constantMatrixOp.value(), SSANameState::SSANameKind::Variable, "mmaFillValue_");
+        RETURN_IF_FAILED(printAccType(mmaMatrix));
+        os << " " << fragName << ";\n";
+        os << "wmma::fill_fragment(" << fragName << ", " << val << ")";
+        return success();
+    }
+
+    int64_t inferM(int64_t K, int64_t N)
+    {
+        if (N == 16 && K == 16)
+            return 16;
+
+        return {};
+    }
+
+    int64_t inferN(int64_t M, int64_t K)
+    {
+        if (M == 16 && K == 16)
+            return 16;
+
+        return {};
+    }
+
+    int64_t inferK(int64_t M, int64_t N)
+    {
+        if (M == 16 && N == 16)
+            return 16;
+
+        return {};
+    }
+
+    LogicalResult GpuDialectCppPrinter::printAccType(const MMAMatrixType& mmaMatrix)
+    {
+        auto matrixShape = mmaMatrix.getShape();
+        auto m = matrixShape[0];
+        auto n = matrixShape[1];
+        auto k = inferK(m, n);
+        os << "wmma::fragment<wmma::accumulator, ";
+        os << m << ", " << n << ", " << k << ", ";
+
+        RETURN_IF_FAILED(printer->printType(mmaMatrix.getElementType()));
+        os << ">";
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printOp(SubgroupMmaLoadMatrixOp loadMatrixOp)
+    {
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            return loadMatrixOp.emitError("non-cuda version is not supported.");
+        }
+
+        auto fragName = state.nameState.getOrCreateName(loadMatrixOp.res(), SSANameState::SSANameKind::Variable, "mmaMatrix_");
+        auto rowIdx = state.nameState.getOrCreateName(loadMatrixOp.indices()[0], SSANameState::SSANameKind::Variable, "row_");
+        auto colIdx = state.nameState.getOrCreateName(loadMatrixOp.indices()[1], SSANameState::SSANameKind::Variable, "col_");
+        auto mmaMatrix = loadMatrixOp.res().getType().cast<MMAMatrixType>();
+        auto leadingDim = loadMatrixOp.leadDimension();
+        int64_t offset;
+        SmallVector<int64_t, 2> strides;
+        mlir::getStridesAndOffset(loadMatrixOp.srcMemref().getType().cast<MemRefType>(), strides, offset);
+
+        // TODO: have a separate op for declaring a fragment
+        if (mmaMatrix.getOperand() == "COp")
+        {
+            RETURN_IF_FAILED(printAccType(mmaMatrix));
+        }
+        else
+        {
+            int m{};
+            int n{};
+            int k{};
+            auto matrixShape = mmaMatrix.getShape();
+            os << "wmma::fragment<";
+            if (mmaMatrix.getOperand() == "AOp")
+            {
+                os << "wmma::matrix_a, ";
+                m = matrixShape[0];
+                k = matrixShape[1];
+                n = inferN(m, k);
+            }
+            else if (mmaMatrix.getOperand() == "BOp")
+            {
+                os << "wmma::matrix_b, ";
+                k = matrixShape[0];
+                n = matrixShape[1];
+                m = inferM(k, n);
+            }
+            else
+            {
+                os << "UNSUPPORTED_MATRIX, ";
+                return loadMatrixOp.emitError("Unsupported matrix used for MMA.");
+            }
+
+            os << m << ", " << n << ", " << k << ", ";
+
+            RETURN_IF_FAILED(printer->printType(mmaMatrix.getElementType()));
+            if (leadingDim.isOneValue())
+                os << ", wmma::col_major>";
+            else
+                os << ", wmma::row_major>";
+        }
+        os << " " << fragName << ";\n";
+        os << "wmma::load_matrix_sync(" << fragName << ", ";
+        os << state.nameState.getName(loadMatrixOp.srcMemref()) << " + ";
+
+        // The col major matrix has been transposed (metadata only), so strides[0] should always be the proper leading dim,
+        // and the leadingDim has the stride in the first dim (before transpose) which tells us the actual layout of the matrix
+        if (leadingDim.isOneValue())
+            os << colIdx << " * " << strides[0] << " + " << rowIdx;
+        else
+            os << rowIdx << " * " << strides[0] << " + " << colIdx;
+        os << ", " << strides[0];
+        if (mmaMatrix.getOperand() == "COp")
+        {
+            if (leadingDim.isOneValue())
+                os << ", wmma::layout_t::mem_col_major";
+            else
+                os << ", wmma::layout_t::mem_row_major";
+        }
+        os << ")";
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printOp(gpu::SubgroupMmaComputeOp computeMatrixOp)
+    {
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            return computeMatrixOp.emitError("non-cuda version is not supported.");
+        }
+
+        auto opA = state.nameState.getName(computeMatrixOp.opA());
+        auto opB = state.nameState.getName(computeMatrixOp.opB());
+        auto opC = state.nameState.getName(computeMatrixOp.opC());
+        auto fragName = state.nameState.getOrCreateName(computeMatrixOp.res(), SSANameState::SSANameKind::Variable, "mmaMatrix_");
+        auto mmaMatrix = computeMatrixOp.res().getType().cast<MMAMatrixType>();
+        RETURN_IF_FAILED(printAccType(mmaMatrix));
+        os << " " << fragName << ";\n";
+        os << "wmma::mma_sync(" << fragName << ", " << opA << ", " << opB << ", " << opC << ")";
+        return success();
+    }
+
+    LogicalResult GpuDialectCppPrinter::printOp(gpu::SubgroupMmaStoreMatrixOp storeMatrixOp)
+    {
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            return storeMatrixOp.emitError("non-cuda version is not supported.");
+        }
+
+        auto rowIdx = state.nameState.getOrCreateName(storeMatrixOp.indices()[0], SSANameState::SSANameKind::Variable, "row_");
+        auto colIdx = state.nameState.getOrCreateName(storeMatrixOp.indices()[1], SSANameState::SSANameKind::Variable, "col_");
+        auto fragName = state.nameState.getName(storeMatrixOp.src());
+        auto leadingDim = storeMatrixOp.leadDimension();
+
+        int64_t offset;
+        SmallVector<int64_t, 2> strides;
+        mlir::getStridesAndOffset(storeMatrixOp.dstMemref().getType().cast<MemRefType>(), strides, offset);
+        auto destMemref = state.nameState.getName(storeMatrixOp.dstMemref());
+        os << "wmma::store_matrix_sync(" << destMemref << " + ";
+
+        // The col major matrix has been transposed (metadata only), so strides[0] should always be the proper leading dim,
+        // and the leadingDim has the stride in the first dim (before transpose) which tells us the actual layout of the matrix
+        if (leadingDim.isOneValue())
+            os << colIdx << " * " << strides[0] << " + " << rowIdx << ", " << fragName << ", " << strides[0] << ", wmma::layout_t::mem_col_major)";
+        else
+            os << rowIdx << " * " << strides[0] << " + " << colIdx << ", " << fragName << ", " << strides[0] << ", wmma::layout_t::mem_row_major)";
+        return success();
+    }
+
     LogicalResult GpuDialectCppPrinter::printDialectOperation(Operation* op,
                                                               bool* /*skipped*/,
                                                               bool* consumed)
     {
-
         auto handler = [&, this](auto op_) {
             printOp(op_);
             *consumed = true;
@@ -204,6 +382,10 @@ namespace cpp_printer
             .Case<LaunchFuncOp>(handler)
             .Case<ModuleEndOp>(handler)
             .Case<ThreadIdOp>(handler)
+            .Case<SubgroupMmaConstantMatrixOp>(handler)
+            .Case<SubgroupMmaLoadMatrixOp>(handler)
+            .Case<SubgroupMmaComputeOp>(handler)
+            .Case<SubgroupMmaStoreMatrixOp>(handler)
             .Default([&](Operation*) { *consumed = false; });
 
         return success();
@@ -311,21 +493,20 @@ namespace cpp_printer
 
     LogicalResult GpuDialectCppPrinter::printHeaderFiles()
     {
-        if (state.hasRuntime(Runtime::CUDA))
+        if (state.hasRuntime(Runtime::ROCM))
         {
             os << R"CUDA(
 #if defined(__HIP_PLATFORM_HCC__)
 #include <hip/hip_runtime.h>
-#elif defined(__HIP_PLATFORM_NVCC__)
-#include <cuda_runtime.h>
 #endif
-using vhalf = _Float16;
-using vhalfx2_t = vhalf __attribute__((ext_vector_type(2)));
-using vhalfx4_t = vhalf __attribute__((ext_vector_type(4)));
-using vhalfx8_t = vhalf __attribute__((ext_vector_type(8)));
-using vhalfx16_t = vhalf __attribute__((ext_vector_type(16)));
-using vhalfx32_t = vhalf __attribute__((ext_vector_type(32)));
-using vhalfx64_t = vhalf __attribute__((ext_vector_type(64)));
+
+using float16_t = _Float16;
+using vhalfx2_t = float16_t __attribute__((ext_vector_type(2)));
+using vhalfx4_t = float16_t __attribute__((ext_vector_type(4)));
+using vhalfx8_t = float16_t __attribute__((ext_vector_type(8)));
+using vhalfx16_t = float16_t __attribute__((ext_vector_type(16)));
+using vhalfx32_t = float16_t __attribute__((ext_vector_type(32)));
+using vhalfx64_t = float16_t __attribute__((ext_vector_type(64)));
 using vfloatx2_t = float __attribute__((ext_vector_type(2)));
 using vfloatx4_t = float __attribute__((ext_vector_type(4)));
 using vfloatx8_t = float __attribute__((ext_vector_type(8)));
@@ -342,6 +523,19 @@ using ::uint16_t;
 using ::int8_t;
 using ::int16_t;
 }
+
+)CUDA";
+        }
+        else if (state.hasRuntime(Runtime::CUDA))
+        {
+            os << R"CUDA(
+#include <cuda_runtime.h>
+#include <mma.h>
+using namespace nvcuda;
+
+using float16_t = __half;
+using uint32_t = unsigned int;
+
 )CUDA";
         }
 

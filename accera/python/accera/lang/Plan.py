@@ -19,7 +19,11 @@ from ..Targets import GridUnits, Target
 from ..Platforms import LibraryDependency
 from ..Constants import AUTO
 
-from .._lang_python._lang import BarrierScope, CacheIndexing, _MemorySpace
+from .._lang_python._lang import CacheIndexing, _MemorySpace, _MMASchedulingPolicy, _MMAShape
+
+
+def _ceildiv(x, y):
+    return ((x - 1) // y) + 1
 
 
 class Plan:
@@ -138,7 +142,7 @@ class Plan:
             idxs, num_threads, _ParallelizationPolicy.DYNAMIC if policy == "dynamic" else _ParallelizationPolicy.STATIC
         )
 
-    def tensorize(self, indices: Union[LoopIndex, Tuple[LoopIndex]], use_static_offsets: bool = False):
+    def tensorize(self, indices: Union[LoopIndex, Tuple[LoopIndex]], mma_shape: _MMAShape, num_total_passes: int = 1, use_static_offsets: bool = False, num_fused_passes: int = None, scheduling_policy: _MMASchedulingPolicy = _MMASchedulingPolicy.PASS_ORDER):
         """Only available for targets with native matrix multiplication instruction (tensor core) support. 
         Marks the dimensions of the iteration-space for tensorization. 
         Only perfectly nested loops of the following form can be tensorized:
@@ -150,6 +154,11 @@ class Plan:
 
         Args:
             indices: The iteration space dimensions to tensorize.
+            mma_shape: The MMA op type to use for tensorization.
+            num_total_passes: This controls the number of MMA passes to run.
+            use_static_offsets: This is an optimization flag, which when enabled will use precomputed offset maps stored in device constant memory.
+            num_fused_passes: This controls the number of passes for which register allocation is done, higher the value more the number of registers that are allocated.
+            scheduling_policy: For multi-block MMA operations, this controls whether matrix multiplication is done block-by-block or pass-by-pass (affects register usage).
         """
         if self._target.category != Target.Category.GPU:
             raise ValueError("tensorization currently only supported on GPU targets")
@@ -168,12 +177,16 @@ class Plan:
         for index in indices:
             self._add_index_attr(index, "tensorized")
 
-        self._commands.append(partial(self._tensorize, indices, use_static_offsets))
+        self._commands.append(partial(self._tensorize, indices, mma_shape, num_total_passes, use_static_offsets, num_fused_passes, scheduling_policy))
 
-    def _tensorize(self, indices, use_static_offsets, context: NativeLoopNestContext):
+    def _tensorize(self, indices, mma_shape, num_total_passes, use_static_offsets, num_fused_passes, scheduling_policy, context: NativeLoopNestContext):
         from .._lang_python import ScalarType
 
-        tensorize_dims = []
+        if num_fused_passes is None:
+            num_fused_passes = -1
+        elif num_fused_passes <= 0:
+            raise ValueError("Number of passes used for fusing must be a positive number greater than 0.")
+
         for index in list(map(self._sched._resolve_index, indices)):
             index_map = self._sched._index_map
             inners = index_map[index].inners
@@ -184,17 +197,16 @@ class Plan:
                 raise ValueError("The tensorization index must start at 0")
             if step != 1:
                 raise ValueError("The tensorization index stride must be contiguous")
-            tensorize_dims.append(stop)
-        if not self._target.tensor_core.supports(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=tensorize_dims) and \
-            not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=tensorize_dims) and \
-            not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=tensorize_dims):
+        if not self._target.tensor_core.supports(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=mma_shape, num_total_passes=num_total_passes, num_fused_passes=num_fused_passes) and \
+            not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=mma_shape, num_total_passes=num_total_passes, num_fused_passes=num_fused_passes) and \
+            not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=mma_shape, num_total_passes=num_total_passes, num_fused_passes=num_fused_passes):
             raise ValueError(
-                "The target does not support the given tensorization dimensions with shape=", tensorize_dims
+                "The target does not support the given tensorization dimensions with shape=", mma_shape
             )
 
         idxs = [context.mapping[id(index)] for index in indices]
 
-        context.plan.tensorize(indices=idxs, dims=tensorize_dims, useStaticOffsets=use_static_offsets)
+        context.plan.tensorize(indices=idxs, dims=mma_shape, numTotalPasses=num_total_passes, useStaticOffsets=use_static_offsets, numFusedPasses=num_fused_passes, schedulingPolicy=scheduling_policy)
 
     def cache(
         self,
@@ -606,10 +618,7 @@ class Plan:
                             dims[i] = index_to_splitfactor_map[index]
 
                         else:
-                            dims[i], rem = divmod(end - begin, step)
-
-                            if rem:
-                                raise RuntimeError("Range for index must not have boundary conditions")
+                            dims[i] = _ceildiv(end - begin, step)
 
             block_dims = [1, 1, 1]
             grid_dims = [1, 1, 1]
@@ -638,10 +647,7 @@ class Plan:
                         block_dims[i] = index_to_splitfactor_map[index]
 
                     # compute the grid size based on the block size
-                    grid_dims[i], remainder = divmod(shape, block_dims[i])
-                    if remainder != 0:
-                        # TODO: remove this restriction
-                        raise RuntimeError(f"Shape {shape} must be a multiple of split factor {block_dims[i]}")
+                    grid_dims[i] = _ceildiv(shape, block_dims[i])
 
             context.options = _GPU(grid=_Dim3(*grid_dims), block=_Dim3(*block_dims))
             context.plan = context.schedule.create_gpu_plan(gpu_options=context.options, runtime=target.runtime)

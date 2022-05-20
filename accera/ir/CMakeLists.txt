@@ -41,7 +41,7 @@ set(rcvalue_include
     include/value/ValueAttributes.h
     include/value/ValueEnums.h
     include/value/ValueFuncOp.h
-    include/value/ValueMFMAOp.h
+    include/value/ValueMMAOp.h
     )
 
 set(rcnest_src

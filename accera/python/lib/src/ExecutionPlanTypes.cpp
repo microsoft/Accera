@@ -67,6 +67,20 @@ namespace
             .value("BLOCK", value::GPU::BarrierScope::Block)
             .value("WARP", value::GPU::BarrierScope::Warp)
             .value("THREADFENCE", value::GPU::BarrierScope::Threadfence);
+
+        py::enum_<ir::value::MMAShape>(module, "_MMAShape", "Determines the underlying MMA op that will be used")
+            .value("M64xN64xK1_B4", ir::value::MMAShape::M64xN64xK1_B4)
+            .value("M64xM64xK1_B2", ir::value::MMAShape::M64xM64xK1_B2)
+            .value("M32xN32xK2_B1", ir::value::MMAShape::M32xN32xK2_B1)
+            .value("M16xN16xK4_B1", ir::value::MMAShape::M16xN16xK4_B1)
+            .value("M64xN64xK4_B4", ir::value::MMAShape::M64xN64xK4_B4)
+            .value("M64xN64xK4_B2", ir::value::MMAShape::M64xN64xK4_B2)
+            .value("M32xN32xK8_B1", ir::value::MMAShape::M32xN32xK8_B1)
+            .value("M16xN16xK16_B1", ir::value::MMAShape::M16xN16xK16_B1);
+
+        py::enum_<ir::value::MMASchedulingPolicy>(module, "_MMASchedulingPolicy", "Used for configuring scheduling policy of MMA ops")
+            .value("PASS_ORDER", ir::value::MMASchedulingPolicy::PassOrder)
+            .value("BLOCK_ORDER", ir::value::MMASchedulingPolicy::BlockOrder);
     }
 
     void DefineExecutionPlanStructs(py::module& module)
@@ -220,7 +234,7 @@ namespace
                 "double_buffer"_a,
                 "double_buffer_location"_a,
                 "vectorization_info"_a)
-            .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a, "useStaticOffsets"_a)
+            .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a, "numTotalPasses"_a, "useStaticOffsets"_a, "numFusedPasses"_a, "schedulingPolicy"_a)
             .def("map_index_to_processor", &value::GPUPlan::MapIndexToProcessor, "index"_a, "proc"_a);
     }
 

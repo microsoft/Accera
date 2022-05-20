@@ -2608,6 +2608,46 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(name=package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+    
+    def test_parameterization_grid_with_random_seed(self) -> None:
+        from accera import create_parameters, create_parameter_grid, Nest, Schedule
+
+        P0, P1, P2, P3, P4 = create_parameters()
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(P0, P1))
+
+        nest = Nest(shape=(P0, P1, P2))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += P3 * A[i, k] * B[k, j]
+
+        sched: Schedule = nest.create_schedule()
+        sched.split(j, P4)
+
+        package = Package()
+        package_name = "test_parameterization_grid_with_random_seed"
+
+        parameter_grid = {
+            P0: [8, 16],
+            P1: [16, 32],
+            P2: [16],
+            P3: [1.0, 2.0],
+            P4: [3, 5, 7]
+        }
+
+        parameters = create_parameter_grid(parameter_grid, sample=5, seed=123)
+        parameters_dup = create_parameter_grid(parameter_grid, sample=5, seed=123)
+
+        self.assertListEqual(parameters, parameters_dup)
+
+        package.add(sched, args=(A, B, C), base_name="matmul", parameters=parameters)
+
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
+            package.build(name=package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_fusion_parameterization_1(self) -> None:
         from accera import create_parameters, Nest, fuse

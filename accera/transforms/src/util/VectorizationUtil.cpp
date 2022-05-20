@@ -319,6 +319,30 @@ bool IsUnrolledAccessSequential(mlir::PatternRewriter& rewriter,
     return sequential;
 }
 
+mlir::Value FlattenMemRefCast(mlir::OpBuilder& builder, mlir::Value memref)
+{
+    auto type = memref.getType();
+    assert(type.isa<mlir::MemRefType>());
+    auto memRefType = type.cast<mlir::MemRefType>();
+    auto elementType = memRefType.getElementType();
+    auto volume = memRefType.getNumElements();
+
+    std::vector<int64_t> flattenedSizes{ volume };
+    std::vector<int64_t> flattenedStrides{ 1 };
+    mlir::MemRefType flattenedType = mlir::MemRefType::get(flattenedSizes, elementType, { mlir::AffineMap::getMultiDimIdentityMap(1, builder.getContext()) }, memRefType.getMemorySpace());
+    return builder.create<mlir::memref::ReinterpretCastOp>(memref.getLoc(), flattenedType, memref, 0 /* offset */, flattenedSizes, flattenedStrides);
+}
+
+template <typename OpTy>
+std::pair<mlir::Value, mlir::Value> FlattenAccess(mlir::OpBuilder& builder, OpTy accessOp, const std::vector<mlir::Value>& indices)
+{
+    auto loc = accessOp->getLoc();
+    auto flatCastMemref = FlattenMemRefCast(builder, accessOp.memref());
+    auto flattenMap = ir::util::GetIndexToMemoryLocationMap(builder.getContext(), accessOp);
+    auto flatPosition = builder.create<mlir::AffineApplyOp>(loc, flattenMap, indices);
+    return std::make_pair(flatCastMemref, flatPosition);
+}
+
 std::optional<VectorizedOp> VectorizeLoadOp(mlir::PatternRewriter& rewriter,
                                             mlir::memref::LoadOp op,
                                             const VectorizedOpMap& vectorizedOps,
@@ -331,16 +355,17 @@ std::optional<VectorizedOp> VectorizeLoadOp(mlir::PatternRewriter& rewriter,
     auto memRefType = op.getMemRefType();
     auto elementType = memRefType.getElementType();
     auto vectorType = mlir::VectorType::get({ vectorSize }, elementType);
-    mlir::memref::LoadOpAdaptor adaptor{ op };
 
+    mlir::memref::LoadOpAdaptor adaptor{ op };
     std::vector<mlir::Value> indices(adaptor.indices().begin(), adaptor.indices().end());
-    bool isSequential = IsUnrolledAccessSequential(rewriter, op, laneMappings, vectorSize);
 
     mlir::Value result;
-
-    if (isSequential)
+    if (IsUnrolledAccessSequential(rewriter, op, laneMappings, vectorSize))
     {
-        result = rewriter.create<mlir::vector::LoadOp>(op.getLoc(), vectorType, op.memref(), indices);
+        // We know these reads are sequential, but mlir::vector::LoadOp only operates on memrefs where the minor
+        // dimension has unit stride, so cast the memref to a flat buffer and load from that shape
+        auto [flatCastMemref, flattenedPosition] = FlattenAccess(rewriter, op, indices);
+        result = rewriter.create<mlir::vector::LoadOp>(op.getLoc(), vectorType, flatCastMemref, mlir::ValueRange{ flattenedPosition });
     }
     else
     {
@@ -381,11 +406,13 @@ std::optional<VectorizedOp> VectorizeStoreOp(mlir::PatternRewriter& rewriter,
     auto vectorizedValueToStore = vecOp->GetVectorResult();
 
     std::vector<mlir::Value> indices(adaptor.indices().begin(), adaptor.indices().end());
-    bool isSequential = IsUnrolledAccessSequential(rewriter, op, laneMappings, vectorSize);
 
-    if (isSequential)
+    if (IsUnrolledAccessSequential(rewriter, op, laneMappings, vectorSize))
     {
-        mlir::Operation* storeOp = rewriter.create<mlir::vector::StoreOp>(op.getLoc(), vectorizedValueToStore, op.memref(), indices);
+        // We know these reads are sequential, but mlir::vector::StoreOp only operates on memrefs where the minor
+        // dimension has unit stride, so cast the memref to a flat buffer and load from that shape
+        auto [flatCastMemref, flattenedPosition] = FlattenAccess(rewriter, op, indices);
+        mlir::Operation* storeOp = rewriter.create<mlir::vector::StoreOp>(op.getLoc(), vectorizedValueToStore, flatCastMemref, mlir::ValueRange{ flattenedPosition });
         return storeOp;
     }
     else
@@ -414,18 +441,17 @@ std::optional<VectorizedOp> VectorizeAffineLoadOp(mlir::PatternRewriter& rewrite
     auto memRefType = op.getMemRefType();
     auto elementType = memRefType.getElementType();
     auto vectorType = mlir::VectorType::get({ vectorSize }, elementType);
+
     mlir::AffineLoadOpAdaptor adaptor{ op };
-
     std::vector<mlir::Value> baseIndices(adaptor.indices().begin(), adaptor.indices().end());
-    auto indices = ir::util::MultiDimAffineApply(rewriter, loc, op.getAffineMap(), baseIndices);
-
-    bool isSequential = IsUnrolledAccessSequential(rewriter, op, laneMappings, vectorSize);
 
     mlir::Value result;
-
-    if (isSequential)
+    if (IsUnrolledAccessSequential(rewriter, op, laneMappings, vectorSize))
     {
-        result = rewriter.create<mlir::vector::LoadOp>(op.getLoc(), vectorType, op.memref(), indices);
+        // We know these reads are sequential, but mlir::vector::LoadOp only operates on memrefs where the minor
+        // dimension has unit stride, so cast the memref to a flat buffer and load from that shape
+        auto [flatCastMemref, flattenedPosition] = FlattenAccess(rewriter, op, baseIndices);
+        result = rewriter.create<mlir::vector::LoadOp>(op.getLoc(), vectorType, flatCastMemref, mlir::ValueRange{ flattenedPosition });
     }
     else
     {
@@ -466,13 +492,13 @@ std::optional<VectorizedOp> VectorizeAffineStoreOp(mlir::PatternRewriter& rewrit
     auto vectorizedValueToStore = vecOp->GetVectorResult();
 
     std::vector<mlir::Value> baseIndices(adaptor.indices().begin(), adaptor.indices().end());
-    auto indices = ir::util::MultiDimAffineApply(rewriter, loc, op.getAffineMap(), baseIndices);
 
-    bool isSequential = IsUnrolledAccessSequential(rewriter, op, laneMappings, vectorSize);
-
-    if (isSequential)
+    if (IsUnrolledAccessSequential(rewriter, op, laneMappings, vectorSize))
     {
-        mlir::Operation* storeOp = rewriter.create<mlir::vector::StoreOp>(op.getLoc(), vectorizedValueToStore, op.memref(), indices);
+        // We know these reads are sequential, but mlir::vector::StoreOp only operates on memrefs where the minor
+        // dimension has unit stride, so cast the memref to a flat buffer and load from that shape
+        auto [flatCastMemref, flattenedPosition] = FlattenAccess(rewriter, op, baseIndices);
+        mlir::Operation* storeOp = rewriter.create<mlir::vector::StoreOp>(op.getLoc(), vectorizedValueToStore, flatCastMemref, mlir::ValueRange{ flattenedPosition });
         return storeOp;
     }
     else

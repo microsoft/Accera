@@ -11,7 +11,7 @@ from dataclasses import dataclass, field, fields
 from enum import Enum, auto
 from ._lang_python import ScalarType, _GetKnownDeviceNames
 from ._lang_python._lang import (
-    BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z, _MemorySpace, _ExecutionRuntime as Runtime
+    BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z, _MemorySpace, _MMAShape, _ExecutionRuntime as Runtime
 )
 
 
@@ -725,44 +725,42 @@ KNOWN_CPUS = [
 
 @dataclass(frozen=True, eq=True)
 class TensorCoreInformationEntry:
-    input_type: ScalarType
-    output_type: ScalarType
-    shape: List[int]
-
+    shape: _MMAShape
+    inType: ScalarType
+    outType: ScalarType
 
 @dataclass(frozen=True)
 class TensorCoreInformation:
     entries: List[TensorCoreInformationEntry] = field(default_factory=list)
 
-    def supports(self, input_type: ScalarType, output_type: ScalarType, shape: List[int]) -> bool:
-        return TensorCoreInformationEntry(input_type, output_type, shape) in self.entries
+    def supports(self, input_type: ScalarType, output_type: ScalarType, shape: _MMAShape, num_total_passes: int, num_fused_passes: int) -> bool:
+        if not (num_total_passes >= 1 and (num_fused_passes == -1 or num_total_passes % num_fused_passes == 0)):
+            return False
+
+        for entry in self.entries:
+            if input_type == entry.inType and output_type == entry.outType and entry.shape == shape:
+                return True
+        return False
 
 
 MI100_TENSORCORE_INFO = TensorCoreInformation([
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16,
-                               shape=[2, 2, 16]),    # maps to the 16x16x16 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16,
-                               shape=[4, 4, 32]),    # maps to the 32x32x8 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16,
-                               shape=[2, 32, 64]),    # maps to the 32x32x4 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float16,
-                               shape=[4, 16, 64]),    # maps to the 16x16x4 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32,
-                               shape=[2, 2, 16]),    # maps to the 16x16x16 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32,
-                               shape=[4, 4, 32]),    # maps to the 32x32x8 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32,
-                               shape=[2, 32, 64]),    # maps to the 32x32x4 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float16, output_type=ScalarType.float32,
-                               shape=[4, 16, 64]),    # maps to the 16x16x4 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32,
-                               shape=[2, 2, 16]),    # maps to the 16x16x4 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32,
-                               shape=[4, 4, 32]),    # maps to the 32x32x2 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32,
-                               shape=[2, 32, 64]),    # maps to the 32x32x1 mfma instruction
-    TensorCoreInformationEntry(input_type=ScalarType.float32, output_type=ScalarType.float32,
-                               shape=[4, 16, 64])    # maps to the 16x16x1 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK4_B1, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK2_B1, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 32x32x2 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xM64xK1_B2, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 32x32x1 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK1_B4, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 16x16x1 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
+])
+
+NV_A100_TENSORCORE_INFO = TensorCoreInformation([
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),
 ])
 
 # Tensor Cores is current unused
@@ -775,16 +773,13 @@ KNOWN_GPUS = [
     ["CUDA", "NVidia P100", "Pascal", "sm60", 56, 1024, [1024, 1024, 64], 49152, 32, 1.328500, 65536, 0,
      None],    # TODO : get the real values for the vector register sizes in bytes
     ["CUDA", "NVidia V100", "Volta", "sm70", 80, 1024, [1024, 1024, 64], 49152, 32, 1.380000, 65536, 0, None],
-    ["CUDA", "NVidia A100", "Ampere", "sm80", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, 0, None],
+    ["CUDA", "NVidia A100", "Ampere", "sm80", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, 0, NV_A100_TENSORCORE_INFO],
     # AMD
     ["ROCM", "AMD Radeon7", "Vega20", "gfx906", 60, 1024, [1024, 1024, 1024], 65536, 64, 1.801000, 65536, 0, None],
     ["ROCM", "AMD MI50", "Vega20", "gfx906", 60, 1024, [1024, 1024, 1024], 65536, 64, 1.725000, 65536, 0, None],
 
     # The MI100 can move up to Up to 4 DWORDs per instruction, so we set the vector size to 16 bytes - https://developer.amd.com/wp-content/resources/CDNA1_Shader_ISA_14December2020.pdf
-    [
-        "ROCM", "AMD MI100", "Arcturus", "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, 16,
-        MI100_TENSORCORE_INFO
-    ],
+    ["ROCM", "AMD MI100", "Arcturus", "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, 16, MI100_TENSORCORE_INFO],
     ["ROCM", "AMD MI200", "Aldebaran", "gfx90a", 220, 1024, [1024, 1024, 1024], 65536, 64, 1.700000, 65536, 0, None]
 ]
 # yapf: enable

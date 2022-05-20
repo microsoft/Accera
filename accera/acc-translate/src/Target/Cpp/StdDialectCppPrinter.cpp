@@ -385,6 +385,22 @@ namespace cpp_printer
         return printer->printMemRefLoadOrStore(false, memref, memRefType, indices, storeOp.getValueToStore());
     }
 
+    LogicalResult StdDialectCppPrinter::printReinterpretCastOp(memref::ReinterpretCastOp reinterpretCastOp)
+    {
+        // Just cast it to a (type*) for the given element type. At this stage, any specific size data may have been removed
+        auto resultElementType = reinterpretCastOp.getType().getElementType();
+        auto src = reinterpretCastOp.source();
+        // Create an unranked memreftype so that we generate a basic "type*" decl rather than allocating a buffer for the memref
+        auto customType = mlir::UnrankedMemRefType::get(resultElementType, reinterpretCastOp.getType().getMemorySpace());
+        RETURN_IF_FAILED(printer->printDeclarationForValue(reinterpretCastOp.result(), customType));
+        os << " = ";
+        os << "(";
+        RETURN_IF_FAILED(printer->printType(resultElementType));
+        os << "*) ";
+        os << state.nameState.getName(src) << ";\n";
+        return success();
+    }
+
     static StringRef getCmpIOpString(CmpIPredicate predicate)
     {
         switch (predicate)
@@ -544,6 +560,28 @@ namespace cpp_printer
         return success();
     }
 
+    LogicalResult StdDialectCppPrinter::printMemRefTransposeOp(memref::TransposeOp memRefCastOp)
+    {
+        // This is metadata transposition only, so this is identical to CastOp
+        Type srcType = memRefCastOp.in().getType();
+        MemRefType srcMemRefType = srcType.dyn_cast<MemRefType>();
+        Type dstType = memRefCastOp.getType();
+        RETURN_IF_FAILED(printer->printType(dstType.dyn_cast<BaseMemRefType>().getElementType()));
+
+        os << " *"
+           << state.nameState.getOrCreateName(memRefCastOp.getResult(),
+                                              SSANameState::SSANameKind::Variable)
+           << " = ";
+        auto srcName = state.nameState.getName(memRefCastOp.getOperand());
+        assert(!srcType.isa<UnrankedMemRefType>());
+
+        os << "(";
+        RETURN_IF_FAILED(printer->printType(srcMemRefType.getElementType()));
+        os << "*)" << srcName;
+
+        return success();
+    }
+
     LogicalResult StdDialectCppPrinter::printDialectOperation(Operation* op,
                                                               bool* skipped,
                                                               bool* consumed)
@@ -601,11 +639,17 @@ namespace cpp_printer
         if (auto storeOp = dyn_cast<memref::StoreOp>(op))
             return printStoreOp(storeOp);
 
+        if (auto reinterpretCastOp = dyn_cast<memref::ReinterpretCastOp>(op))
+            return printReinterpretCastOp(reinterpretCastOp);
+
         if (isa<SignExtendIOp>(op))
             return printCastToIntegerOp(op, /*isSigned*/ true);
 
         if (isa<ZeroExtendIOp>(op))
             return printCastToIntegerOp(op, /*isSigned*/ false);
+
+        if (auto transposeOp = dyn_cast<memref::TransposeOp>(op))
+            return printMemRefTransposeOp(transposeOp);
 
         *consumed = false;
         return success();
@@ -613,19 +657,6 @@ namespace cpp_printer
 
     LogicalResult StdDialectCppPrinter::printHeaderFiles()
     {
-        // TODO: Another instance of information leaking across boundaries. Seems that each source file should have
-        // an "operation mode" and that determines the contents of preamble to the source body
-        if (state.hasRuntime(Runtime::ROCM))
-            return success();
-
-        os << "#if defined(__cplusplus)\n";
-        os << "#include <cstdint>\n";
-        os << "#include <cmath>\n";
-        os << "#else\n";
-        os << "#include <stdint.h>\n";
-        os << "#include <math.h>\n";
-        os << "#endif // defined(__cplusplus)\n";
-
         return success();
     }
 

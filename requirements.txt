@@ -9,7 +9,7 @@ conan
 lit
 packaging
 pytest
-hatlib>=0.0.12
+hatlib>=0.0.16
 varname
 py-cpuinfo
 termcolor

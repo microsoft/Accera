@@ -68,8 +68,8 @@ module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "
 // CHECK:                 affine.for %arg6 = 0 to 16 {
 // CHECK:                   %1 = affine.load %arg1[%arg5, %arg4 + %arg6] : memref<32x32xf32, #map>
 // CHECK:                   affine.store %1, %0[%arg5, %arg6] : memref<32x16xf32, 3>
-// CHECK:                 } {accxp.access_bounds_check, begin = 0 : i64, end = 16 : i64, index = #accln<"index{j,5}">, kernels = ["cache_internal_loopnest_kernel_active_block_copy"], scheduledIndex = #accln<"index{j,5}">, subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">], subdomainSize = [1, 1]}
-// CHECK:               } {accxp.access_bounds_check, begin = 0 : i64, end = 32 : i64, index = #accln<"index{i,4}">, scheduledIndex = #accln<"index{i,4}">, subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">], subdomainSize = [1, 16]}
+// CHECK:                 } {accxp.access_bounds_check, begin = 0 : i64, domain = #xdomain, end = 16 : i64, index = #accln<"index{j,5}">, kernels = ["cache_internal_loopnest_kernel_active_block_copy"], scheduledIndex = #accln<"index{j,5}">, subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">], subdomainSize = [1, 1]}
+// CHECK:               } {accxp.access_bounds_check, begin = 0 : i64, domain = #xdomain, end = 32 : i64, index = #accln<"index{i,4}">, scheduledIndex = #accln<"index{i,4}">, subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">], subdomainSize = [1, 16]}
 // CHECK:               accv.return
 // CHECK:             }) {exec_target = 0 : i64, sym_name = "NestFunction_2", type = () -> ()} : () -> ()
 // CHECK:             affine.for %arg5 = 0 to 4 {

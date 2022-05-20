@@ -35,7 +35,7 @@ namespace executionPlan
 
     mlir::DialectAsmPrinter& operator<<(mlir::DialectAsmPrinter& printer, TensorizationInfo tensorizationInfo)
     {
-        printer << "{{" << tensorizationInfo.dim[0] << "," << tensorizationInfo.dim[1] << "," << tensorizationInfo.dim[2] << "}," << tensorizationInfo.useStaticOffsets << "}";
+        printer << "{{" << (int)tensorizationInfo.dim << "}," << tensorizationInfo.numTotalPasses << "," << tensorizationInfo.useStaticOffsets << "," << tensorizationInfo.numFusedPasses << "," << (int)tensorizationInfo.schedulingPolicy << "}";
         return printer;
     }
 
@@ -161,33 +161,40 @@ namespace executionPlan
 
     TensorizationInfoAttr parseTensorizationInfo(mlir::DialectAsmParser& parser)
     {
-        int dim0, dim1, dim2;
+        int dim;
         bool useStaticOffsets;
+        int numFusedPasses;
+        int numTotalPasses;
+        int schedulingPolicy;
         if (failed(parser.parseLBrace()))
             return {};
         if (failed(parser.parseLBrace()))
             return {};
-        if (failed(parser.parseInteger(dim0)))
-            return {};
-        if (failed(parser.parseComma()))
-            return {};
-        if (failed(parser.parseInteger(dim1)))
-            return {};
-        if (failed(parser.parseComma()))
-            return {};
-        if (failed(parser.parseInteger(dim2)))
+        if (failed(parser.parseInteger(dim)))
             return {};
         if (failed(parser.parseRBrace()))
+            return {};
+        if (failed(parser.parseComma()))
+            return {};
+        if (failed(parser.parseInteger(numTotalPasses)))
             return {};
         if (failed(parser.parseComma()))
             return {};
         if (failed(parser.parseInteger(useStaticOffsets)))
             return {};
+        if (failed(parser.parseComma()))
+            return {};
+        if (failed(parser.parseInteger(numFusedPasses)))
+            return {};
+        if (failed(parser.parseComma()))
+            return {};
+        if (failed(parser.parseInteger(schedulingPolicy)))
+            return {};
         if (failed(parser.parseRBrace()))
             return {};
         if (useStaticOffsets != 0 && useStaticOffsets != 1)
             return {};
-        return TensorizationInfoAttr::get(TensorizationInfo{ std::array<int64_t, 3>{ dim0, dim1, dim2 }, useStaticOffsets }, parser.getBuilder().getContext());
+        return TensorizationInfoAttr::get(TensorizationInfo{ accera::ir::value::MMAShape{ dim }, numTotalPasses, useStaticOffsets, numFusedPasses, accera::ir::value::MMASchedulingPolicy{ schedulingPolicy } }, parser.getBuilder().getContext());
     }
 
     void print(TensorizationInfoAttr attr, mlir::DialectAsmPrinter& printer)
@@ -250,7 +257,7 @@ namespace executionPlan
 
     llvm::hash_code hash_value(const TensorizationInfo& tensorizationInfo)
     {
-        return llvm::hash_combine(tensorizationInfo.dim[0], tensorizationInfo.dim[1], tensorizationInfo.dim[2]);
+        return llvm::hash_combine(tensorizationInfo.dim, tensorizationInfo.numTotalPasses, tensorizationInfo.useStaticOffsets, tensorizationInfo.numFusedPasses, tensorizationInfo.schedulingPolicy);
     }
 
     llvm::hash_code hash_value(const InPlaceUnrollInfo& inPlaceUnrollInfo)

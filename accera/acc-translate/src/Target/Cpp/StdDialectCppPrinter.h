@@ -6,7 +6,7 @@
 
 #ifndef STD_DIALECT_CPP_PRINTER_H_
 #define STD_DIALECT_CPP_PRINTER_H_
- 
+
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
@@ -74,6 +74,8 @@ namespace cpp_printer
         /// print MemRefCastOp
         LogicalResult printMemRefCastOp(memref::CastOp memRefCastOp);
 
+        LogicalResult printMemRefTransposeOp(memref::TransposeOp memRefCastOp);
+
         /// print ReturnOp
         LogicalResult printReturnOp(ReturnOp returnOp);
 
@@ -85,6 +87,9 @@ namespace cpp_printer
 
         /// print StoreOp
         LogicalResult printStoreOp(memref::StoreOp storeOp);
+
+        /// print ReinterpretCastOp
+        LogicalResult printReinterpretCastOp(memref::ReinterpretCastOp reinterpretCastop);
     };
 
 } // namespace cpp_printer

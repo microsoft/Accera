@@ -1,0 +1,4 @@
+*.csv
+*.cu
+*.hat
+_tmp/

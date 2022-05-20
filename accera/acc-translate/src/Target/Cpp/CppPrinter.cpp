@@ -226,7 +226,12 @@ namespace cpp_printer
     // TODO: decouple this function from CppPrinter
     LogicalResult CppPrinter::printDeclarationForValue(Value val)
     {
-        RETURN_IF_FAILED(printType(val.getType()));
+        return printDeclarationForValue(val, val.getType());
+    }
+
+    LogicalResult CppPrinter::printDeclarationForValue(Value val, Type declType)
+    {
+        RETURN_IF_FAILED(printType(declType));
         os << " ";
         os << state.nameState.getOrCreateName(val,
                                               SSANameState::SSANameKind::Variable);
@@ -304,7 +309,7 @@ namespace cpp_printer
             return failure();
         }
 
-        os << "uint" << bitCount << "_t";
+        os << "int" << bitCount << "_t";
         return success();
     }
 
@@ -472,12 +477,15 @@ namespace cpp_printer
 
     LogicalResult CppPrinter::printVectorType(VectorType type)
     {
-        if (!type.getElementType().isa<Float16Type>())
+        os << "v";
+        if (type.getElementType().isa<Float16Type>())
         {
-            // FP16 is "vhalf" but a vector of FP16 is "vhalfxN_t", so don't prepend "v" if the element type is FP16
-            os << "v";
+            os << "half";
         }
-        RETURN_IF_FAILED(printType(type.getElementType()));
+        else
+        {
+            RETURN_IF_FAILED(printType(type.getElementType()));
+        }
         os << "x";
         os << type.getNumElements();
         os << "_t";

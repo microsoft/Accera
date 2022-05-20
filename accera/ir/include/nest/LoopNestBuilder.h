@@ -36,7 +36,6 @@ namespace loopnest
         Index index;
         Range range;
     };
-    using PartitionList = std::vector<Partition>;
 
     struct LoopRange
     {
@@ -57,7 +56,7 @@ namespace loopnest
     public:
         LoopNestBuilder(ScheduleOp op, mlir::PatternRewriter& builder, bool printLoops = false);
 
-        void BuildLoopNest();
+        std::vector<ScheduledLoopOp> BuildLoopNest();
 
         const std::vector<ScheduledKernelOp>& GetKernelGroup(std::string id) const;
         std::vector<std::string> GetKernelIds() const;
@@ -92,7 +91,7 @@ namespace loopnest
         LoopVisitSchedule GetLoopSchedule() const;
 
         ScheduledLoopOp EmitLoopOp(const LoopRange& range, const RecursionState& state, const LoopVisitSchedule& schedule);
-        void GenerateLoopBody(mlir::Value index, const LoopRange& r, const RecursionState& state, const LoopVisitSchedule& schedule);
+        void GenerateLoopBody(ScheduledLoopOp loop, const LoopRange& r, const RecursionState& state, const LoopVisitSchedule& schedule);
         void EmitLoopBody(ScheduledLoopOp loop, const RecursionState& state, const LoopVisitSchedule& schedule);
         void EndLoopRange(const LoopRange& range, const RecursionState& state, const LoopVisitSchedule& schedule);
 
@@ -111,7 +110,7 @@ namespace loopnest
         std::vector<std::string> GetPossiblyValidKernelIds(const RecursionState& state) const;
         std::vector<ScheduledKernelOp> GetPossiblyValidKernels(const RecursionState& state) const;
 
-        PartitionList GetPartitions(const Index& loopIndex, Range loopRange, const RecursionState& state, const LoopVisitSchedule& schedule) const;
+        std::vector<Partition> GetPartitions(const Index& loopIndex, Range loopRange, const RecursionState& state, const LoopVisitSchedule& schedule) const;
 
         // TODO: change this to take a KernelPredicate instead of Operation*
         void AddSplits(const Index& loopIndex, const Range& loopRange, Operation* predicate, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule, std::set<int64_t>& splits) const;
@@ -141,6 +140,7 @@ namespace loopnest
         bool IsSaturated(Index loopIndex) const;
         std::optional<uint64_t> GetUnrollIfRangeSmallerThan(Index loopIndex) const;
         std::optional<uint64_t> GetUnrollAndJamFactor(Index loopIndex) const;
+        bool IsGpuLoop(Index loopIndex) const;
         ScheduleOp GetScheduleOp() const;
         mlir::Region* GetScheduleParentRegion() const;
         std::map<std::string, std::vector<ScheduledKernelOp>> DiscoverKernelGroups() const;

@@ -332,6 +332,7 @@ namespace loopnest
         return _indices.at(index).padding;
     }
 
+    // TODO: fix this to work with loop indices, by taking an MLIR context and filling in an actual affine expression
     AffineExpression TransformedDomain::GetIndexExpr(const Index& index) const
     {
         if (_indices.count(index) == 0)
@@ -340,6 +341,7 @@ namespace loopnest
         return _indices.at(index).expr;
     }
 
+    // TODO: fix this to work with loop indices
     AffineExpression TransformedDomain::GetReducedIndexExpr(const Index& index, mlir::MLIRContext* context) const
     {
         auto expr = GetIndexExpr(index);

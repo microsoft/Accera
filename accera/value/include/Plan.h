@@ -219,8 +219,11 @@ namespace value
         /// <summary> Tensorize three iteration space dimensions </summary>
         /// <param name="indices"> The scalar indices to tensorize. Three indices must be specified whose dimensions must be contiguous in the iteration space dimension order. </param>
         /// <param name="dims"> The dimension of the tensor operation. </param>
+        /// <param name="numTotalPasses"> Total number of passes of the tensor operation to run. </param>
         /// <param name="useStaticOffsets"> Use precomputed index offsets for address calculation (potential optimization). </param>
-        void Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims, bool useStaticOffsets = false);
+        /// <param name="numFusedPasses"> Number of passes of the tensor operation for which to allocate register, higher value indicates higher register allocation. </param>
+        /// <param name="schedulingPolicy"> Determines whether we iterate over blocks or passes. </param>
+        void Tensorize(std::vector<ScalarIndex> indices, ir::value::MMAShape dims, int numTotalPasses = 1, bool useStaticOffsets = false, int numFusedPasses = -1, ir::value::MMASchedulingPolicy schedulingPolicy = ir::value::MMASchedulingPolicy::PassOrder);
 
     private:
         friend class Schedule;

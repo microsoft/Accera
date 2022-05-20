@@ -180,6 +180,7 @@ namespace loopnest
         {
             return { loopBlock->op_begin<InvokeKernelOp>(), loopBlock->op_end<InvokeKernelOp>() };
         }
+
     } // namespace
 
     //
@@ -231,21 +232,23 @@ namespace loopnest
         _kernelGroups = DiscoverKernelGroups();
     }
 
-    void LoopNestBuilder::BuildLoopNest()
+    std::vector<ScheduledLoopOp> LoopNestBuilder::BuildLoopNest()
     {
         auto schedule = GetLoopSchedule();
         auto initialIndex = schedule.CurrentLoopIndex();
 
-        // We need to create a RecursionState object here, because it's passed in as a reference
+        // We need to create a RecursionState object here, because it's passed in as a (mutable) reference
         RecursionState state(*this);
 
         GenerateLoopStructure(state, schedule);
         MergeAdjacentKernelBodies(_loops[initialIndex], schedule);
+
         EmitLoopBodies(_loops[initialIndex], state, schedule);
 
         ApplyInjectableMappings();
-
         EnsureTerminators();
+
+        return _loops[initialIndex];
     }
 
     LoopVisitSchedule LoopNestBuilder::GetLoopSchedule() const
@@ -288,10 +291,26 @@ namespace loopnest
         // step 6: prefix of last partition matches entirety of second: move
         //         --> (0..1: S1), (0..N: S2), (N1-..N: S3)
 
+        auto getParentIndex = [](const TransformedDomain& domain, Index i) {
+            assert(domain.HasParentIndex(i));
+            return domain.GetParentIndices(i)[0];
+        };
+
+        const auto& domain = GetDomain();
         auto loopIndex = schedule.CurrentLoopIndex();
+
         // Find the active range for the current loop dimension and reduce the end amount if it exceeds the active range (boundary case)
-        auto fullRange = schedule.GetActiveLoopRange(GetDomain(), loopIndex, state.loopIndices);
-        auto partitions = GetPartitions(loopIndex, fullRange, state, schedule);
+        auto fullRange = schedule.GetActiveLoopRange(domain, loopIndex, state.loopIndices);
+        bool shouldGuardLoopBounds = IsGpuLoop(loopIndex);
+        std::vector<Partition> partitions;
+        if (shouldGuardLoopBounds)
+        {
+            partitions.push_back({ loopIndex, fullRange });
+        }
+        else
+        {
+            partitions = GetPartitions(loopIndex, fullRange, state, schedule);
+        }
 
         auto newState = state;
         for (const auto& p : partitions)
@@ -300,11 +319,50 @@ namespace loopnest
             UpdateSubdomainSizes(loopIndex, partitionRange, newState.subdomainSize);
 
             auto loop = EmitLoopOp(partitionRange, newState, schedule); // This creates the (empty) loop op
+
+            if (shouldGuardLoopBounds)
+            {
+                // TODO: rewrite this part to be less duplicative
+                if (domain.IsSplitIndex(loopIndex, /*inner=*/true))
+                {
+                    auto parentIndex = getParentIndex(domain, loopIndex);
+                    auto parentRange = domain.GetIndexRange(parentIndex);
+                    auto outerIndex = domain.GetOtherSplitIndex(loopIndex);
+                    auto outerRange = domain.GetIndexRange(outerIndex);
+                    assert(outerRange.Size() == parentRange.Size());
+                    if (parentRange.Size() % outerRange.Increment() != 0)
+                    {
+                        loop->setAttr("accv_upper_limit", _builder.getI64IntegerAttr(parentRange.End()));
+                        loop->setAttr("accv_upper_limit_index", IndexAttr::get(parentIndex, _builder.getContext()));
+                    }
+                }
+                else if (domain.IsSplitIndex(loopIndex, /*inner=*/false))
+                {
+                    auto parentIndex = getParentIndex(domain, loopIndex);
+                    if (domain.HasParentIndex(parentIndex))
+                    {
+                        auto grandparentIndex = getParentIndex(domain, parentIndex);
+                        auto grandparentRange = domain.GetIndexRange(grandparentIndex);
+                        if (domain.IsSplitIndex(parentIndex, /*inner=*/true))
+                        {
+                            auto parentRange = domain.GetIndexRange(parentIndex);
+                            auto outerIndex = domain.GetOtherSplitIndex(parentIndex);
+                            auto outerRange = domain.GetIndexRange(outerIndex);
+                            assert(outerRange.Size() == grandparentRange.Size());
+                            if (grandparentRange.Size() % outerRange.Increment() != 0)
+                            {
+                                loop->setAttr("accv_upper_limit", _builder.getI64IntegerAttr(grandparentRange.End()));
+                                loop->setAttr("accv_upper_limit_index", IndexAttr::get(outerIndex, _builder.getContext()));
+                            }
+                        }
+                    }
+                }
+            }
             _loops[loopIndex].push_back(loop);
 
-            auto loopIndexOp = loop.getSymbolicIndex();
+            SymbolicIndexOp loopIndexOp = loop.getSymbolicIndex();
             newState.loopIndices.insert_or_assign(loopIndex, LoopIndexSymbolTableEntry{ loopIndexOp, partitionRange.GetConstantRange(), LoopIndexState::inProgress });
-            GenerateLoopBody(loopIndexOp, partitionRange, newState, schedule); // This contains the recursive call to GenerateLoopStructure
+            GenerateLoopBody(loop, partitionRange, newState, schedule); // This contains the recursive call to GenerateLoopStructure
             EndLoopRange(partitionRange, newState, schedule);
         }
 
@@ -560,7 +618,7 @@ namespace loopnest
         }
     }
 
-    void LoopNestBuilder::GenerateLoopBody(mlir::Value index, const LoopRange& r, const RecursionState& state, const LoopVisitSchedule& schedule)
+    void LoopNestBuilder::GenerateLoopBody(ScheduledLoopOp loop, const LoopRange& r, const RecursionState& state, const LoopVisitSchedule& schedule)
     {
         auto newState = state;
         auto loopIndex = schedule.CurrentLoopIndex();
@@ -597,8 +655,8 @@ namespace loopnest
 
             // Recursively call EmitLoopBodies to emit the more-deeply-nested loops
             auto epilogueState = EmitLoopBodies(innerLoops, newState, schedule.Next());
-            ReplaceInvokeOps(loop.getEpilogue(), epilogueState);
 
+            ReplaceInvokeOps(loop.getEpilogue(), epilogueState);
             DefinePostLoopIndex(_builder, loopIndex, newState.loopIndices, schedule);
         }
     }
@@ -768,12 +826,8 @@ namespace loopnest
         return newState;
     }
 
-    PartitionList LoopNestBuilder::GetPartitions(const Index& loopIndex, Range loopRange, const RecursionState& state, const LoopVisitSchedule& schedule) const
+    std::vector<Partition> LoopNestBuilder::GetPartitions(const Index& loopIndex, Range loopRange, const RecursionState& state, const LoopVisitSchedule& schedule) const
     {
-        int begin = loopRange.Begin();
-        int end = loopRange.End();
-        int increment = loopRange.Increment();
-
         // Find conditions involving this index and add any relevant partition split points
         std::set<int64_t> splits;
         for (auto k : GetPossiblyValidKernels(state))
@@ -781,8 +835,11 @@ namespace loopnest
             AddSplits(loopIndex, loopRange, k.getPredicate(), state.loopIndices, schedule, splits);
         }
 
-        // Get index range
-        PartitionList result;
+        // Get index ranges
+        int begin = loopRange.Begin();
+        int end = loopRange.End();
+        int increment = loopRange.Increment();
+        std::vector<Partition> result;
         for (auto partitionEnd : splits)
         {
             result.push_back({ loopIndex, { begin, partitionEnd, increment } });
@@ -915,9 +972,9 @@ namespace loopnest
                         {
                             splits.insert(firstCeilBound);
                         }
-                    } // else front-padding does not affect the size of the first split block 
+                    } // else front-padding does not affect the size of the first split block
                 }
- 
+
                 // Unswitch the final partial block if the end-block exceeds the split size AND is a non-multiple of the split size
                 // (also handles the end-padding case)
                 auto extra = end % splitSize;
@@ -1497,6 +1554,30 @@ namespace loopnest
     std::optional<uint64_t> LoopNestBuilder::GetUnrollAndJamFactor(Index loopIndex) const
     {
         return const_cast<ScheduleOp&>(_schedule).getUnrollAndJamFactor(loopIndex);
+    }
+
+    // TODO: make a more general "unswitch this loop" function
+    bool LoopNestBuilder::IsGpuLoop(Index loopIndex) const
+    {
+        auto execPlan = GetScheduleOp().getOrCreateExecPlan();
+        if (execPlan.exec_target() != ir::value::ExecutionTarget::GPU)
+        {
+            return false;
+        }
+
+        if (auto dictAttr = execPlan->getAttrOfType<DictionaryAttr>(execPlan.getGPUProcessorMapAttrName()))
+        {
+            for (auto [key, val] : dictAttr.getValue())
+            {
+                auto indexAttr = val.dyn_cast<IndexAttr>();
+                if (loopIndex.GetId() == indexAttr.getValue().GetId())
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     ScheduleOp LoopNestBuilder::GetScheduleOp() const

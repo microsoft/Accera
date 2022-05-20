@@ -201,11 +201,11 @@ namespace value
             }
         }
 
-        void Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims, bool useStaticOffsets)
+        void Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy)
         {
             auto& builder = GetBuilder();
 
-            TensorizationInfo tensorizationInfo{ dims, useStaticOffsets };
+            TensorizationInfo tensorizationInfo{ static_cast<accera::ir::value::MMAShape>(dims), numTotalPasses, useStaticOffsets, numFusedPasses, static_cast<accera::ir::value::MMASchedulingPolicy>(schedulingPolicy) };
             auto tensorizationInfoIdentifier = builder.getIdentifier(TensorizationInfoAttr::getKeyName());
             auto tensorizationInfoAttr = TensorizationInfoAttr::get(tensorizationInfo, builder.getContext());
 
@@ -408,9 +408,9 @@ namespace value
         return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace);
     }
 
-    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, std::array<int64_t, 3> dims, bool useStaticOffsets)
+    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy)
     {
-        _impl->Tensorize(indices, dims, useStaticOffsets);
+        _impl->Tensorize(indices, dims, numTotalPasses, useStaticOffsets, numFusedPasses, schedulingPolicy);
     }
 
     void GPUPlan::MapIndexToProcessor(ScalarIndex index, Processor proc)

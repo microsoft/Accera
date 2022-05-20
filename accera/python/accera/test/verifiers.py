@@ -31,7 +31,7 @@ class CorrectnessChecker():
         self.func_map[function_name](*input_outputs)
 
         for actual, desired in zip(input_outputs, after):
-            np.testing.assert_allclose(actual, desired, tolerance)
+            np.testing.assert_allclose(actual, desired, rtol=tolerance)
 
 
 class FileChecker():
@@ -121,7 +121,7 @@ class VerifyPackage():
             function_name
             before: values before calling the function
             after: desired values after calling the function
-            tolerance: absolute tolerance for floating point comparison
+            tolerance: relative tolerance for floating point comparison
         """
         hat_files = list(filter(lambda f: f.suffix == ".hat", self.file_list))
         if hat_files:

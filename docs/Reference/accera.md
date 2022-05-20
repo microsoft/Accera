@@ -10,6 +10,8 @@
 
 # Top level enumerations
 * [`accera.ScalarType`](<enumerations/ScalarType.md>)
+* [`accera.MMASchedulingPolicy`](<enumerations/MMASchedulingPolicy.md>)
+* [`accera.MMAShape`](<enumerations/MMAShape.md>)
 
 # Classes
 

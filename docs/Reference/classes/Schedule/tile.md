@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.4)
+[//]: # (Version: v1.2.5)
 
-# Accera v1.2.4 Reference
+# Accera v1.2.5 Reference
 
 ## `accera.Schedule.tile(shape)`
 The `tile` transformation is a convenience syntax that takes a tuple of indices and a tuple of sizes, and splits each index by the corresponding size. The indices involved in the split are then ordered such that all the outer indices precede all of their respective inner indices.

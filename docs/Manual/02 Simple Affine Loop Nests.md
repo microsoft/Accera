@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.4)
+[//]: # (Version: v1.2.5)
 
 # Section 2: Simple affine loop nests
 This section introduces *loop nests* and their different types that are provided in Accera programming model.

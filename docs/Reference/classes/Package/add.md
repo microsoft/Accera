@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.4)
+[//]: # (Version: v1.2.5)
 
-# Accera v1.2.4 Reference
+# Accera v1.2.5 Reference
 
 ## `accera.Package.add(source, args[, base_name, parameters])`
 Adds one or more functions to the package.

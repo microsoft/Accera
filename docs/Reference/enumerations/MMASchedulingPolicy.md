@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.3)
+[//]: # (Version: v1.2.5)
 
-# Accera v1.2.3 Reference
+# Accera v1.2.5 Reference
 ## `accera.MMASchedulingPolicy`
 
 type | description

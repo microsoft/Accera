@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.4)
+[//]: # (Version: v1.2.5)
 
 ## Installing on Windows
 
@@ -48,12 +48,24 @@ https://github.com/microsoft/Accera
 
 ### Build and install Accera
 
-From a command line with Python in your PATH, such as an Anaconda Command Prompt, run the `build.bat` script to install dependencies and build the Accera Python package. Replace `<path_to_accera>` with the path to the cloned Accera repository.
+From a command line with Python in your PATH, such as an Anaconda Command Prompt, setup the Visual Studio command line environment (`vcvars64.bat`) and then run `build.bat` to generate the Accera Python packages. 
+
+For Visual Studio 2022:
+```shell
+"%ProgramFiles%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+```
+
+For Visual Studio 2019:
+```shell
+"%ProgramFiles(x86)%\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
+```
 
 ```shell
 cd <path_to_accera>
 build.bat
 ```
+
+Replace `<path_to_accera>` with the path to the cloned Accera repository.
 
 Update or install the resulting `.whl` file from the `dist` subdirectory. The `--find-links` option tells pip to look at the `dist` subdirectory for the dependent packages.
 The whl filename depends on your Python version, your OS, and your CPU architecture.

@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.4)
+[//]: # (Version: v1.2.5)
 
-# Accera v1.2.4 Reference
+# Accera v1.2.5 Reference
 
 ## `accera.Plan.tensorize(indices, mma_shape [, use_static_offsets, num_total_passes, num_fused_passes, scheduling_policy])`
 Only available for targets with native matrix multiplication instruction (tensor core) support. Marks the dimensions of the iteration-space for tensorization. Only perfectly nested loops of the following form can be tensorized:
@@ -24,9 +24,9 @@ argument | description | type/default
 `num_fused_passes` | This controls the number of passes for which register allocation is done, higher the value more the number of registers that are allocated. Defaults to `None` which will fuse all the passes as specified by `num_total_passes`. | positive integer
 `scheduling_policy` | For multi-block MMA operations, this controls whether matrix multiplication is done block-by-block or pass-by-pass (affects register usage). Default value is `accera.MMASchedulingPolicy.PASS_ORDER` | `accera.MMASchedulingPolicy`
 
-The different values of the enum `MMASchedulingPolicy` (applicable only for AMD targets supporting MFMA ops, such as `accera.Target.Model.AMD_MI100`) are mentioned here: [`accera.MMASchedulingPolicy`](<enumerations/MMASchedulingPolicy.md>)
+The different values of the enum `MMASchedulingPolicy` (applicable only for AMD targets supporting MFMA ops, such as `accera.Target.Model.AMD_MI100`) are mentioned here: [`accera.MMASchedulingPolicy`](<../../enumerations/MMASchedulingPolicy.md>)
 
-The different values of the enum `MMAShape` are explained here: [`accera.MMAShape`](<enumerations/MMAShape.md>)
+The different values of the enum `MMAShape` are explained here: [`accera.MMAShape`](<../../enumerations/MMAShape.md>)
 
 ## Examples
 

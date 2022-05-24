@@ -6,6 +6,7 @@
 #include "util/VectorizationUtil.h"
 #include "util/VectorizedOp.h"
 
+#include <cstdint>
 #include <ir/include/IRUtil.h>
 #include <ir/include/exec/ExecutionPlanOps.h>
 #include <ir/include/value/ValueDialect.h>
@@ -227,7 +228,7 @@ std::optional<VectorizedOp> VectorizeAllocaOp(mlir::PatternRewriter& rewriter,
     // Just create many copies of the AllocaOp
     // TODO : figure out when replacing the allocation with a vector allocation is a valid choice
 
-    auto loc = op.getLoc();
+    [[maybe_unused]] auto loc = op.getLoc();
     std::vector<mlir::Value> result;
     for (int64_t i = 0; i < vectorSize; ++i)
     {
@@ -272,7 +273,7 @@ bool IsUnrolledAccessSequential(mlir::PatternRewriter& rewriter,
     auto accessMapComposition = ir::util::GetIndexToMemoryLocationMap(rewriter.getContext(), op);
 
     bool sequential = true;
-    for (size_t unrollIdx = 1; unrollIdx < vectorSize; ++unrollIdx)
+    for (int64_t unrollIdx = 1; unrollIdx < vectorSize; ++unrollIdx)
     {
         std::vector<mlir::Value> prevIndicesVec(temporaryClones[unrollIdx - 1].indices().begin(), temporaryClones[unrollIdx - 1].indices().end());
         std::vector<mlir::Value> currentIndicesVec(temporaryClones[unrollIdx].indices().begin(), temporaryClones[unrollIdx].indices().end());
@@ -682,7 +683,7 @@ std::optional<VectorizedOp> VectorizeBinOp(mlir::PatternRewriter& rewriter,
         auto lhsVec = lhs->GetScalarResults();
         auto rhsVec = rhs->GetScalarResults();
         std::vector<mlir::Value> results;
-        for (size_t unrollIdx = 0; unrollIdx < vectorSize; ++unrollIdx)
+        for (int64_t unrollIdx = 0; unrollIdx < vectorSize; ++unrollIdx)
         {
             mlir::Value current = rewriter.create<v::BinOp>(loc, predicate, lhsVec[unrollIdx], rhsVec[unrollIdx]);
             results.push_back(current);

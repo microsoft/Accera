@@ -469,7 +469,6 @@ namespace value
         RuntimeInitCacheImpl(ScheduleOp schedule, Value value, const std::string& packingFunctionName, const std::string& packedBufferSizeFnName, CacheIndexing mapping) :
             OfflineCacheImpl(schedule, value, mapping)
         {
-            auto loc = GetLocation();
             auto builder = GetBuilder();
 
             auto memorySpace = *ir::value::symbolizeMemorySpace((uint64_t)MemorySpace::Global);

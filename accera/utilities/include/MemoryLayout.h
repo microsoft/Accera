@@ -24,7 +24,7 @@ namespace utilities
     struct MemoryAffineCoefficients
     {
         std::vector<int64_t> coefficients;
-        int64_t offset;
+        int64_t offset{};
     };
 
     /// <summary> An abstract base class for DimensionOrder,  MemoryShape, and MemoryCoordinates. </summary>

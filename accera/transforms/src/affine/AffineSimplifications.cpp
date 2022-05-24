@@ -80,7 +80,7 @@ bool IsConstantMul(mlir::AffineExpr expr)
 
 // Gets the dim or symbol expr in the given expr
 // Requires that the given expr is either a Dim expr, symbol expr, or a binary op expr where either the LHS or RHS is a constant and the other is a Dim/Symbol expr
-mlir::AffineExpr GetContainedDimOrSymbolExpr(mlir::AffineExpr expr)
+[[maybe_unused]] mlir::AffineExpr GetContainedDimOrSymbolExpr(mlir::AffineExpr expr)
 {
     if (expr.isa<mlir::AffineDimExpr>() || expr.isa<mlir::AffineSymbolExpr>())
     {
@@ -90,7 +90,6 @@ mlir::AffineExpr GetContainedDimOrSymbolExpr(mlir::AffineExpr expr)
     {
         auto lhs = binOp.getLHS();
         auto rhs = binOp.getRHS();
-        mlir::AffineExpr operand;
         if (lhs.isa<mlir::AffineDimExpr>() || lhs.isa<mlir::AffineSymbolExpr>())
         {
             return lhs;
@@ -157,9 +156,9 @@ bool GetDotProductTerms(mlir::AffineExpr expr, std::vector<mlir::AffineExpr>& re
 
 // Creates an equivalent AffineExpr where the outermost expr is a sum of the term with the smallest coefficient and the remaining terms, repeating down the tree
 // e.g.:                 +
-//                     /   \ 
+//                     /   \
 //                   +      (smallest coefficient) * operand_0
-//                 /   \ 
+//                 /   \
 //               +      (second smallest coefficient) * operand_1
 //          ...
 mlir::AffineExpr ReorderDotProduct(mlir::AffineExpr expr, std::vector<std::pair<int64_t, mlir::AffineExpr>>& coefficientAndExprs)
@@ -203,7 +202,7 @@ mlir::AffineExpr ReorderDotProduct(mlir::AffineExpr expr, std::vector<std::pair<
     return accumulatingExpr;
 }
 
-std::vector<std::pair<int64_t, mlir::AffineExpr>> GetOrderedGCDsWithDenominatorHelper(const mlir::AffineExpr& numeratorExpr, int64_t denominator, mlir::AffineExpr& reorderedDotProduct)
+[[maybe_unused]] std::vector<std::pair<int64_t, mlir::AffineExpr>> GetOrderedGCDsWithDenominatorHelper(const mlir::AffineExpr& numeratorExpr, int64_t denominator, mlir::AffineExpr& reorderedDotProduct)
 {
     std::vector<std::pair<int64_t, mlir::AffineExpr>> orderedCoefficientAndExprs;
     reorderedDotProduct = ReorderDotProduct(numeratorExpr, orderedCoefficientAndExprs);

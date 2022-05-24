@@ -16,6 +16,7 @@
 #include "value/ValueEnums.h"
 #include <utilities/include/MemoryLayout.h>
 
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_os_ostream.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
@@ -374,10 +375,7 @@ namespace executionPlan
             // e.g. A[0,0] will produce an index cast from int64 to index for each 0
             return RecursiveBinOpToAffineExprHelper(indexCast.in(), orderedAccessIndices);
         }
-        else
-        {
-            assert(false && "Unsupported op type used for indexing into a value that is being cached");
-        }
+        llvm_unreachable("Unsupported op type used for indexing into a value that is being cached");
     }
 
     std::vector<loopnest::Index> GetBaseIndicesCombinedToMakeValue(mlir::Value combinedIndex, const loopnest::TransformedDomain& domain)
@@ -479,9 +477,9 @@ namespace executionPlan
                 auto sliceOp = mlir::dyn_cast_or_null<value::SliceOp>(userOp);
                 assert(sliceOp != nullptr && "Only supports SliceOps into values for caching currently");
                 value::SliceOp::Adaptor sliceAdaptor{ sliceOp };
-                auto inputMemRefType = sliceOp.getSourceMemRefType();
+                [[maybe_unused]] auto inputMemRefType = sliceOp.getSourceMemRefType();
                 auto sliceDimensions = util::ConvertArrayAttrToIntVector(sliceAdaptor.sliceDimensions());
-                assert(sliceDimensions.size() == inputMemRefType.getRank() && "Only support single-element slicing currently");
+                assert(inputMemRefType.getRank() > 0 && sliceDimensions.size() == (size_t)inputMemRefType.getRank() && "Only support single-element slicing currently");
                 std::vector<mlir::Value> sliceOffsets{ sliceAdaptor.offsets().begin(), sliceAdaptor.offsets().end() };
                 for (const auto& offsetValue : sliceOffsets)
                 {
@@ -525,9 +523,9 @@ namespace executionPlan
                 auto sliceOp = mlir::dyn_cast_or_null<value::SliceOp>(userOp);
                 assert(sliceOp != nullptr && "Only supports SliceOps into values for caching currently");
                 value::SliceOp::Adaptor sliceAdaptor{ sliceOp };
-                auto inputMemRefType = sliceOp.getSourceMemRefType();
+                [[maybe_unused]] auto inputMemRefType = sliceOp.getSourceMemRefType();
                 auto sliceDimensions = util::ConvertArrayAttrToIntVector(sliceAdaptor.sliceDimensions());
-                assert(sliceDimensions.size() == inputMemRefType.getRank() && "Only support single-element slicing currently");
+                assert(inputMemRefType.getRank() > 0 && sliceDimensions.size() == (size_t)inputMemRefType.getRank() && "Only support single-element slicing currently");
                 std::vector<mlir::Value> sliceOffsets{ sliceAdaptor.offsets().begin(), sliceAdaptor.offsets().end() };
 
                 // Find the SymbolicIndexOps and their corresponding loopnest Indices used in each dimension offset
@@ -545,7 +543,7 @@ namespace executionPlan
                 if (!accessExpressions.empty())
                 {
                     // Currently only supports one access pattern in the kernel
-                    bool accessPatternMatches = accessExpressions.size() == currentAccessExpressions.size() &&
+                    [[maybe_unused]] bool accessPatternMatches = accessExpressions.size() == currentAccessExpressions.size() &&
                                                 std::equal(accessExpressions.begin(), accessExpressions.end(), currentAccessExpressions.begin());
                     assert(accessPatternMatches && "Only supports one access pattern per cached buffer");
                 }
@@ -556,7 +554,7 @@ namespace executionPlan
                 if (!orderedAccessIndices.empty())
                 {
                     // Currently only supports one access pattern in the kernel
-                    bool accessIndicesMatch = orderedAccessIndices.size() == currentOrderedAccessIndices.size() &&
+                    [[maybe_unused]] bool accessIndicesMatch = orderedAccessIndices.size() == currentOrderedAccessIndices.size() &&
                                               std::equal(orderedAccessIndices.begin(), orderedAccessIndices.end(), currentOrderedAccessIndices.begin());
                     assert(accessIndicesMatch && "Only supports one access pattern per cached buffer");
                 }
@@ -1556,21 +1554,21 @@ namespace executionPlan
     // Print an instance of a type registered to the execution plan dialect.
     void ExecutionPlanDialect::printAttribute(mlir::Attribute attr, mlir::DialectAsmPrinter& printer) const
     {
-        if (auto castAttr = attr.dyn_cast<VectorizationInfoAttr>())
+        if (auto vecInfoAttr = attr.dyn_cast<VectorizationInfoAttr>())
         {
-            print(castAttr, printer);
+            print(vecInfoAttr, printer);
         }
-        else if (auto castAttr = attr.dyn_cast<ParallelizationInfoAttr>())
+        else if (auto parInfoAttr = attr.dyn_cast<ParallelizationInfoAttr>())
         {
-            print(castAttr, printer);
+            print(parInfoAttr, printer);
         }
-        else if (auto castAttr = attr.dyn_cast<TensorizationInfoAttr>())
+        else if (auto tensorInfoAttr = attr.dyn_cast<TensorizationInfoAttr>())
         {
-            print(castAttr, printer);
+            print(tensorInfoAttr, printer);
         }
-        else if (auto castAttr = attr.dyn_cast<InPlaceUnrollInfoAttr>())
+        else if (auto unrollInfoAttr = attr.dyn_cast<InPlaceUnrollInfoAttr>())
         {
-            print(castAttr, printer);
+            print(unrollInfoAttr, printer);
         }
     }
 

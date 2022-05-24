@@ -372,3 +372,6 @@ docs/README.md
 
 # iPython
 .ipynb_checkpoints/
+
+# JetBrains IDEs
+.idea/

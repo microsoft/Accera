@@ -141,7 +141,7 @@ Consider the parameterized nest defined above. Rather than setting a specific va
 
 Accera provides an easy way to add all the functions that correspond to the parameter grid at once:
 ```python
-parameters = create_parameter_grid(parameter_choices={P0:[8,16], P1:[16,32], P2:[16], P3:[1.0,2.0]})
+parameters = create_parameter_grid(parameter_choices={P0:[8,16], P1:[16,32], P2:[16], P3:[1.0,2.0])
 package.add(nest, args=(A, B, C), base_name="matmul", parameters)
 ```
 In this case, `package.add` generates a function eight times, once for each parameter combination in the grid.  Other than `nest`, `package.add` can alternatively accept a `Schedule` (if we are performing schedule transformations), or a `Plan` (if we are setting target-specific options). All eight functions share the same base name. However, Accera automatically adds a unique suffix to each function name to prevent duplication. This pattern allows optional filtering by inspecting the generated parameter values list before calling `package.add`.
@@ -155,4 +155,33 @@ To limit the size of the parameter grid (and therefore the number of functions g
 ```python
 parameters = create_parameter_grid(parameter_choices={P0:[8,16], P1:[16,32], P2:[16], P3:[1.0,2.0]}, sample=5)
 ```
+
+If the parameter is a loop order which is a list or tuple of indices, create_parameter_grid can generate all the permutations of loop order. Further more, you can also pass in a filter function to filter out invalid loop order, the order of the list or tuple of indices provided to create_parameter_grid does not matter:
+```python
+parameters = create_parameter_grid({P0:(i, j, k, ii, jj, kk)}, filter_func = lambda *p : schedule.is_valid_loop_order(p[0][0]))
+
+```
+
+If you need to filter more parameters with a complicated filtering logic, you can always define your own filter function:
+```python
+def filter_function(parameters_choice):
+    P1, P2, P3, P4, P5, loop_order = parameters_choice
+
+    return P1 > P2 \
+        and P3 > P4 \
+        and P1 * P5 < P3 \
+        and P2 * P5 < P4 \
+        and loop_order == (kk, jj, j, ii, i, k)
+
+ parameters_list = acc.create_parameter_grid({
+        P1: [64, 128, 256],
+        P2: [32, 128], 
+        P3: [16, 32, 128],
+        P4: [8, 64],
+        P5: [4],
+        loop_order: (i, j, k, ii, jj, kk)
+    }, filter_func)
+
+```
+
 <div style="page-break-after: always;"></div>

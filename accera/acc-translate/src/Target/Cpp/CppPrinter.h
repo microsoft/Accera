@@ -27,6 +27,12 @@
         return failure();      \
     }
 
+#define THROW_IF_FAILED(call)           \
+    if (auto res = (call); failed(res)) \
+    {                                   \
+        throw res;                      \
+    }
+
 namespace mlir
 {
 namespace cpp_printer

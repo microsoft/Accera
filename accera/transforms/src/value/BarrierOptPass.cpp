@@ -60,12 +60,12 @@ struct BarrierOptPass : public BarrierOptBase<BarrierOptPass>
     // Maybe make this a map from op->operands?
     struct MemoryAccessInfo
     {
-        Operation* op;
+        Operation* op = nullptr;
         mlir::Value baseMemRef;
         mlir::ValueRange indices;
         mlir::AffineMap accessMap;
         mlir::ValueRange accessMapOperands;
-        MemoryAccessType accessType;
+        MemoryAccessType accessType = MemoryAccessType::Read;
         int nodeId = -1;
         // TODO: integer set or something to indicate the subset of the memory being accessed?
         // TODO: loop level?

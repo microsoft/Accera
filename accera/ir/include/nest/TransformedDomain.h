@@ -115,10 +115,10 @@ namespace loopnest
             IndexInfo() :
                 expr({}), range(0, 0), parents({}), padding({}) {}
 
-            IndexInfo(const AffineExpression& expr, const Range& range, std::vector<int64_t> padding, const std::vector<Index>& parents) :
-                expr(expr), range(range), padding(padding)
+            IndexInfo(const AffineExpression& expr_, const Range& range_, std::vector<int64_t> padding_, const std::vector<Index>& parents_) :
+                expr(expr_), range(range_), padding(padding_)
             {
-                this->parents.insert(parents.begin(), parents.end());
+                parents.insert(parents_.begin(), parents_.end());
             }
 
             AffineExpression expr;

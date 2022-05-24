@@ -224,10 +224,14 @@ class Package:
         param_value_dict = {}
         for delayed_param, value in parameters.items():
             delayed_param.set_value(value)
-            param_value_dict[delayed_param._name] = value if isinstance(value, int) else str(value)
-        auxiliary_metadata['accera'] = {
-            'parameters': param_value_dict
-        }
+            if isinstance(value, int):
+                param_value_dict[delayed_param._name] = value
+            else:
+                if isinstance(value, tuple) or isinstance(value, list):
+                    param_value_dict[delayed_param._name] = str([x._name for x in value])
+                else:
+                    param_value_dict[delayed_param._name] = str(value)
+        auxiliary_metadata['accera'] = {'parameters': param_value_dict}
 
         def validate_target(target: Target):
             # can't use set because targets are mutable (therefore unhashable)

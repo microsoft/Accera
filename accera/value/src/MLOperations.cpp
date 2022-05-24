@@ -118,16 +118,16 @@ namespace value
                 // loop 1: VectorMax
                 Scalar maxVal;
                 {
-                    LocationGuard region(GET_LOCATION());
-                    ProfileRegion profileRegion("softmax_1_vecmax");
+                    LocationGuard region_(GET_LOCATION());
+                    ProfileRegion profileRegion_("softmax_1_vecmax");
                     maxVal = VectorMax(row);
                 }
 
                 // loop 2: Compute exp(x_i-max), and sum of exp(x_i-max)
                 Scalar sum;
                 {
-                    LocationGuard region(GET_LOCATION());
-                    ProfileRegion profileRegion("softmax_2_expsum");
+                    LocationGuard region_(GET_LOCATION());
+                    ProfileRegion profileRegion_("softmax_2_expsum");
                     sum = MapReduce(
                         row,
                         Scalar(0.0f),
@@ -137,8 +137,8 @@ namespace value
 
                 // loop 3: Scale to sum to 1
                 {
-                    LocationGuard region(GET_LOCATION());
-                    ProfileRegion profileRegion("softmax_3_scale");
+                    LocationGuard region_(GET_LOCATION());
+                    ProfileRegion profileRegion_("softmax_3_scale");
 
                     auto reciprocal = Cast(Scalar(1.0), sum.GetType()) / sum;
 
@@ -179,7 +179,7 @@ namespace value
 
             // loop 1: row max
             {
-                ProfileRegion profileRegion("softmax_1_vecmax");
+                ProfileRegion profileRegion_("softmax_1_vecmax");
                 Nest nest1(MemoryShape{ numRows, numColumns });
                 auto i1 = nest1.GetIndices()[0];
                 auto j1 = nest1.GetIndices()[1];
@@ -213,7 +213,7 @@ namespace value
 
             // loop 2: compute exp(x_i-max), sum of exp(x_i-max)
             {
-                ProfileRegion profileRegion("softmax_2_expsum");
+                ProfileRegion profileRegion_("softmax_2_expsum");
                 Nest nest2(MemoryShape{ numRows, numColumns });
                 auto i2 = nest2.GetIndices()[0];
                 auto j2 = nest2.GetIndices()[1];
@@ -248,7 +248,7 @@ namespace value
 
             // loop 3: normalize
             {
-                ProfileRegion profileRegion("softmax_3_scale");
+                ProfileRegion profileRegion_("softmax_3_scale");
                 Nest nest3(MemoryShape{ numRows, numColumns });
                 auto i3 = nest3.GetIndices()[0];
                 auto j3 = nest3.GetIndices()[1];

@@ -118,7 +118,7 @@ NestOp CreateMatMulNestOp(mlir::Value A, mlir::Value B, mlir::Value C)
     auto cType = C.getType().dyn_cast<ShapedType>();
     auto dimensions = GetMatMulDimensions(aType, bType, cType);
 
-    auto& builder = GetTestBuilder();
+    [[maybe_unused]] auto& builder = GetTestBuilder();
     auto nest = MakeNest(dimensions, [&](mlir::OpBuilder& builder, mlir::Location loc, NestOp& nest) {
         auto [i, j, k] = nest.getIndices<3>(builder);
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i, j });
@@ -160,7 +160,7 @@ MatMul3Parameters GetMatMul3Parameters(int M, int N, int K, int L)
     return { M, N, K, L, A, B, C, D, E };
 }
 
-MatMul3Parameters GetMatMul3ParametersWithCachedTemp(int M, int N, int K, int L, int cacheM, int cacheN)
+[[maybe_unused]] MatMul3Parameters GetMatMul3ParametersWithCachedTemp(int M, int N, int K, int L, int cacheM, int cacheN)
 {
     auto& builder = GetTestBuilder();
     auto floatType = builder.getF64Type();
@@ -497,7 +497,7 @@ TEST_CASE("CreateKernelTypeTest")
 TEST_CASE("CreateSymbolicIndexTest")
 {
     TestContext context([] {
-        auto& builder = GetTestBuilder();
+        [[maybe_unused]] auto& builder = GetTestBuilder();
         // [[maybe_unused]] auto index = builder.create<loopnest::SymbolicIndexOp>(ScopedContext::getLocation(), "i", 1);
     });
 
@@ -515,12 +515,12 @@ TEST_CASE("CreateSymbolicIndexTest")
 TEST_CASE("CreateScheduledLoopTest")
 {
     TestContext context([] {
-        auto& builder = GetTestBuilder();
+        [[maybe_unused]] auto& builder = GetTestBuilder();
         Index i("i");
         // auto index = builder.create<loopnest::SymbolicIndexOp>(ScopedContext::getLocation(), i);
-        int64_t begin = 0;
-        int64_t end = 32;
-        int64_t step = 1;
+        [[maybe_unused]] int64_t begin = 0;
+        [[maybe_unused]] int64_t end = 32;
+        [[maybe_unused]] int64_t step = 1;
         std::vector<int64_t> subdomainSize = { 32 };
         std::vector<Index> subdomainIndexOrder = {};
         // [[maybe_unused]] auto loop = builder.create<loopnest::ScheduledLoopOp>(ScopedContext::getLocation(), begin, end, step, index, subdomainSize, subdomainIndexOrder);
@@ -547,9 +547,9 @@ TEST_CASE("CreateKernelTest")
 
         auto floatType = builder.getF64Type();
 
-        auto A = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ M, K }, floatType)) };
-        auto B = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ K, N }, floatType)) };
-        auto C = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ M, N }, floatType)) };
+        [[maybe_unused]] auto A = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ M, K }, floatType)) };
+        [[maybe_unused]] auto B = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ K, N }, floatType)) };
+        [[maybe_unused]] auto C = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ M, N }, floatType)) };
 
         // TODO: get these from a domain object?
         // auto i = builder.create<loopnest::SymbolicIndexOp>(ScopedContext::getLocation(), "i", 1);
@@ -575,7 +575,7 @@ TEST_CASE("CreateKernelTest")
 TEST_CASE("CreateNullPredicateTest")
 {
     TestContext context([] {
-        auto& builder = GetTestBuilder();
+        [[maybe_unused]] auto& builder = GetTestBuilder();
         // [[maybe_unused]] auto pred = builder.create<loopnest::NullPredicateOp>(ScopedContext::getLocation());
     });
 
@@ -594,7 +594,7 @@ TEST_CASE("CreateConstantPredicateTest")
 {
     TestContext context([] {
         auto& builder = GetTestBuilder();
-        auto value = builder.getBoolAttr(true);
+        [[maybe_unused]] auto value = builder.getBoolAttr(true);
         // [[maybe_unused]] auto pred = builder.create<loopnest::ConstantPredicateOp>(ScopedContext::getLocation(), value);
     });
 
@@ -620,7 +620,7 @@ TEST_CASE("CreateFragmentTypePredicateTest")
 
         SECTION(fragmentTypeStr)
         {
-            auto fragmentAttr = builder.getI64IntegerAttr(static_cast<int64_t>(fragmentType));
+            [[maybe_unused]] auto fragmentAttr = builder.getI64IntegerAttr(static_cast<int64_t>(fragmentType));
             loopnest::FragmentTypePredicateOp pred;
             switch (fragmentType)
             {
@@ -654,7 +654,7 @@ TEST_CASE("CreatePlacementPredicateTest")
         auto& builder = GetTestBuilder();
         Index i("i");
         auto placement = PlacementType::after;
-        auto placementAttr = builder.getI64IntegerAttr(static_cast<int64_t>(placement));
+        [[maybe_unused]] auto placementAttr = builder.getI64IntegerAttr(static_cast<int64_t>(placement));
         // [[maybe_unused]] auto pred = builder.create<loopnest::PlacementPredicateOp>(ScopedContext::getLocation(), placementAttr, i);
     });
 
@@ -672,7 +672,7 @@ TEST_CASE("CreatePlacementPredicateTest")
 TEST_CASE("CreateIndexDefinedPredicateTest")
 {
     TestContext context([] {
-        auto& builder = GetTestBuilder();
+        [[maybe_unused]] auto& builder = GetTestBuilder();
         Index i("i");
         // [[maybe_unused]] auto pred = builder.create<loopnest::IndexDefinedPredicateOp>(ScopedContext::getLocation(), i);
     });
@@ -698,7 +698,7 @@ TEST_CASE("CreateConjunctionPredicateTest")
         // auto pred1 = builder.create<loopnest::IndexDefinedPredicateOp>(ScopedContext::getLocation(), i);
 
         auto fragment = FragmentType::endBoundary;
-        auto fragmentAttr = builder.getI64IntegerAttr(static_cast<int64_t>(fragment));
+        [[maybe_unused]] auto fragmentAttr = builder.getI64IntegerAttr(static_cast<int64_t>(fragment));
         // auto pred2 = builder.create<loopnest::FragmentTypePredicateOp>(ScopedContext::getLocation(), fragmentAttr, j);
 
         // [[maybe_unused]] auto pred = builder.create<loopnest::ConjunctionPredicateOp>(ScopedContext::getLocation(), ValueRange{ pred1, pred2 });
@@ -725,7 +725,7 @@ TEST_CASE("CreateDisjunctionPredicateTest")
         // auto pred1 = builder.create<loopnest::IndexDefinedPredicateOp>(ScopedContext::getLocation(), i);
 
         auto fragment = FragmentType::endBoundary;
-        auto fragmentAttr = builder.getI64IntegerAttr(static_cast<int64_t>(fragment));
+        [[maybe_unused]] auto fragmentAttr = builder.getI64IntegerAttr(static_cast<int64_t>(fragment));
         // auto pred2 = builder.create<loopnest::FragmentTypePredicateOp>(ScopedContext::getLocation(), fragmentAttr, j);
 
         // [[maybe_unused]] auto pred = builder.create<loopnest::DisjunctionPredicateOp>(ScopedContext::getLocation(), ValueRange{ pred1, pred2 });
@@ -752,9 +752,9 @@ TEST_CASE("CreateScheduledKernelTest")
 
         auto floatType = builder.getF64Type();
 
-        auto A = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ M, K }, floatType)) };
-        auto B = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ K, N }, floatType)) };
-        auto C = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ M, N }, floatType)) };
+        [[maybe_unused]] auto A = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ M, K }, floatType)) };
+        [[maybe_unused]] auto B = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ K, N }, floatType)) };
+        [[maybe_unused]] auto C = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ M, N }, floatType)) };
 
         // TODO: get these from a domain object?
         // auto i = builder.create<loopnest::SymbolicIndexOp>(ScopedContext::getLocation(), "i", 1);
@@ -1496,7 +1496,7 @@ void LowerSplitScheduleWithScheduledBoundaryKernelTest()
     });
 
     auto loc = builder.getUnknownLoc();
-    auto pred = builder.create<loopnest::ConstantPredicateOp>(loc, builder.getBoolAttr(true));
+    [[maybe_unused]] auto pred = builder.create<loopnest::ConstantPredicateOp>(loc, builder.getBoolAttr(true));
     // auto scheduledKernel = MakeKernel(builder, kernel, pred);
     // nest.getOrCreateSchedule().addKernel(scheduledKernel);
     nest.getOrCreateSchedule().addKernel(kernel);
@@ -1522,7 +1522,7 @@ void LowerSplitScheduleWithScheduledBoundaryKernelTest2()
 
     auto floatType = GetTestBuilder().getF64Type();
     auto A = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ M, K }, floatType)) };
-    auto B = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ K, N }, floatType)) };
+    [[maybe_unused]] auto B = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ K, N }, floatType)) };
     auto C = mlir::Value{ Alloca(builder, mlir::MemRefType::get({ M, N }, floatType)) };
 
     std::vector<int64_t> domain{ M, N, K };
@@ -1551,7 +1551,7 @@ void LowerSplitScheduleWithScheduledBoundaryKernelTest2()
     [[maybe_unused]] auto k = indices[2];
 
     // now add a kernel
-    auto pi = builder.create<ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(3.14), floatType);
+    [[maybe_unused]] auto pi = builder.create<ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(3.14), floatType);
     [[maybe_unused]] auto kernel = MakeKernel(builder, [&](OpBuilder& builder, Location loc) {
         (void)builder.create<memref::StoreOp>(
             loc,
@@ -1923,8 +1923,8 @@ void FusionTest2()
     nestE.getOrCreateSchedule().addKernel(scheduledInitEKernel);
     nestE.getOrCreateSchedule().addKernel(computeEKernel);
 
-    auto scheduleC = nestC.getOrCreateSchedule();
-    auto scheduleE = nestE.getOrCreateSchedule();
+    [[maybe_unused]] auto scheduleC = nestC.getOrCreateSchedule();
+    [[maybe_unused]] auto scheduleE = nestE.getOrCreateSchedule();
 
     // auto fusedSchedule = Fuse(builder, scheduleC, scheduleE, { l }, { k });
     // fusedSchedule.setOrder({ i, j, k, l });

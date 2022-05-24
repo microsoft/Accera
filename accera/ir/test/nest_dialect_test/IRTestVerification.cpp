@@ -164,7 +164,7 @@ llvm::TargetMachine* GetTargetMachine(llvm::Module& module)
     auto hostTripleString = llvm::sys::getProcessTriple();
     llvm::Triple hostTriple(hostTripleString);
     auto triple = hostTriple.normalize();
-    auto architecture = llvm::Triple::getArchTypeName(hostTriple.getArch());
+    [[maybe_unused]] auto architecture = llvm::Triple::getArchTypeName(hostTriple.getArch());
     auto cpu = llvm::sys::getHostCPUName();
 
     // llvm::StringMap<bool> features;

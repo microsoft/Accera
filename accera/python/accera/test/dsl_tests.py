@@ -937,6 +937,219 @@ class DSLTest_03Schedules(unittest.TestCase):
         }
         self._verify_schedule(schedule, [A, B, C], "test_schedule_pad", correctness_check_values)
 
+    def test_schedule_pad_inner_index_no_bc_1(self) -> None:
+        I = 16
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I,))
+
+        nest = Nest(shape=(I,))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i] *= 2.0
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.pad(ii, 2)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test],
+            "post": [A_test * 2]
+        }
+        self._verify_schedule(schedule, [A], "test_schedule_pad_inner_index_no_bc_1", correctness_check_values)
+
+    def test_schedule_pad_inner_index_no_bc_2(self) -> None:
+        I = 16
+        J = 8
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I,J))
+
+        nest = Nest(shape=(I,J))
+        i,j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i,j] *= 2.0
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.pad(ii, 2)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test],
+            "post": [A_test * 2]
+        }
+        self._verify_schedule(schedule, [A], "test_schedule_pad_inner_index_no_bc_2", correctness_check_values)
+
+    def test_schedule_pad_inner_index_no_bc_3(self) -> None:
+        I = 16
+        J = 8
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I,J))
+
+        nest = Nest(shape=(I,J))
+        i,j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i,j] *= 2.0
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.pad(ii, 2)
+        schedule.reorder(i, j, ii)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test],
+            "post": [A_test * 2]
+        }
+        self._verify_schedule(schedule, [A], "test_schedule_pad_inner_index_no_bc_3", correctness_check_values)
+
+    @expectedFailure(FailedReason.BUG, "Padding with boundary conditions is broken")
+    def test_schedule_pad_inner_index_bc_1(self) -> None:
+        I = 17
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I,))
+
+        nest = Nest(shape=(I,))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i] *= 2.0
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.pad(ii, 2)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test],
+            "post": [A_test * 2]
+        }
+        self._verify_schedule(schedule, [A], "test_schedule_pad_inner_index_bc_1", correctness_check_values)
+
+    @expectedFailure(FailedReason.BUG, "Padding with boundary conditions is broken")
+    def test_schedule_pad_inner_index_bc_2(self) -> None:
+        I = 17
+        J = 8
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I,J))
+
+        nest = Nest(shape=(I,J))
+        i,j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i,j] *= 2.0
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.pad(ii, 2)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test],
+            "post": [A_test * 2]
+        }
+        self._verify_schedule(schedule, [A], "test_schedule_pad_inner_index_bc_2", correctness_check_values)
+
+    @expectedFailure(FailedReason.BUG, "Padding with boundary conditions is broken")
+    def test_schedule_pad_inner_index_bc_3(self) -> None:
+        I = 17
+        J = 8
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I,J))
+
+        nest = Nest(shape=(I,J))
+        i,j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i,j] *= 2.0
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.pad(ii, 2)
+        schedule.reorder(i, j, ii)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test],
+            "post": [A_test * 2]
+        }
+        self._verify_schedule(schedule, [A], "test_schedule_pad_inner_index_bc_3", correctness_check_values)
+
+    @expectedFailure(FailedReason.BUG, "Padding of outer indices is unsupported")
+    def test_schedule_pad_outer_index_no_bc_1(self) -> None:
+        I = 16
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I,))
+
+        nest = Nest(shape=(I,))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i] *= 2.0
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.pad(i, 2)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test],
+            "post": [A_test * 2]
+        }
+        self._verify_schedule(schedule, [A], "test_schedule_pad_outer_index_no_bc_1", correctness_check_values)
+
+    @expectedFailure(FailedReason.BUG, "Padding of outer indices is unsupported")
+    def test_schedule_pad_outer_index_no_bc_2(self) -> None:
+        I = 16
+        J = 8
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I,J))
+
+        nest = Nest(shape=(I,J))
+        i,j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i,j] *= 2.0
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.pad(i, 2)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test],
+            "post": [A_test * 2]
+        }
+        self._verify_schedule(schedule, [A], "test_schedule_pad_outer_index_no_bc_2", correctness_check_values)
+
+    @expectedFailure(FailedReason.BUG, "Padding of outer indices is unsupported")
+    def test_schedule_pad_outer_index_no_bc_3(self) -> None:
+        I = 16
+        J = 8
+        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I,J))
+
+        nest = Nest(shape=(I,J))
+        i,j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i,j] *= 2.0
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.pad(i, 2)
+        schedule.reorder(i, j, ii)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test],
+            "post": [A_test * 2]
+        }
+        self._verify_schedule(schedule, [A], "test_schedule_pad_outer_index_no_bc_3", correctness_check_values)
+
     def test_convenience_syntax(self) -> None:
 
         nest, A, B, C = self._create_nest((16, 10, 11))
@@ -2645,6 +2858,62 @@ class DSLTest_09Parameters(unittest.TestCase):
         self.assertListEqual(parameters, parameters_dup)
 
         package.add(sched, args=(A, B, C), base_name="matmul", parameters=parameters)
+
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
+            package.build(name=package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+
+    def test_parameterization_loopIndex_order(self) -> None:
+        from accera import create_parameter_grid, create_parameters, Nest
+
+        P0, P1, P2, P3 = create_parameters()
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(P0, P1))
+
+        nest = Nest(shape=(P0, P1, P2))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += P3 * A[i, k] * B[k, j]
+
+        package = Package()
+        package_name = "test_parameterization_loopIndex_order"
+
+        P4, P5 = create_parameters()
+
+        # Create a parameterized schedule
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, size=P4)
+        jj = schedule.split(j, size=P4)
+        kk = schedule.split(k, size=P4)
+
+        schedule.reorder(order=P5)
+
+        # Create a parameterized plan
+        plan = schedule.create_plan()
+
+        parameter_grid = {
+            P0: [256],
+            P1: [256, 512],
+            P2: [16, 32],
+            P3: [1.0],
+            P4: [4, 8, 16],
+            P5: (i, j, k, ii, jj, kk)
+        }
+
+        parameters = create_parameter_grid(parameter_grid, 
+                                        filter_func = lambda *p : schedule.is_valid_loop_order(p[0][5]),
+                                        sample=5)
+
+        # Add another function to the package
+        package.add(
+            plan,
+            args=(A, B, C),
+            parameters=parameters,
+            base_name="matmul_256_256_256"
+        )
 
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(name=package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)

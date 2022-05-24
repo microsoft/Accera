@@ -56,11 +56,11 @@ namespace util
             s.insert(abstractOp);
         }
         op->walk([&patterns, &s, context](mlir::Operation* childOp) {
-            auto abstractOp = childOp->getAbstractOperation();
-            if (s.count(abstractOp) == 0)
+            auto childAbstractOp = childOp->getAbstractOperation();
+            if (s.count(childAbstractOp) == 0)
             {
-                abstractOp->getCanonicalizationPatterns(patterns, context);
-                s.insert(abstractOp);
+                childAbstractOp->getCanonicalizationPatterns(patterns, context);
+                s.insert(childAbstractOp);
             }
         });
     }
@@ -310,7 +310,7 @@ namespace util
     {
         // modules can define the execution target
         // search if the current module specifies the execution target
-        auto getExecTarget = [](Operation* op) { return op->getAttrOfType<vir::ExecutionTargetAttr>(vir::ValueFuncOp::getExecTargetAttrName()); };
+        auto getExecTarget = [](Operation* op_) { return op_->getAttrOfType<vir::ExecutionTargetAttr>(vir::ValueFuncOp::getExecTargetAttrName()); };
 
         Operation* execAwareOp = op;
         auto execTargetAttr = getExecTarget(execAwareOp);
@@ -336,20 +336,20 @@ namespace util
         }
 
         return mlir::TypeSwitch<Operation*, std::optional<vir::ExecutionTarget>>(execAwareOp)
-            .Case([](mlir::gpu::GPUFuncOp op) {
+            .Case([](mlir::gpu::GPUFuncOp) {
                 return vir::ExecutionTarget::GPU;
             })
-            .Case([](mlir::spirv::FuncOp op) {
+            .Case([](mlir::spirv::FuncOp) {
                 return vir::ExecutionTarget::GPU;
             })
-            .Case([](mlir::FuncOp op) {
+            .Case([](mlir::FuncOp) {
                 return vir::ExecutionTarget::CPU;
             })
-            .Case([](mlir::LLVM::LLVMFuncOp op) {
+            .Case([](mlir::LLVM::LLVMFuncOp) {
                 return vir::ExecutionTarget::CPU;
             })
-            .Default([](Operation* op) {
-                op->emitWarning("Couldn't determine execution environment");
+            .Default([](Operation* op_) {
+                op_->emitWarning("Couldn't determine execution environment");
                 return std::nullopt;
             });
     }
@@ -358,8 +358,8 @@ namespace util
     {
         auto execRuntimeAttrName = ir::value::ValueModuleOp::getExecRuntimeAttrName();
 
-        auto getExecRuntime = [&](Operation* op) {
-            return op->getAttrOfType<vir::ExecutionRuntimeAttr>(execRuntimeAttrName);
+        auto getExecRuntime = [&](Operation* op_) {
+            return op_->getAttrOfType<vir::ExecutionRuntimeAttr>(execRuntimeAttrName);
         };
 
         Operation* moduleLikeOp = op;
@@ -500,7 +500,7 @@ namespace util
             currentParentLoop = currentParentLoop->getParentOfType<mlir::AffineForOp>();
         }
 
-        for (auto iv : ivs)
+        for ([[maybe_unused]] auto iv : ivs)
         {
             assert(iv != nullptr && "Couldn't find all loop indices");
         }

@@ -772,11 +772,11 @@ std::size_t std::hash<::accera::utilities::MemoryLayout>::operator()(const accer
 {
     using ::accera::utilities::HashCombine;
 
-    size_t hash = 0;
-    HashCombine(hash, arg.GetActiveSize().ToVector());
-    HashCombine(hash, arg.GetExtent().ToVector());
-    HashCombine(hash, arg.GetOffset().ToVector());
-    HashCombine(hash, arg.GetIncrement().ToVector());
-    HashCombine(hash, arg.GetDimensionOrder().ToVector());
-    return hash;
+    size_t hashVal = 0;
+    HashCombine(hashVal, arg.GetActiveSize().ToVector());
+    HashCombine(hashVal, arg.GetExtent().ToVector());
+    HashCombine(hashVal, arg.GetOffset().ToVector());
+    HashCombine(hashVal, arg.GetIncrement().ToVector());
+    HashCombine(hashVal, arg.GetDimensionOrder().ToVector());
+    return hashVal;
 }

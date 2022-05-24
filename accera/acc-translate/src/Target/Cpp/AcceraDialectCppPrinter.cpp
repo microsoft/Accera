@@ -100,7 +100,7 @@ namespace cpp_printer
         bool* consumed)
     {
         auto handler = [&, this](auto op_) {
-            printOp(op_);
+            THROW_IF_FAILED(printOp(op_));
             *consumed = true;
         };
 

@@ -6,6 +6,7 @@
 import logging
 from typing import Callable, List, Union, Tuple
 from functools import partial
+from varname import varname
 
 from .Array import Array
 from .LoopIndex import LoopIndex
@@ -13,7 +14,6 @@ from .LogicFunction import logic_function, LogicFunction
 from .NativeLoopNestContext import NativeLoopNestContext
 from ..Parameter import DelayedParameter
 from .. import Target
-
 
 class Nest:
     "Represents an iteration space"
@@ -64,6 +64,20 @@ class Nest:
             A list of indices (multi-dimensional iteration space)
             or a single index (1-dimensional iteration space)
         """
+        try:
+            names = varname(multi_vars=True)
+        except:
+            names = None
+        
+        if names:
+            indices = [idx for _, idx in self._shape]
+            if len(self._shape) > 1:
+                zipped_name_index = zip(names, indices)
+                for name, index in zipped_name_index:
+                    if not index.name:
+                        index.name = name
+            else:
+                self._shape[0][1].name = names[0]
 
         return ([idx for _, idx in self._shape] if len(self._shape) > 1 else self._shape[0][1])
 

@@ -5,6 +5,7 @@
 
 #include "nest/LoopNestAttributes.h"
 
+#include <llvm/Support/ErrorHandling.h>
 #include <utilities/include/Exception.h>
 #include <utilities/include/TypeTraits.h>
 
@@ -238,13 +239,13 @@ namespace loopnest
     //
     namespace detail
     {
-        IterationDomainAttributeStorage::IterationDomainAttributeStorage(const IterationDomain& value) :
-            value(value)
+        IterationDomainAttributeStorage::IterationDomainAttributeStorage(const IterationDomain& value_) :
+            value(value_)
         {
         }
 
-        IterationDomainAttributeStorage::IterationDomainAttributeStorage(const mlir::ArrayRef<IndexRange>& value) :
-            value(std::vector<IndexRange>(std::begin(value), std::end(value)))
+        IterationDomainAttributeStorage::IterationDomainAttributeStorage(const mlir::ArrayRef<IndexRange>& value_) :
+            value(std::vector<IndexRange>(std::begin(value_), std::end(value_)))
         {
         }
 
@@ -525,13 +526,13 @@ namespace loopnest
     //
     namespace detail
     {
-        TransformedDomainAttributeStorage::TransformedDomainAttributeStorage(const TransformedDomain& value) :
-            value(value)
+        TransformedDomainAttributeStorage::TransformedDomainAttributeStorage(const TransformedDomain& value_) :
+            value(value_)
         {
         }
 
-        TransformedDomainAttributeStorage::TransformedDomainAttributeStorage(const KeyTy& value) :
-            value(value)
+        TransformedDomainAttributeStorage::TransformedDomainAttributeStorage(const KeyTy& value_) :
+            value(value_)
         {
         }
 
@@ -804,10 +805,7 @@ namespace loopnest
         {
             return llvm::hash_combine(range.Begin(), range.EndOperandIndex(), range.Increment());
         }
-        else
-        {
-            assert(false && "Unhandled Range case");
-        }
+        llvm_unreachable("Unhandled Range case");
     }
 
     llvm::hash_code hash_value(const SplitIndex& splitIndex)

@@ -49,7 +49,6 @@ using namespace llvm;
 namespace ir = accera::ir;
 namespace utilir = accera::ir::util;
 namespace vir = accera::ir::value;
-namespace tr = accera::transforms;
 namespace vtr = accera::transforms::value;
 
 namespace accera::generated
@@ -461,7 +460,7 @@ struct AllocOpLowering : public OpRewritePattern<ValueAllocOp>
     LogicalResult matchAndRewrite(ValueAllocOp op,
                                   PatternRewriter& rewriter) const final
     {
-        auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
+        [[maybe_unused]] auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
 
         auto execTarget = irutil::ResolveExecutionTarget(op).value_or(kDefaultExecutionTarget);
 
@@ -1418,7 +1417,7 @@ LogicalResult MergeDimOpLowering::matchAndRewrite(
     ValueMergeDimOp op,
     PatternRewriter& rewriter) const
 {
-    auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
+    [[maybe_unused]] auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
     auto source = op.source();
 
     auto resultType = op.getSourceMemRefType();
@@ -2540,7 +2539,7 @@ void ValueToStdLoweringPass::runOnModule()
         vtr::populateValueLaunchFuncPatterns(patterns);
         utilir::FillCanonicalPatternsRecursively(vModule, patterns);
         mlir::populateExpandTanhPattern(patterns);
-        applyPatternsAndFoldGreedily(vModule, std::move(patterns));
+        (void)applyPatternsAndFoldGreedily(vModule, std::move(patterns));
     }
 
     {

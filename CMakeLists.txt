@@ -153,6 +153,7 @@ else()
   endif()
   add_compile_options(-Wsign-compare)
   add_compile_options(-Wno-missing-braces)
+  add_compile_options(-Wno-shadow)
   add_compile_options(-Wmissing-field-initializers)
   add_compile_options(-Wno-unknown-pragmas)
   add_compile_options(-Wno-comment)
@@ -169,16 +170,12 @@ else()
     add_compile_options(-Wno-backslash-newline-escape)
     add_compile_options(-Wno-self-assign)
     add_compile_options(-fcolor-diagnostics)
-    # Enable Shadow Stack mitigation
-    add_compile_options(-fsanitize=shadow-call-stack)
     # Exit after the first 2 errors are reported
     add_compile_options(-ferror-limit=2)
   else() # GCC
     add_compile_options(-Wno-ignored-attributes)
     add_compile_options(-fdiagnostics-color=always)
     add_compile_options(-Wl,dynamicbase)
-    # Enable Shadow Stack mitigation
-    add_compile_options(-Wshadow)
 
     if(NOT ${OSX_NATIVE_ARCH} STREQUAL "arm64")
       # Set options for Control Flow Integrity (not supported on macos/arm64)

@@ -1654,15 +1654,15 @@ TEST_CASE("jit_int8_simple_matrix_multiply_test1")
     const int N = 16;
     const int K = 4;
 
-    const int kernelM = 4;
-    const int kernelN = 8;
+    [[maybe_unused]] const int kernelM = 4;
+    [[maybe_unused]] const int kernelN = 8;
     const int kernelK = 4;
     const int innerKernelK = 2;
 
     auto aType = ValueType::Int8;
     auto bType = ValueType::Int8;
     auto cType = ValueType::Int32;
-    auto i16 = ValueType::Int16; // signed
+    [[maybe_unused]] auto i16 = ValueType::Int16; // signed
     auto i32 = ValueType::Int32; // signed
 
     auto ind = [](auto i) { return Scalar(Cast(i, ValueType::Index)); };
@@ -1793,17 +1793,17 @@ TEST_CASE("jit_int8_simple_matrix_multiply_test3")
     const int N = 16;
     const int K = 4;
 
-    const int kernelM = 4;
-    const int kernelN = 8;
+    [[maybe_unused]] const int kernelM = 4;
+    [[maybe_unused]] const int kernelN = 8;
     const int kernelK = 4;
 
     auto aType = ValueType::Int8;
     auto bType = ValueType::Int8;
     auto cType = ValueType::Int32;
-    auto i16 = ValueType::Int16; // signed
-    auto i32 = ValueType::Int32; // signed
+    [[maybe_unused]] auto i16 = ValueType::Int16; // signed
+    [[maybe_unused]] auto i32 = ValueType::Int32; // signed
 
-    auto ind = [](auto i) { return Scalar(Cast(i, ValueType::Index)); };
+    [[maybe_unused]] auto ind = [](auto i) { return Scalar(Cast(i, ValueType::Index)); };
 
     auto fillFn = DeclareFunction("fill")
                       .Public(true)
@@ -2167,7 +2167,7 @@ TEST_CASE("jit_int32_cached_matrix_multiply_test")
             };
 
             const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
-            const int vectorUnits = 16; // AVX-2 has 16 256-bit registers
+            [[maybe_unused]] const int vectorUnits = 16; // AVX-2 has 16 256-bit registers
 
             auto matMulNest = simpleMatMul(A, B, C);
             auto [i, j, k] = matMulNest.GetIndices<3>();

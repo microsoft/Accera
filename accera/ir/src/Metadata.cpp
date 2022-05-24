@@ -45,22 +45,22 @@ namespace ir
             {
                 if (arrayAttr[0].isa<mlir::BoolAttr>())
                 {
-                    auto boolVec = util::ArrayAttrToVector<utilities::Boolean, mlir::BoolAttr>(arrayAttr, [&](const mlir::BoolAttr& boolAttr) {
-                        return boolAttr.getValue();
+                    auto boolVec = util::ArrayAttrToVector<utilities::Boolean, mlir::BoolAttr>(arrayAttr, [&](const mlir::BoolAttr& boolAttr_) {
+                        return boolAttr_.getValue();
                     });
                     metadataMap.emplace(keyStr, boolVec);
                 }
                 else if (arrayAttr[0].isa<mlir::IntegerAttr>())
                 {
-                    auto intVec = util::ArrayAttrToVector<int64_t, mlir::IntegerAttr>(arrayAttr, [&](const mlir::IntegerAttr& intAttr) {
-                        return intAttr.getInt();
+                    auto intVec = util::ArrayAttrToVector<int64_t, mlir::IntegerAttr>(arrayAttr, [&](const mlir::IntegerAttr& intAttr_) {
+                        return intAttr_.getInt();
                     });
                     metadataMap.emplace(keyStr, intVec);
                 }
                 else if (arrayAttr[0].isa<mlir::StringAttr>())
                 {
-                    auto strVec = util::ArrayAttrToVector<std::string, mlir::StringAttr>(arrayAttr, [&](const mlir::StringAttr& strAttr) {
-                        return strAttr.getValue().str();
+                    auto strVec = util::ArrayAttrToVector<std::string, mlir::StringAttr>(arrayAttr, [&](const mlir::StringAttr& strAttr_) {
+                        return strAttr_.getValue().str();
                     });
                     metadataMap.emplace(keyStr, strVec);
                 }

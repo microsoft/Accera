@@ -7,6 +7,7 @@
 #include "AffineDialectCppPrinter.h"
 
 #include <llvm/ADT/Sequence.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <numeric>
@@ -138,9 +139,9 @@ namespace cpp_printer
         if (kind == AffineExprKind::CeilDiv)
         {
             os << affineCeilDivStr << "(";
-            (void)printAffineExpr(lhs);
+            RETURN_IF_FAILED(printAffineExpr(lhs));
             os << ", ";
-            (void)printAffineExpr(rhs);
+            RETURN_IF_FAILED(printAffineExpr(rhs));
             os << ")";
             return success();
         }
@@ -160,12 +161,14 @@ namespace cpp_printer
         case AffineExprKind::Mod:
             binOpStr = "%";
             break;
+        default:
+            llvm_unreachable("Unexpected");
         }
 
         os << "(";
-        printAffineExpr(lhs);
+        RETURN_IF_FAILED(printAffineExpr(lhs));
         os << " " << binOpStr << " ";
-        printAffineExpr(rhs);
+        RETURN_IF_FAILED(printAffineExpr(rhs));
         os << ")";
 
         return success();
@@ -181,7 +184,7 @@ namespace cpp_printer
         for (int resIdx = 0; resIdx < (int)(map.getNumResults()); resIdx++)
         {
             os << "__forceinline__ " << printer->deviceAttrIfCuda() << "\n";
-            printer->printIndexType();
+            RETURN_IF_FAILED(printer->printIndexType());
             os << " " << makeAffineIdxFuncName(funcBaseName, resIdx)
                << "(";
             int numDims = (int)(map.getNumDims());
@@ -191,10 +194,10 @@ namespace cpp_printer
                 int dimIdx = 0;
                 for (; dimIdx < numDims - 1; dimIdx++)
                 {
-                    printer->printIndexType();
+                    RETURN_IF_FAILED(printer->printIndexType());
                     os << " " << makeAffineDimName(dimIdx) << ", ";
                 }
-                printer->printIndexType();
+                RETURN_IF_FAILED(printer->printIndexType());
                 os << " " << makeAffineDimName(dimIdx);
                 if (numSyms > 0)
                     os << ", ";
@@ -205,17 +208,17 @@ namespace cpp_printer
                 int symIdx = 0;
                 for (; symIdx < numSyms - 1; symIdx++)
                 {
-                    printer->printIndexType();
+                    RETURN_IF_FAILED(printer->printIndexType());
                     os << " " << makeAffineSymName(symIdx) << ", ";
                 }
-                printer->printIndexType();
+                RETURN_IF_FAILED(printer->printIndexType());
                 os << " " << makeAffineSymName(symIdx);
             }
 
             os << ") {\n";
 
             const char* idxName = "idx";
-            printer->printIndexType();
+            RETURN_IF_FAILED(printer->printIndexType());
             os << " " << idxName << " = ";
             RETURN_IF_FAILED(printAffineExpr(map.getResult(resIdx)));
             os << ";\n";
@@ -271,7 +274,7 @@ namespace cpp_printer
         {
             std::string idxFuncName = makeAffineIdxFuncName(funcBaseName, idx);
             auto idxVarName = state.nameState.getTempName();
-            printer->printIndexType();
+            THROW_IF_FAILED(printer->printIndexType());
             os << " " << idxVarName << " = " << idxFuncName << "("
                << affineFuncArgs << ");\n";
             memIdxVars.push_back(idxVarName);
@@ -546,7 +549,7 @@ namespace cpp_printer
         }
 
         auto affineForOp = affineYieldOp->getParentOfType<AffineForOp>();
-        for (auto i = 0; i < affineForOp.getNumRegionIterArgs(); ++i)
+        for (auto i = 0u; i < affineForOp.getNumRegionIterArgs(); ++i)
         {
             auto iterVar = affineForOp.getRegionIterArgs()[i];
             auto result = affineYieldOp.getOperand(i);

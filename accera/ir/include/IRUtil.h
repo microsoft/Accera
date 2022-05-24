@@ -296,9 +296,9 @@ namespace util
         auto currentBlock = currentParentOp->getBlock();
         while (currentParentOp != nullptr && currentBlock != nullptr)
         {
-            for (auto& op : currentBlock->getOperations())
+            for (auto& blockOp : currentBlock->getOperations())
             {
-                if (auto outerOp = mlir::dyn_cast_or_null<OpType>(&op))
+                if (auto outerOp = mlir::dyn_cast_or_null<OpType>(&blockOp))
                 {
                     if (ignoreAttrName.has_value())
                     {

@@ -13,8 +13,8 @@ namespace utilities
 
     Boolean::Boolean() = default;
 
-    Boolean::Boolean(bool value) :
-        value(value) {}
+    Boolean::Boolean(bool value_) :
+        value(value_) {}
 
     bool operator==(Boolean b1, Boolean b2)
     {

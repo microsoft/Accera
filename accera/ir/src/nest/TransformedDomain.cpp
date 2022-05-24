@@ -354,21 +354,21 @@ namespace loopnest
             indexPosMap[i] = newIndices.size();
             newIndices.push_back(i); } };
 
-        for (auto index : expr.GetIndices())
+        for (auto exprIdx : expr.GetIndices())
         {
-            if (IsLoopIndex(index))
+            if (IsLoopIndex(exprIdx))
             {
-                addIndex(index);
+                addIndex(exprIdx);
             }
         }
 
         std::vector<mlir::AffineExpr> subExprs;
-        for (auto index : expr.GetIndices())
+        for (auto exprIndex : expr.GetIndices())
         {
-            auto subExpr = GetReducedIndexExpr(index, context);
+            auto subExpr = GetReducedIndexExpr(exprIndex, context);
             if (subExpr.IsIdentity())
             {
-                subExprs.emplace_back(mlir::getAffineDimExpr(indexPosMap[index], context));
+                subExprs.emplace_back(mlir::getAffineDimExpr(indexPosMap[exprIndex], context));
             }
             else
             {
@@ -694,7 +694,7 @@ namespace loopnest
         }
 
         // Update padding information for the fused index
-        auto updateFusedPadding = [&result](const TransformedDomain& domain, const Index& index, std::vector<int64_t>& fusedPadding) -> void {
+        auto updateFusedPadding = [](const TransformedDomain& domain, const Index& index, std::vector<int64_t>& fusedPadding) -> void {
             auto padding = domain.GetIndexPadding(index);
             if (padding.empty())
             {

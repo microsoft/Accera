@@ -420,8 +420,8 @@ void SetOpNameAttr(mlir::Operation* op, std::string name)
 auto GetConstantDataElementType(const ConstantData& data)
 {
     return std::visit(
-        [](auto&& data) {
-            using DataType = std::decay_t<decltype(data)>;
+        [](auto&& data_) {
+            using DataType = std::decay_t<decltype(data_)>;
             using ElementType = typename DataType::value_type;
 
             return GetValueType<ElementType>();
@@ -432,14 +432,14 @@ auto GetConstantDataElementType(const ConstantData& data)
 auto ConstantDataToDenseElementAttr(mlir::ShapedType shape, const ConstantData& data)
 {
     return std::visit(
-        [shape](auto&& data) -> mlir::DenseElementsAttr {
-            using DataType = std::decay_t<decltype(data)>;
+        [shape](auto&& data_) -> mlir::DenseElementsAttr {
+            using DataType = std::decay_t<decltype(data_)>;
             using ElementType = typename DataType::value_type;
 
             if constexpr (std::is_same_v<ElementType, Boolean>)
             {
-                std::vector<int8_t> boolData(data.size());
-                std::transform(data.begin(), data.end(), boolData.begin(), [](Boolean b) { return b ? 1 : 0; });
+                std::vector<int8_t> boolData(data_.size());
+                std::transform(data_.begin(), data_.end(), boolData.begin(), [](Boolean b) { return b ? 1 : 0; });
 
                 return mlir::DenseElementsAttr::get(shape, llvm::makeArrayRef(boolData));
             }
@@ -450,14 +450,14 @@ auto ConstantDataToDenseElementAttr(mlir::ShapedType shape, const ConstantData& 
             else if constexpr (std::is_same_v<ElementType, float16_t>)
             {
                 using float16_underlying_type = typename float16_t::underlying_type;
-                std::vector<float16_underlying_type> fp16Data(data.size());
-                std::transform(data.begin(), data.end(), fp16Data.begin(), [](float16_t value) { return value.data; });
+                std::vector<float16_underlying_type> fp16Data(data_.size());
+                std::transform(data_.begin(), data_.end(), fp16Data.begin(), [](float16_t value) { return value.data; });
 
                 return mlir::DenseElementsAttr::get(shape, llvm::makeArrayRef(fp16Data));
             }
             else
             {
-                return mlir::DenseElementsAttr::get(shape, llvm::makeArrayRef(data));
+                return mlir::DenseElementsAttr::get(shape, llvm::makeArrayRef(data_));
             }
         },
         data);
@@ -1914,7 +1914,6 @@ void MLIRContext::MMAStoreSyncImpl(const MatrixFragment& source, Matrix& target,
 
     const auto mmaShape = static_cast<ir::value::MMAShape>(source.GetFragmentShape());
     const ir::value::MMAOp mmaType(mmaShape);
-    const ir::value::MMAOperandType operandType{ static_cast<ir::value::MMAOperandType>(source.GetFragmentType()) };
     builder.create<ir::value::MMAStoreSyncOp>(loc, sourceValue, targetValue, mmaShape, mlir::ValueRange{ rowOff, colOff });
 }
 
@@ -1970,7 +1969,7 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)
                     }
                     else
                     {
-                        Wrap(builder.create<mlir::ZeroExtendIOp>(loc, signlessMlirValue, toIntTypeSignless));
+                        return Wrap(builder.create<mlir::ZeroExtendIOp>(loc, signlessMlirValue, toIntTypeSignless));
                     }
                 })
                 .Case([&](mlir::IndexType) {

@@ -252,7 +252,7 @@ namespace cpp_printer
         auto leadingDim = loadMatrixOp.leadDimension();
         int64_t offset;
         SmallVector<int64_t, 2> strides;
-        mlir::getStridesAndOffset(loadMatrixOp.srcMemref().getType().cast<MemRefType>(), strides, offset);
+        RETURN_IF_FAILED(mlir::getStridesAndOffset(loadMatrixOp.srcMemref().getType().cast<MemRefType>(), strides, offset));
 
         // TODO: have a separate op for declaring a fragment
         if (mmaMatrix.getOperand() == "COp")
@@ -348,7 +348,7 @@ namespace cpp_printer
 
         int64_t offset;
         SmallVector<int64_t, 2> strides;
-        mlir::getStridesAndOffset(storeMatrixOp.dstMemref().getType().cast<MemRefType>(), strides, offset);
+        RETURN_IF_FAILED(mlir::getStridesAndOffset(storeMatrixOp.dstMemref().getType().cast<MemRefType>(), strides, offset));
         auto destMemref = state.nameState.getName(storeMatrixOp.dstMemref());
         os << "wmma::store_matrix_sync(" << destMemref << " + ";
 
@@ -366,11 +366,12 @@ namespace cpp_printer
                                                               bool* consumed)
     {
         auto handler = [&, this](auto op_) {
-            printOp(op_);
+            RETURN_IF_FAILED(printOp(op_));
             *consumed = true;
+            return success();
         };
 
-        TypeSwitch<Operation*>(op)
+        return TypeSwitch<Operation*, LogicalResult>(op)
             // KEEP THIS SORTED
             .Case<BarrierOp>(handler)
             .Case<BlockDimOp>(handler)
@@ -381,14 +382,12 @@ namespace cpp_printer
             .Case<GridDimOp>(handler)
             .Case<LaunchFuncOp>(handler)
             .Case<ModuleEndOp>(handler)
-            .Case<ThreadIdOp>(handler)
+            .Case<SubgroupMmaComputeOp>(handler)
             .Case<SubgroupMmaConstantMatrixOp>(handler)
             .Case<SubgroupMmaLoadMatrixOp>(handler)
-            .Case<SubgroupMmaComputeOp>(handler)
             .Case<SubgroupMmaStoreMatrixOp>(handler)
-            .Default([&](Operation*) { *consumed = false; });
-
-        return success();
+            .Case<ThreadIdOp>(handler)
+            .Default([&](Operation*) { *consumed = false; return success(); });
     }
 
     LogicalResult GpuDialectCppPrinter::printGpuFPVectorType(VectorType vecType,

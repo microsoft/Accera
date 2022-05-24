@@ -118,9 +118,9 @@ namespace loopnest
                     {
                         ids.push_back(kernelOp.getId());
                     }
-                    else if (auto kernelOp = dyn_cast<ScheduledKernelOp>(op))
+                    else if (auto schedKernelOp = dyn_cast<ScheduledKernelOp>(op))
                     {
-                        ids.push_back(kernelOp.getId());
+                        ids.push_back(schedKernelOp.getId());
                     }
                 });
             }
@@ -172,8 +172,8 @@ namespace loopnest
                 auto kernelId = op.getId().str();
 
                 bool found = false;
-                region->walk([&](Operation* op) {
-                    if (auto nestOp = dyn_cast<NestOp>(op))
+                region->walk([&](Operation* regionOp) {
+                    if (auto nestOp = dyn_cast<NestOp>(regionOp))
                     {
                         auto kernels = nestOp.getKernelIds();
                         if (std::find(kernels.begin(), kernels.end(), kernelId) != kernels.end())
@@ -182,7 +182,7 @@ namespace loopnest
                             return WalkResult::interrupt();
                         }
                     }
-                    else if (auto scheduleOp = dyn_cast<ScheduleOp>(op))
+                    else if (auto scheduleOp = dyn_cast<ScheduleOp>(regionOp))
                     {
                         auto kernels = scheduleOp.getKernelIds();
                         if (std::find(kernels.begin(), kernels.end(), kernelId) != kernels.end())
@@ -204,7 +204,7 @@ namespace loopnest
                             }
                         }
                     }
-                    else if (auto scheduledKernelOp = dyn_cast<ScheduledKernelOp>(op))
+                    else if (auto scheduledKernelOp = dyn_cast<ScheduledKernelOp>(regionOp))
                     {
                         if (scheduledKernelOp.getKernel() == kernelId)
                         {
@@ -238,8 +238,8 @@ namespace loopnest
                 auto kernelId = op.getId().str();
 
                 bool found = false;
-                region->walk([&](Operation* op) {
-                    if (auto nestOp = dyn_cast<NestOp>(op))
+                region->walk([&](Operation* op_) {
+                    if (auto nestOp = dyn_cast<NestOp>(op_))
                     {
                         auto kernels = nestOp.getKernelIds();
                         if (std::find(kernels.begin(), kernels.end(), kernelId) != kernels.end())
@@ -248,7 +248,7 @@ namespace loopnest
                             return WalkResult::interrupt();
                         }
                     }
-                    else if (auto scheduleOp = dyn_cast<ScheduleOp>(op))
+                    else if (auto scheduleOp = dyn_cast<ScheduleOp>(op_))
                     {
                         auto kernels = scheduleOp.getKernelIds();
                         if (std::find(kernels.begin(), kernels.end(), kernelId) != kernels.end())
@@ -257,7 +257,7 @@ namespace loopnest
                             return WalkResult::interrupt();
                         }
                     }
-                    else if (auto scheduledKernelOp = dyn_cast<ScheduledKernelOp>(op))
+                    else if (auto scheduledKernelOp = dyn_cast<ScheduledKernelOp>(op_))
                     {
                         if (scheduledKernelOp.getKernel() == kernelId)
                         {
@@ -2609,29 +2609,29 @@ namespace loopnest
     // Print an instance of a type registered to the loopnest dialect.
     void LoopNestDialect::printAttribute(mlir::Attribute attr, mlir::DialectAsmPrinter& printer) const
     {
-        if (auto castAttr = attr.dyn_cast<IndexAttr>())
+        if (auto idxAttr = attr.dyn_cast<IndexAttr>())
         {
-            print(castAttr, printer);
+            print(idxAttr, printer);
         }
-        else if (auto castAttr = attr.dyn_cast<IndexRangeAttr>())
+        else if (auto idxRangeAttr = attr.dyn_cast<IndexRangeAttr>())
         {
-            print(castAttr, printer);
+            print(idxRangeAttr, printer);
         }
-        else if (auto castAttr = attr.dyn_cast<IterationDomainAttr>())
+        else if (auto iterDomainAttr = attr.dyn_cast<IterationDomainAttr>())
         {
-            print(castAttr, printer);
+            print(iterDomainAttr, printer);
         }
-        else if (auto castAttr = attr.dyn_cast<RangeAttr>())
+        else if (auto rangeAttr = attr.dyn_cast<RangeAttr>())
         {
-            print(castAttr, printer);
+            print(rangeAttr, printer);
         }
-        else if (auto castAttr = attr.dyn_cast<SplitIndexAttr>())
+        else if (auto splitIndexAttr = attr.dyn_cast<SplitIndexAttr>())
         {
-            print(castAttr, printer);
+            print(splitIndexAttr, printer);
         }
-        else if (auto castAttr = attr.dyn_cast<TransformedDomainAttr>())
+        else if (auto transformedDomainAttr = attr.dyn_cast<TransformedDomainAttr>())
         {
-            print(castAttr, printer);
+            print(transformedDomainAttr, printer);
         }
     }
 

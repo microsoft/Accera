@@ -98,8 +98,8 @@ namespace loopnest
                 auto constraints = domain.GetConstraints();
                 constraints.AddConstraint(dependentIndex, dependentIndexRange);
 
-                auto [begin, end] = constraints.GetEffectiveRangeBounds(loopIndex);
-                loopRange = { begin, end, loopRange.Increment() };
+                auto [begin_, end_] = constraints.GetEffectiveRangeBounds(loopIndex);
+                loopRange = { begin_, end_, loopRange.Increment() };
             }
         }
 

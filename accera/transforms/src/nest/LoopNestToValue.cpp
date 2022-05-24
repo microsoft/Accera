@@ -126,7 +126,7 @@ mlir::Value FindIndexVariable(Index index, Operation* where)
     return {};
 }
 
-SymbolicIndexOp GetOrCreateSymbolicIndex(OpBuilder& builder, Index index, Operation* where)
+[[maybe_unused]] SymbolicIndexOp GetOrCreateSymbolicIndex(OpBuilder& builder, Index index, Operation* where)
 {
     auto parentFuncOp = where->getParentOfType<ValueFuncOp>();
 
@@ -663,7 +663,7 @@ LogicalResult SaturatedAccumulateLoopRewrite::matchAndRewrite(AffineForOp loopOp
 
     // Push ceil(log2(n)) + 1 empty vectors onto list of stacks
     std::vector<std::vector<mlir::Value>> accumStacks(log2(numIter - 1) + 2);
-    auto inductionVarMap = AffineMap::get(1, 1, rewriter.getAffineDimExpr(0) + step * rewriter.getAffineSymbolExpr(0));
+    [[maybe_unused]] auto inductionVarMap = AffineMap::get(1, 1, rewriter.getAffineDimExpr(0) + step * rewriter.getAffineSymbolExpr(0));
     for (int64_t i = 0; i < numIter; ++i)
     {
         auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, step * i + begin);
@@ -907,8 +907,8 @@ LogicalResult GPUMappedAffineForOpRewrite::matchAndRewrite(mlir::AffineForOp aff
     if (auto gpuMapAttr = affineForOp->getAttrOfType<StringAttr>("accv_gpu_map"))
     {
         auto iv = affineForOp.getInductionVar();
-        int64_t begin = affineForOp.getConstantLowerBound();
-        int64_t end = affineForOp.getConstantUpperBound();
+        [[maybe_unused]] int64_t begin = affineForOp.getConstantLowerBound();
+        [[maybe_unused]] int64_t end = affineForOp.getConstantUpperBound();
         int64_t step = affineForOp.getStep();
 
         auto processor = *symbolizeProcessor(gpuMapAttr.getValue());
@@ -969,7 +969,7 @@ void IndexReplacedOpUpdates(Operation* op, PatternRewriter& rewriter)
 
 LogicalResult ScheduledLoopOpIndexConversion::matchAndRewrite(ScheduledLoopOp op, PatternRewriter& rewriter) const
 {
-    auto loc = op.getLoc();
+    [[maybe_unused]] auto loc = op.getLoc();
 
     rewriter.startRootUpdate(op);
     auto indexOp = op.getSymbolicIndex();
@@ -1030,7 +1030,7 @@ LogicalResult DimSizeOpConversion::matchAndRewrite(DimSizeOp op, PatternRewriter
 
 LogicalResult ReplaceSymbolicIndexOpPattern::matchAndRewrite(SymbolicIndexOp op, PatternRewriter& rewriter) const
 {
-    auto loc = util::GetLocation(rewriter, "ReplaceSymbolicIndexOpPattern", op.getLoc());
+    [[maybe_unused]] auto loc = util::GetLocation(rewriter, "ReplaceSymbolicIndexOpPattern", op.getLoc());
 
     // TODO: need to get the domain somehow and check if the index is a computed index
     // (or somehow add compound indices to the outer loop where they're fully-defined)

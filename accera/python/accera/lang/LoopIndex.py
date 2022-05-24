@@ -5,9 +5,10 @@
 
 
 class LoopIndex:
-    def __init__(self, nest=None):
+    def __init__(self, nest=None, name=None):
         self._nest = nest
         self.base_index = id(self)
+        self._name = name
 
     def __eq__(self, other):
         return id(self) == id(other)
@@ -19,3 +20,11 @@ class LoopIndex:
         child = LoopIndex(self._nest)
         child.base_index = self.base_index
         return child
+    
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._name = value

@@ -384,12 +384,15 @@ namespace ir
 
             mlir::TypeSwitch<mlir::Type>(t.type)
                 .Case([&](LLVMPointerType ptrTy) {
-                    auto elementType = ptrTy.getElementType(); 
-               
+                    auto elementType = ptrTy.getElementType();
+
                     // std-to-llvm getVoidPtrType uses getInt8PtrTy, so follow that pattern
                     // (unless we are looking at a shaped MLIR type containing ui8/i8)
-                    if ((!t.source || !t.source->isa<mlir::ShapedType>()) &&
-                        elementType.isInteger(8) || elementType.isa<LLVMStructType>())
+                    if ((
+                            (!t.source ||
+                             !t.source->isa<mlir::ShapedType>()) &&
+                            elementType.isInteger(8)) ||
+                        elementType.isa<LLVMStructType>())
                     {
                         os << "void*";
                     }

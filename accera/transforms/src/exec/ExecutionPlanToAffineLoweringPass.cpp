@@ -501,7 +501,7 @@ InPlaceUnrollInfo GetInPlaceUnrollInfo(Operation* op)
     op.addLoopAttribute(index, inPlaceUnrollInfoIdentifier, InPlaceUnrollInfoAttr::get(inPlaceUnrollInfo, builder.getContext()));
 }
 
-void SetInPlaceUnrollInfo(ScheduleOp op, SymbolicIndexOp index, const InPlaceUnrollInfo& inPlaceUnrollInfo)
+[[maybe_unused]] void SetInPlaceUnrollInfo(ScheduleOp op, SymbolicIndexOp index, const InPlaceUnrollInfo& inPlaceUnrollInfo)
 {
     SetInPlaceUnrollInfo(op, index.getValue(), inPlaceUnrollInfo);
 }
@@ -791,7 +791,7 @@ std::tuple<NestOp, ScheduleOp, ExecPlanOp> CreateCacheLoopnestHelper(
             {
                 auto position = loopnestInfo.indexOrder[domainDimIdx][splitIndexIdx];
                 auto splitIndexSymbolicOp = unorderedSplitIndices[domainDimIdx][splitIndexIdx];
-                assert(position < cacheNestScheduleOrder.size());
+                assert(position < (int)cacheNestScheduleOrder.size());
                 cacheNestScheduleOrder[position] = splitIndexSymbolicOp.getValue();
                 orderedSymbolicIndexOpValues[position] = splitIndexSymbolicOp;
             }
@@ -923,7 +923,7 @@ std::tuple<NestOp, ScheduleOp, ExecPlanOp> CreateActiveBlockCacheLoopnest(
 
     // Set the preferred traversal order based on the strides in the array we're copying from. Larger strides -> earlier in the schedule
     // The activeBlockShape is given in logical ordering, so the preferred traversal order is a permutation array of those dimensions
-    if (sourceType.getRank() == activeBlockShape.size())
+    if (auto rank = sourceType.getRank(); rank >= 0 && (size_t)rank == activeBlockShape.size())
     {
         // Only set the preferred order if we're creating a loopnest with the same number of dimensions as our source memref type
         loopnestInfo.preferredTraversalOrder = GetMajorToMinorDimensionTraversal(sourceType);
@@ -1074,7 +1074,6 @@ bool ComputeRegionAccessedByOp(PatternRewriter& rewriter, mlir::MemRefRegion& ac
 {
     mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
     rewriter.setInsertionPoint(op);
-    auto loc = op->getLoc();
 
     if (isa<mlir::AffineLoadOp, mlir::AffineStoreOp, v::MMALoadSyncOp, v::MMAStoreSyncOp>(op))
     {
@@ -1252,7 +1251,7 @@ ActiveBlockInfo ConvertMemRefRegionToActiveBlockInfo(OpBuilder& builder, const m
     unsigned rank = activeBlockRegion.getRank();
     activeBlockInfo.lbMaps.resize(rank);
     activeBlockInfo.ubMaps.resize(rank);
-    for (int dim = 0; dim < rank; ++dim)
+    for (auto dim = 0u; dim < rank; ++dim)
     {
         activeBlockRegion.getLowerAndUpperBound(dim, activeBlockInfo.lbMaps[dim], activeBlockInfo.ubMaps[dim]);
     }
@@ -1384,7 +1383,7 @@ mlir::AffineMap CreateArrayToCacheMap(mlir::OpBuilder& builder,
 
     // Now create a map that subtracts each offset amount from the corresponding base array position
     std::vector<mlir::AffineExpr> subtractOffsetExprs;
-    for (int dimIdx = 0; dimIdx < arrayRank; ++dimIdx)
+    for (auto dimIdx = 0u; dimIdx < arrayRank; ++dimIdx)
     {
         subtractOffsetExprs.push_back(builder.getAffineDimExpr(dimIdx + arrayRank) - builder.getAffineDimExpr(dimIdx));
     }
@@ -2106,7 +2105,7 @@ LogicalResult ActiveElementCacheCopyOpRewrite::matchAndRewrite(ActiveElementCach
 
         auto finalLoopNestOrder = copyScheduleOp.getOrder();
         std::vector<mlir::NamedAttribute> mappings;
-        for (int dimIdx = 0; dimIdx < blockDimSizes.size(); ++dimIdx)
+        for (auto dimIdx = 0u; dimIdx < blockDimSizes.size(); ++dimIdx)
         {
             if (finalLoopNestOrder.size() <= dimIdx)
             {
@@ -2139,8 +2138,8 @@ std::optional<std::vector<int64_t>> GetConstantActiveBlockShape(const std::vecto
     assert(lbMaps.size() == ubMaps.size() && "Must have same number of lower bound and upper bound maps");
 
     std::vector<int64_t> activeBlockShape;
-    bool hasConstantShape = true;
-    for (int dim = 0; dim < lbMaps.size(); ++dim)
+    [[maybe_unused]] bool hasConstantShape = true;
+    for (auto dim = 0u; dim < lbMaps.size(); ++dim)
     {
         assert(lbMaps[dim].getNumResults() == 1);
         assert(ubMaps[dim].getNumResults() == 1);
@@ -2233,7 +2232,7 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
     auto cacheMemRefType = cache.getType().cast<MemRefType>();
     unsigned cacheMemRefSpace = cacheMemRefType.getMemorySpaceAsInt();
     auto baseCacheElementType = GetInnerElementType(cache); // e.g. f32
-    unsigned fullCacheRank = cacheMemRefType.getRank();
+    [[maybe_unused]] unsigned fullCacheRank = cacheMemRefType.getRank();
 
     assert(baseArrayElementType == baseCacheElementType && "Copy source and dest data types don't match");
 
@@ -2341,11 +2340,11 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
                 //      so now we need to do
                 //      %lb_resolve = affine.apply affine_map<(d0) -> (d0)>(%arg4)
                 //      %real_arg5 = affine.apply affine_map<(d0, d1) -> (d0 + d1)>(%lb_resolve, %arg5)
-                auto lptIndex = domainIndices[0];
-                auto threadZ = domainIndices[1];
-                auto threadY = domainIndices[2];
-                auto threadX = domainIndices[3];
-                auto vecIndex = domainIndices[4];
+                [[maybe_unused]] auto lptIndex = domainIndices[0];
+                [[maybe_unused]] auto threadZ = domainIndices[1];
+                [[maybe_unused]] auto threadY = domainIndices[2];
+                [[maybe_unused]] auto threadX = domainIndices[3];
+                [[maybe_unused]] auto vecIndex = domainIndices[4];
 
                 // Map domainIndices -> flat buffer w/ affine expr + map
                 mlir::AffineExpr cacheFillNestToFlatExpr = (currentBuilder.getAffineDimExpr(0) * (blockDimSizes[2] * blockDimSizes[1] * blockDimSizes[0] * vectorSizePerThread)) +
@@ -2436,7 +2435,7 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
 
                 std::vector<mlir::NamedAttribute> mappings;
                 auto copySymbolicIndices = copyNestOp.getIndices(rewriter);
-                for (int i = 0; i < procStrs.size(); ++i)
+                for (auto i = 0u; i < procStrs.size(); ++i)
                 {
                     mappings.push_back({ rewriter.getIdentifier(procStrs[i]),
                                          IndexAttr::get(copySymbolicIndices[i + 1].getValue(), rewriter.getContext()) });
@@ -2559,7 +2558,7 @@ LogicalResult ActiveBlockCacheReduceOpRewrite::matchAndRewrite(ActiveBlockCacheR
     auto cache = cacheReduceOp.cache();
     assert(cache.getType().isa<MemRefType>());
     auto cacheMemRefType = cache.getType().cast<MemRefType>();
-    unsigned cacheMemRefSpace = cacheMemRefType.getMemorySpaceAsInt();
+    [[maybe_unused]] unsigned cacheMemRefSpace = cacheMemRefType.getMemorySpaceAsInt();
     auto baseCacheElementType = GetInnerElementType(cache); // e.g. f32
 
     assert(baseArrayElementType == baseCacheElementType && "Copy source and dest data types don't match");
@@ -2682,7 +2681,7 @@ LogicalResult ActiveElementCacheReduceOpRewrite::matchAndRewrite(ActiveElementCa
     [[maybe_unused]] auto dst = cacheReduceOp.dst();
     assert(dst.getType().isa<MemRefType>());
     auto baseOutputMemRefType = dst.getType().cast<MemRefType>();
-    auto baseOutputShape = baseOutputMemRefType.getShape();
+    [[maybe_unused]] auto baseOutputShape = baseOutputMemRefType.getShape();
     auto baseOutputElementType = GetInnerElementType(dst);
 
     auto elementBitWidth = baseOutputMemRefType.getElementTypeBitWidth();
@@ -2690,9 +2689,9 @@ LogicalResult ActiveElementCacheReduceOpRewrite::matchAndRewrite(ActiveElementCa
 
     auto cache = cacheReduceOp.srcCache();
     auto cacheMemRefType = cache.getType().cast<MemRefType>();
-    auto cacheElementType = cacheMemRefType.getElementType(); // either something like vector< n x f32 > or f32
-    auto cacheShape = cacheMemRefType.getShape();
-    auto baseCacheElementType = GetInnerElementType(cache); // e.g. f32
+    [[maybe_unused]] auto cacheElementType = cacheMemRefType.getElementType(); // either something like vector< n x f32 > or f32
+    [[maybe_unused]] auto cacheShape = cacheMemRefType.getShape();
+    [[maybe_unused]] auto baseCacheElementType = GetInnerElementType(cache); // e.g. f32
 
     auto cacheRegionIndexRanges = util::ArrayAttrToVector<IndexRange, IndexRangeAttr>(
         cacheReduceOp.cacheRegionRelevantIndexRanges(),
@@ -2886,7 +2885,7 @@ bool ThriftyCacheAllSingleElementStridesHelper(mlir::PatternRewriter& rewriter,
                                                mlir::ArrayAttr ubMapsArrayAttr)
 {
     mlir::ValueRange lbOperands = activeBlockExternalSymbols;
-    mlir::ValueRange ubOperands = activeBlockExternalSymbols;
+    [[maybe_unused]] mlir::ValueRange ubOperands = activeBlockExternalSymbols;
 
     auto lbMaps = util::ArrayAttrToVector<mlir::AffineMap, mlir::AffineMapAttr>(lbMapsArrayAttr, [](const mlir::AffineMapAttr& mapAttr) -> mlir::AffineMap {
         return mapAttr.getValue();
@@ -3223,7 +3222,7 @@ std::pair<mlir::Block::iterator, mlir::Block::iterator> GetCacheRegionIterators(
 {
     auto pairOp = GetCacheOpPair(reduceOp);
     assert(pairOp != nullptr);
-    auto parentBlock = reduceOp->getBlock();
+    [[maybe_unused]] auto parentBlock = reduceOp->getBlock();
     mlir::Block::iterator beginReplace = pairOp->getIterator();
     beginReplace++;
     mlir::Block::iterator endReplace = reduceOp->getIterator();
@@ -3375,7 +3374,7 @@ LogicalResult ThriftyCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCopyOp 
     }
 
     // Get pair op if it exists
-    auto pairOp = GetCacheOpPair(cacheCopyOp);
+    [[maybe_unused]] auto pairOp = GetCacheOpPair(cacheCopyOp);
 
     ActiveBlockCacheCopyOp::Adaptor adaptor{ cacheCopyOp };
     auto loc = cacheCopyOp.getLoc();
@@ -3704,9 +3703,9 @@ LogicalResult AdjustCacheMappingPositionRewrite::matchAndRewrite(BeginCacheMappi
     mlir::Block::iterator initBeginPos(beginCacheMappingOp);
     mlir::Block::iterator initEndPos(endOp);
 
-    auto fromValue = beginCacheMappingOp.fromValue();
-    auto baseCacheValue = beginCacheMappingOp.baseCacheValue();
-    auto toValue = beginCacheMappingOp.toValue();
+    [[maybe_unused]] auto fromValue = beginCacheMappingOp.fromValue();
+    [[maybe_unused]] auto baseCacheValue = beginCacheMappingOp.baseCacheValue();
+    [[maybe_unused]] auto toValue = beginCacheMappingOp.toValue();
 
     // Walk the ops that precede this BeginCacheMappingOp in reverse order to find the new position for the BeginCacheMappingOp
     auto newBeginPos = initBeginPos;
@@ -3835,7 +3834,7 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
 
     auto parentBlock = beginCacheMappingOp->getBlock();
     auto parentRegion = parentBlock->getParent();
-    auto parentOp = parentRegion->getParentOp();
+    [[maybe_unused]] auto parentOp = parentRegion->getParentOp();
     bool isActiveBlockCache = beginCacheMappingOp.activeBlockCache();
 
     if (IsCacheRegionEmpty(beginCacheMappingOp))
@@ -4229,13 +4228,13 @@ LogicalResult HoistCacheRegionOpsRewrite::matchAndRewrite(BeginCacheRegionOp beg
         return failure();
     }
 
-    auto loc = beginCacheRegionOp.getLoc();
+    [[maybe_unused]] auto loc = beginCacheRegionOp.getLoc();
 
-    auto sourceBlock = beginCacheRegionOp.getOperation()->getBlock();
+    [[maybe_unused]] auto sourceBlock = beginCacheRegionOp.getOperation()->getBlock();
 
     EndCacheRegionOp endOp = mlir::dyn_cast<EndCacheRegionOp>(beginCacheRegionOp.getEndOp());
 
-    mlir::Block* destBlock = beginCacheRegionOp.getOperation()->getBlock();
+    [[maybe_unused]] mlir::Block* destBlock = beginCacheRegionOp.getOperation()->getBlock();
     mlir::Block::iterator beginIter(beginCacheRegionOp);
     mlir::Block::iterator endIter(endOp);
     auto parentOp = beginCacheRegionOp->getParentOp();
@@ -4259,7 +4258,7 @@ LogicalResult HoistCacheRegionOpsRewrite::matchAndRewrite(BeginCacheRegionOp beg
         hoistedBeginCacheRegionOp.triggerIndexAttr(triggerLoopIndexAttr);
 
         rewriter.setInsertionPointAfter(newTriggerLoopLevel);
-        auto clonedEndOp = rewriter.clone(*endOp.getOperation(), mapping);
+        [[maybe_unused]] auto clonedEndOp = rewriter.clone(*endOp.getOperation(), mapping);
 
         rewriter.eraseOp(endOp);
         rewriter.eraseOp(beginCacheRegionOp);
@@ -4317,7 +4316,7 @@ LogicalResult MergeCacheRegionOpsRewrite::matchAndRewrite(BeginCacheRegionOp beg
 {
     // Merge cache regions that are in the same block and have identical operands
 
-    auto loc = beginCacheRegionOp.getLoc();
+    [[maybe_unused]] auto loc = beginCacheRegionOp.getLoc();
 
     auto block = beginCacheRegionOp.getOperation()->getBlock();
 
@@ -4411,7 +4410,7 @@ MakeCacheOp CreateDoubleBufferTempArray(mlir::OpBuilder& builder,
     auto fullCacheShape = cacheMemRefType.getShape().vec();
     std::vector<int64_t> activeBlockCacheShape(fullCacheShape.begin() + multiCacheShape.size(), fullCacheShape.end());
 
-    auto sharedMemSpaceAttr = util::MemorySpaceToAttribute(v::MemorySpace::Shared, builder.getContext());
+    [[maybe_unused]] auto sharedMemSpaceAttr = util::MemorySpaceToAttribute(v::MemorySpace::Shared, builder.getContext());
     auto privateMemSpaceAttr = util::MemorySpaceToAttribute(v::MemorySpace::Private, builder.getContext());
     auto cacheMemSpaceAttr = cacheMemRefType.getMemorySpace();
     auto tempArrayMemSpaceAttrOpt = cacheRegionOp.doubleBufferMemorySpace();
@@ -4484,9 +4483,9 @@ MakeCacheOp CreateDoubleBufferTempArray(mlir::OpBuilder& builder,
             // To do this, set the cacheOffsetIndices to be the placeholders (which will need to get fully resolved later once the loopnest is created)
             // and construct the map to only pay attention to those inputs
 
-            size_t multiCacheIndexPos = 0;
-            size_t cacheOffsetIndexPos = multiCacheAccessIndices.size();
-            size_t multiCacheDimAndPrivateThreadDimCount = multiCacheAccessIndices.size() + 2; // + 2 because there is one ActionPerThread dim and one ThreadVectorization dim
+            [[maybe_unused]] size_t multiCacheIndexPos = 0;
+            [[maybe_unused]] size_t cacheOffsetIndexPos = multiCacheAccessIndices.size();
+            [[maybe_unused]] size_t multiCacheDimAndPrivateThreadDimCount = multiCacheAccessIndices.size() + 2; // + 2 because there is one ActionPerThread dim and one ThreadVectorization dim
             size_t totalDimCount = multiCacheDimAndPrivateThreadDimCount + arrayRank;
 
             // Map { multiCacheIndices..., ActionPerThread idx, ThreadVectorization idx, arrayRank global indices... } to { multiCacheIndices..., ActionPerThread idx, ThreadVectorization idx }
@@ -4537,7 +4536,7 @@ void CreateCacheMappingRegionHelper(mlir::PatternRewriter& rewriter,
                                                                                   beginCacheRegionOp.activeBlockCache());
 
         rewriter.setInsertionPoint(cacheLevelBlock, cacheLevelEndOp);
-        EndCacheMappingOp endCacheMappingOp = rewriter.create<EndCacheMappingOp>(beginCacheRegionOp.getLoc(), cacheMappingOp.getResult());
+        [[maybe_unused]] EndCacheMappingOp endCacheMappingOp = rewriter.create<EndCacheMappingOp>(beginCacheRegionOp.getLoc(), cacheMappingOp.getResult());
     }
 }
 
@@ -4569,7 +4568,7 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
 
     auto loc = beginCacheRegionOp.getLoc();
 
-    auto parentBlock = beginCacheRegionOp.getOperation()->getBlock();
+    [[maybe_unused]] auto parentBlock = beginCacheRegionOp.getOperation()->getBlock();
 
     // If the region is empty, just erase this op and move on
     if (IsCacheRegionEmpty(beginCacheRegionOp) || GetOutermostAffineForOp(beginCacheRegionOp) == nullptr)
@@ -4703,7 +4702,7 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                 mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPointToStart(multiCacheLoop.getBody());
 
-                mlir::Value iterCounter = util::CreateConstantRangeForOpIterationCounter(rewriter, loc, multiCacheLoop);
+                [[maybe_unused]] mlir::Value iterCounter = util::CreateConstantRangeForOpIterationCounter(rewriter, loc, multiCacheLoop);
 
                 auto constantTripCountOpt = mlir::getConstantTripCount(multiCacheLoop);
                 assert(constantTripCountOpt.hasValue() && "AffineForOps in Accera loop nests must have constant trip counts");
@@ -4878,8 +4877,8 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                 rewriter.setInsertionPoint(parentLoopBlock, triggerLoopParentLoop->getIterator());
 
                 mlir::Value triggerLoopParentIV = triggerLoopParentLoop.getInductionVar();
-                int64_t triggerLoopParentFirstIterIntValue = triggerLoopParentLoop.getConstantLowerBound();
-                int64_t triggerLoopParentStepSize = triggerLoopParentLoop.getStep();
+                [[maybe_unused]] int64_t triggerLoopParentFirstIterIntValue = triggerLoopParentLoop.getConstantLowerBound();
+                [[maybe_unused]] int64_t triggerLoopParentStepSize = triggerLoopParentLoop.getStep();
 
                 // Clone the parent loop and wrap it around this ActiveBlockCacheCopyOp for cache access resolution
                 // However, limit the range to just a single iteration and remove everything inside the loop body
@@ -4935,7 +4934,7 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                 auto prologueThenBuilder = prologueCopyIfOp.getThenBodyBuilder();
 
                 MakeDelayedMappingRegion(prologueThenBuilder, triggerLoopParentIV, triggerLoopParentNextIterValue, [&](mlir::OpBuilder& builder) {
-                    auto prologueTempCopy = builder.create<MultiCacheCopyOp>(loc,
+                    [[maybe_unused]] auto prologueTempCopy = builder.create<MultiCacheCopyOp>(loc,
                                                                              beginCacheRegionOp.input(),
                                                                              doubleBufferTempArray,
                                                                              multiCacheInfo.multiCacheExternalSymbols,
@@ -4963,7 +4962,7 @@ LogicalResult BeginCacheRegionOpRewrite::matchAndRewrite(BeginCacheRegionOp begi
                 auto epilogueThenBuilder = epilogueCopyIfOp.getThenBodyBuilder();
 
                 MakeDelayedMappingRegion(epilogueThenBuilder, triggerLoopParentIV, triggerLoopParentNextIterValue, [&](mlir::OpBuilder& builder) {
-                    auto epilogueTempCopy = builder.create<MultiCacheCopyOp>(loc,
+                    [[maybe_unused]] auto epilogueTempCopy = builder.create<MultiCacheCopyOp>(loc,
                                                                              multiCacheInfo.multiCache,
                                                                              doubleBufferTempArray,
                                                                              multiCacheInfo.multiCacheExternalSymbols,
@@ -5300,7 +5299,7 @@ void VectorizeAffineForOpConversion::vectorizeOpsInBlock(PatternRewriter& rewrit
                     emitVectorizationRemark(sourceOp, "Terminal op, not vectorized");
                 }
 
-                auto mappedClonedOp = rewriter.clone(*it, operandMap);
+                [[maybe_unused]] auto mappedClonedOp = rewriter.clone(*it, operandMap);
             }
         }
     }
@@ -5494,7 +5493,7 @@ void InPlaceUnrollOpsInBlock(PatternRewriter& rewriter,
 
             if (!(IsTerminalOp(sourceOp) && vectorizedOps.Lookup(sourceOp)))
             {
-                auto mappedClonedOp = rewriter.clone(*it, operandMap);
+                [[maybe_unused]] auto mappedClonedOp = rewriter.clone(*it, operandMap);
             }
         }
     }
@@ -5935,7 +5934,7 @@ auto LoadMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineLoadOp loa
 
         int64_t offset;
         SmallVector<int64_t, 2> strides;
-        mlir::getStridesAndOffset(loadOp.getMemRefType(), strides, offset);
+        (void)mlir::getStridesAndOffset(loadOp.getMemRefType(), strides, offset);
         mlir::Value castMemref;
         if (strides[1] == 1) // row-major
         {
@@ -6006,7 +6005,7 @@ void StoreMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineStoreOp s
 
     int64_t offset;
     SmallVector<int64_t, 2> strides;
-    mlir::getStridesAndOffset(storeOp.getMemRefType(), strides, offset);
+    (void)mlir::getStridesAndOffset(storeOp.getMemRefType(), strides, offset);
     mlir::Value castMemref;
     if (strides[1] == 1) // row-major
     {
@@ -6355,7 +6354,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     rewriter.startRootUpdate(affineForOp);
     auto loc = innerLoop.getLoc();
-    auto ctx = rewriter.getContext();
+    [[maybe_unused]] auto ctx = rewriter.getContext();
 
     const v::MMAOp mmaOp(tensorizationInfo.dim);
 
@@ -7210,7 +7209,7 @@ mlir::AffineForOp SegmentLoopAtIteration(mlir::AffineForOp forOp, int64_t n)
 
     assert(constantTripCountOpt.hasValue() && "AffineForOps in Accera loop nests must have constant trip counts");
     auto constantTripCount = constantTripCountOpt.getValue();
-    if (constantTripCount < n)
+    if ((int64_t)constantTripCount < n)
     {
         // Can't unswitch more iterations than this loop has, so don't bother unswitching
         return nullptr;

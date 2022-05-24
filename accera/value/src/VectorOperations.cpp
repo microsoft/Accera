@@ -39,10 +39,10 @@ namespace value
             throw InputException(InputExceptionErrors::typeMismatch);
         }
 
-        auto defaultImpl = [](Vector v1, Vector v2) {
-            Scalar result = Allocate(v1.GetType(), ScalarLayout);
-            For(v1, [&](auto index) {
-                result += v1[index] * v2[index];
+        auto defaultImpl = [](Vector v1_, Vector v2_) {
+            Scalar result = Allocate(v1_.GetType(), ScalarLayout);
+            For(v1_, [&](auto index) {
+                result += v1_[index] * v2_[index];
             });
 
             return result;

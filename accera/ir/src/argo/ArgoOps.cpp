@@ -622,8 +622,8 @@ namespace
 {
 struct EraseDeadArgoOp : public RewritePattern
 {
-    EraseDeadArgoOp(MLIRContext* context, PatternBenefit benefit = 1) :
-        RewritePattern(MatchAnyOpTypeTag{}, benefit, context) {}
+    EraseDeadArgoOp(MLIRContext* context_, PatternBenefit benefit_ = 1) :
+        RewritePattern(MatchAnyOpTypeTag{}, benefit_, context_) {}
 
     LogicalResult matchAndRewrite(Operation* op,
                                   PatternRewriter& rewriter) const override

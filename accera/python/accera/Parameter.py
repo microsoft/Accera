@@ -157,7 +157,8 @@ def create_parameter_grid(parameter_choices: dict,
     """
     import itertools
     import random
-    
+    from .lang import LoopIndex
+
     choices = []
     keys = []
 
@@ -166,6 +167,11 @@ def create_parameter_grid(parameter_choices: dict,
             _ = iter(value)
         except TypeError:
             value = [value]
+
+        # if the parameter is a loop order, we permute the indices
+        if (all(isinstance(v, LoopIndex) for v in value)):
+            value = list(itertools.permutations(value, len(value)))
+        
         choices.append(value)
         keys.append(key)
 

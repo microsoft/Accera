@@ -7,12 +7,12 @@ from typing import List, Mapping, Tuple, Union, Callable, Any
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from functools import partial
+from varname import varname
 
 from .NativeLoopNestContext import NativeLoopNestContext
 from .Nest import Nest, LoopIndex
 from ..Targets import Target
 from ..Parameter import DelayedParameter
-
 
 @dataclass
 class IndexTransform(Enum):
@@ -110,10 +110,17 @@ class Schedule:
         """
         index = self._resolve_index(index)
 
+        try:
+            name = varname(multi_vars=False)
+        except:
+            name = None
+
         if isinstance(size, DelayedParameter):
             self._delayed_calls[partial(self._split_delayed, index)] = size
 
             inner_index = index.create_child_index()
+            if name and not inner_index.name:
+                inner_index.name = name
             order_pos = self._indices.index(index) + 1
             self._indices.insert(order_pos, inner_index)
             self._index_map[index].inners.insert(0, inner_index)
@@ -125,6 +132,8 @@ class Schedule:
             raise ValueError("Split sizes must be integers >= 1")
 
         inner_index = index.create_child_index()
+        if name and not inner_index.name:
+            inner_index.name = name
 
         order_pos = self._indices.index(index) + 1
         self._indices.insert(order_pos, inner_index)
@@ -260,12 +269,38 @@ class Schedule:
         Args:
             shape: Mapping of indices to tile sizes
         """
+        try:
+            names = varname(multi_vars=True)
+        except:
+            names = None
 
         # split for each index and it will automatically place the inner child index after its parent
         # self._indices is updated in-place.
         split_indices = [self.split(self._resolve_index(idx), factor) for idx, factor in shape.items()]
 
+        if names:
+            zipped_name_index = zip(names, split_indices)
+            for name, index in zipped_name_index:
+                index._name = name
+
         return split_indices
+    
+    def is_valid_loop_order(self, loop_order:Tuple[LoopIndex]) -> bool:
+        '''This method is used to validate the order of parent index and inner index, inner index should precede its parant index.
+
+        Args:
+            loop_order: A tuple of loop index.
+
+        '''
+        loop_order = list(loop_order)
+        for index in loop_order:
+            for inner_index in self._index_map[index].inners:
+                if loop_order.index(index) > loop_order.index(inner_index):
+                    return False
+            if self._index_map[index].parent:
+                if loop_order.index(index) < loop_order.index(self._index_map[index].parent):
+                    return False
+        return True
 
     def print(self, per_index_fn: Callable[[LoopIndex], List[str]] = None):
         indices = self.get_indices()

@@ -64,10 +64,10 @@ namespace loopnest
         {
             if constexpr (std::is_integral<T>::value)
             {
-                if (auto op = mlir::dyn_cast_or_null<mlir::ConstantIntOp>(const_cast<mlir::Value&>(value).getDefiningOp()))
-                    return static_cast<T>(op.getValue());
-                else if (auto op = mlir::dyn_cast_or_null<mlir::ConstantIndexOp>(const_cast<mlir::Value&>(value).getDefiningOp()))
-                    return static_cast<T>(op.getValue());
+                if (auto constIntOp = mlir::dyn_cast_or_null<mlir::ConstantIntOp>(const_cast<mlir::Value&>(value).getDefiningOp()))
+                    return static_cast<T>(constIntOp.getValue());
+                else if (auto constIdxOp = mlir::dyn_cast_or_null<mlir::ConstantIndexOp>(const_cast<mlir::Value&>(value).getDefiningOp()))
+                    return static_cast<T>(constIdxOp.getValue());
                 else
                     assert(false && "Error: got bad op type for constant int");
             }
@@ -83,7 +83,6 @@ namespace loopnest
             }
 
             llvm_unreachable("unexpected");
-            return {};
         }
 
         // TODO : replace this with something less hacky - surely MLIR has a better way of finding ops recursively in a graph segment already
@@ -207,8 +206,8 @@ namespace loopnest
     // LoopRange
     //
 
-    LoopRange::LoopRange(mlir::Value start, mlir::Value stop, mlir::Value increment) :
-        start(start), stop(stop), step(increment)
+    LoopRange::LoopRange(mlir::Value start_, mlir::Value stop_, mlir::Value increment) :
+        start(start_), stop(stop_), step(increment)
     {
     }
 
@@ -785,19 +784,19 @@ namespace loopnest
             {
                 bool predicateResult = false;
                 // TODO: Move to TypeSwitch
-                if (auto castPredicate = dyn_cast<NullPredicateOp>(predicate))
+                if (isa<NullPredicateOp>(predicate))
                 {
                     predicateResult = schedule.IsInnermostLoop();
                 }
-                else if (auto castPredicate = dyn_cast<KernelPredicateOpInterface>(predicate))
+                else if (auto kernelPredIface = dyn_cast<KernelPredicateOpInterface>(predicate))
                 {
-                    auto result = castPredicate.evaluate(GetDomain(), runtimeIndexVariables, schedule);
+                    auto result = kernelPredIface.evaluate(GetDomain(), runtimeIndexVariables, schedule);
                     if (result.has_value())
                         predicateResult = *result;
                 }
-                else if (auto castPredicate = dyn_cast<EvaluatablePredicateOpInterface>(predicate))
+                else if (auto evalPredIface = dyn_cast<EvaluatablePredicateOpInterface>(predicate))
                 {
-                    predicateResult = castPredicate.evaluate(definedIndices, loopIndex, position);
+                    predicateResult = evalPredIface.evaluate(definedIndices, loopIndex, position);
                 }
 
                 if (predicateResult)
@@ -860,7 +859,7 @@ namespace loopnest
 
         const auto& domain = GetDomain();
 
-        auto addTransformationSplits = [&domain, &loopIndex, &loopRange, &runtimeIndexVariables, &schedule](std::set<int64_t>& splits) -> void {
+        auto addTransformationSplits = [&domain, &loopIndex, &loopRange, &schedule](std::set<int64_t>& splits) -> void {
             // Apply splits resulting from schedule transformations on indices
             if (auto skewedOrReference = domain.IsSkewedOrReferenceIndex(loopIndex))
             {
@@ -1115,7 +1114,7 @@ namespace loopnest
             return result;
         };
 
-        auto addValidSplits = [&domain, &loopIndex, &loopRange, &runtimeIndexVariables, &schedule, containsFragmentPredicate](Operation* p, const std::set<int64_t>& splits, std::set<int64_t>& allSplits) -> void {
+        auto addValidSplits = [&domain, &loopIndex, &loopRange, &runtimeIndexVariables, &schedule, containsFragmentPredicate](Operation* p, const std::set<int64_t>& splits, std::set<int64_t>& allSplits_) -> void {
             auto pred = dyn_cast_or_null<KernelPredicateOpInterface>(p);
             if (pred)
             {
@@ -1158,7 +1157,7 @@ namespace loopnest
 
                     if (splitVal.value_or(false))
                     {
-                        allSplits.insert(splitPt);
+                        allSplits_.insert(splitPt);
                         prevBegin = splitPt;
                         prevVal = splitVal;
                     }
@@ -1168,7 +1167,7 @@ namespace loopnest
                 auto lastSplit = *(splits.rbegin());
                 if (prevBegin != lastSplit && prevBegin != loopRange.Begin())
                 {
-                    allSplits.insert(prevBegin);
+                    allSplits_.insert(prevBegin);
                 }
             }
         };
@@ -1377,9 +1376,9 @@ namespace loopnest
             }
 
             auto predicate = k.getPredicate();
-            if (auto castPredicate = dyn_cast_or_null<KernelPredicateOpInterface>(predicate))
+            if (auto kernelPredIface = dyn_cast_or_null<KernelPredicateOpInterface>(predicate))
             {
-                auto simplifiedPredicateOp = castPredicate.simplify(GetDomain(), runtimeIndexVariables, schedule);
+                auto simplifiedPredicateOp = kernelPredIface.simplify(GetDomain(), runtimeIndexVariables, schedule);
                 auto simplifiedPredicate = dyn_cast_or_null<KernelPredicateOpInterface>(simplifiedPredicateOp);
                 auto result = simplifiedPredicate.evaluate(GetDomain(), runtimeIndexVariables, schedule);
                 if (result.has_value() && *result == false)
@@ -1388,9 +1387,9 @@ namespace loopnest
                 }
                 return true;
             }
-            else if (auto castPredicate = dyn_cast_or_null<EvaluatablePredicateOpInterface>(predicate))
+            else if (auto evalPredIface = dyn_cast_or_null<EvaluatablePredicateOpInterface>(predicate))
             {
-                auto predicateResult = castPredicate.evaluate(definedIndices, loopIndex, position);
+                auto predicateResult = evalPredIface.evaluate(definedIndices, loopIndex, position);
                 if (!predicateResult)
                 {
                     return false;
@@ -1737,9 +1736,9 @@ namespace loopnest
         }
 
         // Actually clone the operations
-        for (auto& op : kernelBody.without_terminator())
+        for (auto& kernelOp : kernelBody.without_terminator())
         {
-            builder.clone(op, argMap);
+            builder.clone(kernelOp, argMap);
         }
 
         auto scheduledLoopOp = invokeOp->getParentOp();

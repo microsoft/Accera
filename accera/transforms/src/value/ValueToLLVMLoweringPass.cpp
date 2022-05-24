@@ -372,7 +372,7 @@ Value createIndexAttrConstant(OpBuilder& builder, Location loc, Type resultType,
 }
 
 // Create an LLVM IR pseudo-operation defining the given index constant.
-Value createIndexConstant(LLVMTypeConverter& converter, ConversionPatternRewriter& builder, Location loc, uint64_t value)
+[[maybe_unused]] Value createIndexConstant(LLVMTypeConverter& converter, ConversionPatternRewriter& builder, Location loc, uint64_t value)
 {
     return createIndexAttrConstant(builder, loc, converter.convertType(builder.getIndexType()), value);
 }
@@ -651,7 +651,7 @@ struct RawPointerAPIUnusedUndefRemoval : public OpRewritePattern<LLVM::UndefOp>
 
 using namespace accera::transforms::value;
 
-static Type getPointerIndexType(LLVMTypeConverter& typeConverter)
+[[maybe_unused]] static Type getPointerIndexType(LLVMTypeConverter& typeConverter)
 {
     return IntegerType::get(&typeConverter.getContext(), typeConverter.getPointerBitwidth());
 }

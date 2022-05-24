@@ -44,6 +44,12 @@ inline void emitVulkanError(const char* api, VkResult error)
         return failure();                   \
     }
 
+#define RETURN_IF_FAILED(call)          \
+    if (auto res = (call); failed(res)) \
+    {                                   \
+        return res;                     \
+    }
+
 using namespace mlir;
 
 void VulkanRuntime::setNumWorkGroups(const NumWorkGroups& numberWorkGroups)
@@ -304,7 +310,7 @@ LogicalResult VulkanRuntime::run()
     }
 
     // update host memory buffers
-    updateHostMemoryBuffers();
+    RETURN_IF_FAILED(updateHostMemoryBuffers());
 
     // Destroy the memory buffer components created as part of this run
 
@@ -1015,7 +1021,7 @@ LogicalResult VulkanRuntime::submitCommandBuffersToQueue()
 LogicalResult VulkanRuntime::updateHostMemoryBuffers()
 {
     // First copy back the data to the staging buffer.
-    copyResource(/*deviceToHost=*/true);
+    RETURN_IF_FAILED(copyResource(/*deviceToHost=*/true));
 
     // For each descriptor set.
     for (auto& resourceDataMapPair : resourceData)

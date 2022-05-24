@@ -375,7 +375,7 @@ TEST_CASE("Int8Test1C")
 
             auto i8Type = builder.getIntegerType(8);
             auto i32Type = builder.getIntegerType(32);
-            auto halfVecType = mlir::VectorType::get({ vecSize }, i8Type);
+            [[maybe_unused]] auto halfVecType = mlir::VectorType::get({ vecSize }, i8Type);
             auto bigVecType = mlir::VectorType::get({ vecSize }, i32Type);
 
             auto mulSum = [&](auto a, auto b) {
@@ -726,7 +726,7 @@ TEST_CASE("Int8Test3")
             auto loc = builder.getUnknownLoc();
 
             auto A = IndexedValue{ args[0] };
-            auto B = IndexedValue{ args[1] };
+            [[maybe_unused]] auto B = IndexedValue{ args[1] };
             auto C = IndexedValue{ args[2] };
 
             auto aType = args[0].getType().cast<mlir::MemRefType>();
@@ -1913,14 +1913,14 @@ TEST_CASE("Int8Test8")
                             auto builder = util::MakeBodyBuilder(iInitLoop);
                             auto iInner = iInitLoop.getInductionVar();
 
-                            auto i = builder.create<mlir::AddIOp>(loc, iOuter, iInner);
+                            [[maybe_unused]] auto i = builder.create<mlir::AddIOp>(loc, iOuter, iInner);
 
                             auto jInitLoop = builder.create<AffineForOp>(loc, 0, vecN, 1);
                             {
                                 auto builder = util::MakeBodyBuilder(jInitLoop);
                                 auto jInner = jInitLoop.getInductionVar();
 
-                                auto j = builder.create<mlir::AddIOp>(loc, jOuter, jInner);
+                                [[maybe_unused]] auto j = builder.create<mlir::AddIOp>(loc, jOuter, jInner);
                                 if (ccElemType == cElemType)
                                 {
                                     CC.Set(builder, builder.create<mlir::ConstantIntOp>(loc, 0, 32), iInner, jInner);

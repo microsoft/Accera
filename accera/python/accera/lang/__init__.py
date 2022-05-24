@@ -14,3 +14,4 @@ from .Plan import Plan
 from .Cache import Cache
 from .Function import Function
 from .LogicFunction import logic_function, LogicFunction
+from .LoopIndex import LoopIndex

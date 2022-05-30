@@ -174,7 +174,7 @@ for i in range(3):
                 C[i, j+jj] += A[i, k] * B[k, j+jj]
         # loop unswitching: handle the last iteration of the j loop separately
         for j in range(10, 12):
-            for j in range(15):
+            for k in range(15):
                 C[i, j] += A[i, k] * B[k, j]
 ```
 

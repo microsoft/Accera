@@ -674,19 +674,28 @@ def accln_TerminatorOp : accln_Op<"terminator", [Terminator]> {
 // ExecPlanOp
 //
 def accln_ExecPlanOp : accln_Op<"exec_plan", [ParentOneOf<["NestOp", "ScheduleOp"]>]> {
-let summary = "loopnest execution plan operation";
-let description = [{
-The "accln.exec_plan" operation describes the execution plan for a loop nest.
+  let summary = "loopnest execution plan operation";
+  let description = [{
+    The "accln.exec_plan" operation describes the execution plan for a loop nest.
 
-The "accln.exec_plan" operation has a single region, which contains ops directing the execution plan
-}];
+    The "accln.exec_plan" operation has a single region, which contains ops directing the execution plan
+  }];
 
-let arguments = (ins ExecutionTargetAttr:$exec_target);
-let results = (outs);
-let extraClassDeclaration = [{
-static StringRef getGPUProcessorMapAttrName() { return "gpu_processor_map"; }
-static StringRef getGPULaunchAttrName() { return "gpu_launch"; }
-}];
+  let arguments = (ins ExecutionTargetAttr:$exec_target,
+                       OptionalAttr<DictionaryAttr>:$bindings);
+  let results = (outs);
+
+  let builders = [
+    OpBuilder<(ins "value::ExecutionTarget":$execTarget),
+      [{ build($_builder, $_state, execTarget, mlir::DictionaryAttr::get($_builder.getContext())); }]>
+  ];
+  let extraClassDeclaration = [{
+    static StringRef getGPUProcessorMapAttrName() { return "gpu_processor_map"; }
+    static StringRef getGPULaunchAttrName() { return "gpu_launch"; }
+    void addBinding(mlir::MLIRContext* context, const Index& index, value::Processor proc, mlir::AffineMap map = {});
+    std::optional<std::pair<value::Processor, mlir::AffineMap>> getBinding(const Index& index);
+    bool hasBinding(const Index& index);
+  }];
 
 }
 

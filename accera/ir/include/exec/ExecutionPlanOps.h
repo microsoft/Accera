@@ -180,4 +180,6 @@ CacheAccessContext MakeCacheAccessContext(
 
 DelayedMappingRegionOp MakeDelayedMappingRegion(mlir::OpBuilder& builder, mlir::Value from, mlir::Value to, std::function<void(mlir::OpBuilder&)> body);
 
+std::optional<std::pair<value::Processor, mlir::AffineMap>> GetBindingForLoop(mlir::AffineForOp loop);
+
 } // namespace accera::ir::executionPlan

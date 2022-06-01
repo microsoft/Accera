@@ -9,6 +9,7 @@ import re
 from typing import List, Union
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
+
 from ._lang_python import ScalarType, _GetKnownDeviceNames
 from ._lang_python._lang import (
     BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z, _MemorySpace, _MMAShape, _ExecutionRuntime as Runtime
@@ -30,9 +31,10 @@ class Architecture(Enum):
 
 # Branding is currently unused
 KNOWN_CPUS_HEADER = \
-    ["Model", "Family", "Branding", "Base Freq", "Turbo Freq", "Cores", "Threads", "Cache Lines", "Cache Sizes", "Vector Bytes", "Vector Registers", "Extensions", "ISA", "Runtime"]
+    ["Model", "Family", "Branding", "Base Freq (GHz)", "Turbo Freq (GHz)", "Cores", "Threads", "Cache Lines", "Cache Sizes (KB)", "Vector Bytes", "Vector Registers", "Extensions", "ISA", "Runtime"]
 
 # yapf: disable
+# NOTE: When updating this table, please update docs/Reference/classes/Target/Model.md by following the instructions in that file
 KNOWN_CPUS = [
 
     # Intel Skylake
@@ -331,6 +333,7 @@ KNOWN_CPUS = [
     # Intel Cascade Lake
     # ref: https://en.wikipedia.org/wiki/Cascade_Lake_(microarchitecture)
     # ref: https://en.wikichip.org/wiki/intel/microarchitectures/cascade_lake
+    # ref: https://en.wikipedia.org/wiki/List_of_Intel_Xeon_processors_(Cascade_Lake-based)
     ["Intel 6209U",   "Cascade Lake", "Xeon Gold", 2.1, {20: 3.9}, 20, 40, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
     ["Intel 6210U",   "Cascade Lake", "Xeon Gold", 2.5, {20: 3.9}, 20, 40, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
     ["Intel 6212U",   "Cascade Lake", "Xeon Gold", 2.4, {24: 3.9}, 24, 48, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
@@ -405,21 +408,23 @@ KNOWN_CPUS = [
     ["Intel 6254",  "Cascade Lake", "Xeon Gold", 3.1, {18: 4.0}, 18, 36, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
     ["Intel 6262V", "Cascade Lake", "Xeon Gold", 1.9, {24: 3.6}, 24, 48, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
 
-    ["Intel 8253",  "Cascade Lake", "Xeon Platinum", 2.2, {16: 3.0}, 16, 32, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8256",  "Cascade Lake", "Xeon Platinum", 3.8, { 4: 3.9},  4,  8, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8260",  "Cascade Lake", "Xeon Platinum", 2.4, {24: 3.9}, 24, 48, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8260L", "Cascade Lake", "Xeon Platinum", 2.4, {24: 3.9}, 24, 48, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8260M", "Cascade Lake", "Xeon Platinum", 2.4, {24: 3.9}, 24, 48, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8260Y", "Cascade Lake", "Xeon Platinum", 2.4, {24: 3.9}, 24, 48, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8268",  "Cascade Lake", "Xeon Platinum", 2.9, {24: 3.9}, 24, 48, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8270",  "Cascade Lake", "Xeon Platinum", 2.7, {26: 4.0}, 26, 52, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8276",  "Cascade Lake", "Xeon Platinum", 2.2, {28: 4.0}, 28, 56, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8276L", "Cascade Lake", "Xeon Platinum", 2.2, {28: 4.0}, 28, 56, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8276M", "Cascade Lake", "Xeon Platinum", 2.2, {28: 4.0}, 28, 56, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8280",  "Cascade Lake", "Xeon Platinum", 2.7, {28: 4.0}, 28, 56, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8280L", "Cascade Lake", "Xeon Platinum", 2.7, {28: 4.0}, 28, 56, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8280M", "Cascade Lake", "Xeon Platinum", 2.7, {28: 4.0}, 28, 56, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
-    ["Intel 8284",  "Cascade Lake", "Xeon Platinum", 3.0, {28: 4.0}, 28, 56, [32, 1024, 1.375 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8253",  "Cascade Lake", "Xeon Platinum", 2.2, {16: 3.0}, 16, 32, [32, 1024, 22 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8256",  "Cascade Lake", "Xeon Platinum", 3.8, { 4: 3.9},  4,  8, [32, 1024, 16.5 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8260",  "Cascade Lake", "Xeon Platinum", 2.4, {24: 3.9}, 24, 48, [32, 1024, 35.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8260L", "Cascade Lake", "Xeon Platinum", 2.4, {24: 3.9}, 24, 48, [32, 1024, 35.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8260M", "Cascade Lake", "Xeon Platinum", 2.4, {24: 3.9}, 24, 48, [32, 1024, 35.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8260Y", "Cascade Lake", "Xeon Platinum", 2.4, {24: 3.9}, 24, 48, [32, 1024, 35.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8268",  "Cascade Lake", "Xeon Platinum", 2.9, {24: 3.9}, 24, 48, [32, 1024, 35.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8270",  "Cascade Lake", "Xeon Platinum", 2.7, {26: 4.0}, 26, 52, [32, 1024, 35.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8272CL",  "Cascade Lake", "Xeon Platinum", 2.6, {26: 3.4}, 26, 52, [32, 1024, 35.75 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8273CL",  "Cascade Lake", "Xeon Platinum", 2.2, {28: 3.0}, 28, 56, [32, 1024, 38.5 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8276",  "Cascade Lake", "Xeon Platinum", 2.2, {28: 4.0}, 28, 56, [32, 1024, 38.5 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8276L", "Cascade Lake", "Xeon Platinum", 2.2, {28: 4.0}, 28, 56, [32, 1024, 38.5 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8276M", "Cascade Lake", "Xeon Platinum", 2.2, {28: 4.0}, 28, 56, [32, 1024, 38.5 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8280",  "Cascade Lake", "Xeon Platinum", 2.7, {28: 4.0}, 28, 56, [32, 1024, 38.5 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8280L", "Cascade Lake", "Xeon Platinum", 2.7, {28: 4.0}, 28, 56, [32, 1024, 38.5 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8280M", "Cascade Lake", "Xeon Platinum", 2.7, {28: 4.0}, 28, 56, [32, 1024, 38.5 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
+    ["Intel 8284",  "Cascade Lake", "Xeon Platinum", 3.0, {28: 4.0}, 28, 56, [32, 1024, 38.5 * 1024], [64, 64, 64], 64, 32, ["SSE4.1", "SSE4.2", "AVX2", "AVX512", "AVX-VNNI"], "X86_64", "OPENMP"],
 
     # Intel Tiger Lake
     # ref: https://en.wikipedia.org/wiki/Tiger_Lake
@@ -441,11 +446,19 @@ KNOWN_CPUS = [
     ["Intel 7505",    "Tiger Lake", "Pentium Gold", 2.0, 3.5, 2, 4,  [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["Intel 6035",    "Tiger Lake", "Celeron", 1.8, 0.0, 2, 2,  [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
 
+    # Intel Ivy Bridge
+    # https://en.wikipedia.org/wiki/List_of_Intel_Xeon_processors_(Ivy_Bridge-based)
+    ["Intel E5-1607 v2",  "Ivy Bridge", "Xeon E5", 3.0, 3.0, 4, 8, [48, 256, 10 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel E5-1620 v2",  "Ivy Bridge", "Xeon E5", 3.7, 3.9, 4, 8, [48, 256, 10 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel E5-1650 v2",  "Ivy Bridge", "Xeon E5", 3.5, 3.9, 6, 12, [48, 256, 12 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel E5-1660 v2",  "Ivy Bridge", "Xeon E5", 3.7, 4.0, 6, 12, [48, 256, 15 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel E5-1680 v2",  "Ivy Bridge", "Xeon E5", 3.0, 3.9, 8, 16, [48, 256, 25 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+
     # Intel Haswell
     # ref: https://en.wikipedia.org/wiki/List_of_Intel_Haswell-based_Xeon_microprocessors
-    ["Intel E5-1650v3",  "Haswell", "Xeon E5", 3.5, 3.8, 6, 12, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
-    ["Intel E5-1660v3",  "Haswell", "Xeon E5", 3.0, 3.5, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
-    ["Intel E5-1680v3",  "Haswell", "Xeon E5", 3.2, 3.8, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel E5-1650 v3",  "Haswell", "Xeon E5", 3.5, 3.8, 6, 12, [48, 256, 15 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel E5-1660 v3",  "Haswell", "Xeon E5", 3.0, 3.5, 8, 16, [48, 256, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel E5-1680 v3",  "Haswell", "Xeon E5", 3.2, 3.8, 8, 16, [48, 256, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
 
     # AMD Zen
     # ref: https://en.wikipedia.org/wiki/Zen_(first_generation)
@@ -649,6 +662,7 @@ KNOWN_CPUS = [
     ["AMD 7F52", "Zen2", "EPYC", 3.5, {1: 3.9}, 16, 32, [32, 2 * 1024, 256 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["AMD 7F72", "Zen2", "EPYC", 3.2, {1: 3.7}, 24, 48, [32, 2 * 1024, 192 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["AMD 7H12", "Zen2", "EPYC", 2.6, {1: 3.3}, 64, 128, [32, 2 * 1024, 256 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["AMD 7V12", "Zen2", "EPYC", 2.45, {1: 3.3}, 64, 128, [32, 2 * 1024, 256 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
 
     # AMD Zen3
     # ref: https://en.wikichip.org/wiki/amd/microarchitectures/zen_3
@@ -729,11 +743,15 @@ class TensorCoreInformationEntry:
     inType: ScalarType
     outType: ScalarType
 
+
 @dataclass(frozen=True)
 class TensorCoreInformation:
     entries: List[TensorCoreInformationEntry] = field(default_factory=list)
 
-    def supports(self, input_type: ScalarType, output_type: ScalarType, shape: _MMAShape, num_total_passes: int, num_fused_passes: int) -> bool:
+    def supports(
+        self, input_type: ScalarType, output_type: ScalarType, shape: _MMAShape, num_total_passes: int,
+        num_fused_passes: int
+    ) -> bool:
         if not (num_total_passes >= 1 and (num_fused_passes == -1 or num_total_passes % num_fused_passes == 0)):
             return False
 
@@ -744,21 +762,33 @@ class TensorCoreInformation:
 
 
 MI100_TENSORCORE_INFO = TensorCoreInformation([
-    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK4_B1, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK2_B1, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 32x32x2 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xM64xK1_B2, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 32x32x1 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK1_B4, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 16x16x1 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 16x16x16 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 32x32x8 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 32x32x4 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 16x16x4 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 16x16x16 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 32x32x8 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 32x32x4 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK4_B1, inType=ScalarType.float32,
+                               outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK2_B1, inType=ScalarType.float32,
+                               outType=ScalarType.float32),    # maps to the 32x32x2 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK1_B2, inType=ScalarType.float32,
+                               outType=ScalarType.float32),    # maps to the 32x32x1 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK1_B4, inType=ScalarType.float32,
+                               outType=ScalarType.float32),    # maps to the 16x16x1 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16,
+                               outType=ScalarType.float16),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.float16,
+                               outType=ScalarType.float16),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.float16,
+                               outType=ScalarType.float16),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.float16,
+                               outType=ScalarType.float16),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16,
+                               outType=ScalarType.float32),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.float16,
+                               outType=ScalarType.float32),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.float16,
+                               outType=ScalarType.float32),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.float16,
+                               outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
 ])
 
-NV_A100_TENSORCORE_INFO = TensorCoreInformation([
+NV_A6000_TENSORCORE_INFO = TensorCoreInformation([
     TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),
     TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),
 ])
@@ -766,20 +796,28 @@ NV_A100_TENSORCORE_INFO = TensorCoreInformation([
 # Tensor Cores is current unused
 KNOWN_GPUS_HEADER = [
     "Runtime", "Model", "Branding", "Family", "Cores", "MaxThreadsPerBlock", "MaxBlockSize", "MaxSharedMemoryPerBlock",
-    "WarpSize", "Base Freq", "MaxRegistersPerBlock", "Vector Bytes", "TensorCoreInformation"
+    "WarpSize", "Base Freq (GHz)", "MaxRegistersPerBlock", "Vector Bytes", "TensorCoreInformation"
 ]
 KNOWN_GPUS = [
     # NVIDIA
     ["CUDA", "NVidia P100", "Pascal", "sm60", 56, 1024, [1024, 1024, 64], 49152, 32, 1.328500, 65536, 0,
      None],    # TODO : get the real values for the vector register sizes in bytes
     ["CUDA", "NVidia V100", "Volta", "sm70", 80, 1024, [1024, 1024, 64], 49152, 32, 1.380000, 65536, 0, None],
-    ["CUDA", "NVidia A100", "Ampere", "sm80", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, 0, NV_A100_TENSORCORE_INFO],
+    # https://developer.nvidia.com/blog/nvidia-ampere-architecture-in-depth/
+    ["CUDA", "NVidia A100", "Ampere", "sm80", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, 0, None],
+    [
+        "CUDA", "NVidia RTX A6000", "Ampere", "sm86", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, 0,
+        NV_A6000_TENSORCORE_INFO
+    ],
     # AMD
     ["ROCM", "AMD Radeon7", "Vega20", "gfx906", 60, 1024, [1024, 1024, 1024], 65536, 64, 1.801000, 65536, 0, None],
     ["ROCM", "AMD MI50", "Vega20", "gfx906", 60, 1024, [1024, 1024, 1024], 65536, 64, 1.725000, 65536, 0, None],
 
     # The MI100 can move up to Up to 4 DWORDs per instruction, so we set the vector size to 16 bytes - https://developer.amd.com/wp-content/resources/CDNA1_Shader_ISA_14December2020.pdf
-    ["ROCM", "AMD MI100", "Arcturus", "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, 16, MI100_TENSORCORE_INFO],
+    [
+        "ROCM", "AMD MI100", "Arcturus", "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, 16,
+        MI100_TENSORCORE_INFO
+    ],
     ["ROCM", "AMD MI200", "Aldebaran", "gfx90a", 220, 1024, [1024, 1024, 1024], 65536, 64, 1.700000, 65536, 0, None]
 ]
 # yapf: enable
@@ -868,16 +906,16 @@ def _recompute_known_devices():
         target = _TargetContainer(
             architecture=Architecture[device["ISA"]],
             cache_lines=device["Cache Lines"],
-            cache_sizes=device["Cache Sizes"],
+            cache_sizes=device["Cache Sizes (KB)"],
             category=Category.CPU,
             extensions=device["Extensions"],
             family=device["Family"],
-            frequency_GHz=device["Base Freq"],
+            frequency_GHz=device["Base Freq (GHz)"],
             name=device["Model"],
             num_cores=device["Cores"],
             num_threads=device["Threads"],
             runtime=Runtime.__members__[device["Runtime"]] if device["Runtime"] else Runtime.NONE,
-            turbo_frequency_GHz=device["Turbo Freq"],
+            turbo_frequency_GHz=device["Turbo Freq (GHz)"],
             vector_bytes=device["Vector Bytes"],
             vector_registers=device["Vector Registers"],
         )
@@ -898,7 +936,7 @@ def _recompute_known_devices():
             max_threads_per_block=device["MaxThreadsPerBlock"],
             max_block_size=device["MaxBlockSize"],
             max_shared_memory_per_block=device["MaxSharedMemoryPerBlock"],
-            frequency_GHz=device["Base Freq"],
+            frequency_GHz=device["Base Freq (GHz)"],
             max_registers_per_block=device["MaxRegistersPerBlock"],
             tensor_core=device["TensorCoreInformation"],
             vector_bytes=device["Vector Bytes"],
@@ -1050,7 +1088,7 @@ class Target(_TargetContainer):
             from termcolor import colored
             print(
                 colored(
-                    """Warning: Your host machine is not a known target model. To generate optimal code, we recommend that you inspect the accera.Target.Models enumeration to find the closest matching target model,
+                    f"""Warning: Your host machine "{cpu_info['brand_raw']}" is not a known target model. To generate optimal code, we recommend that you inspect the accera.Target.Models enumeration to find the closest matching target model,
 and create a Target using that model. You may also define a custom target if there is no closest match.
 For more details please refer to this link: https://microsoft.github.io/Accera/Reference/classes/Target/Target/#known-device-names""",
                     'yellow'

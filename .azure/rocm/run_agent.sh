@@ -27,13 +27,11 @@ sudo docker login -u ${ACR_USER} -p ${ACR_SECRET} ${ACR_REPO}
 #
 # Uncomment this block below to launch a debug container:
 # It maps the volume to our local start.sh so we can modify and run manually to debug
-# The Accera and hat repositories are mapped in case we need to debug build configuration issues
-# The hat repository should be in the same root as the Accera repository
+# The Accera repository is mapped in case we need to debug build configuration issues
 #
 # sudo -E docker run \
 #  -v ${SCRIPT_DIR}/scripts:/azp \
 #  -v ${ACCERA_ROOT}:/code \
-#  -v ${ACCERA_ROOT}../hat:/hat \
 #  -it --entrypoint /bin/bash \
 #  --ipc=host --device=/dev/kfd --device=/dev/dri --security-opt seccomp=unconfined \
 #  -e AZP_URL \

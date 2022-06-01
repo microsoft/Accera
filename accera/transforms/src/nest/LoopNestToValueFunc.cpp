@@ -59,6 +59,9 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
         mlir::GreedyRewriteConfig topDownConfig; // Some patterns require a top-down handling of ops to ensure relative orders stay consistent
         topDownConfig.useTopDownTraversal = true;
 
+        mlir::GreedyRewriteConfig singleIterationConfig;
+        singleIterationConfig.maxIterations = 1;
+
         while (std::exchange(shouldRun, false))
         {
             {
@@ -257,17 +260,17 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
                 snapshotter.Snapshot("ExecutionPlanLoopUnswitching", vFuncOp);
             }
 
-            {
-                OwningRewritePatternList patterns(context);
-                tr::populateLoopSimplificationPatterns(patterns);
-                (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
-                snapshotter.Snapshot("LoopSimplification", vFuncOp);
-            }
-
             vFuncOp.walk([&shouldRun](lnir::NestOp) { shouldRun = true; return WalkResult::interrupt(); });
         }
 
         snapshotter.Snapshot("PostLoop", vFuncOp);
+
+        {
+            OwningRewritePatternList patterns(context);
+            tr::populateLoopSimplificationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            snapshotter.Snapshot("LoopSimplification", vFuncOp);
+        }
 
         {
             OwningRewritePatternList patterns(context);
@@ -279,7 +282,7 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
         {
             OwningRewritePatternList patterns(context);
             affinetr::populateAcceraAffineSimplificationPatterns(patterns);
-            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), singleIterationConfig);
             snapshotter.Snapshot("AcceraAffineSimplification", vFuncOp);
         }
 
@@ -314,9 +317,9 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
 
         {
             OwningRewritePatternList patterns(context);
-            xptr::populateExecutionPlanMakeCachePatterns(patterns);
+            xptr::populateExecutionPlanCacheFinalizePatterns(patterns);
             (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
-            snapshotter.Snapshot("ExecutionPlanMakeCache", vFuncOp);
+            snapshotter.Snapshot("ExecutionPlanCacheFinalize", vFuncOp);
         }
 
         {

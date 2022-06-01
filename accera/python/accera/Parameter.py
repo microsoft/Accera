@@ -8,7 +8,6 @@ from varname import varname
 
 
 class DelayedParameter:
-
     def __init__(
         self,
         name: str = None,
@@ -24,17 +23,29 @@ class DelayedParameter:
 
     def get_value(self):
         """
-        get_value method either returns the value of a normal DelayedParameter if it has been set, 
+        get_value method either returns the value of a normal DelayedParameter if it has been set,
         or works as the delay evaluation of resultant DelayedParameter calculated from arithmetic operation,
         it recusively calls the operand's get_value method, then does arithmetic operation with the value of the operands.
         """
         if self._operation:
-            operand1 = self._operand1.get_value() if isinstance(self._operand1, DelayedParameter) else self._operand1
-            operand2 = self._operand2.get_value() if self._operand2 and isinstance(self._operand2, DelayedParameter) else self._operand2
-            self._value = self._operation(operand1, operand2) if operand2 else self._operation(operand1)
+            operand1 = (
+                self._operand1.get_value()
+                if isinstance(self._operand1, DelayedParameter)
+                else self._operand1
+            )
+            operand2 = (
+                self._operand2.get_value()
+                if self._operand2 and isinstance(self._operand2, DelayedParameter)
+                else self._operand2
+            )
+            self._value = (
+                self._operation(operand1, operand2)
+                if operand2
+                else self._operation(operand1)
+            )
 
         return self._value
-    
+
     def __hash__(self):
         return id(self)
 
@@ -57,14 +68,18 @@ class DelayedParameter:
         return DelayedParameter(operand1=self, operand2=other, operation=ops.__matmul__)
 
     def __truediv__(self, other):
-        return DelayedParameter(operand1=self, operand2=other, operation=ops.__truediv__)
+        return DelayedParameter(
+            operand1=self, operand2=other, operation=ops.__truediv__
+        )
 
     def __floordiv__(self, other):
-        return DelayedParameter(operand1=self, operand2=other, operation=ops.__floordiv__)
+        return DelayedParameter(
+            operand1=self, operand2=other, operation=ops.__floordiv__
+        )
 
     def __mod__(self, other):
         return DelayedParameter(operand1=self, operand2=other, operation=ops.__mod__)
-    
+
     def __rmul__(self, other):
         return DelayedParameter(operand1=self, operand2=other, operation=ops.__mul__)
 
@@ -124,15 +139,19 @@ class DelayedParameter:
 def create_parameters():
     try:
         names = varname(multi_vars=True)
-        return (tuple([DelayedParameter(name) for name in names]) if len(names) > 1 else DelayedParameter(names[0]))
+        return (
+            tuple([DelayedParameter(name) for name in names])
+            if len(names) > 1
+            else DelayedParameter(names[0])
+        )
     except Exception as e:
-        raise RuntimeError("Caller didn't assign the return value(s) of create_parameters() directly to any variable(s)")
+        raise RuntimeError(
+            "Caller didn't assign the return value(s) of create_parameters() directly to any variable(s)"
+        )
 
 
-def create_parameter_grid(parameter_choices: dict, 
-                        filter_func: Callable = None, 
-                        sample: int = 0, 
-                        seed = None
+def create_parameter_grid(
+    parameter_choices: dict, filter_func: Callable = None, sample: int = 0, seed=None
 ) -> List[dict]:
     """
     Create a parameter grid from a dictionary that maps each parameter to its possible values,
@@ -169,9 +188,9 @@ def create_parameter_grid(parameter_choices: dict,
             value = [value]
 
         # if the parameter is a loop order, we permute the indices
-        if (all(isinstance(v, LoopIndex) for v in value)):
+        if all(isinstance(v, LoopIndex) for v in value):
             value = list(itertools.permutations(value, len(value)))
-        
+
         choices.append(value)
         keys.append(key)
 

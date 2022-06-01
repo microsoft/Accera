@@ -18,6 +18,7 @@
 #include "value/ValueDialect.h"
 #include "value/ValueEnums.h"
 
+#include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
@@ -266,9 +267,9 @@ namespace util
 
     std::optional<int64_t> GetDimSizeAt(const loopnest::Index& dimensionIndex, mlir::Operation* where);
 
-    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Operation* where, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices = {});
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Operation* where);
 
-    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Block* where, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices = {});
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Block* where);
 
     std::vector<loopnest::Index> GetIndicesForLoopIVs(const std::vector<mlir::Value>& loopIVs);
 
@@ -394,5 +395,14 @@ namespace util
     mlir::Operation* GetDefiningOpOrForLoop(mlir::Value val);
 
     mlir::Value GetGPUIndex(mlir::Operation* op, value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc);
+    mlir::Value GetGPUIndex(const ir::value::ExecutionRuntime& runtime, value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc);
+
+    value::Processor GetGPUProcessor(mlir::Operation* gpuOp);
+
+    int64_t GetBlockDimSize(mlir::gpu::BlockDimOp op);
+    int64_t GetGridDimSize(mlir::gpu::GridDimOp op);
+
+    int64_t GetBlockDimSize(mlir::Operation* where, const std::string& dimId);
+    int64_t GetGridDimSize(mlir::Operation* where, const std::string& dimId);
 } // namespace util
 } // namespace accera::ir

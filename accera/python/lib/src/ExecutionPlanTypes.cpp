@@ -70,7 +70,7 @@ namespace
 
         py::enum_<ir::value::MMAShape>(module, "_MMAShape", "Determines the underlying MMA op that will be used")
             .value("M64xN64xK1_B4", ir::value::MMAShape::M64xN64xK1_B4)
-            .value("M64xM64xK1_B2", ir::value::MMAShape::M64xM64xK1_B2)
+            .value("M64xN64xK1_B2", ir::value::MMAShape::M64xN64xK1_B2)
             .value("M32xN32xK2_B1", ir::value::MMAShape::M32xN32xK2_B1)
             .value("M16xN16xK4_B1", ir::value::MMAShape::M16xN16xK4_B1)
             .value("M64xN64xK4_B4", ir::value::MMAShape::M64xN64xK4_B4)
@@ -234,8 +234,8 @@ namespace
                 "double_buffer"_a,
                 "double_buffer_location"_a,
                 "vectorization_info"_a)
-            .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a, "numTotalPasses"_a, "useStaticOffsets"_a, "numFusedPasses"_a, "schedulingPolicy"_a)
-            .def("map_index_to_processor", &value::GPUPlan::MapIndexToProcessor, "index"_a, "proc"_a);
+            .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a, "numTotalPasses"_a, "useStaticOffsets"_a, "numFusedPasses"_a, "schedulingPolicy"_a, "_useRocWMMA"_a)
+            .def("_map_index_to_processor", &value::GPUPlan::MapIndicesToProcessor, "indices"_a, "proc"_a);
     }
 
 } // namespace

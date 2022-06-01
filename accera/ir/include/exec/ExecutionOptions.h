@@ -7,6 +7,7 @@
 #pragma once
 
 #include <ir/include/IRUtil.h>
+#include <ir/include/value/ValueEnums.h>
 
 #include <mlir/IR/Attributes.h>
 
@@ -56,7 +57,7 @@ namespace targets
             return { gridDimSizes, blockDimSizes };
         }
 
-        mlir::ArrayAttr ToArrayAttr(mlir::MLIRContext* context)
+        mlir::ArrayAttr ToArrayAttr(mlir::MLIRContext* context) const
         {
             std::vector<int64_t> gridAndBlockDims{ grid.x, grid.y, grid.z, block.x, block.y, block.z };
             return util::VectorToArrayAttr<int64_t, mlir::IntegerAttr>(
@@ -68,15 +69,7 @@ namespace targets
     };
 
     using Target = std::variant<CPU, GPU>;
-    enum class Runtime : int
-    {
-        NONE,
-        CUDA,
-        ROCM,
-        VULKAN,
-        OPENMP,
-        DEFAULT
-    };
+    using Runtime = accera::ir::value::ExecutionRuntime;
 
 } // namespace targets
 } // namespace accera::ir

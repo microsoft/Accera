@@ -27,10 +27,10 @@ enum class MMAShape
 {
     // The shapes below refer to the dimensions of the matmul operation
     // they perform. The B{N} refers to the number of blocks the operation
-    // is divided into. e.g. M64xM64xK1_B2 performs the 64x64x1 matmul using
-    // 2 separate instruction, each computing half of the output data.
+    // is divided into. e.g. M64xN64xK1_B2 performs the 64x64x1 matmul using
+    // 2 separate instructions, each computing half of the output data.
     M64xN64xK1_B4,
-    M64xM64xK1_B2,
+    M64xN64xK1_B2,
     M32xN32xK2_B1,
     M16xN16xK4_B1,
 
@@ -58,8 +58,6 @@ class MMAOp
 public:
     MMAOp(MMAShape shape);
 
-    int64_t getLeadingDim() const;
-
     MMAShape getShapeType() const;
     int getM() const { return m; }
     int getN() const { return n; }
@@ -67,8 +65,6 @@ public:
 
     int64_t getInElementsPerThread(int64_t warpSize) const;
     int64_t getOutElementsPerThread(int64_t warpSize) const;
-
-    int64_t getPassIncrements(int64_t warpSize) const;
 
     int64_t getNumBlocks() const;
 

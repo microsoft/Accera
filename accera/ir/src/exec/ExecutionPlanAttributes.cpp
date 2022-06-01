@@ -35,7 +35,7 @@ namespace executionPlan
 
     mlir::DialectAsmPrinter& operator<<(mlir::DialectAsmPrinter& printer, TensorizationInfo tensorizationInfo)
     {
-        printer << "{{" << (int)tensorizationInfo.dim << "}," << tensorizationInfo.numTotalPasses << "," << tensorizationInfo.useStaticOffsets << "," << tensorizationInfo.numFusedPasses << "," << (int)tensorizationInfo.schedulingPolicy << "}";
+        printer << "{{" << (int)tensorizationInfo.dim << "}," << tensorizationInfo.numTotalPasses << "," << tensorizationInfo.useStaticOffsets << "," << tensorizationInfo.numFusedPasses << "," << (int)tensorizationInfo.schedulingPolicy << "," << tensorizationInfo._useRocWMMA << "}";
         return printer;
     }
 
@@ -166,6 +166,7 @@ namespace executionPlan
         int numFusedPasses;
         int numTotalPasses;
         int schedulingPolicy;
+        bool _useRocWMMA;
         if (failed(parser.parseLBrace()))
             return {};
         if (failed(parser.parseLBrace()))
@@ -190,11 +191,15 @@ namespace executionPlan
             return {};
         if (failed(parser.parseInteger(schedulingPolicy)))
             return {};
+        if (failed(parser.parseComma()))
+            return {};
+        if (failed(parser.parseInteger(_useRocWMMA)))
+            return {};
         if (failed(parser.parseRBrace()))
             return {};
         if (useStaticOffsets != 0 && useStaticOffsets != 1)
             return {};
-        return TensorizationInfoAttr::get(TensorizationInfo{ accera::ir::value::MMAShape{ dim }, numTotalPasses, useStaticOffsets, numFusedPasses, accera::ir::value::MMASchedulingPolicy{ schedulingPolicy } }, parser.getBuilder().getContext());
+        return TensorizationInfoAttr::get(TensorizationInfo{ accera::ir::value::MMAShape{ dim }, numTotalPasses, useStaticOffsets, numFusedPasses, accera::ir::value::MMASchedulingPolicy{ schedulingPolicy }, _useRocWMMA }, parser.getBuilder().getContext());
     }
 
     void print(TensorizationInfoAttr attr, mlir::DialectAsmPrinter& printer)
@@ -257,7 +262,7 @@ namespace executionPlan
 
     llvm::hash_code hash_value(const TensorizationInfo& tensorizationInfo)
     {
-        return llvm::hash_combine(tensorizationInfo.dim, tensorizationInfo.numTotalPasses, tensorizationInfo.useStaticOffsets, tensorizationInfo.numFusedPasses, tensorizationInfo.schedulingPolicy);
+        return llvm::hash_combine(tensorizationInfo.dim, tensorizationInfo.numTotalPasses, tensorizationInfo.useStaticOffsets, tensorizationInfo.numFusedPasses, tensorizationInfo.schedulingPolicy, tensorizationInfo._useRocWMMA);
     }
 
     llvm::hash_code hash_value(const InPlaceUnrollInfo& inPlaceUnrollInfo)

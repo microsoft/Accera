@@ -5,10 +5,10 @@
 
 import logging
 from typing import *
-from functools import partial
+from functools import partial, reduce
+from collections.abc import Iterable
 
 from ..Parameter import DelayedParameter
-
 from .Array import Array
 from .Schedule import Schedule, IndexTransform
 from .Cache import Cache, DelayedCache
@@ -19,7 +19,12 @@ from ..Targets import GridUnits, Target
 from ..Platforms import LibraryDependency
 from ..Constants import AUTO
 
-from .._lang_python._lang import CacheIndexing, _MemorySpace, _MMASchedulingPolicy, _MMAShape
+from .._lang_python._lang import (
+    CacheIndexing,
+    _MemorySpace,
+    _MMASchedulingPolicy,
+    _MMAShape,
+)
 
 
 def _ceildiv(x, y):
@@ -36,7 +41,10 @@ class Plan:
         self._dynamic_dependencies = set()
         self._bindings = {}
 
-        if target.category == Target.Category.GPU and target.runtime == Target.Runtime.VULKAN:
+        if (
+            target.category == Target.Category.GPU
+            and target.runtime == Target.Runtime.VULKAN
+        ):
             self._dynamic_dependencies.add(LibraryDependency.VULKAN)
 
     def _add_index_attr(self, index: LoopIndex, attr: str):
@@ -80,7 +88,9 @@ class Plan:
 
         self._add_index_attr(index, "vectorized")
 
-        self._commands.append(partial(self._vectorize, index, self._target.vectorization_info))
+        self._commands.append(
+            partial(self._vectorize, index, self._target.vectorization_info)
+        )
 
     def _vectorize(self, index, vectorization_info, context: NativeLoopNestContext):
         context.plan.vectorize(context.mapping[id(index)], vectorization_info)
@@ -89,7 +99,7 @@ class Plan:
         self,
         indices: Union[LoopIndex, Tuple[LoopIndex], DelayedParameter],
         pin: Union[Tuple[Any], DelayedParameter] = None,
-        policy: Union[str, DelayedParameter] = "static"
+        policy: Union[str, DelayedParameter] = "static",
     ):
         """Executes one or more loops in parallel on multiple cores or processors.
         Only available for targets with multiple cores or processors.
@@ -112,7 +122,7 @@ class Plan:
             self._delayed_calls[partial(self.parallelize)] = {
                 "indices": indices,
                 "pin": pin,
-                "policy": policy
+                "policy": policy,
             }
             return None
 
@@ -121,8 +131,13 @@ class Plan:
         # ensure the indices are contiguous and follow the Schedule ordering
         start = self._sched._indices.index(indices[0])
         end = start + len(indices)
-        if end > len(self._sched._indices) or indices != self._sched._indices[start:end]:
-            raise ValueError("indices must be contiguous in the Schedule dimension order")
+        if (
+            end > len(self._sched._indices)
+            or indices != self._sched._indices[start:end]
+        ):
+            raise ValueError(
+                "indices must be contiguous in the Schedule dimension order"
+            )
 
         for index in indices:
             self._add_index_attr(index, "parallelized")
@@ -133,18 +148,33 @@ class Plan:
         from .._lang_python._lang import _ParallelizationPolicy
 
         # num_threads = number of split blocks, clamped by the number of threads supported by this target
-        num_threads = min(self._target.num_threads, self._sched._get_num_split_blocks(indices))
+        num_threads = min(
+            self._target.num_threads, self._sched._get_num_split_blocks(indices)
+        )
         logging.debug(f"Parallelizing with {num_threads} thread(s)")
 
         idxs = [context.mapping[id(index)] for index in indices]
 
         context.plan.parallelize(
-            idxs, num_threads, _ParallelizationPolicy.DYNAMIC if policy == "dynamic" else _ParallelizationPolicy.STATIC
+            idxs,
+            num_threads,
+            _ParallelizationPolicy.DYNAMIC
+            if policy == "dynamic"
+            else _ParallelizationPolicy.STATIC,
         )
 
-    def tensorize(self, indices: Union[LoopIndex, Tuple[LoopIndex]], mma_shape: _MMAShape, num_total_passes: int = 1, use_static_offsets: bool = False, num_fused_passes: int = None, scheduling_policy: _MMASchedulingPolicy = _MMASchedulingPolicy.PASS_ORDER):
-        """Only available for targets with native matrix multiplication instruction (tensor core) support. 
-        Marks the dimensions of the iteration-space for tensorization. 
+    def tensorize(
+        self,
+        indices: Union[LoopIndex, Tuple[LoopIndex]],
+        mma_shape: _MMAShape,
+        num_total_passes: int = 1,
+        use_static_offsets: bool = False,
+        num_fused_passes: int = None,
+        scheduling_policy: _MMASchedulingPolicy = _MMASchedulingPolicy.PASS_ORDER,
+        _use_rocWMMA: bool = False,
+    ):
+        """Only available for targets with native matrix multiplication instruction (tensor core) support.
+        Marks the dimensions of the iteration-space for tensorization.
         Only perfectly nested loops of the following form can be tensorized:
 
         for i in range(M):
@@ -171,21 +201,49 @@ class Plan:
         # ensure the indices are contiguous and follow the Schedule ordering
         start = self._sched._indices.index(indices[0])
         end = start + len(indices)
-        if end > len(self._sched._indices) or indices != self._sched._indices[start:end]:
-            raise ValueError("indices must be contiguous in the Schedule dimension order")
+        if (
+            end > len(self._sched._indices)
+            or indices != self._sched._indices[start:end]
+        ):
+            raise ValueError(
+                "indices must be contiguous in the Schedule dimension order"
+            )
 
         for index in indices:
             self._add_index_attr(index, "tensorized")
 
-        self._commands.append(partial(self._tensorize, indices, mma_shape, num_total_passes, use_static_offsets, num_fused_passes, scheduling_policy))
+        self._commands.append(
+            partial(
+                self._tensorize,
+                indices,
+                mma_shape,
+                num_total_passes,
+                use_static_offsets,
+                num_fused_passes,
+                scheduling_policy,
+                _use_rocWMMA,
+            )
+        )
 
-    def _tensorize(self, indices, mma_shape, num_total_passes, use_static_offsets, num_fused_passes, scheduling_policy, context: NativeLoopNestContext):
+    def _tensorize(
+        self,
+        indices,
+        mma_shape,
+        num_total_passes,
+        use_static_offsets,
+        num_fused_passes,
+        scheduling_policy,
+        _use_rocWMMA,
+        context: NativeLoopNestContext,
+    ):
         from .._lang_python import ScalarType
 
         if num_fused_passes is None:
             num_fused_passes = -1
         elif num_fused_passes <= 0:
-            raise ValueError("Number of passes used for fusing must be a positive number greater than 0.")
+            raise ValueError(
+                "Number of passes used for fusing must be a positive number greater than 0."
+            )
 
         for index in list(map(self._sched._resolve_index, indices)):
             index_map = self._sched._index_map
@@ -197,16 +255,45 @@ class Plan:
                 raise ValueError("The tensorization index must start at 0")
             if step != 1:
                 raise ValueError("The tensorization index stride must be contiguous")
-        if not self._target.tensor_core.supports(input_type=ScalarType.float32, output_type=ScalarType.float32, shape=mma_shape, num_total_passes=num_total_passes, num_fused_passes=num_fused_passes) and \
-            not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float32, shape=mma_shape, num_total_passes=num_total_passes, num_fused_passes=num_fused_passes) and \
-            not self._target.tensor_core.supports(input_type=ScalarType.float16, output_type=ScalarType.float16, shape=mma_shape, num_total_passes=num_total_passes, num_fused_passes=num_fused_passes):
+        if (
+            not self._target.tensor_core.supports(
+                input_type=ScalarType.float32,
+                output_type=ScalarType.float32,
+                shape=mma_shape,
+                num_total_passes=num_total_passes,
+                num_fused_passes=num_fused_passes,
+            )
+            and not self._target.tensor_core.supports(
+                input_type=ScalarType.float16,
+                output_type=ScalarType.float32,
+                shape=mma_shape,
+                num_total_passes=num_total_passes,
+                num_fused_passes=num_fused_passes,
+            )
+            and not self._target.tensor_core.supports(
+                input_type=ScalarType.float16,
+                output_type=ScalarType.float16,
+                shape=mma_shape,
+                num_total_passes=num_total_passes,
+                num_fused_passes=num_fused_passes,
+            )
+        ):
             raise ValueError(
-                "The target does not support the given tensorization dimensions with shape=", mma_shape
+                "The target does not support the given tensorization dimensions with shape=",
+                mma_shape,
             )
 
         idxs = [context.mapping[id(index)] for index in indices]
 
-        context.plan.tensorize(indices=idxs, dims=mma_shape, numTotalPasses=num_total_passes, useStaticOffsets=use_static_offsets, numFusedPasses=num_fused_passes, schedulingPolicy=scheduling_policy)
+        context.plan.tensorize(
+            indices=idxs,
+            dims=mma_shape,
+            numTotalPasses=num_total_passes,
+            useStaticOffsets=use_static_offsets,
+            numFusedPasses=num_fused_passes,
+            schedulingPolicy=scheduling_policy,
+            _useRocWMMA=_use_rocWMMA,
+        )
 
     def cache(
         self,
@@ -222,7 +309,7 @@ class Plan:
         double_buffer: Union[bool, DelayedParameter] = False,
         double_buffer_location: Union[object, _MemorySpace, DelayedParameter] = AUTO,
         vectorize: Union[bool, DelayedParameter, object] = AUTO,
-        _delayed_cache: DelayedCache = None
+        _delayed_cache: DelayedCache = None,
     ):
         """Adds a cache for a view target
 
@@ -244,8 +331,25 @@ class Plan:
                 | MemorySpace.SHARED  | True          | MemorySpace.PRIVATE             |
                 | !MemorySpace.SHARED | True          | Same value as location          |
         """
-        if any([isinstance(arg, DelayedParameter) for arg in (index, trigger_index, level, trigger_level, thrifty, double_buffer, double_buffer_location, vectorize, layout)]) or \
-            (isinstance(source, DelayedCache) and not source.completed):
+        if (
+            any(
+                [
+                    isinstance(arg, DelayedParameter)
+                    for arg in (
+                        index,
+                        trigger_index,
+                        level,
+                        trigger_level,
+                        thrifty,
+                        double_buffer,
+                        double_buffer_location,
+                        vectorize,
+                        layout,
+                    )
+                ]
+            )
+            or (isinstance(source, DelayedCache) and not source.completed)
+        ):
             # If any of the cache level arguments are parameters, then this cache call is incomplete until those parameters
             # have values. Additionally, if this is a hierarchical cache and an outer cache is parameterized,
             # then this cache call is also incomplete until the outer cache's parameters have values
@@ -253,9 +357,15 @@ class Plan:
             # Create an incomplete Cache object so hierarchical caches that depend on this cache handle can
             # have an object to hold onto
             delayed_cache = DelayedCache(plan=self, target=source)
-            self._delayed_calls[partial(
-                self.cache, source=source, max_elements=max_elements, location=location, _delayed_cache=delayed_cache
-            )] = {
+            self._delayed_calls[
+                partial(
+                    self.cache,
+                    source=source,
+                    max_elements=max_elements,
+                    location=location,
+                    _delayed_cache=delayed_cache,
+                )
+            ] = {
                 "index": index,
                 "trigger_index": trigger_index,
                 "level": level,
@@ -264,15 +374,19 @@ class Plan:
                 "thrifty": thrifty,
                 "double_buffer": double_buffer,
                 "double_buffer_location": double_buffer_location,
-                "vectorize": vectorize
+                "vectorize": vectorize,
             }
             return delayed_cache
 
         if sum(i is not None for i in [index, level, max_elements]) != 1:
-            raise ValueError("Specify one and only one of index, level, or max_elements")
+            raise ValueError(
+                "Specify one and only one of index, level, or max_elements"
+            )
 
         if max_elements is not None and max_elements <= 0:
-            raise ValueError("Max element count specified as a cache budget must be greater than 0")
+            raise ValueError(
+                "Max element count specified as a cache budget must be greater than 0"
+            )
 
         if isinstance(source, Array):
             array_role = source.role
@@ -280,14 +394,21 @@ class Plan:
             array_role = source.target_role
 
         if double_buffer and array_role not in [Array.Role.CONST, Array.Role.INPUT]:
-            raise ValueError("Double-buffering is only supported for CONST and INPUT arrays")
+            raise ValueError(
+                "Double-buffering is only supported for CONST and INPUT arrays"
+            )
 
         if not double_buffer and double_buffer_location != AUTO:
-            raise ValueError("double_buffer_location is only valid to specify when double_buffer is set to True")
+            raise ValueError(
+                "double_buffer_location is only valid to specify when double_buffer is set to True"
+            )
 
         if double_buffer_location is AUTO:
             if double_buffer:
-                if self._target.category == Target.Category.GPU and location == _MemorySpace.SHARED:
+                if (
+                    self._target.category == Target.Category.GPU
+                    and location == _MemorySpace.SHARED
+                ):
                     double_buffer_location = _MemorySpace.PRIVATE
                 else:
                     double_buffer_location = location
@@ -299,11 +420,15 @@ class Plan:
 
             # Validate that if index is specified, then level and trigger_level are not
             if (index is not None) and (level is not None or trigger_level is not None):
-                raise ValueError("Can't specify both a cache index and a cache level or trigger level")
+                raise ValueError(
+                    "Can't specify both a cache index and a cache level or trigger level"
+                )
 
             # Validate that if level is specified, then index and trigger_index are not
             if (level is not None) and (index is not None or trigger_index is not None):
-                raise ValueError("Can't specify both a cache level and a cache index or trigger index")
+                raise ValueError(
+                    "Can't specify both a cache level and a cache index or trigger index"
+                )
 
             if level:
                 # the level of the key-slices is the count of right-aligned wildcards, e.g. level 2 = (i[0], ..., *, *)
@@ -315,8 +440,13 @@ class Plan:
                 index_pos = self._sched._indices.index(index)
                 level = len(self._sched._indices) - index_pos
 
-            if (trigger_level or trigger_index) and array_role not in [Array.Role.CONST, Array.Role.INPUT]:
-                raise ValueError("Multicaching is only supported for CONST and INPUT arrays")
+            if (trigger_level or trigger_index) and array_role not in [
+                Array.Role.CONST,
+                Array.Role.INPUT,
+            ]:
+                raise ValueError(
+                    "Multicaching is only supported for CONST and INPUT arrays"
+                )
 
             if layout is None:
                 layout = source._requested_layout
@@ -324,7 +454,9 @@ class Plan:
             # Validate or set trigger_index / trigger_level values
 
             if trigger_index is not None and trigger_level is not None:
-                raise ValueError("Can't specify both a trigger_index and a trigger_level")
+                raise ValueError(
+                    "Can't specify both a trigger_index and a trigger_level"
+                )
 
             if trigger_index is None and trigger_level is None:
                 trigger_index = index
@@ -339,22 +471,32 @@ class Plan:
                 trigger_level = len(self._sched._indices) - trigger_index_pos
 
             if level > trigger_level:
-                raise ValueError("Cache level must be less than or equal to the cache trigger level")
+                raise ValueError(
+                    "Cache level must be less than or equal to the cache trigger level"
+                )
 
             if level <= 0:
                 raise ValueError("Cache level must be greater than or equal to 1")
 
             if trigger_level <= 0:
-                raise ValueError("Cache trigger level must be greater than or equal to 1")
+                raise ValueError(
+                    "Cache trigger level must be greater than or equal to 1"
+                )
 
         if isinstance(source, Cache):
             # The outer cache must have a higher cache level and a higher trigger level than this cache, or a higher max element budget
-            if source.max_elements is None and (source.level is None or source.trigger_level is None):
+            if source.max_elements is None and (
+                source.level is None or source.trigger_level is None
+            ):
                 # If the outer cache doesn't have a max element budget, then it must have both a cache level and a cache trigger_level
-                raise ValueError("Given source cache doesn't have a cache level, trigger_level, or max_elements")
+                raise ValueError(
+                    "Given source cache doesn't have a cache level, trigger_level, or max_elements"
+                )
 
             if (source.max_elements is None) != (max_elements is None):
-                raise ValueError("Can only create a max element hierarchical caches of other max element caches")
+                raise ValueError(
+                    "Can only create a max element hierarchical caches of other max element caches"
+                )
             if source.max_elements is not None:
                 if source.max_elements <= max_elements:
                     raise ValueError(
@@ -383,7 +525,7 @@ class Plan:
             location=location,
             double_buffer=double_buffer,
             double_buffer_location=double_buffer_location,
-            vectorize=vectorize
+            vectorize=vectorize,
         )
 
         if _delayed_cache:
@@ -413,14 +555,21 @@ class Plan:
 
         last_in_index = context.mapping[id(cache.index)] if cache.index else None
 
-        trigger_index = context.mapping[id(cache.trigger_index)] if cache.trigger_index else last_in_index
+        trigger_index = (
+            context.mapping[id(cache.trigger_index)]
+            if cache.trigger_index
+            else last_in_index
+        )
 
         if isinstance(cache.target, Array):
             target = context.mapping[id(cache.target)]
         else:
             target = cache.target.native_cache
 
-        if (isinstance(self._target, Target) and self._target.category == Target.Category.GPU):
+        if (
+            isinstance(self._target, Target)
+            and self._target.category == Target.Category.GPU
+        ):
             cache.native_cache = context.plan.add_cache(
                 target=target,
                 index=last_in_index,
@@ -434,7 +583,7 @@ class Plan:
                 thrifty=cache.thrifty,
                 double_buffer=cache.double_buffer,
                 double_buffer_location=cache.double_buffer_location,
-                vectorization_info=vectorization_info
+                vectorization_info=vectorization_info,
             )
         else:
             cache.native_cache = context.plan.add_cache(
@@ -450,11 +599,15 @@ class Plan:
                 thrifty=cache.thrifty,
                 double_buffer=cache.double_buffer,
                 double_buffer_location=cache.double_buffer_location,
-                vectorization_info=vectorization_info
+                vectorization_info=vectorization_info,
             )
 
     def pack_and_embed_buffer(
-        self, target, wrapper_fn_name, packed_buffer_name="", indexing=CacheIndexing.GLOBAL_TO_PHYSICAL
+        self,
+        target,
+        wrapper_fn_name,
+        packed_buffer_name="",
+        indexing=CacheIndexing.GLOBAL_TO_PHYSICAL,
     ):
         """Emits a packing function for the given target and rewrites the loopnest to assume the given input is packed
 
@@ -471,11 +624,21 @@ class Plan:
             raise ValueError("Can only pack and embed constant data buffers")
 
         self._commands.append(
-            partial(self._pack_and_embed_buffer, target, wrapper_fn_name, packed_buffer_name, indexing)
+            partial(
+                self._pack_and_embed_buffer,
+                target,
+                wrapper_fn_name,
+                packed_buffer_name,
+                indexing,
+            )
         )
 
     def emit_runtime_init_pack(
-        self, target, packing_func_name, packed_buf_size_func_name, indexing=CacheIndexing.GLOBAL_TO_PHYSICAL
+        self,
+        target,
+        packing_func_name,
+        packed_buf_size_func_name,
+        indexing=CacheIndexing.GLOBAL_TO_PHYSICAL,
     ):
         """Emits a packing function for the given target and rewrites the loopnest to assume the given input is packed
 
@@ -523,10 +686,12 @@ class Plan:
         context: NativeLoopNestContext,
     ):
         target = context.mapping[id(target)]
-        context.plan.emit_runtime_init_packing(target, packing_func_name, packed_buf_size_func_name, indexing)
+        context.plan.emit_runtime_init_packing(
+            target, packing_func_name, packed_buf_size_func_name, indexing
+        )
 
     # TODO: Support parameters
-    def bind(self, mapping: Mapping[LoopIndex, GridUnits]):
+    def bind(self, mapping: Mapping[Union[LoopIndex, Tuple[LoopIndex]], GridUnits]):
         """Binds iteration space dimensions to GPU execution units
 
         Args:
@@ -536,21 +701,24 @@ class Plan:
         if self._target is not None and self._target.category == Target.Category.GPU:
             self._commands.append(partial(self._bind, mapping))
 
-            for index, proc in mapping.items():
-                self._bindings[proc] = index
+            for index_or_tuple, proc in mapping.items():
+                self._bindings[proc] = index_or_tuple
 
         else:
             raise ValueError("Only supported on plans with GPU targets")
 
-    def _bind(self, mapping: Mapping[LoopIndex, GridUnits], context: NativeLoopNestContext):
-        for index, proc in mapping.items():
-            index = context.mapping[id(index)]
-            context.plan.map_index_to_processor(index, proc.value)
+    def _bind(self, mapping: Mapping[Union[LoopIndex, Tuple[LoopIndex]], GridUnits], context: NativeLoopNestContext):
+        for index_or_tuple, proc in mapping.items():
+            if isinstance(index_or_tuple, tuple):
+                resolved_index_or_tuple = [context.mapping[id(index)] for index in index_or_tuple]
+            else:
+                resolved_index_or_tuple = [context.mapping[id(index_or_tuple)]]
+            context.plan._map_index_to_processor(resolved_index_or_tuple, proc.value)
 
     def kernelize(
         self,
         unroll_indices: Union[Tuple[LoopIndex], DelayedParameter],
-        vectorize_indices: Union[Tuple[LoopIndex], LoopIndex, DelayedParameter] = None
+        vectorize_indices: Union[Tuple[LoopIndex], LoopIndex, DelayedParameter] = None,
     ):
         """Performs automatic kernelization.
 
@@ -570,17 +738,25 @@ class Plan:
             unroll_indices: a list of indices to unroll
             vectorize_indices: Optional indices to vectorize
         """
-        if isinstance(unroll_indices, DelayedParameter) or isinstance(vectorize_indices, DelayedParameter):
+        if isinstance(unroll_indices, DelayedParameter) or isinstance(
+            vectorize_indices, DelayedParameter
+        ):
             self._delayed_calls[partial(self.kernelize)] = {
                 "unroll_indices": unroll_indices,
-                "vectorize_indices": vectorize_indices
+                "vectorize_indices": vectorize_indices,
             }
             return None
 
-        vindices = [vectorize_indices] if isinstance(vectorize_indices, LoopIndex) else list(vectorize_indices)
+        vindices = (
+            [vectorize_indices]
+            if isinstance(vectorize_indices, LoopIndex)
+            else list(vectorize_indices)
+        )
         for vidx in vindices:
             if vidx in unroll_indices:
-                raise ValueError("vectorize_indices cannot be one of the unroll indices")
+                raise ValueError(
+                    "vectorize_indices cannot be one of the unroll indices"
+                )
 
         if not self._target.vectorization_info:
             raise RuntimeError("The target does not support vectorization")
@@ -606,19 +782,24 @@ class Plan:
             index_to_splitfactor_map = {
                 i: self._sched.get_index_transform(i)[1]
                 for i in self._sched.get_indices()
-                if self._sched.get_index_transform(i) and self._sched.get_index_transform(i)[0] is IndexTransform.SPLIT
+                if self._sched.get_index_transform(i)
+                and self._sched.get_index_transform(i)[0] is IndexTransform.SPLIT
             }
 
             def units_to_dim(units, dims):
-                for i, u in enumerate(units):
-                    index = self._bindings.get(u)
-                    if index is not None:
-                        begin, end, step = self._sched.get_index_range(index)
-                        if step == 1 and index in index_to_splitfactor_map:
-                            dims[i] = index_to_splitfactor_map[index]
+                def compute_index_itercount(idx):
+                    begin, end, step = self._sched.get_index_range(idx)
+                    if step == 1 and idx in index_to_splitfactor_map:
+                        return index_to_splitfactor_map[idx]
+                    else:
+                        return _ceildiv(end - begin, step)
 
-                        else:
-                            dims[i] = _ceildiv(end - begin, step)
+                for i, u in enumerate(units):
+                    index_or_tuple = self._bindings.get(u)
+                    if index_or_tuple is not None:
+                        if not isinstance(index_or_tuple, Iterable):
+                            index_or_tuple = (index_or_tuple,)
+                        dims[i] = reduce(lambda x, y: x*y, [compute_index_itercount(index) for index in index_or_tuple])
 
             block_dims = [1, 1, 1]
             grid_dims = [1, 1, 1]
@@ -626,8 +807,16 @@ class Plan:
             if any(proc in self._bindings for proc in target.GridUnit):
 
                 # TODO: move this into the C++ layer
-                block_units = [target.GridUnit.BLOCK_X, target.GridUnit.BLOCK_Y, target.GridUnit.BLOCK_Z]
-                thread_units = [target.GridUnit.THREAD_X, target.GridUnit.THREAD_Y, target.GridUnit.THREAD_Z]
+                block_units = [
+                    target.GridUnit.BLOCK_X,
+                    target.GridUnit.BLOCK_Y,
+                    target.GridUnit.BLOCK_Z,
+                ]
+                thread_units = [
+                    target.GridUnit.THREAD_X,
+                    target.GridUnit.THREAD_Y,
+                    target.GridUnit.THREAD_Z,
+                ]
 
                 # Block units map to the grid specification
                 units_to_dim(block_units, grid_dims)
@@ -650,7 +839,9 @@ class Plan:
                     grid_dims[i] = _ceildiv(shape, block_dims[i])
 
             context.options = _GPU(grid=_Dim3(*grid_dims), block=_Dim3(*block_dims))
-            context.plan = context.schedule.create_gpu_plan(gpu_options=context.options, runtime=target.runtime)
+            context.plan = context.schedule.create_gpu_plan(
+                gpu_options=context.options, runtime=target.runtime
+            )
         else:
             context.plan = context.schedule.create_plan()
 
@@ -659,7 +850,7 @@ class Plan:
             cmd(context)
 
     def _replay_delayed_calls(self):
-        '''
+        """
         This method is called once per adding function, so it can be called multiple times when
         multiple functions get added. In order for the functions to be added correctly, we need to make sure all
         the residual states are cleared between different method calls.
@@ -668,18 +859,21 @@ class Plan:
         before we replay the delayed methods.
 
         If there is no residual states between different method calls, no need to reset.
-        '''
+        """
         for delayed_call in self._delayed_calls:
             params = self._delayed_calls[delayed_call]
             if isinstance(params, dict):
                 resolved_params = {
-                    key: params[key].get_value() if isinstance(params[key], DelayedParameter) else params[key]
+                    key: params[key].get_value()
+                    if isinstance(params[key], DelayedParameter)
+                    else params[key]
                     for key in params
                 }
                 delayed_call(**resolved_params)
             else:
                 resolved_params = [
-                    param.get_value() if isinstance(param, DelayedParameter) else param for param in params
+                    param.get_value() if isinstance(param, DelayedParameter) else param
+                    for param in params
                 ]
                 delayed_call(*resolved_params)
 
@@ -709,7 +903,9 @@ def _build_native_nest(plan: "Plan", nest_args: List[Array]):
         sched._replay_delayed_calls()
         plan._replay_delayed_calls()
 
-        loopnest_context = NativeLoopNestContext(function_args=nest_args, runtime_args=args)
+        loopnest_context = NativeLoopNestContext(
+            function_args=nest_args, runtime_args=args
+        )
         build_array_native_context(loopnest_context)
         build_loopnest_native_context(loopnest_context)
 
@@ -720,7 +916,9 @@ def _build_native_nest(plan: "Plan", nest_args: List[Array]):
     return nest_wrapper_fn
 
 
-def _create_function(plan: "Plan", args: List[Array], public: bool = True, no_inline: bool = False) -> Function:
+def _create_function(
+    plan: "Plan", args: List[Array], public: bool = True, no_inline: bool = False
+) -> Function:
     from secrets import token_hex
 
     name = f"nest_impl_{token_hex(16)}"

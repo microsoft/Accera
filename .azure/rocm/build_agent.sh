@@ -16,9 +16,9 @@ CWD=$(pwd)
 cd ${ACCERA_ROOT}
 sudo docker build . \
     --build-arg ROCMVER=${ROCMVER} \
-    --tag acceracontainers/rocm-linuxagent:${ROCMVER} \
+    --tag acceracontainers.azurecr.io/rocm-linuxagent:${ROCMVER} \
     --file .azure/rocm/Dockerfile
 
-# sudo docker tag acceracontainers/rocm-linuxagent:${ROCMVER} \
-#     acceracontainers/rocm-linuxagent:latest
+sudo docker tag acceracontainers.azurecr.io/rocm-linuxagent:${ROCMVER} \
+    acceracontainers.azurecr.io/rocm-linuxagent:latest
 cd ${CWD}

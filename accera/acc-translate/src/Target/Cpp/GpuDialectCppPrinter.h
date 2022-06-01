@@ -61,6 +61,9 @@ namespace cpp_printer
         LogicalResult printGPUIndexType();
 
     private:
+        std::string getWmmaNamespace();
+        std::string getFragmentEnum(const gpu::MMAMatrixType& mmaMatrix);
+        LogicalResult printFragmentType(const gpu::MMAMatrixType& mmaMatrix, int m, int n, int k, bool row_major);
         LogicalResult printAccType(const gpu::MMAMatrixType& mmaMatrix);
 
         llvm::SmallVector<gpu::GPUModuleOp> _gpuModuleOps;

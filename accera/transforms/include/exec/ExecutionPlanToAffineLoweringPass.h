@@ -17,7 +17,7 @@ using OwningRewritePatternList = RewritePatternSet;
 
 namespace accera::transforms::executionPlan
 {
-void populateExecutionPlanMakeCachePatterns(mlir::OwningRewritePatternList& patterns);
+void populateExecutionPlanCacheFinalizePatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanMultiCachePatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanCopyReducePatterns(mlir::OwningRewritePatternList& patterns);
 void populateExecutionPlanCacheRegionHoistingPatterns(mlir::OwningRewritePatternList& patterns);

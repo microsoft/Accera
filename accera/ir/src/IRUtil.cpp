@@ -7,6 +7,7 @@
 #include "value/ValueAttributes.h"
 #include "value/ValueEnums.h"
 
+#include <ir/include/exec/ExecutionOptions.h>
 #include <ir/include/nest/LoopNestOps.h>
 #include <ir/include/value/ValueDialect.h>
 
@@ -437,14 +438,32 @@ namespace util
         return {};
     }
 
-    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Operation* where, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices)
+    std::vector<std::pair<loopnest::Index, mlir::Value>> ResolveUnrealizedNestIndices(mlir::Operation* where)
     {
-        return GetCurrentIndexIVs(loopIndices, where->getBlock(), unrealizedLoopNestIndices);
+        std::vector<std::pair<loopnest::Index, mlir::Value>> result;
+        if (auto kernelOp = CastOrGetParentOfType<loopnest::KernelOp>(where))
+        {
+            auto symbolicIndexOps = kernelOp.getIndices();
+            for (auto& symbolicIndexOp : symbolicIndexOps)
+            {
+                result.emplace_back(std::make_pair(symbolicIndexOp.getValue(), symbolicIndexOp));
+            }
+        }
+        return result;
     }
 
-    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Block* where, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices)
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Operation* where)
+    {
+        return GetCurrentIndexIVs(loopIndices, where->getBlock());
+    }
+
+    std::vector<mlir::Value> GetCurrentIndexIVs(const std::vector<loopnest::Index>& loopIndices, mlir::Block* where)
     {
         std::vector<mlir::Value> ivs(loopIndices.size());
+
+        auto blockParentOp = where->getParentOp();
+
+        std::vector<std::pair<loopnest::Index, mlir::Value>> unrealizedLoopNestIndices = ResolveUnrealizedNestIndices(blockParentOp);
 
         // First check the unrealizedLoopNestIndices for any loopnest indices that haven't been resolved to full AffineForOps yet
         for (const auto& indexIVPair : unrealizedLoopNestIndices)
@@ -464,7 +483,6 @@ namespace util
             }
         }
 
-        auto blockParentOp = where->getParentOp();
         mlir::AffineForOp currentParentLoop;
         if (mlir::isa<mlir::AffineForOp>(blockParentOp))
         {
@@ -919,9 +937,8 @@ namespace util
         return builder.create<mlir::IndexCastOp>(loc, builder.create<_TyOp>(loc, builder.getI32Type()), builder.getIndexType());
     }
 
-    mlir::Value GetGPUIndex(mlir::Operation* op, const value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc)
+    mlir::Value GetGPUIndex(const ir::value::ExecutionRuntime& runtime, value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc)
     {
-        const auto runtime = ResolveExecutionRuntime(op).value();
         if (runtime == value::ExecutionRuntime::ROCM)
         {
             switch (idxType)
@@ -991,5 +1008,245 @@ namespace util
             }
         }
     }
+
+    mlir::Value GetGPUIndex(mlir::Operation* op, const value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc)
+    {
+        const auto runtime = ResolveExecutionRuntime(op).value();
+        return GetGPUIndex(runtime, idxType, builder, loc);
+    }
+
+    value::Processor GetGPUProcessor(mlir::Operation* gpuOp)
+    {
+        assert(gpuOp != nullptr && "Can't get GPU Proc for null op");
+        return mlir::TypeSwitch<mlir::Operation*, value::Processor>(gpuOp)
+            .Case([&](mlir::gpu::ThreadIdOp threadIdOp) {
+                auto threadStr = threadIdOp.dimension().str();
+                if (threadStr == "x")
+                {
+                    return value::Processor::ThreadX;
+                }
+                else if (threadStr == "y")
+                {
+                    return value::Processor::ThreadY;
+                }
+                else if (threadStr == "z")
+                {
+                    return value::Processor::ThreadZ;
+                }
+                else
+                {
+                    assert(false && "Unrecognized thread dimension");
+                    return value::Processor::Sequential;
+                }
+            })
+            .Case([&](mlir::gpu::BlockIdOp blockIdOp) {
+                auto blockStr = blockIdOp.dimension().str();
+                if (blockStr == "x")
+                {
+                    return value::Processor::BlockX;
+                }
+                else if (blockStr == "y")
+                {
+                    return value::Processor::BlockY;
+                }
+                else if (blockStr == "z")
+                {
+                    return value::Processor::BlockZ;
+                }
+                else
+                {
+                    assert(false && "Unrecognized block dimension");
+                    return value::Processor::Sequential;
+                }
+            })
+            .Case([&](mlir::gpu::BlockDimOp blockDimOp) {
+                auto blockStr = blockDimOp.dimension().str();
+                if (blockStr == "x")
+                {
+                    return value::Processor::BlockDimX;
+                }
+                else if (blockStr == "y")
+                {
+                    return value::Processor::BlockDimY;
+                }
+                else if (blockStr == "z")
+                {
+                    return value::Processor::BlockDimZ;
+                }
+                else
+                {
+                    assert(false && "Unrecognized block dimension");
+                    return value::Processor::Sequential;
+                }
+            })
+            .Case([&](mlir::gpu::GridDimOp gridDimOp) {
+                auto gridStr = gridDimOp.dimension().str();
+                if (gridStr == "x")
+                {
+                    return value::Processor::GridDimX;
+                }
+                else if (gridStr == "y")
+                {
+                    return value::Processor::GridDimY;
+                }
+                else if (gridStr == "z")
+                {
+                    return value::Processor::GridDimZ;
+                }
+                else
+                {
+                    assert(false && "Unrecognized grid dimension");
+                    return value::Processor::Sequential;
+                }
+            })
+            .Case([&](mlir::ROCDL::ThreadIdXOp) {
+                return value::Processor::ThreadX;
+            })
+            .Case([&](mlir::ROCDL::ThreadIdYOp) {
+                return value::Processor::ThreadY;
+            })
+            .Case([&](mlir::ROCDL::ThreadIdZOp) {
+                return value::Processor::ThreadZ;
+            })
+            .Case([&](mlir::ROCDL::BlockIdXOp) {
+                return value::Processor::BlockX;
+            })
+            .Case([&](mlir::ROCDL::BlockIdYOp) {
+                return value::Processor::BlockY;
+            })
+            .Case([&](mlir::ROCDL::BlockIdZOp) {
+                return value::Processor::BlockZ;
+            })
+            .Case([&](mlir::ROCDL::BlockDimXOp) {
+                return value::Processor::BlockDimX;
+            })
+            .Case([&](mlir::ROCDL::BlockDimYOp) {
+                return value::Processor::BlockDimY;
+            })
+            .Case([&](mlir::ROCDL::BlockDimZOp) {
+                return value::Processor::BlockDimZ;
+            })
+            .Case([&](mlir::ROCDL::GridDimXOp) {
+                return value::Processor::GridDimX;
+            })
+            .Case([&](mlir::ROCDL::GridDimYOp) {
+                return value::Processor::GridDimY;
+            })
+            .Case([&](mlir::ROCDL::GridDimZOp) {
+                return value::Processor::GridDimZ;
+            })
+            .Case([&](mlir::IndexCastOp castOp) {
+                // If this is an index cast, recurse to the arg of the index cast
+                auto inputVal = castOp.in();
+                return GetGPUProcessor(inputVal.getDefiningOp());
+            })
+            .Default([&](mlir::Operation*) {
+                assert(false && "Unsupported GPU op");
+                return value::Processor::Sequential;
+            });
+    }
+
+    int DimIndexToInteger(llvm::StringRef dim)
+    {
+        return ::llvm::StringSwitch<int>(dim)
+            .Case("x", 0)
+            .Case("y", 1)
+            .Case("z", 2)
+            .Default(-1);
+    }
+
+    int GetDimValByDimIndexStr(accera::ir::targets::Dim3 dims, llvm::StringRef dimStr)
+    {
+        return ::llvm::StringSwitch<int>(dimStr)
+            .Case("x", dims.x)
+            .Case("y", dims.y)
+            .Case("z", dims.z)
+            .Default(-1);
+    }
+
+    template <typename OpTy>
+    accera::ir::targets::GPU GetGPUFuncLaunchHelper(OpTy vFuncOrLambdaOp)
+    {
+        auto launchAttr = vFuncOrLambdaOp->template getAttrOfType<mlir::ArrayAttr>(vFuncOrLambdaOp.getGPULaunchAttrName());
+        assert(launchAttr != nullptr);
+        return accera::ir::targets::GPU::FromArrayAttr(launchAttr);
+    }
+
+    accera::ir::targets::GPU GetGPUFuncLaunchInfo(mlir::Operation* where)
+    {
+        return mlir::TypeSwitch<mlir::Operation*, accera::ir::targets::GPU>(where)
+            .Case([&](ir::value::ValueFuncOp vFuncOp) { return GetGPUFuncLaunchHelper(vFuncOp); })
+            .Case([&](ir::value::ValueLambdaOp vLambdaOp) { return GetGPUFuncLaunchHelper(vLambdaOp); })
+            .Default([](mlir::Operation*) {
+                assert(false && "Can only resolve gpu launch info for ir::value::ValueFuncOp and ir::value::ValueLambdaOp");
+                return accera::ir::targets::GPU{};
+            });
+    }
+
+    int64_t GetBlockDimSize(mlir::Operation* where, const std::string& dimId)
+    {
+        if (auto gpuFunc = where->getParentOfType<mlir::gpu::GPUFuncOp>())
+        {
+            auto blockIdxAttr = gpuFunc->getAttrOfType<ArrayAttr>("blockSize");
+            auto blockDimIdx = DimIndexToInteger(dimId);
+            assert((blockIdxAttr && blockDimIdx != -1) && "Couldn't resolve block size");
+            auto blockDimSize = blockIdxAttr.getValue()[blockDimIdx].cast<IntegerAttr>().getInt();
+            return blockDimSize;
+        }
+        else
+        {
+            mlir::Operation* vFuncOp = where->getParentOfType<ir::value::ValueFuncOp>();
+            mlir::Operation* vLambdaOp = where->getParentOfType<ir::value::ValueLambdaOp>();
+            if (vFuncOp == nullptr && vLambdaOp == nullptr)
+            {
+                assert(false && "Can only resolve block dim size inside of a gpu::GPUFuncOp, ir::value::ValueFuncOp, or ir::value::ValueLambdaOp");
+                return -1;
+            }
+            // Prefer using the ValueLambdaOp as inner loopnests will be a ValueLambdaOp nested inside of a ValueFuncOp
+            auto op = vLambdaOp != nullptr ? vLambdaOp : vFuncOp;
+            auto gpuParams = GetGPUFuncLaunchInfo(op);
+            auto blockDimVal = GetDimValByDimIndexStr(gpuParams.block, dimId);
+            assert(blockDimVal != -1 && "Couldn't resolve block size");
+            return blockDimVal;
+        }
+    }
+
+    int64_t GetGridDimSize(mlir::Operation* where, const std::string& dimId)
+    {
+        if (auto gpuFunc = where->getParentOfType<mlir::gpu::GPUFuncOp>())
+        {
+            auto gridIdxAttr = gpuFunc->getAttrOfType<ArrayAttr>("gridSize");
+            auto gridDimIdx = DimIndexToInteger(dimId);
+            assert((gridIdxAttr && gridDimIdx != -1) && "Couldn't resolve grid size");
+            auto gridDimSize = gridIdxAttr.getValue()[gridDimIdx].cast<IntegerAttr>().getInt();
+            return gridDimSize;
+        }
+        else
+        {
+            mlir::Operation* vFuncOp = where->getParentOfType<ir::value::ValueFuncOp>();
+            mlir::Operation* vLambdaOp = where->getParentOfType<ir::value::ValueLambdaOp>();
+            if (vFuncOp == nullptr && vLambdaOp == nullptr)
+            {
+                assert(false && "Can only resolve grid dim size inside of a gpu::GPUFuncOp, ir::value::ValueFuncOp, or ir::value::ValueLambdaOp");
+                return -1;
+            }
+            auto op = vLambdaOp != nullptr ? vLambdaOp : vFuncOp;
+            auto gpuParams = GetGPUFuncLaunchInfo(op);
+            auto gridDimVal = GetDimValByDimIndexStr(gpuParams.grid, dimId);
+            assert(gridDimVal != -1 && "Couldn't resolve grid size");
+            return gridDimVal;
+        }
+    }
+
+    int64_t GetBlockDimSize(mlir::gpu::BlockDimOp op)
+    {
+        return GetBlockDimSize(op, op.dimension().str());
+    }
+
+    int64_t GetGridDimSize(mlir::gpu::GridDimOp op)
+    {
+        return GetGridDimSize(op, op.dimension().str());
+    }
+
 } // namespace util
 } // namespace accera::ir

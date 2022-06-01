@@ -6,6 +6,7 @@
 set -e
 
 pip install -r requirements.txt
+cp -f ../../docs/assets/logos/Accera_darktext.svg static/.
 
 # python viz_tool.py [--port <port>]
 python viz_tool.py

@@ -49,8 +49,8 @@ endforeach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
 InstallAcceraDirectory(samples accera "accera/samples")
 
 # tests
-configure_file("accera/test/smoke_test.py" "test/smoke_test.py" @ONLY)
-add_test(NAME ${library_name}_smoketest COMMAND python -m pytest -v --junitxml=test/test-smoke_test.xml test/smoke_test.py)
+configure_file("accera/test/smoke_tests.py" "test/smoke_tests.py" @ONLY)
+add_test(NAME ${library_name}_smoketest COMMAND python -m pytest -v --junitxml=test/test-smoke_test.xml test/smoke_tests.py)
 
 configure_file("accera/test/unit_tests.py" "test/unit_tests.py" @ONLY)
 add_test(NAME ${library_name}_unittests COMMAND python -m pytest -v --junitxml=test/test-unit_tests.xml test/unit_tests.py)

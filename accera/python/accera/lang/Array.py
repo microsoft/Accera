@@ -7,6 +7,7 @@ import logging
 from typing import *
 from enum import Enum, auto
 from functools import partial
+
 from .._lang_python import ScalarType, _MemoryLayout
 from .._lang_python._lang import Array as NativeArray
 from .Layout import Layout, MemoryMapLayout
@@ -300,7 +301,7 @@ class SubArray(Array):
             package.add(main, args=(A,), base_name="main")
 
     """
-    def __init__(self, source: Array, shape: Tuple[int]):
+    def __init__(self, source: Array, shape: Tuple[Union[int, DelayedParameter]]):
         self._source = source
         self._role = source.role
         self._shape = shape or source.shape
@@ -308,9 +309,11 @@ class SubArray(Array):
         self._layout = source._layout
         self._requested_layout = source._requested_layout
         self._offset = 0
-
-        # TODO: support DelayedParameter
         self._delayed_calls = {}
+        
+        if self._shape and any([isinstance(s, DelayedParameter) for s in self._shape]):
+            self._delayed_calls[partial(self._init_delayed)] = tuple([s for s in self._shape])
+            return
 
         self._create_native_array()
 
@@ -319,5 +322,8 @@ class SubArray(Array):
         # Note that this is *not* the actual subarray view, but is intended only for
         # defining functions. To get the actual subarray view, call
         # NativeArray.sub_array() on the source NativeArray after it is materialized.
+        self._shape = [x.get_value() if isinstance(x, DelayedParameter) else x for x in self._shape]
+
         self._layout = _MemoryLayout.get_subarray_layout(self._source._layout, self._shape)
         self._native_array = NativeArray(self._element_type, self._layout)
+

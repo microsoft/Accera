@@ -578,18 +578,17 @@ namespace loopnest
         case ir::value::ExecutionTarget::CPU:
             break;
         case ir::value::ExecutionTarget::GPU:
-            if (auto dictAttr = execPlan->getAttrOfType<DictionaryAttr>(execPlan.getGPUProcessorMapAttrName()))
+            auto bindingPairOpt = execPlan.getBinding(loopIndex);
+            if (bindingPairOpt.has_value())
             {
-                for (auto [key, val] : dictAttr.getValue())
-                {
-                    auto indexAttr = val.dyn_cast<IndexAttr>();
-                    if (loopIndex.GetId() == indexAttr.getValue().GetId())
-                    {
-                        loop->setAttr("accv_gpu_map", builder.getStringAttr(key.str()));
-                    }
-                }
-            }
+                auto [proc, map] = bindingPairOpt.value();
+                auto procStr = ir::value::stringifyEnum(proc);
 
+                std::vector<mlir::NamedAttribute> loopBoundAttrs;
+                loopBoundAttrs.emplace_back(builder.getIdentifier("proc"), builder.getStringAttr(procStr));
+                loopBoundAttrs.emplace_back(builder.getIdentifier("map"), mlir::AffineMapAttr::get(map));
+                loop->setAttr("accv_gpu_map", builder.getDictionaryAttr(loopBoundAttrs));
+            }
             break;
         }
 
@@ -1564,19 +1563,7 @@ namespace loopnest
             return false;
         }
 
-        if (auto dictAttr = execPlan->getAttrOfType<DictionaryAttr>(execPlan.getGPUProcessorMapAttrName()))
-        {
-            for (auto [key, val] : dictAttr.getValue())
-            {
-                auto indexAttr = val.dyn_cast<IndexAttr>();
-                if (loopIndex.GetId() == indexAttr.getValue().GetId())
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return execPlan.hasBinding(loopIndex);
     }
 
     ScheduleOp LoopNestBuilder::GetScheduleOp() const

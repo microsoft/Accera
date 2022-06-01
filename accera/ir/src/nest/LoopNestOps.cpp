@@ -7,7 +7,6 @@
 
 #include "nest/LoopNestAttributes.h"
 #include "nest/LoopNestOps.h"
-#include "nest/LoopNestDialect.cpp.inc"
 #include "nest/LoopNestTypes.h"
 #include "nest/Util.h"
 #include <ir/include/value/ValueDialect.h>
@@ -39,6 +38,9 @@
 #include <set>
 #include <sstream>
 #include <unordered_map>
+
+// Include tablegen-generated cpp
+#include "nest/LoopNestDialect.cpp.inc"
 
 using namespace accera::ir;
 using namespace loopnest;
@@ -1191,7 +1193,7 @@ namespace loopnest
                     auto& fusedMap = schedFusedIndexMap[schedule];
                     auto indexVal = index.getValue();
 
-                    for (const auto &it : fusedMap)
+                    for (const auto& it : fusedMap)
                     {
                         // Replace the index-in-use with the corresponding index
                         // If the corresponding index is padded, check if its parent is the index-in-use
@@ -1230,7 +1232,7 @@ namespace loopnest
             {
                 // Derive the active range from the correspondence index's constraints
                 auto [begin, end] = constraints.GetEffectiveRangeBounds(correspondence[idx]);
-                auto activeRange = Range(begin, end, /*unused*/1);
+                auto activeRange = Range(begin, end, /*unused*/ 1);
 
                 auto fusedIndex = correspondence[0];
                 auto fusedRange = fusedDomain.GetIndexRange(fusedIndex);
@@ -1344,6 +1346,120 @@ namespace loopnest
         }
 
         return Fuse(builder, std::vector{ schedule1, schedule2 }, correspondences);
+    }
+
+    //
+    // ExecPlanOp
+    //
+    void ExecPlanOp::addBinding(mlir::MLIRContext* context, const Index& index, value::Processor proc, mlir::AffineMap map)
+    {
+        auto procStr = ir::value::stringifyEnum(proc);
+        auto indexAttr = IndexAttr::get(index, context);
+
+        if (!map)
+        {
+            map = mlir::AffineMap::getMultiDimIdentityMap(1, context);
+        }
+
+        // the bindings map { procTag : [ { "index": IndexAttr, "map": AffineMapAttr }, ... ] }
+        // where procTag is like "ThreadX" or "BlockY"
+        mlir::DictionaryAttr currentBindings = bindings().getValueOr(mlir::DictionaryAttr::get(context));
+
+        // Since multiple loops can be bound to operations on a single handle, the handle maps to an array of dictionaries
+        // where each dictionary contains both an index attr and a map
+        std::vector<mlir::Attribute> boundIndicesAndMaps;
+
+        // If we already have bindings for this proc tag, then fetch those so we can append
+        if (auto boundProcAttr = currentBindings.get(procStr))
+        {
+            assert(boundProcAttr.isa<mlir::ArrayAttr>());
+            auto boundIndicesAndMapsArrayAttr = boundProcAttr.cast<mlir::ArrayAttr>();
+            boundIndicesAndMaps.insert(boundIndicesAndMaps.end(), boundIndicesAndMapsArrayAttr.begin(), boundIndicesAndMapsArrayAttr.end());
+        }
+
+        // Create a dictionary attribute that holds the index attribute and the affine map
+        std::vector<mlir::NamedAttribute> boundIndexAndMap;
+        boundIndexAndMap.emplace_back(mlir::Identifier::get("index", context), indexAttr);
+        boundIndexAndMap.emplace_back(mlir::Identifier::get("map", context), mlir::AffineMapAttr::get(map));
+        boundIndicesAndMaps.emplace_back(mlir::DictionaryAttr::get(context, boundIndexAndMap));
+
+        // DictionaryAttrs are immutable, so modify the key-value pair entry and create a new DictionaryAttr
+        std::vector<mlir::NamedAttribute> currentBindingsEntries = currentBindings.getValue().vec();
+        auto fullProcBindingInfo = mlir::ArrayAttr::get(context, boundIndicesAndMaps);
+        auto existingEntryIter = std::find_if(currentBindingsEntries.begin(), currentBindingsEntries.end(), [&](const mlir::NamedAttribute& existingDictEntry) {
+            return existingDictEntry.first.strref() == procStr;
+        });
+        if (existingEntryIter == currentBindingsEntries.end())
+        {
+            currentBindingsEntries.emplace_back(mlir::Identifier::get(procStr, context), fullProcBindingInfo);
+        }
+        else
+        {
+            *existingEntryIter = mlir::NamedAttribute(mlir::Identifier::get(procStr, context), fullProcBindingInfo);
+        }
+        bindingsAttr(mlir::DictionaryAttr::get(context, currentBindingsEntries));
+    }
+
+    auto getIterForIndex(const Index& index, mlir::ArrayAttr boundIndexMapArrayAttr)
+    {
+        return std::find_if(boundIndexMapArrayAttr.begin(), boundIndexMapArrayAttr.end(), [&](mlir::Attribute attr) {
+            assert(attr.isa<mlir::DictionaryAttr>());
+            auto dictAttr = attr.cast<mlir::DictionaryAttr>();
+            auto indexAttr = dictAttr.get("index").cast<IndexAttr>();
+            return index == indexAttr.getValue();
+        });
+    }
+
+    std::optional<std::pair<value::Processor, mlir::AffineMap>> ExecPlanOp::getBinding(const Index& index)
+    {
+        // the bindings map { procTag : [ { "index": IndexAttr, "map": AffineMapAttr }, ... ] }
+        // where procTag is like "ThreadX" or "BlockY"
+        auto currentBindingsOpt = bindings();
+        if (!currentBindingsOpt.hasValue())
+        {
+            return std::nullopt;
+        }
+        mlir::DictionaryAttr currentBindings = currentBindingsOpt.getValue();
+        std::vector<mlir::NamedAttribute> procMappingEntries = currentBindings.getValue();
+        for (auto [procStr, boundIndexMapAttr] : procMappingEntries)
+        {
+            auto boundIndexMapArrayAttr = boundIndexMapAttr.cast<mlir::ArrayAttr>();
+            auto iter = getIterForIndex(index, boundIndexMapArrayAttr);
+            if (iter != boundIndexMapArrayAttr.end())
+            {
+                assert(iter->isa<mlir::DictionaryAttr>() && "Invalid bindings dict state");
+                auto foundDictAttr = iter->cast<mlir::DictionaryAttr>();
+                auto map = foundDictAttr.get("map").cast<mlir::AffineMapAttr>().getValue();
+                auto procOpt = ir::value::symbolizeEnum<value::Processor>(procStr);
+                assert(procOpt.hasValue() && "Unrecognized proc tag found");
+                auto proc = procOpt.getValue();
+
+                return std::make_pair(proc, map);
+            }
+        }
+        return std::nullopt;
+    }
+
+    bool ExecPlanOp::hasBinding(const Index& index)
+    {
+        // the bindings map { procTag : [ { "index": IndexAttr, "map": AffineMapAttr }, ... ] }
+        // where procTag is like "ThreadX" or "BlockY"
+        auto currentBindingsOpt = bindings();
+        if (!currentBindingsOpt.hasValue())
+        {
+            return false;
+        }
+        mlir::DictionaryAttr currentBindings = currentBindingsOpt.getValue();
+        std::vector<mlir::NamedAttribute> procMappingEntries = currentBindings.getValue();
+        for (auto [procStr, boundIndexMapAttr] : procMappingEntries)
+        {
+            auto boundIndexMapArrayAttr = boundIndexMapAttr.cast<mlir::ArrayAttr>();
+            if (getIterForIndex(index, boundIndexMapArrayAttr) != boundIndexMapArrayAttr.end())
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     //

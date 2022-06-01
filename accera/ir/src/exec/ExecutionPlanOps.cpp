@@ -544,7 +544,7 @@ namespace executionPlan
                 {
                     // Currently only supports one access pattern in the kernel
                     [[maybe_unused]] bool accessPatternMatches = accessExpressions.size() == currentAccessExpressions.size() &&
-                                                std::equal(accessExpressions.begin(), accessExpressions.end(), currentAccessExpressions.begin());
+                                                                 std::equal(accessExpressions.begin(), accessExpressions.end(), currentAccessExpressions.begin());
                     assert(accessPatternMatches && "Only supports one access pattern per cached buffer");
                 }
                 else
@@ -555,7 +555,7 @@ namespace executionPlan
                 {
                     // Currently only supports one access pattern in the kernel
                     [[maybe_unused]] bool accessIndicesMatch = orderedAccessIndices.size() == currentOrderedAccessIndices.size() &&
-                                              std::equal(orderedAccessIndices.begin(), orderedAccessIndices.end(), currentOrderedAccessIndices.begin());
+                                                               std::equal(orderedAccessIndices.begin(), orderedAccessIndices.end(), currentOrderedAccessIndices.begin());
                     assert(accessIndicesMatch && "Only supports one access pattern per cached buffer");
                 }
                 else
@@ -1008,19 +1008,18 @@ namespace executionPlan
         return result;
     }
 
-    mlir::AffineValueMap MakeCacheOp::insertCachePosition(mlir::Operation* where, const std::vector<mlir::Value>& baseArrayIndices, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopnestIndices)
+    mlir::AffineValueMap MakeCacheOp::insertCachePosition(mlir::Operation* where, const std::vector<mlir::Value>& baseArrayIndices)
     {
-        return insertCachePosition(where->getBlock(), baseArrayIndices, unrealizedLoopnestIndices);
+        return insertCachePosition(where->getBlock(), baseArrayIndices);
     }
 
-    mlir::AffineValueMap MakeCacheOp::insertCachePosition(mlir::Block* where, const std::vector<mlir::Value>& baseArrayIndices, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopnestIndices)
+    mlir::AffineValueMap MakeCacheOp::insertCachePosition(mlir::Block* where, const std::vector<mlir::Value>& baseArrayIndices)
     {
-        // The unrealizedLoopnestIndices contain indices for a loopnest that hasn't been fully constructed yet
         std::vector<loopnest::Index> cacheMultiCacheIndices = util::ConvertArrayAttrToIndexVector(multiCacheAccessIndices());
         std::vector<loopnest::Index> cacheOffsetAccessIndices = util::ConvertArrayAttrToIndexVector(offsetAccessIndices());
 
-        std::vector<mlir::Value> multiCacheIVs = util::GetCurrentIndexIVs(cacheMultiCacheIndices, where, unrealizedLoopnestIndices);
-        std::vector<mlir::Value> offsetAccessIVs = util::GetCurrentIndexIVs(cacheOffsetAccessIndices, where, unrealizedLoopnestIndices);
+        std::vector<mlir::Value> multiCacheIVs = util::GetCurrentIndexIVs(cacheMultiCacheIndices, where);
+        std::vector<mlir::Value> offsetAccessIVs = util::GetCurrentIndexIVs(cacheOffsetAccessIndices, where);
 
         mlir::OpBuilder builder = mlir::OpBuilder::atBlockBegin(where);
 
@@ -1297,9 +1296,9 @@ namespace executionPlan
     }
 
     //
-    // BeginCacheRegionOp
+    // BeginCreateCacheOp
     //
-    void BeginCacheRegionOp::build(OpBuilder& builder,
+    void BeginCreateCacheOp::build(OpBuilder& builder,
                                    OperationState& result,
                                    Value inputValue,
                                    CacheAccessContext cacheAccessContext,
@@ -1363,9 +1362,9 @@ namespace executionPlan
         result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({ 1 /* fromValue */, 1 /* toValue */, 1 /* baseInput */, static_cast<int32_t>(cacheAccessContext.fullRelevantScheduleIndices.size()), static_cast<int32_t>(cacheAccessContext.externalRelevantScheduleIndices.size()) }));
     }
 
-    CacheAccessContext BeginCacheRegionOp::getCacheAccessContext()
+    CacheAccessContext BeginCreateCacheOp::getCacheAccessContext()
     {
-        BeginCacheRegionOp::Adaptor adaptor{ *this };
+        BeginCreateCacheOp::Adaptor adaptor{ *this };
 
         auto cacheRegionRelevantIndexRanges = util::ArrayAttrToVector<IndexRange, IndexRangeAttr>(
             adaptor.cacheRegionRelevantIndexRanges(),
@@ -1389,37 +1388,37 @@ namespace executionPlan
         return result;
     }
 
-    Index BeginCacheRegionOp::index()
+    Index BeginCreateCacheOp::index()
     {
         return triggerIndex().getValue();
     }
 
-    Position BeginCacheRegionOp::position()
+    Position BeginCreateCacheOp::position()
     {
         return Position::prologue;
     }
 
-    mlir::Operation* BeginCacheRegionOp::getInjectionEndOp()
+    mlir::Operation* BeginCreateCacheOp::getInjectionEndOp()
     {
         return getEndOp();
     }
 
-    mlir::Operation* BeginCacheRegionOp::getEndOp()
+    mlir::Operation* BeginCreateCacheOp::getEndOp()
     {
         auto uses = util::getUsesOfType<EndCacheRegionOp>(resultId());
         assert(uses.size() == 1);
         return uses.front();
     }
 
-    int64_t BeginCacheRegionOp::getId()
+    int64_t BeginCreateCacheOp::getId()
     {
         return id();
     }
 
     //
-    // BeginMaxElementCacheRegionOp
+    // BeginCreateMaxElementCacheOp
     //
-    void BeginMaxElementCacheRegionOp::build(OpBuilder& builder,
+    void BeginCreateMaxElementCacheOp::build(OpBuilder& builder,
                                              OperationState& result,
                                              Value input,
                                              Value cache,
@@ -1460,29 +1459,54 @@ namespace executionPlan
         result.addAttribute("vectorizationInfo", VectorizationInfoAttr::get(vecInfo, builder.getContext()));
     }
 
-    Index BeginMaxElementCacheRegionOp::index()
+    Index BeginCreateMaxElementCacheOp::index()
     {
         return innermostLoopNestIndex().getValue();
     }
 
-    Position BeginMaxElementCacheRegionOp::position()
+    Position BeginCreateMaxElementCacheOp::position()
     {
         return Position::prologue;
     }
 
-    mlir::Operation* BeginMaxElementCacheRegionOp::getInjectionEndOp()
+    mlir::Operation* BeginCreateMaxElementCacheOp::getInjectionEndOp()
     {
         return getEndOp();
     }
 
-    mlir::Operation* BeginMaxElementCacheRegionOp::getEndOp()
+    mlir::Operation* BeginCreateMaxElementCacheOp::getEndOp()
     {
         auto uses = util::getUsesOfType<EndCacheRegionOp>(resultId());
         assert(uses.size() == 1);
         return uses.front();
     }
 
-    int64_t BeginMaxElementCacheRegionOp::getId()
+    int64_t BeginCreateMaxElementCacheOp::getId()
+    {
+        return id();
+    }
+
+    //
+    // BeginActiveCacheRegionOp
+    //
+    void BeginActiveCacheRegionOp::build(OpBuilder& builder,
+                                         OperationState& result,
+                                         mlir::Value cache,
+                                         int64_t id)
+    {
+        result.addTypes(builder.getIndexType());
+        result.addOperands(cache);
+        result.addAttribute("id", builder.getI64IntegerAttr(id));
+    }
+
+    mlir::Operation* BeginActiveCacheRegionOp::getEndOp()
+    {
+        auto uses = util::getUsesOfType<EndCacheRegionOp>(resultId());
+        assert(uses.size() == 1);
+        return uses.front();
+    }
+
+    int64_t BeginActiveCacheRegionOp::getId()
     {
         return id();
     }
@@ -1520,6 +1544,21 @@ namespace executionPlan
         body(bodyBuilder);
 
         return mappingRegionOp;
+    }
+
+    std::optional<std::pair<value::Processor, mlir::AffineMap>> GetBindingForLoop(mlir::AffineForOp loop)
+    {
+        auto gpuMapAttr = loop->getAttrOfType<mlir::DictionaryAttr>("accv_gpu_map");
+        if (!gpuMapAttr)
+        {
+            return std::nullopt;
+        }
+        auto gpuProcStr = gpuMapAttr.get("proc").cast<mlir::StringAttr>().getValue();
+        auto gpuProcOpt = value::symbolizeEnum<value::Processor>(gpuProcStr);
+        assert(gpuProcOpt.hasValue() && "Unrecognized proc tag found");
+        auto gpuProc = gpuProcOpt.getValue();
+        auto map = gpuMapAttr.get("map").cast<mlir::AffineMapAttr>().getValue();
+        return std::make_pair(gpuProc, map);
     }
 
     // Parse an instance of an attribute registered to the execution plan dialect.

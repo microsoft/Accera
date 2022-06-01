@@ -412,7 +412,7 @@ MMAOp::MMAOp(MMAShape shape_) :
         k = 1;
         blocks = 4;
         break;
-    case MMAShape::M64xM64xK1_B2:
+    case MMAShape::M64xN64xK1_B2:
         m = 64;
         n = 64;
         k = 1;
@@ -460,11 +460,6 @@ MMAOp::MMAOp(MMAShape shape_) :
     }
 }
 
-int64_t MMAOp::getLeadingDim() const
-{
-    return m;
-}
-
 MMAShape MMAOp::getShapeType() const
 {
     return shape;
@@ -477,12 +472,7 @@ int64_t MMAOp::getInElementsPerThread(const int64_t warpSize) const
 
 int64_t MMAOp::getOutElementsPerThread(const int64_t warpSize) const
 {
-    return getLeadingDim() * getLeadingDim() / warpSize;
-}
-
-int64_t MMAOp::getPassIncrements(const int64_t warpSize) const
-{
-    return getInElementsPerThread(warpSize) * warpSize / getLeadingDim();
+    return getM() * getN() / warpSize;
 }
 
 int64_t MMAOp::getNumBlocks() const
@@ -510,7 +500,7 @@ std::vector<uint8_t> MMAOp::getOffsetMap() const
 {
     // These index offsets are calculated based on the data layout in which
     // AMD mfma operation maps them to different threads.
-    if (getNumBlocks() == 2 || m == 32) // M64xM64xK1_B2, M64xN64xK4_B2, M32xN32xK2_B1, M32xN32xK8_B1
+    if (getNumBlocks() == 2 || m == 32) // M64xN64xK1_B2, M64xN64xK4_B2, M32xN32xK2_B1, M32xN32xK8_B1
         return { 0, 4, 1, 5, 2, 6, 3, 7, 8, 12, 9, 13, 10, 14, 11, 15, 16, 20, 17, 21, 18, 22, 19, 23, 24, 28, 25, 29, 26, 30, 27, 31 };
 
     return { 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15 }; // M64xN64xK1_B4, M64xN64xK4_B4, M16xN16xK4_B1, M16xN16xK16_B1
@@ -519,7 +509,7 @@ std::vector<uint8_t> MMAOp::getOffsetMap() const
 std::array<int64_t, 2> MMAOp::getOffsetMapSize() const
 {
     // The offset map is organised in this layout so that it can be indexed by thread id.
-    if (getNumBlocks() == 2 || m == 32) // M64xM64xK1_B2, M64xN64xK4_B2, M32xN32xK2_B1, M32xN32xK8_B1
+    if (getNumBlocks() == 2 || m == 32) // M64xN64xK1_B2, M64xN64xK4_B2, M32xN32xK2_B1, M32xN32xK8_B1
         return { 16, 2 };
 
     return { 4, 4 }; // M64xN64xK1_B4, M64xN64xK4_B4, M16xN16xK4_B1, M16xN16xK16_B1
@@ -535,7 +525,7 @@ std::pair<mlir::Value, mlir::Value> MMAOp::GetThreadBlockOffsets(mlir::Operation
 {
     const auto [warpSizeX, warpSizeY] = util::ResolveWarpSize(util::ResolveExecutionRuntime(op).value()).value();
     auto warpSize = builder.create<mlir::ConstantIndexOp>(loc, warpSizeX * warpSizeY);
-    auto leadingDim = builder.create<mlir::ConstantIndexOp>(loc, getLeadingDim());
+    auto leadingDim = builder.create<mlir::ConstantIndexOp>(loc, getM());
     auto tileFactor = builder.create<mlir::ConstantIndexOp>(loc, getTileFactor());
     auto tidX = util::GetGPUIndex(op, value::Processor::ThreadX, builder, loc);
     auto tidY = util::GetGPUIndex(op, value::Processor::ThreadY, builder, loc);

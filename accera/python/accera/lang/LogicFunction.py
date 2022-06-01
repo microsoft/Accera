@@ -24,7 +24,9 @@ class LogicFunction:
         args_dict = {}
         for d in [self.func_globals, self.func_nonlocals]:
             for k, v in d.items():
-                if isinstance(v, ((_type, ) if _type else ()) + LogicFunction._SPECIAL_TYPES):
+                if isinstance(
+                    v, ((_type,) if _type else ()) + LogicFunction._SPECIAL_TYPES
+                ):
                     args_dict[k] = v
                     continue
 
@@ -81,7 +83,9 @@ class LogicFunction:
             # need to create proper unwinding infra
 
             # we undo the changes that we made to the func object
-            for k, v in zip(self.func.__code__.co_freevars, self.func.__closure__ or []):
+            for k, v in zip(
+                self.func.__code__.co_freevars, self.func.__closure__ or []
+            ):
                 if k not in nonlocals_to_update:
                     continue
 

@@ -1,4 +1,4 @@
-find_package(CUDAToolkit)
+find_package(CUDAToolkit) # requires cmake >= 3.17
 
 if(TARGET CUDA::cublas)
     add_executable(cublas_gemm main.cpp)

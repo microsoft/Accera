@@ -211,7 +211,12 @@ namespace value
         /// <returns> An instance of Cache </returns>
         Cache AddCache(ViewAdapter target, int64_t maxElements, MemorySpace memorySpace = MemorySpace::Shared);
 
-        /// <summary> Assigns a loop index to a GPU processor </summary>
+        /// <summary> Assigns an ordered sequence of loop indices to a GPU processor </summary>
+        /// <param name="indices"> The loop indices </param>
+        /// <param name="proc"> The GPU processor, indicating a block or thread </param>
+        void MapIndicesToProcessor(std::vector<ScalarIndex> indices, Processor proc);
+
+        /// <summary> Assigns a loop indes to a GPU processor </summary>
         /// <param name="index"> The loop index </param>
         /// <param name="proc"> The GPU processor, indicating a block or thread </param>
         void MapIndexToProcessor(ScalarIndex index, Processor proc);
@@ -223,7 +228,7 @@ namespace value
         /// <param name="useStaticOffsets"> Use precomputed index offsets for address calculation (potential optimization). </param>
         /// <param name="numFusedPasses"> Number of passes of the tensor operation for which to allocate register, higher value indicates higher register allocation. </param>
         /// <param name="schedulingPolicy"> Determines whether we iterate over blocks or passes. </param>
-        void Tensorize(std::vector<ScalarIndex> indices, ir::value::MMAShape dims, int numTotalPasses = 1, bool useStaticOffsets = false, int numFusedPasses = -1, ir::value::MMASchedulingPolicy schedulingPolicy = ir::value::MMASchedulingPolicy::PassOrder);
+        void Tensorize(std::vector<ScalarIndex> indices, ir::value::MMAShape dims, int numTotalPasses = 1, bool useStaticOffsets = false, int numFusedPasses = -1, ir::value::MMASchedulingPolicy schedulingPolicy = ir::value::MMASchedulingPolicy::PassOrder, bool _useRocWMMA=false);
 
     private:
         friend class Schedule;

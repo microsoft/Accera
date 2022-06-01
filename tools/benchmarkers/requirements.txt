@@ -1,0 +1,13 @@
+azure-core==1.1.1
+azure-cosmos==4.2.0
+certifi==2019.11.28
+chardet==3.0.4
+gitpython==3.1.27
+idna==2.8
+requests==2.22.0
+six==1.13.0
+urllib3==1.25.8
+virtualenv==16.7.9
+virtualenv-clone==0.5.3
+progressbar==2.5
+psutil

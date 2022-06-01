@@ -685,28 +685,28 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
                              rewriter.getUnitAttr());
         if (gpuRuntime == vir::ExecutionRuntime::VULKAN)
         {
+            // Add vulkan-specific versions of the launch attributes
             auto entryPointLocalSize = blockDimsLaunchConfig;
             assert(entryPointLocalSize.size() == kLocalSizeDimSize);
             fnAttrs.emplace_back(
                 rewriter.getIdentifier(mlir::spirv::getEntryPointABIAttrName()),
                 mlir::spirv::getEntryPointABIAttr(entryPointLocalSize, rewriter.getContext()));
         }
-        else
+
+        // Add common launch attribute information
+        SmallVector<mlir::Attribute, 4> gridDimsLaunchConfigAttrs, blockDimsLaunchConfigAttrs;
+        for (auto dim : gridDimsLaunchConfig)
         {
-            SmallVector<mlir::Attribute, 4> gridDimsLaunchConfigAttrs, blockDimsLaunchConfigAttrs;
-            for (auto dim : gridDimsLaunchConfig)
-            {
-                gridDimsLaunchConfigAttrs.emplace_back(rewriter.getI32IntegerAttr(dim));
-            }
-            for (auto dim : blockDimsLaunchConfig)
-            {
-                blockDimsLaunchConfigAttrs.emplace_back(rewriter.getI32IntegerAttr(dim));
-            }
-            fnAttrs.emplace_back(
-                rewriter.getIdentifier("gridSize"), rewriter.getArrayAttr(gridDimsLaunchConfigAttrs));
-            fnAttrs.emplace_back(
-                rewriter.getIdentifier("blockSize"), rewriter.getArrayAttr(blockDimsLaunchConfigAttrs));
+            gridDimsLaunchConfigAttrs.emplace_back(rewriter.getI32IntegerAttr(dim));
         }
+        for (auto dim : blockDimsLaunchConfig)
+        {
+            blockDimsLaunchConfigAttrs.emplace_back(rewriter.getI32IntegerAttr(dim));
+        }
+        fnAttrs.emplace_back(
+            rewriter.getIdentifier("gridSize"), rewriter.getArrayAttr(gridDimsLaunchConfigAttrs));
+        fnAttrs.emplace_back(
+            rewriter.getIdentifier("blockSize"), rewriter.getArrayAttr(blockDimsLaunchConfigAttrs));
 
         auto newFuncOp = rewriter.create<gpu::GPUFuncOp>(
             loc,

@@ -346,7 +346,7 @@ template <typename PostMFMAOp>
 void MFMALoadStoreAccumulator(Operation* op, ConversionPatternRewriter& rewriter, const vir::MMAOp& mfmaMatrixType, const int64_t vecSize, AffineMap affineMap, ValueRange indices, PostMFMAOp&& doAfterFn, ValueRange iterArgs = llvm::None)
 {
     const auto numBlocks = mfmaMatrixType.getNumBlocks();
-    const auto leadingDim = mfmaMatrixType.getLeadingDim();
+    const auto leadingDim = mfmaMatrixType.getM();
     auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
     const auto warpSize = warpSizeX * warpSizeY;
 
@@ -481,7 +481,7 @@ struct ValueMMALoadSyncOpToRocDLConversion final : public OpConversionPattern<vi
 
         auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
         const auto warpSize = warpSizeX * warpSizeY;
-        auto leadingDim = mfmaOpType.getLeadingDim();
+        auto leadingDim = mfmaOpType.getM();
 
         std::vector<Value> mapOperands;
         AffineMap matrixLayoutMap;
@@ -716,7 +716,7 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
             case MMAShape::M64xN64xK1_B4:
                 loopBuilder.create<AffineYieldOp>(loc, ValueRange{ loopBuilder.create<ROCDL::mfma_f32_16x16x1f32>(loc, vecC.getType(), ValueRange{ elemA, elemB, matD, cbsz, abid, blgp }) });
                 break;
-            case MMAShape::M64xM64xK1_B2:
+            case MMAShape::M64xN64xK1_B2:
                 loopBuilder.create<AffineYieldOp>(loc, ValueRange{ loopBuilder.create<ROCDL::mfma_f32_32x32x1f32>(loc, vecC.getType(), ValueRange{ elemA, elemB, matD, cbsz, abid, blgp }) });
                 break;
             case MMAShape::M32xN32xK2_B1:

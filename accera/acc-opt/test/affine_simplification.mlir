@@ -43,9 +43,9 @@ module @test_accera_affine_simplification {
             affine.for %arg1 = 0 to 16 {
                 affine.for %arg2 = 0 to 16 {
                     affine.for %arg3 = 0 to 4 {
-                        // CHECK: %1 = affine.load %arg0[%arg1 * 2 + (%arg2 * 48) floordiv 32] : memref<32xf32>
+                        // CHECK: %1 = affine.load %arg0[%arg1 * 2 + (%arg2 * 3) floordiv 2] : memref<32xf32>
                         %1 = affine.load %arg0[(%arg1 * 64 + %arg2 * 48 + %arg3) floordiv 32] : memref<32xf32>
-                        // CHECK: affine.store %1, %0[%arg1 * 2 + (%arg2 * 48) floordiv 32] : memref<32xf32>
+                        // CHECK: affine.store %1, %0[%arg1 * 2 + (%arg2 * 3) floordiv 2] : memref<32xf32>
                         affine.store %1, %0[(%arg1 * 64 + %arg2 * 48 + %arg3) floordiv 32] : memref<32xf32>
                     } {begin = 0 : i64, end = 4 : i64}
                 } {begin = 0 : i64, end = 16 : i64}
@@ -109,9 +109,10 @@ module @test_accera_affine_simplification {
             affine.for %arg1 = 0 to 16 {
                 affine.for %arg2 = 0 to 16 {
                     affine.for %arg3 = 0 to 4 {
-                        // CHECK: %1 = affine.load %arg0[%arg3 + (%arg1 * 68 + %arg2 * 48) mod 32] : memref<32xf32>
+                        // note: MLIR expands the mod out to a subtraction + floordiv in this scenario for the terms other than %arg3 which are not extracted from the mod
+                        // CHECK: %1 = affine.load %arg0[%arg1 * 68 + %arg2 * 48 + %arg3 - ((%arg1 * 17 + %arg2 * 12) floordiv 8) * 32] : memref<32xf32>
                         %1 = affine.load %arg0[(%arg1 * 68 + %arg2 * 48 + %arg3) mod 32] : memref<32xf32>
-                        // CHECK: affine.store %1, %0[%arg3 + (%arg1 * 68 + %arg2 * 48) mod 32] : memref<32xf32>
+                        // CHECK: affine.store %1, %0[%arg1 * 68 + %arg2 * 48 + %arg3 - ((%arg1 * 17 + %arg2 * 12) floordiv 8) * 32] : memref<32xf32>
                         affine.store %1, %0[(%arg1 * 68 + %arg2 * 48 + %arg3) mod 32] : memref<32xf32>
                     } {begin = 0 : i64, end = 4 : i64}
                 } {begin = 0 : i64, end = 16 : i64}
@@ -125,9 +126,9 @@ module @test_accera_affine_simplification {
             affine.for %arg1 = 0 to 16 {
                 affine.for %arg2 = 0 to 16 {
                     affine.for %arg3 = 0 to 4 {
-                        // CHECK: %1 = affine.load %arg0[%arg3 + %arg2 * 4] : memref<64xf32>
+                        // CHECK: %1 = affine.load %arg0[%arg2 * 4 + %arg3] : memref<64xf32>
                         %1 = affine.load %arg0[(%arg1 * 128 + %arg2 * 4 + %arg3) mod 64] : memref<64xf32>
-                        // CHECK: affine.store %1, %0[%arg3 + %arg2 * 4] : memref<64xf32>
+                        // CHECK: affine.store %1, %0[%arg2 * 4 + %arg3] : memref<64xf32>
                         affine.store %1, %0[(%arg1 * 128 + %arg2 * 4 + %arg3) mod 64] : memref<64xf32>
                     } {begin = 0 : i64, end = 4 : i64}
                 } {begin = 0 : i64, end = 16 : i64}

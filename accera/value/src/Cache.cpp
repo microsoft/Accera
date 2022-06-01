@@ -182,7 +182,7 @@ namespace value
             _cacheAccessContext.cacheRegionRelevantScheduleIndexRanges = _cacheInfo.cacheRegionRelevantScheduleIndexRanges;
             _cacheAccessContext.cacheRegionBaseIndices = _cacheInfo.cacheRegionBaseIndices;
 
-            BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc,
+            BeginCreateCacheOp regionOp = builder.create<BeginCreateCacheOp>(loc,
                                                                              _mlirValueInput,
                                                                              _cacheAccessContext,
                                                                              _mlirValueInput,
@@ -260,7 +260,7 @@ namespace value
                 assert(!loopIndices.empty());
                 auto innermostIndex = loopIndices.back();
 
-                BeginMaxElementCacheRegionOp regionOp = builder.create<BeginMaxElementCacheRegionOp>(loc,
+                BeginCreateMaxElementCacheOp regionOp = builder.create<BeginCreateMaxElementCacheOp>(loc,
                                                                                                      _mlirValueInput,
                                                                                                      _cacheValue,
                                                                                                      _baseMlirValueInput,
@@ -278,7 +278,7 @@ namespace value
             }
             else
             {
-                BeginCacheRegionOp regionOp = builder.create<BeginCacheRegionOp>(loc,
+                BeginCreateCacheOp regionOp = builder.create<BeginCreateCacheOp>(loc,
                                                                                  _mlirValueInput,
                                                                                  _cacheAccessContext,
                                                                                  _baseMlirValueInput,
@@ -493,7 +493,6 @@ namespace value
             auto loc = builder.getUnknownLoc();
             [[maybe_unused]] auto cacheZero = builder.create<CacheZeroOp>(loc,
                                                                           cache,
-                                                                          "", // activeBlockTag
                                                                           false); // thrifty
         }
 

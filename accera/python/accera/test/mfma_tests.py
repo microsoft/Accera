@@ -68,7 +68,7 @@ class TensorizeTest(unittest.TestCase):
         checker.check_label(
             'extern "C" __global__  __launch_bounds__({{.+}}) void ' + test_name + '_{{.+}}__gpu__('
         )
-        checker.check('__builtin_amdgcn_mfma_f32_16x16x4f32')
+        checker.check('__builtin_amdgcn_mfma_')
         checker.run()
 
 
@@ -77,7 +77,7 @@ class TensorizeTest(unittest.TestCase):
         checker.check_label(
             'extern "C" __global__  __launch_bounds__({{.+}}) void ' + test_name + '_{{.+}}__gpu__('
         )
-        checker.check_not('__builtin_amdgcn_mfma_f32_16x16x4f32')
+        checker.check_not('__builtin_amdgcn_mfma_')
         checker.run()
 
     def _verify_matrix_multiplication_function(
@@ -544,6 +544,76 @@ class TensorizeTest(unittest.TestCase):
                 self._verify_matmul(function, A, B, C, v)
 
 
+    # This should produce MFMA instructions
+    def test_rocm_tensorize_multi_block_multi_warp_output_boundary(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        M = 704
+        N = 384
+        K = 4096
+        outer_tile_x = 128
+        outer_tile_y = outer_tile_x
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+        })
+
+        iii, jjj, kk = schedule.tile({
+            ii: 4,
+            jj: 16,
+            k: 64
+        })
+
+        schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            mapping={
+                i: target.GridUnit.BLOCK_Y,
+                j: target.GridUnit.BLOCK_X,
+                ii: target.GridUnit.THREAD_Y,
+                jj: target.GridUnit.THREAD_X
+            }
+        )
+
+        plan.tensorize(indices=(iii, jjj, kk), mma_shape=_MMAShape.M64xN64xK1_B4, num_total_passes=64)
+
+        test_name = inspect.currentframe().f_code.co_name
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu", f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+
+            self._check_cu_has_mfma(test_name, v)
+
+            if ROCM_AVAILABLE:
+                self._verify_matmul(function, A, B, C, v)
+
+    
     # This should produce MFMA instructions
     def test_rocm_tensorize_multi_block_multi_warp_output_reordered_indices(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -1407,7 +1477,7 @@ class TensorizeTest(unittest.TestCase):
 
         schedule.reorder((i, j, ii, jj, k, iii, jjj, kk))
 
-        target=Target(Target.Model.NVIDIA_A100)
+        target=Target(Target.Model.NVIDIA_RTX_A6000)
         plan = schedule.create_plan(target=target)
         plan.bind(
             mapping={
@@ -1501,7 +1571,7 @@ class TensorizeTest(unittest.TestCase):
             schedule.reorder(i, j, k, ii, jj, kk)
 
 
-        target = Target(Target.Model.NVIDIA_A100)
+        target = Target(Target.Model.NVIDIA_RTX_A6000)
         plan = schedule.create_plan(target=target)
         plan.bind(
             mapping={
@@ -1765,10 +1835,11 @@ class TensorizeTest(unittest.TestCase):
         self._rocm_tensorize(32, 32, 32, 32, 32, (4, 4, 32), _MMAShape.M32xN32xK2_B1, 16)
 
     def test_rocm_tensorize_64x64x64_fp32_fp32_t64_w32(self) -> None:
-        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xM64xK1_B2, 64)
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xN64xK1_B2, 64)
 
     def test_rocm_tensorize_64x64x64_fp32_fp32_t64_w16(self) -> None:
-        self._rocm_tensorize(64, 64, 64, 64, 64, (4, 16, 64), _MMAShape.M64xN64xK1_B4, 64)
+        self._rocm_tensorize(960, 1024, 1024, 128, 128, (4, 16, 64), _MMAShape.M64xN64xK1_B4, 64)
+        # self._rocm_tensorize(64, 64, 64, 64, 64, (4, 16, 64), _MMAShape.M64xN64xK1_B4, 64)
 
     def test_rocm_tensorize_64x64x64_fp32_fp32_t16_w2(self) -> None:
         self._rocm_tensorize(64, 64, 64, 64, 64, (2, 2, 16), _MMAShape.M16xN16xK4_B1, 4)
@@ -1783,7 +1854,7 @@ class TensorizeTest(unittest.TestCase):
         self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 4, 32), _MMAShape.M32xN32xK2_B1, 16)
 
     def test_rocm_tensorize_2048x2048x2048_fp32_fp32_t64_w32(self) -> None:
-        self._rocm_tensorize(2048, 2048, 2048, 128, 64, (2, 32, 64), _MMAShape.M64xM64xK1_B2, 64)
+        self._rocm_tensorize(2048, 2048, 2048, 128, 64, (2, 32, 64), _MMAShape.M64xN64xK1_B2, 64)
 
     def test_rocm_tensorize_2048x2048x2048_fp32_fp32_t64_w16(self) -> None:
         self._rocm_tensorize(2048, 2048, 2048, 128, 128, (4, 16, 64), _MMAShape.M64xN64xK1_B4, 64)
@@ -1858,7 +1929,7 @@ class TensorizeTest(unittest.TestCase):
         self._rocm_tensorize(32, 32, 32, 32, 32, (4, 4, 32), _MMAShape.M32xN32xK2_B1, 16, 1e-2, ScalarType.float32, ScalarType.float32, True)
 
     def test_rocm_tensorize_64x64x64_fp32_fp32_t64_w32_tensormap(self) -> None:
-        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xM64xK1_B2, 64, 1e-2, ScalarType.float32, ScalarType.float32, True)
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xN64xK1_B2, 64, 1e-2, ScalarType.float32, ScalarType.float32, True)
 
     def test_rocm_tensorize_64x64x64_fp32_fp32_t64_w16_tensormap(self) -> None:
         self._rocm_tensorize(64, 64, 64, 64, 64, (4, 16, 64), _MMAShape.M64xN64xK1_B4, 64, 1e-2, ScalarType.float32, ScalarType.float32, True)
@@ -1904,16 +1975,16 @@ class TensorizeTest(unittest.TestCase):
         self._rocm_tensorize(32, 32, 32, 32, 32, (4, 4, 32), _MMAShape.M32xN32xK8_B1, 4, 1e-2, ScalarType.float16, ScalarType.float16, True, 4)
 
     def test_rocm_tensorize_64x64x64_fp32_fp32_t64_w32_tensormap_p1(self) -> None:
-        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xM64xK1_B2, 64, 1e-2, ScalarType.float32, ScalarType.float32, True, 1, _MMASchedulingPolicy.BLOCK_ORDER)
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xN64xK1_B2, 64, 1e-2, ScalarType.float32, ScalarType.float32, True, 1, _MMASchedulingPolicy.BLOCK_ORDER)
 
     def test_rocm_tensorize_64x64x64_fp32_fp32_t64_w32_p4(self) -> None:
-        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xM64xK1_B2, 64, 1e-2, ScalarType.float32, ScalarType.float32, False, 4)
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xN64xK1_B2, 64, 1e-2, ScalarType.float32, ScalarType.float32, False, 4)
 
     def test_rocm_tensorize_64x64x64_fp32_fp32_t64_w32_tensormap_p16(self) -> None:
-        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xM64xK1_B2, 64, 1e-2, ScalarType.float32, ScalarType.float32, True, 16, _MMASchedulingPolicy.BLOCK_ORDER)
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xN64xK1_B2, 64, 1e-2, ScalarType.float32, ScalarType.float32, True, 16, _MMASchedulingPolicy.BLOCK_ORDER)
 
     def test_rocm_tensorize_64x64x64_fp32_fp32_t64_w32_p64(self) -> None:
-        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xM64xK1_B2, 64, 1e-2, ScalarType.float32, ScalarType.float32, False, 64)
+        self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xN64xK1_B2, 64, 1e-2, ScalarType.float32, ScalarType.float32, False, 64)
 
     def test_rocm_tensorize_64x64x64_fp16_fp16_t64_w32_tensormap_p2(self) -> None:
         self._rocm_tensorize(64, 64, 64, 64, 64, (2, 32, 64), _MMAShape.M64xN64xK4_B2, 16, 1e-2, ScalarType.float16, ScalarType.float16, True, 2)
@@ -1965,7 +2036,7 @@ class TensorizeTest(unittest.TestCase):
         self._rocm_tensorize(32, 32, 136, 32, 32, (4, 4, 136), _MMAShape.M32xN32xK8_B1, 17, 1e-3, ScalarType.float16)
 
     def test_rocm_tensorize_64x64x1_fp32_fp32_t64_w32(self) -> None:
-        self._rocm_tensorize(64, 64, 1, 64, 64, (2, 32, 64), _MMAShape.M64xM64xK1_B2, 1)
+        self._rocm_tensorize(64, 64, 1, 64, 64, (2, 32, 64), _MMAShape.M64xN64xK1_B2, 1)
 
     def test_rocm_tensorize_64x64x44_fp16_fp32_t64_w32(self) -> None:
         self._rocm_tensorize(64, 64, 44, 64, 64, (2, 32, 64), _MMAShape.M64xN64xK4_B2, 11, 1e-3, ScalarType.float16)

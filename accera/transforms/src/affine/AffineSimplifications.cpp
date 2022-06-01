@@ -13,8 +13,12 @@
 
 #include <mlir/Conversion/AffineToStandard/AffineToStandard.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/GPU/GPUDialect.h>
+#include <mlir/Dialect/LLVMIR/ROCDLDialect.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+
+#include <llvm/ADT/TypeSwitch.h>
 
 #include <algorithm>
 #include <numeric>
@@ -32,7 +36,10 @@ struct AffineSimplifyHelper
     AffineSimplifyHelper(AffineOpTy op) :
         affineOp(op)
     {
-        auto parentFuncOp = affineOp->template getParentOfType<ValueFuncOp>();
+        mlir::Operation* parentValueFuncOp = affineOp->template getParentOfType<ValueFuncOp>();
+        mlir::Operation* parentGPUFuncOp = affineOp->template getParentOfType<mlir::gpu::GPUFuncOp>();
+        mlir::Operation* parentMLIRFuncOp = affineOp->template getParentOfType<mlir::FuncOp>();
+        mlir::Operation* parentFuncOp = parentValueFuncOp != nullptr ? parentValueFuncOp : (parentGPUFuncOp != nullptr ? parentGPUFuncOp : parentMLIRFuncOp);
         rangeAnalysis = RangeValueAnalysis(parentFuncOp);
 
         // Need to get the affine map for this access and the ranges for all of the operands to that map
@@ -64,13 +71,13 @@ struct AffineSimplifyHelper
     std::vector<RangeValue> symOperandRanges;
 };
 
-bool IsConstantMul(mlir::AffineExpr expr)
+bool IsConstantOrSymbolicMul(mlir::AffineExpr expr)
 {
     if (auto binOp = expr.dyn_cast<mlir::AffineBinaryOpExpr>(); expr.getKind() == mlir::AffineExprKind::Mul)
     {
         if (!(binOp.getLHS().isa<mlir::AffineBinaryOpExpr>()) &&
             !(binOp.getRHS().isa<mlir::AffineBinaryOpExpr>()) &&
-            (binOp.getLHS().isa<mlir::AffineConstantExpr>() || binOp.getRHS().isa<mlir::AffineConstantExpr>()))
+            (binOp.getLHS().isSymbolicOrConstant() || binOp.getRHS().isSymbolicOrConstant()))
         {
             return true;
         }
@@ -115,7 +122,7 @@ bool IsLinearExpression(mlir::AffineExpr expr)
 {
     if (auto binOp = expr.dyn_cast<mlir::AffineBinaryOpExpr>())
     {
-        if (IsConstantMul(binOp))
+        if (IsConstantOrSymbolicMul(binOp))
         {
             return true;
         }
@@ -141,7 +148,7 @@ bool GetDotProductTerms(mlir::AffineExpr expr, std::vector<mlir::AffineExpr>& re
 {
     if (IsLinearExpression(expr))
     {
-        if (IsConstantMul(expr) || !expr.isa<mlir::AffineBinaryOpExpr>())
+        if (IsConstantOrSymbolicMul(expr) || !expr.isa<mlir::AffineBinaryOpExpr>())
         {
             resultVec.push_back(expr);
             return true;
@@ -237,12 +244,38 @@ mlir::AffineExpr RunOnBinaryOpSubExpr(mlir::AffineExprKind exprKind, mlir::Affin
     return expr;
 }
 
-template <typename AffineLoadStoreOpTy>
-struct SmallNumeratorTermFloorDivSimplification : public OpRewritePattern<AffineLoadStoreOpTy>
+mlir::AffineValueMap GetAffineValueMap(mlir::AffineStoreOp& storeOp)
 {
-    using OpRewritePattern<AffineLoadStoreOpTy>::OpRewritePattern;
+    return mlir::AffineValueMap(storeOp.getAffineMap(), storeOp.getOperands());
+}
+mlir::AffineValueMap GetAffineValueMap(mlir::AffineLoadOp& loadOp)
+{
+    return mlir::AffineValueMap(loadOp.getAffineMap(), loadOp.getOperands());
+}
+mlir::AffineValueMap GetAffineValueMap(mlir::AffineApplyOp& applyOp)
+{
+    return applyOp.getAffineValueMap();
+}
 
-    LogicalResult matchAndRewrite(AffineLoadStoreOpTy affineOp, PatternRewriter& rewriter) const final
+void ReplaceOpUsingNewValueMap(PatternRewriter& rewriter, mlir::AffineLoadOp loadOp, mlir::AffineValueMap newAffineValueMap)
+{
+    rewriter.replaceOpWithNewOp<mlir::AffineLoadOp>(loadOp, loadOp.memref(), newAffineValueMap.getAffineMap(), newAffineValueMap.getOperands());
+}
+void ReplaceOpUsingNewValueMap(PatternRewriter& rewriter, mlir::AffineStoreOp storeOp, mlir::AffineValueMap newAffineValueMap)
+{
+    rewriter.replaceOpWithNewOp<mlir::AffineStoreOp>(storeOp, storeOp.value(), storeOp.memref(), newAffineValueMap.getAffineMap(), newAffineValueMap.getOperands());
+}
+void ReplaceOpUsingNewValueMap(PatternRewriter& rewriter, mlir::AffineApplyOp applyOp, mlir::AffineValueMap newAffineValueMap)
+{
+    rewriter.replaceOpWithNewOp<mlir::AffineApplyOp>(applyOp, newAffineValueMap.getAffineMap(), newAffineValueMap.getOperands());
+}
+
+template <typename AffineOpTy>
+struct SmallNumeratorTermFloorDivSimplification : public OpRewritePattern<AffineOpTy>
+{
+    using OpRewritePattern<AffineOpTy>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(AffineOpTy affineOp, PatternRewriter& rewriter) const final
     {
         // See docs/Reference/gpu_caching_floor_divisions.md for a proof of the equivalence this simplification leverages
 
@@ -254,6 +287,8 @@ struct SmallNumeratorTermFloorDivSimplification : public OpRewritePattern<Affine
         auto exprs = helper.map.getResults();
         MutableAffineMap mutableMap(helper.map);
         bool modifiedMap = false;
+        auto constantZeroOp = rewriter.create<mlir::ConstantIntOp>(loc, 0, rewriter.getI64Type());
+        auto constantZeroRV = helper.rangeAnalysis.addOperation(constantZeroOp);
         for (size_t exprIdx = 0; exprIdx < exprs.size(); ++exprIdx)
         {
             auto newExpr = RunOnBinaryOpSubExpr(mlir::AffineExprKind::FloorDiv, exprs[exprIdx], helper.dimCount, helper.symbolCount, [&](mlir::AffineExpr floorDivExpr) {
@@ -284,12 +319,26 @@ struct SmallNumeratorTermFloorDivSimplification : public OpRewritePattern<Affine
 
                     RangeValue lastExprRange = helper.rangeAnalysis.addOperation(smallestTermExpandedOp);
 
+                    if (successiveCoefficientGCDsAndExprs.size() == 1)
+                    {
+                        // If there's only one term in the numerator, check if its range is greater than 0 and less than the denominator
+                        // In which case this floordiv is always 0
+                        auto constantDenominatorOp = rewriter.create<mlir::ConstantIntOp>(loc, denominatorValue, rewriter.getI64Type());
+                        RangeValue constantDenominatorRV = helper.rangeAnalysis.addOperation(constantDenominatorOp);
+                        if (lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SGE, constantZeroRV) &&
+                            lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SLT, constantDenominatorRV))
+                        {
+                            modifiedMap = true;
+                            return rewriter.getAffineConstantExpr(0);
+                        }
+                    }
                     if (successiveCoefficientGCDsAndExprs.size() >= 2)
                     {
                         auto secondSmallestGCD = successiveCoefficientGCDsAndExprs[successiveCoefficientGCDsAndExprs.size() - 2].first;
                         auto constantGCD = rewriter.create<mlir::ConstantIntOp>(loc, secondSmallestGCD, rewriter.getI64Type());
                         RangeValue constantGCDRV = helper.rangeAnalysis.addOperation(constantGCD);
-                        if (lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SLT, constantGCDRV))
+                        if (lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SGE, constantZeroRV) &&
+                            lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SLT, constantGCDRV))
                         {
                             // The last term is always smaller than the smallest GCD, so the last term can be removed
                             auto reorderedDotProductBinOp = currentReorderedDotProduct.cast<mlir::AffineBinaryOpExpr>();
@@ -318,19 +367,21 @@ struct SmallNumeratorTermFloorDivSimplification : public OpRewritePattern<Affine
         if (modifiedMap)
         {
             auto newMap = mutableMap.getAffineMap();
-            affineOp->setAttr(affineOp.getMapAttrName(), mlir::AffineMapAttr::get(newMap));
+            mlir::AffineValueMap newAffineValueMap(newMap, affineOp.getMapOperands());
+            (void)newAffineValueMap.canonicalize();
+            ReplaceOpUsingNewValueMap(rewriter, affineOp, newAffineValueMap);
             return success();
         }
         return failure();
     }
 };
 
-template <typename AffineLoadStoreOpTy>
-struct SmallNumeratorTermModSimplification : public OpRewritePattern<AffineLoadStoreOpTy>
+template <typename AffineOpTy>
+struct SmallNumeratorTermModSimplification : public OpRewritePattern<AffineOpTy>
 {
-    using OpRewritePattern<AffineLoadStoreOpTy>::OpRewritePattern;
+    using OpRewritePattern<AffineOpTy>::OpRewritePattern;
 
-    LogicalResult matchAndRewrite(AffineLoadStoreOpTy affineOp, PatternRewriter& rewriter) const final
+    LogicalResult matchAndRewrite(AffineOpTy affineOp, PatternRewriter& rewriter) const final
     {
         // See docs/Reference/gpu_caching_mod.md for a proof of the equivalence this simplification leverages
 
@@ -342,6 +393,8 @@ struct SmallNumeratorTermModSimplification : public OpRewritePattern<AffineLoadS
         auto exprs = helper.map.getResults();
         MutableAffineMap mutableMap(helper.map);
         bool modifiedMap = false;
+        auto constantZeroOp = rewriter.create<mlir::ConstantIntOp>(loc, 0, rewriter.getI64Type());
+        auto constantZeroRV = helper.rangeAnalysis.addOperation(constantZeroOp);
         for (size_t exprIdx = 0; exprIdx < exprs.size(); ++exprIdx)
         {
             auto newExpr = RunOnBinaryOpSubExpr(mlir::AffineExprKind::Mod, exprs[exprIdx], helper.dimCount, helper.symbolCount, [&](mlir::AffineExpr modExpr) {
@@ -373,12 +426,26 @@ struct SmallNumeratorTermModSimplification : public OpRewritePattern<AffineLoadS
 
                     RangeValue lastExprRange = helper.rangeAnalysis.addOperation(smallestTermExpandedOp);
 
+                    if (successiveCoefficientGCDsAndExprs.size() == 1)
+                    {
+                        // If there's only one term in the numerator, check if its range is greater than 0 and less than the denominator
+                        // In which case this mod is unnecessary
+                        auto constantDenominatorOp = rewriter.create<mlir::ConstantIntOp>(loc, denominatorValue, rewriter.getI64Type());
+                        RangeValue constantDenominatorRV = helper.rangeAnalysis.addOperation(constantDenominatorOp);
+                        if (lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SGE, constantZeroRV) &&
+                            lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SLT, constantDenominatorRV))
+                        {
+                            modifiedMap = true;
+                            return numerator;
+                        }
+                    }
                     if (successiveCoefficientGCDsAndExprs.size() >= 2)
                     {
                         auto secondSmallestGCD = successiveCoefficientGCDsAndExprs[successiveCoefficientGCDsAndExprs.size() - 2].first;
                         auto constantGCD = rewriter.create<mlir::ConstantIntOp>(loc, secondSmallestGCD, rewriter.getI64Type());
                         RangeValue constantGCDRV = helper.rangeAnalysis.addOperation(constantGCD);
-                        if (lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SLT, constantGCDRV))
+                        if (lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SGE, constantZeroRV) &&
+                            lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SLT, constantGCDRV))
                         {
                             // The last term is always smaller than the smallest GCD, so the last term can be removed
                             auto reorderedDotProductBinOp = currentReorderedDotProduct.cast<mlir::AffineBinaryOpExpr>();
@@ -408,10 +475,125 @@ struct SmallNumeratorTermModSimplification : public OpRewritePattern<AffineLoadS
         if (modifiedMap)
         {
             auto newMap = mutableMap.getAffineMap();
-            affineOp->setAttr(affineOp.getMapAttrName(), mlir::AffineMapAttr::get(newMap));
+            mlir::AffineValueMap newAffineValueMap(newMap, affineOp.getMapOperands());
+            (void)newAffineValueMap.canonicalize();
+            ReplaceOpUsingNewValueMap(rewriter, affineOp, newAffineValueMap);
             return success();
         }
         return failure();
+    }
+};
+
+template <typename AffineOpTy>
+struct PropagateGPUConstants : public OpRewritePattern<AffineOpTy>
+{
+    using OpRewritePattern<AffineOpTy>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(AffineOpTy affineOp, PatternRewriter& rewriter) const final
+    {
+        auto loc = affineOp.getLoc();
+
+        std::vector<mlir::Operation*> opsToErase;
+
+        // Examine the operands, if any are block dim ops or grid dim ops, then replace them with their equivalent constant values and simplify the map
+        bool replaced = false;
+        for (auto operand : affineOp.getMapOperands())
+        {
+            if (auto definingOp = GetDefiningOpOrForLoop(operand))
+            {
+                auto handleBlockDimOp = [&](gpu::BlockDimOp blockDimOp) {
+                    auto dimSize = GetBlockDimSize(blockDimOp);
+                    mlir::Value dimSizeConstantOp = rewriter.create<mlir::ConstantIntOp>(loc, dimSize, rewriter.getI64Type());
+                    affineOp->replaceUsesOfWith(operand, dimSizeConstantOp);
+                    replaced = true;
+                };
+                auto handleGridDimOp = [&](gpu::GridDimOp gridDimOp) {
+                    auto dimSize = GetGridDimSize(gridDimOp);
+                    mlir::Value dimSizeConstantOp = rewriter.create<mlir::ConstantIntOp>(loc, dimSize, rewriter.getI64Type());
+                    affineOp->replaceUsesOfWith(operand, dimSizeConstantOp);
+                    replaced = true;
+                };
+                mlir::TypeSwitch<mlir::Operation*>(definingOp)
+                    .Case([&](gpu::BlockDimOp blockDimOp) {
+                        handleBlockDimOp(blockDimOp);
+                    })
+                    .Case([&](gpu::GridDimOp gridDimOp) {
+                        handleGridDimOp(gridDimOp);
+                    })
+
+                    // TODO : we shouldn't need to lower to these rocdl ops until after affine simplifications run
+                    .Case([&](mlir::ROCDL::BlockDimXOp) {
+                        auto gpuBlockDimOp = rewriter.create<mlir::gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x");
+                        opsToErase.push_back(gpuBlockDimOp);
+                        handleBlockDimOp(gpuBlockDimOp);
+                    })
+                    .Case([&](mlir::ROCDL::BlockDimYOp) {
+                        auto gpuBlockDimOp = rewriter.create<mlir::gpu::BlockDimOp>(loc, rewriter.getIndexType(), "y");
+                        opsToErase.push_back(gpuBlockDimOp);
+                        handleBlockDimOp(gpuBlockDimOp);
+                    })
+                    .Case([&](mlir::ROCDL::BlockDimZOp) {
+                        auto gpuBlockDimOp = rewriter.create<mlir::gpu::BlockDimOp>(loc, rewriter.getIndexType(), "z");
+                        opsToErase.push_back(gpuBlockDimOp);
+                        handleBlockDimOp(gpuBlockDimOp);
+                    })
+                    .Case([&](mlir::ROCDL::GridDimXOp) {
+                        auto gpuGridDimOp = rewriter.create<mlir::gpu::GridDimOp>(loc, rewriter.getIndexType(), "x");
+                        opsToErase.push_back(gpuGridDimOp);
+                        handleGridDimOp(gpuGridDimOp);
+                    })
+                    .Case([&](mlir::ROCDL::GridDimYOp) {
+                        auto gpuGridDimOp = rewriter.create<mlir::gpu::GridDimOp>(loc, rewriter.getIndexType(), "y");
+                        opsToErase.push_back(gpuGridDimOp);
+                        handleGridDimOp(gpuGridDimOp);
+                    })
+                    .Case([&](mlir::ROCDL::GridDimZOp) {
+                        auto gpuGridDimOp = rewriter.create<mlir::gpu::GridDimOp>(loc, rewriter.getIndexType(), "z");
+                        opsToErase.push_back(gpuGridDimOp);
+                        handleGridDimOp(gpuGridDimOp);
+                    })
+                    .Case([&](mlir::IndexCastOp indexCastOp) {
+                        // Canonicalize the constant int into the operation
+                        if (auto definingOp = indexCastOp.in().getDefiningOp())
+                        {
+                            if (mlir::isa<mlir::ConstantOp,
+                                          mlir::gpu::BlockDimOp,
+                                          mlir::gpu::GridDimOp,
+                                          mlir::ROCDL::BlockDimXOp,
+                                          mlir::ROCDL::BlockDimYOp,
+                                          mlir::ROCDL::BlockDimZOp,
+                                          mlir::ROCDL::GridDimXOp,
+                                          mlir::ROCDL::GridDimXOp,
+                                          mlir::ROCDL::GridDimXOp>(definingOp))
+                            {
+                                affineOp->replaceUsesOfWith(operand, indexCastOp.in());
+                                replaced = true;
+                            }
+                        }
+                    })
+                    .Case([&](mlir::ConstantOp constantOp) {
+                        // Canonicalize the constant int into the operation
+                        replaced = true;
+                    });
+            }
+        }
+        for (auto op : opsToErase)
+        {
+            rewriter.eraseOp(op);
+        }
+
+        if (replaced)
+        {
+            // Simplify the affine maps and recreate the op
+            mlir::AffineValueMap affineValueMap = GetAffineValueMap(affineOp);
+            (void)affineValueMap.canonicalize();
+            ReplaceOpUsingNewValueMap(rewriter, affineOp, affineValueMap);
+            return success();
+        }
+        else
+        {
+            return failure();
+        }
     }
 };
 
@@ -436,8 +618,13 @@ void populateAcceraAffineSimplificationPatterns(mlir::OwningRewritePatternList& 
 {
     patterns.insert<SmallNumeratorTermFloorDivSimplification<mlir::AffineLoadOp>>(patterns.getContext());
     patterns.insert<SmallNumeratorTermFloorDivSimplification<mlir::AffineStoreOp>>(patterns.getContext());
+    patterns.insert<SmallNumeratorTermFloorDivSimplification<mlir::AffineApplyOp>>(patterns.getContext());
     patterns.insert<SmallNumeratorTermModSimplification<mlir::AffineLoadOp>>(patterns.getContext());
     patterns.insert<SmallNumeratorTermModSimplification<mlir::AffineStoreOp>>(patterns.getContext());
+    patterns.insert<SmallNumeratorTermModSimplification<mlir::AffineApplyOp>>(patterns.getContext());
+    patterns.insert<PropagateGPUConstants<mlir::AffineLoadOp>>(patterns.getContext());
+    patterns.insert<PropagateGPUConstants<mlir::AffineStoreOp>>(patterns.getContext());
+    patterns.insert<PropagateGPUConstants<mlir::AffineApplyOp>>(patterns.getContext());
 }
 
 std::unique_ptr<mlir::Pass> createAffineSimplificationPass()

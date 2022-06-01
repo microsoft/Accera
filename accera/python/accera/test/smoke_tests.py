@@ -3957,7 +3957,7 @@ class SmokeTest(unittest.TestCase):
             checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
             checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
-            checker.check('%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][%[[lpt_iv]] * 8 + symbol(%[[Block_X]]) * 16 + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16, %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32] : memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>')
+            checker.check('%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][%[[lpt_iv]] * 8 + symbol(%[[Block_X]]) * 16 - (symbol(%[[Block_X]]) floordiv 160) * 2560  + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16, %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32] : memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>')
             # Note: (16*thread_y) % 32 == (16*thread_y) - 32((16*thread_y) floordiv 32) == (16*thread_y) - 32(thread_y floordiv 2)
             checker.check('affine.store %[[Loaded_A_Val]], %[[Cache_A]][(%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) mod 16, symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32] : memref<16x32xf32, 3>')
 
@@ -3968,7 +3968,7 @@ class SmokeTest(unittest.TestCase):
             checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
             checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
-            checker.check('%[[Loaded_B_Val:[0-9_]+]] = affine.load %[[Array_B]][%[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, %[[lpt_iv]] * 8 + symbol(%[[Block_Y]]) * 16 + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16] : memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>')
+            checker.check('%[[Loaded_B_Val:[0-9_]+]] = affine.load %[[Array_B]][%[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, %[[lpt_iv]] * 8 + symbol(%[[Block_Y]]) * 16 - (symbol(%[[Block_Y]]) floordiv 96) * 1536 + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16] : memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>')
             checker.check('affine.store %[[Loaded_B_Val]], %[[Cache_B]][symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, (%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) mod 16] : memref<32x16xf32, 3>')
 
             checker.run()
@@ -3983,6 +3983,254 @@ class SmokeTest(unittest.TestCase):
             package_format=Package.Format.DEFAULT
         )
 
+    def test_gpu_cache_block_level_private_mem(self):
+        # This test verifies that a private memory cache will compute a region specific to each thread
+        # even when added at the block level of the loopnest
+
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera._lang_python._lang import _MemorySpace
+
+        M = 2560
+        N = 1536
+        K = 2048
+        block_x = 16
+        block_y = block_x
+        k_outer_tile_size = 512
+        k_inner_tile_size = 32
+
+        m_tile_size = block_x
+        n_tile_size = block_y
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i,j] += A[i,k] * B[k,j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile({
+            i: m_tile_size,
+            j: n_tile_size,
+            k: k_outer_tile_size
+        })
+
+        kkk = schedule.split(kk, k_inner_tile_size)
+        schedule.reorder(i, j, k, kk, ii, jj, kkk)
+
+        target = Target(category=Target.Category.GPU, runtime=Target.Runtime.ROCM)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
+        )
+        
+        # Cache at index k
+        # The active block of C at index k in this schedule should be { m_tile_size x n_tile_size },
+        # but the cache of C is in private memory and indices in the cache active region (k, kk, ii, jj, kkk) are bound
+        # to thread IDs (indices ii, jj).
+        # Therefore the cache should be each thread's portion of that { m_tile_size x n_tile_size } tile,
+        # which would be a buffer of shape { 1 x 1 } that is parameterized by the ii and jj indices
+        plan.cache(C, index=k, location=_MemorySpace.PRIVATE, layout=Array.Layout.FIRST_MAJOR)
+
+        package_name = "test_gpu_cache_block_level_private_mem"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=package_name)
+
+        def file_check_fn(verifier):
+            checker = verifier.file_checker(f"*_LoopNestToValueFunc.mlir")
+
+            # Check for an accv.alloc of a 1x1 buffer in the private memory space inside a lambda inside our value func
+            checker.check_label('accv.func nested @test_gpu_cache_block_level_private_mem_')
+            checker.check('"accv.lambda"() ( {')
+            checker.check('%[[Cache_C:[0-9_]+]] = "accv.alloc"() : () -> memref<1x1xf32, 5>')
+
+            checker.run()
+
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            package_name,
+            file_check_fn=file_check_fn,
+            check_correctness=CUDA_AVAILABLE,
+            file_list=[f"{package_name}.cu", f"{package_name}.hat"],
+            package_format=Package.Format.DEFAULT | Package.Format.MLIR
+        )
+
+    def test_gpu_cache_block_level_shared_mem(self):
+        # This test verifies that a shared memory cache will compute a region specific to each logical block
+        # even when added outside the block level of the loopnest
+
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera._lang_python._lang import _MemorySpace
+
+        M = 2560
+        N = 1536
+        K = 2048
+        block_x = 16
+        block_y = block_x
+        k_outer_tile_size = 512
+        k_inner_tile_size = 32
+
+        m_tile_size = block_x
+        n_tile_size = block_y
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i,j] += A[i,k] * B[k,j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile({
+            i: m_tile_size,
+            j: n_tile_size,
+            k: k_outer_tile_size
+        })
+
+        kkk = schedule.split(kk, k_inner_tile_size)
+        schedule.reorder(i, j, k, kk, ii, jj, kkk)
+
+        target = Target(category=Target.Category.GPU, runtime=Target.Runtime.ROCM)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
+        )
+        
+        # Cache at index j
+        # The active block of C at index j in this schedule would be { m_tile_size x N },
+        # but the cache of C is in shared memory and indices in the cache active region (j, k, kk, ii, jj, kkk) are bound
+        # to block IDs (index j).
+        # Therefore the cache should be each block's portion of that { M x N } tile,
+        # which would be a buffer of shape { m_tile_size x n_tile_size } that is parameterized by the j index
+        plan.cache(C, index=j, location=_MemorySpace.SHARED, layout=Array.Layout.FIRST_MAJOR)
+
+        package_name = "test_gpu_cache_block_level_shared_mem"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=package_name)
+
+        def file_check_fn(verifier):
+            checker = verifier.file_checker(f"*_LoopNestToValueFunc.mlir")
+
+            # Check for an accv.alloc of a { m_tile_size x n_tile_size } buffer in the shared memory space inside a lambda inside our value func
+            checker.check_label('accv.func nested @test_gpu_cache_block_level_shared_mem_')
+            checker.check('"accv.lambda"() ( {')
+            checker.check(f'%[[Cache_C:[0-9_]+]] = "accv.alloc"() : () -> memref<{m_tile_size}x{n_tile_size}xf32, 3>')
+
+            checker.run()
+
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            package_name,
+            file_check_fn=file_check_fn,
+            check_correctness=CUDA_AVAILABLE,
+            file_list=[f"{package_name}.cu", f"{package_name}.hat"],
+            package_format=Package.Format.DEFAULT | Package.Format.MLIR
+        )
+
+    def test_gpu_cache_block_level_global_mem(self):
+        # This test verifies that a global memory cache will compute a region specific to each logical block
+        # even when added outside the block level of the loopnest
+
+        from accera import Array, Nest, Package, ScalarType, Target
+        from accera._lang_python._lang import _MemorySpace
+
+        M = 2560
+        N = 1536
+        K = 2048
+        block_x = 16
+        block_y = block_x
+        k_outer_tile_size = 512
+        k_inner_tile_size = 32
+
+        m_tile_size = block_x
+        n_tile_size = block_y
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i,j] += A[i,k] * B[k,j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile({
+            i: m_tile_size,
+            j: n_tile_size,
+            k: k_outer_tile_size
+        })
+
+        kkk = schedule.split(kk, k_inner_tile_size)
+        schedule.reorder(i, j, k, kk, ii, jj, kkk)
+
+        target = Target(category=Target.Category.GPU, runtime=Target.Runtime.ROCM)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
+        )
+        
+        # Cache at index j
+        # The active block of C at index j in this schedule is be { m_tile_size x N },
+        # and since the cache of C is in global memory, none of the bound indices in the cache
+        # region (j, k, kk, ii, jj, kkk) will parameterize the cache, they will all only affect the shape
+        # so the buffer should be of shape { m_tile_size x N }
+        plan.cache(C, index=j, location=_MemorySpace.GLOBAL, layout=Array.Layout.FIRST_MAJOR)
+
+        package_name = "test_gpu_cache_block_level_global_mem"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=package_name)
+
+        def file_check_fn(verifier):
+            checker = verifier.file_checker(f"*_LoopNestToValueFunc.mlir")
+
+            # Check for an accv.alloc of a { m_tile_size x N } buffer in the global memory space inside a lambda inside our value func
+            checker.check_label('accv.func nested @test_gpu_cache_block_level_global_mem_')
+            checker.check('"accv.lambda"() ( {')
+            # checker.check(f'%[[Cache_C:[0-9_]+]] = "accv.alloc"() : () -> memref<{m_tile_size}x{N}xf32>')
+            checker.check(f'%[[Cache_C:[0-9_]+]] = "accv.ref_global"() {"{"}global_name = @cache_[[cache_id:[0-9]+]]{"}"} : () -> memref<{m_tile_size}x{N}xf32>')
+
+            checker.run()
+
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            package_name,
+            file_check_fn=file_check_fn,
+            check_correctness=CUDA_AVAILABLE,
+            file_list=[f"{package_name}.cu", f"{package_name}.hat"],
+            package_format=Package.Format.DEFAULT | Package.Format.MLIR
+        )
 
     def test_vectorized_and_unvectorized_cpu_caches(self):
         from accera import AUTO
@@ -4649,6 +4897,85 @@ class SmokeTest(unittest.TestCase):
             test_name,
             check_correctness=ROCM_AVAILABLE,
             tolerance=0.2, # Higher tolerance for fp16
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.DEFAULT
+        )
+
+    def test_rocm_double_buffer_small_cache_vectorized_unvectorized_tensorized(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        M = 512
+        N = 512
+        K = 512
+
+        # Pick the A and B tile sizes to be smaller than the number of threads per block
+        outer_tile_x = 32
+        outer_tile_y = 32
+        outer_tile_k = 16
+        # 32x32 = 1024 threads, A and B caches will each have 32x16 and 16x32 active blocks
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
+
+        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
+
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind({
+            i: target.GridUnit.BLOCK_Y,
+            j: target.GridUnit.BLOCK_X,
+            ii: target.GridUnit.THREAD_Y,
+            jj: target.GridUnit.THREAD_X
+        })
+        plan.cache(A,
+            index=ii,
+            double_buffer=True,
+            vectorize=True,
+            location=target.MemorySpace.SHARED,
+            double_buffer_location=target.MemorySpace.PRIVATE,
+            layout=Array.Layout.FIRST_MAJOR
+        )
+        plan.cache(
+            B,
+            index=ii,
+            double_buffer=True,
+            location=target.MemorySpace.SHARED,
+            double_buffer_location=target.MemorySpace.PRIVATE,
+            layout=Array.Layout.FIRST_MAJOR
+        )
+        plan.tensorize(indices=(iii, jjj, kkk), mma_shape=_MMAShape.M16xN16xK4_B1, num_total_passes=4)
+
+
+        test_name = "test_rocm_double_buffer_small_cache_vectorized_unvectorized"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
             package_format=Package.Format.DEFAULT
         )

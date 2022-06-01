@@ -870,7 +870,7 @@ private:
                 {
                     if (op.getNumRegions() > 0)
                     {
-                        bool isLoop = isa<LoopLikeOpInterface>(op) && !op.getAttrOfType<StringAttr>("accv_gpu_map");
+                        bool isLoop = isa<LoopLikeOpInterface>(op) && !op.hasAttr("accv_gpu_map");
                         int loopWeight = 1;
                         if (isLoop)
                             loopWeight *= getTripCount(op, 10);

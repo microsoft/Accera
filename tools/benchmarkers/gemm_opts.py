@@ -5,6 +5,8 @@
 
 from dataclasses import dataclass
 
+CONFIG_HEADERS = ["type", "m", "n", "k", "transA", "transB", "alpha", "beta", "lda", "ldb", "ldc"]
+
 @dataclass(eq=True, unsafe_hash=True)
 class GemmOpts:
     m: int = 0
@@ -30,3 +32,6 @@ class GemmOpts:
         self.lda = int(self.lda)
         self.ldb = int(self.ldb)
         self.ldc = int(self.ldc)
+
+    def __str__(self):
+        return f'{self.type}, {self.m}, {self.n}, {self.k}, {self.transA}, {self.transB}, {self.alpha}, {self.beta}, {self.lda}, {self.ldb}, {self.ldc}'

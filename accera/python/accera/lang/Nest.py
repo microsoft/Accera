@@ -3,7 +3,6 @@
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
 
-import logging
 from typing import Callable, List, Union, Tuple
 from functools import partial
 from varname import varname
@@ -14,6 +13,7 @@ from .LogicFunction import logic_function, LogicFunction
 from .NativeLoopNestContext import NativeLoopNestContext
 from ..Parameter import DelayedParameter
 from .. import Target
+
 
 class Nest:
     "Represents an iteration space"
@@ -55,7 +55,11 @@ class Nest:
             A list of extents (multi-dimensional iteration space)
             or a single extent (1-dimensional iteration space)
         """
-        return ([idx for idx, _ in self._shape] if len(self._shape) > 1 else self._shape[0][0])
+        return (
+            [idx for idx, _ in self._shape]
+            if len(self._shape) > 1
+            else self._shape[0][0]
+        )
 
     def get_indices(self) -> Union[List[LoopIndex], LoopIndex]:
         """Gets the iteration space indices
@@ -68,7 +72,7 @@ class Nest:
             names = varname(multi_vars=True)
         except:
             names = None
-        
+
         if names:
             indices = [idx for _, idx in self._shape]
             if len(self._shape) > 1:
@@ -79,7 +83,11 @@ class Nest:
             else:
                 self._shape[0][1].name = names[0]
 
-        return ([idx for _, idx in self._shape] if len(self._shape) > 1 else self._shape[0][1])
+        return (
+            [idx for _, idx in self._shape]
+            if len(self._shape) > 1
+            else self._shape[0][1]
+        )
 
     def iteration_logic(self, logic: Callable = None, predicate=None, placement=None):
         """Adds iteration logic to the nest
@@ -108,9 +116,13 @@ class Nest:
         wrapped_logic = logic_function(logic)
         self._logic_fns.append(wrapped_logic)
 
-        self._commands.append(partial(self._add_iteration_logic, wrapped_logic, predicate, placement))
+        self._commands.append(
+            partial(self._add_iteration_logic, wrapped_logic, predicate, placement)
+        )
 
-    def _add_iteration_logic(self, logic_fn, pred, placement, context: NativeLoopNestContext):
+    def _add_iteration_logic(
+        self, logic_fn, pred, placement, context: NativeLoopNestContext
+    ):
         from .._lang_python._lang import _Logic
 
         captures_to_replace = {}
@@ -124,11 +136,17 @@ class Nest:
                     from .._lang_python import _ResolveConstantDataReference
 
                     if v.role == Array.Role.TEMP:
-                        temp_array = NativeArray(Allocate(type=v.element_type, layout=v.layout))
+                        temp_array = NativeArray(
+                            Allocate(type=v.element_type, layout=v.layout)
+                        )
                         captures_to_replace[k] = context.mapping[value_id] = temp_array
                     elif v.role == Array.Role.CONST:
-                        const_ref_array = NativeArray(_ResolveConstantDataReference(v._value))
-                        captures_to_replace[k] = context.mapping[value_id] = const_ref_array
+                        const_ref_array = NativeArray(
+                            _ResolveConstantDataReference(v._value)
+                        )
+                        captures_to_replace[k] = context.mapping[
+                            value_id
+                        ] = const_ref_array
                     continue
                 elif isinstance(v, LoopIndex):
                     continue
@@ -166,12 +184,18 @@ class Nest:
         except TypeError:
             args_iter = iter(context.runtime_args)
 
-        logic_args = dict([(id(x), NativeArray(y) if isinstance(x, Array) else y)
-                           for x, y in zip(context.function_args, args_iter)])
+        logic_args = dict(
+            [
+                (id(x), NativeArray(y) if isinstance(x, Array) else y)
+                for x, y in zip(context.function_args, args_iter)
+            ]
+        )
         native_indices = context.nest.get_indices()
 
         # fake index => native index
-        index_handles_to_native_index = dict(zip([id(x) for _, x in self._shape], native_indices))
+        index_handles_to_native_index = dict(
+            zip([id(x) for _, x in self._shape], native_indices)
+        )
         logic_args.update(index_handles_to_native_index)
 
         context.mapping.update(logic_args)
@@ -185,7 +209,7 @@ class Nest:
         self._shape = resolved_shape
 
     def _replay_delayed_calls(self):
-        '''
+        """
         This method is called once per adding function, so it can be called multiple times when
         multiple functions get added. In order for the functions to be added correctly, we need to make sure all
         the residual states are cleared between different method calls.
@@ -194,7 +218,7 @@ class Nest:
         before we replay the delayed methods.
 
         If there is no residual state between different method calls, no need to reset.
-        '''
+        """
         for delayed_call in self._delayed_calls:
             params = self._delayed_calls[delayed_call]
 

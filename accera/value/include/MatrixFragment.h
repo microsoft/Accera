@@ -19,7 +19,7 @@ namespace value
         enum class Shape
         {
             M64xN64xK1_B4,
-            M64xM64xK1_B2,
+            M64xN64xK1_B2,
             M32xN32xK2_B1,
             M16xN16xK4_B1,
 

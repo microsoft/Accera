@@ -5,6 +5,7 @@
 
 from dataclasses import dataclass
 from typing import Any, Tuple, Union
+
 from .Array import Array
 from .LoopIndex import LoopIndex
 from .._lang_python._lang import (

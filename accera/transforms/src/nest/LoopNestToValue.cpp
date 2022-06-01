@@ -459,6 +459,12 @@ LogicalResult ScheduleOpConversion::matchAndRewrite(ScheduleOp op, PatternRewrit
         // passes will still move them around into their final position
         return failure();
     }
+    if (op->getParentOfType<NestOp>())
+    {
+        // ScheduleOps still inside of NestOps should also be left alone as other lowering
+        // passes will still update nest state before creating the ValueLambdaOp that the nest should be expanded in
+        return failure();
+    }
 
     auto domain = op.getDomain().getValue();
     domain.ResolveRangeValues([&](lnir::Range& range) {
@@ -904,24 +910,26 @@ LogicalResult GPUMappedAffineForOpRewrite::matchAndRewrite(mlir::AffineForOp aff
 {
     auto loc = affineForOp.getLoc();
 
-    if (auto gpuMapAttr = affineForOp->getAttrOfType<StringAttr>("accv_gpu_map"))
+    if (auto gpuMapAttr = affineForOp->getAttrOfType<mlir::DictionaryAttr>("accv_gpu_map"))
     {
         auto iv = affineForOp.getInductionVar();
         [[maybe_unused]] int64_t begin = affineForOp.getConstantLowerBound();
         [[maybe_unused]] int64_t end = affineForOp.getConstantUpperBound();
         int64_t step = affineForOp.getStep();
 
-        auto processor = *symbolizeProcessor(gpuMapAttr.getValue());
+        auto procStr = gpuMapAttr.get("proc").cast<mlir::StringAttr>().getValue();
+        auto bindingMap = gpuMapAttr.get("map").cast<mlir::AffineMapAttr>().getValue();
+
+        auto processor = *symbolizeProcessor(procStr);
         auto affineScopeParent = affineForOp->getParentWithTrait<mlir::OpTrait::AffineScope>();
         auto& firstRegion = affineScopeParent->getRegion(0);
         auto& firstBlock = firstRegion.front();
         OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPoint(&firstBlock, firstBlock.begin());
-        loc = affineForOp.getLoc();
 
-        auto gpuValue = [&]() -> mlir::Value {
-            return util::GetGPUIndex(affineForOp, processor, rewriter, loc);
-        }();
+        auto gpuValue = util::GetGPUIndex(affineForOp, processor, rewriter, loc);
+        auto replacementVal = rewriter.create<mlir::AffineApplyOp>(loc, bindingMap, mlir::ValueRange{ gpuValue });
+
         // We're going to replace all uses of the affine loop's induction variable with GPU hardware mapping instead, so
         // make the AffineForOp effectively a no-op
 
@@ -931,7 +939,7 @@ LogicalResult GPUMappedAffineForOpRewrite::matchAndRewrite(mlir::AffineForOp aff
         affineForOp.setConstantLowerBound(0);
         affineForOp.setConstantUpperBound(1);
         auto idxMap = AffineMap::get(1, 0, rewriter.getAffineDimExpr(0) * rewriter.getAffineConstantExpr(step));
-        mlir::Value affineApplyResult = rewriter.create<mlir::AffineApplyOp>(loc, idxMap, ValueRange{ gpuValue });
+        mlir::Value affineApplyResult = rewriter.create<mlir::AffineApplyOp>(loc, idxMap, ValueRange{ replacementVal });
 
         affineForOp.walk([&](Operation* walkOp) {
             walkOp->replaceUsesOfWith(iv, affineApplyResult);
@@ -1185,8 +1193,8 @@ LogicalResult MergeNearlyIdenticalSiblingLoops::matchAffineForOps(AffineForOp op
             // it's only valid for the first ops to be either begin cache region ops or affine for ops. anything else, we can't handle
 
             if (
-                auto beginOp1 = dyn_cast<executionPlan::BeginCacheRegionOp>(&op1Child),
-                beginOp2 = dyn_cast<executionPlan::BeginCacheRegionOp>(&op2Child);
+                auto beginOp1 = dyn_cast<executionPlan::BeginCreateCacheOp>(&op1Child),
+                beginOp2 = dyn_cast<executionPlan::BeginCreateCacheOp>(&op2Child);
                 // if there's a mismatch, bail
                 !!beginOp1 ^ !!beginOp2)
             {

@@ -1,3 +1,4 @@
 onnx==1.9.0
 onnxruntime==1.7.0
+protobuf==3.20.1 # tied to the version of onnx above
 sympy

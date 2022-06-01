@@ -9,6 +9,7 @@
 #include "MLIREmitterContext.h"
 #include "Schedule.h"
 
+#include <ir/include/IRUtil.h>
 #include <ir/include/exec/ExecutionPlanAttributes.h>
 #include <ir/include/exec/ExecutionPlanOps.h>
 #include <ir/include/exec/ParallelizationInfo.h>
@@ -201,11 +202,11 @@ namespace value
             }
         }
 
-        void Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy)
+        void Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy, bool _useRocWMMA)
         {
             auto& builder = GetBuilder();
 
-            TensorizationInfo tensorizationInfo{ static_cast<accera::ir::value::MMAShape>(dims), numTotalPasses, useStaticOffsets, numFusedPasses, static_cast<accera::ir::value::MMASchedulingPolicy>(schedulingPolicy) };
+            TensorizationInfo tensorizationInfo{ static_cast<accera::ir::value::MMAShape>(dims), numTotalPasses, useStaticOffsets, numFusedPasses, static_cast<accera::ir::value::MMASchedulingPolicy>(schedulingPolicy), _useRocWMMA };
             auto tensorizationInfoIdentifier = builder.getIdentifier(TensorizationInfoAttr::getKeyName());
             auto tensorizationInfoAttr = TensorizationInfoAttr::get(tensorizationInfo, builder.getContext());
 
@@ -219,28 +220,48 @@ namespace value
             }
         }
 
-        void MapIndexToProcessor(ScalarIndex i, Processor proc)
+        void MapIndicesToProcessor(std::vector<ScalarIndex>& scalarIndices, Processor proc)
         {
-            auto& builder = GetBuilder();
-            auto symbolicIndexOp = GetIndexOp(i);
-            auto index = symbolicIndexOp.getValue();
+            // Create a mapping for each index bound to this processor
 
+            // The mapping expressions are computed following a first-major-like mapping where the last index
+            // has a stride of 1 in the mapping, the second to last index has a stride equal to the iteration
+            // count of the last index, and so on
+            // E.g. for ordered indices (i, j, k) bound to THREAD_Y the mappings will be:
+            //      THREAD_Y = (i * num_iters(j) * num_iters(k)) + (j * num_iters(k)) + k
+            //      But more usefully from this we can compute:
+            //      mapping_k = ( THREAD_Y ) % num_iters(k)
+            //      mapping_j = ( THREAD_Y // num_iters(k) ) % num_iters(j)
+            //      mapping_i = ( THREAD_Y // (num_iters(j) * num_iters(k)) ) % num_iters(i)
+
+            auto& builder = GetBuilder();
+
+            // Position the builder inside the nest before the schedule op
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.setInsertionPoint(_scheduleOp);
+
+            // Get the current mapping dictionary
             auto planOp = _scheduleOp.getOrCreateExecPlan();
-            auto procStr = ir::value::stringifyEnum(proc);
-            auto procMapAttrName = planOp.getGPUProcessorMapAttrName();
-            auto procMap = planOp->getAttrOfType<mlir::DictionaryAttr>(procMapAttrName);
-            if (!procMap)
+
+            std::vector<SymbolicIndexOp> symbolicIndexOps;
+            std::transform(scalarIndices.begin(), scalarIndices.end(), std::back_inserter(symbolicIndexOps), [&](const ScalarIndex& index) { return GetIndexOp(index); });
+
+            // Traverse the symbolicIndexOps from back to front to compute iteration shape stride information
+            std::reverse(symbolicIndexOps.begin(), symbolicIndexOps.end());
+            auto transformedDomain = _scheduleOp.getDomain().getValue();
+            int64_t accumulatedStride = 1;
+            std::vector<mlir::NamedAttribute> boundSymNameIndexPairs;
+            for (auto& symbolicIndexOp : symbolicIndexOps)
             {
-                procMap = builder.getDictionaryAttr(
-                    { { builder.getIdentifier(procStr), IndexAttr::get(index, builder.getContext()) } });
-                planOp->setAttr(procMapAttrName, procMap);
-            }
-            else
-            {
-                auto mapArray = procMap.getValue().vec();
-                mapArray.emplace_back(
-                    builder.getIdentifier(procStr), IndexAttr::get(index, builder.getContext()));
-                planOp->setAttr(procMapAttrName, builder.getDictionaryAttr(mapArray));
+                auto index = symbolicIndexOp.getValue();
+                auto range = transformedDomain.GetIndexRange(index);
+                auto iterCount = range.NumIterations();
+                auto currentStride = accumulatedStride;
+                accumulatedStride *= iterCount;
+
+                mlir::AffineMap boundMap = mlir::AffineMap::get(0, 1, (builder.getAffineSymbolExpr(0).floorDiv(currentStride)) % iterCount);
+
+                planOp.addBinding(builder.getContext(), index, proc, boundMap);
             }
         }
 
@@ -408,14 +429,19 @@ namespace value
         return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace);
     }
 
-    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy)
+    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy, bool _useRocWMMA)
     {
-        _impl->Tensorize(indices, dims, numTotalPasses, useStaticOffsets, numFusedPasses, schedulingPolicy);
+        _impl->Tensorize(indices, dims, numTotalPasses, useStaticOffsets, numFusedPasses, schedulingPolicy, _useRocWMMA);
+    }
+
+    void GPUPlan::MapIndicesToProcessor(std::vector<ScalarIndex> indices, Processor proc)
+    {
+        _impl->MapIndicesToProcessor(indices, proc);
     }
 
     void GPUPlan::MapIndexToProcessor(ScalarIndex index, Processor proc)
     {
-        _impl->MapIndexToProcessor(index, proc);
+        MapIndicesToProcessor({ index }, proc);
     }
 } // namespace value
 } // namespace accera

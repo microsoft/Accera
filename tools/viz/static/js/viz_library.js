@@ -11,18 +11,18 @@ function loadScript(scriptUrl) {
     document.body.appendChild(script);
 
     return new Promise((res, rej) => {
-        script.onload = function() {
-        res();
+        script.onload = function () {
+            res();
         }
         script.onerror = function () {
-        rej();
+            rej();
         }
     });
 }
 
 let plane = null
 const shadowMapRes = 8192;
-const HTTP_METHODS = { GET: "GET", POST: "POST"};
+const HTTP_METHODS = { GET: "GET", POST: "POST" };
 
 const AXIS = {
     _0: "_0",
@@ -47,7 +47,7 @@ const LIGHT_TYPES = {
 function TweenPosition(three_obj, options) {
     let position = three_obj.position.clone()
     var tween = new TWEEN.Tween(position)
-    .to(options.target, options.duration);
+        .to(options.target, options.duration);
 
     tween.onUpdate(() => {
         three_obj.position.x = position.x;
@@ -61,7 +61,7 @@ function TweenPosition(three_obj, options) {
 function TweenRotation(three_obj, options) {
     let rotation = three_obj.rotation.clone()
     var tween = new TWEEN.Tween(rotation)
-    .to(options.target, options.duration);
+        .to(options.target, options.duration);
 
     tween.onUpdate(() => {
         three_obj.rotation.x = rotation.x;
@@ -75,7 +75,7 @@ function TweenRotation(three_obj, options) {
 function TweenProperties(options) {
     let initial_props = options.initial;
     var tween = new TWEEN.Tween(initial_props)
-    .to(options.target, options.duration);
+        .to(options.target, options.duration);
 
     tween.onUpdate(() => {
         if (typeof options.onUpdate === 'function') {
@@ -89,25 +89,23 @@ function TweenProperties(options) {
 // Make a reusable function that returns a single Promise
 function PerformRequest(method, path, json) {
     json = json ? json : {};
-    return new Promise(function(resolve, reject) {
-      const getAPIData = new XMLHttpRequest();
-      const url = path;
-      getAPIData.open(method, url);
+    return new Promise(function (resolve, reject) {
+        const getAPIData = new XMLHttpRequest();
+        const url = path;
+        getAPIData.open(method, url);
 
-      if (method === HTTP_METHODS.POST)
-      {
-        getAPIData.setRequestHeader('Content-Type', 'application/json');
-        getAPIData.send(JSON.stringify(json));
-      }
-      else
-      {
-        getAPIData.send();
-      }
+        if (method === HTTP_METHODS.POST) {
+            getAPIData.setRequestHeader('Content-Type', 'application/json');
+            getAPIData.send(JSON.stringify(json));
+        }
+        else {
+            getAPIData.send();
+        }
 
-      getAPIData.onload = function() {
-        const APIData = JSON.parse(getAPIData.responseText);
-        resolve(APIData);
-      };
+        getAPIData.onload = function () {
+            const APIData = JSON.parse(getAPIData.responseText);
+            resolve(APIData);
+        };
     });
 }
 
@@ -117,9 +115,9 @@ function GetBaseSceneObject(viz, parent) {
     var obj = {
         parent_object: parent_obj,
         root_object: _root,
-        remove: () => { 
+        remove: () => {
             if (obj.root_object.parent) {
-                obj.root_object.parent.remove(obj.root_object); 
+                obj.root_object.parent.remove(obj.root_object);
             }
         }
     };
@@ -129,11 +127,11 @@ function GetBaseSceneObject(viz, parent) {
 }
 
 function GetDefault3dIterationPose() {
-    return {x :0.65, y: 2.5, z: 3.14}
+    return { x: 0.65, y: 2.5, z: 3.14 }
 }
 
 function GetDefault2dIterationPose() {
-    return {x :0, y: 3.14, z: 3.14}
+    return { x: 0, y: 3.14, z: 3.14 }
 }
 
 function GetLayoutInfoOfSpace(space_params) {
@@ -144,9 +142,9 @@ function GetLayoutInfoOfSpace(space_params) {
 
     const starting_pos = [space_params.position.x - overall_x / 2, space_params.position.y - overall_y / 2, space_params.position.z - overall_z / 2];
     return {
-        origin: {x: starting_pos[0], y: starting_pos[1], z: starting_pos[2]},
-        center: {x: space_params.position.x, y: space_params.position.y, z: space_params.position.z},
-        total_dim_size: {x: overall_x, y: overall_y, z: overall_z}
+        origin: { x: starting_pos[0], y: starting_pos[1], z: starting_pos[2] },
+        center: { x: space_params.position.x, y: space_params.position.y, z: space_params.position.z },
+        total_dim_size: { x: overall_x, y: overall_y, z: overall_z }
     }
 }
 
@@ -168,18 +166,18 @@ function GenerateIterationSpacePair(viz, options) {
     obj.root_object.attach(obj.space1.root_object);
 
     if (space1_axis_label) {
-        obj.space1_label = viz.CreateAxisLabel({ ...{space: obj.space1}, ...space1_axis_label })
+        obj.space1_label = viz.CreateAxisLabel({ ...{ space: obj.space1 }, ...space1_axis_label })
         obj.root_object.attach(obj.space1_label.root_object);
     }
 
     const space2_position = new THREE.Vector3();
     space2_position.z = (space_1_layout.center.z + (space_1_layout.total_dim_size.z / 2)) - (space_2_layout.total_dim_size.z / 2);
     if (horizontal) {
-        space2_position.y = (space_1_layout.center.y + (space_1_layout.total_dim_size.y/2)) - (space_2_layout.total_dim_size.y/2);
-        space2_position.x = (space_1_layout.center.x + (space_1_layout.total_dim_size.x/2)) + spacing + (space_2_layout.total_dim_size.x/2);
+        space2_position.y = (space_1_layout.center.y + (space_1_layout.total_dim_size.y / 2)) - (space_2_layout.total_dim_size.y / 2);
+        space2_position.x = (space_1_layout.center.x + (space_1_layout.total_dim_size.x / 2)) + spacing + (space_2_layout.total_dim_size.x / 2);
     } else {
-        space2_position.y = (space_1_layout.center.y - (space_1_layout.total_dim_size.y/2)) - spacing - (space_2_layout.total_dim_size.y/2);
-        space2_position.x = (space_1_layout.center.x - (space_1_layout.total_dim_size.x/2)) + (space_2_layout.total_dim_size.x/2);
+        space2_position.y = (space_1_layout.center.y - (space_1_layout.total_dim_size.y / 2)) - spacing - (space_2_layout.total_dim_size.y / 2);
+        space2_position.x = (space_1_layout.center.x - (space_1_layout.total_dim_size.x / 2)) + (space_2_layout.total_dim_size.x / 2);
     }
 
     space_2_params.position = space2_position;
@@ -187,7 +185,7 @@ function GenerateIterationSpacePair(viz, options) {
     obj.root_object.attach(obj.space2.root_object);
 
     if (space2_axis_label) {
-        obj.space2_label = viz.CreateAxisLabel({ ...{space: obj.space2}, ...space2_axis_label })
+        obj.space2_label = viz.CreateAxisLabel({ ...{ space: obj.space2 }, ...space2_axis_label })
         obj.root_object.attach(obj.space2_label.root_object);
     }
 
@@ -212,10 +210,9 @@ function GetOverlappedPosition(overlapped_space, overlapped_coord, overlapping_s
 }
 
 
-async function AutoSaveFrame(img_name, vizInfo){
+async function AutoSaveFrame(img_name, vizInfo) {
     const frameAsDataURL = document.getElementById("render_container").children[0].toDataURL("image/png");
-    if (vizInfo.save_through_browser)
-    {
+    if (vizInfo.save_through_browser) {
         img_name = img_name ? img_name : "image";
         console.log("Saving image " + img_name + " through browser");
         document.getElementById("downloader_hidden").download = img_name + ".png";
@@ -223,21 +220,20 @@ async function AutoSaveFrame(img_name, vizInfo){
         document.getElementById("downloader_hidden").click();
     }
 
-    if (!vizInfo.enable_image)
-    {
+    if (!vizInfo.enable_image) {
         console.log("not saving image on dry run");
         return;
     }
 
-    return PerformRequest(HTTP_METHODS.POST, 
-        "/api/save_image", 
-        {frame: frameAsDataURL, viz_name: vizInfo.name, frame_name: img_name})
-    .then((result) => {
-        console.log("save_image: " + result);
-    });
+    return PerformRequest(HTTP_METHODS.POST,
+        "/api/save_image",
+        { frame: frameAsDataURL, viz_name: vizInfo.name, frame_name: img_name })
+        .then((result) => {
+            console.log("save_image: " + result);
+        });
 }
 
-async function CreateSequence(viz_obj, sequence_name, fps){
+async function CreateSequence(viz_obj, sequence_name, fps) {
     const seq_obj = {
         viz_obj: viz_obj,
         viz_name: viz_obj.vizInfo.name,
@@ -270,7 +266,7 @@ async function CreateSequence(viz_obj, sequence_name, fps){
 
             let cur_frame = 0;
             const frame_duration = Math.floor(1000 / seq_obj.sequence_fps);
-            while(seq_obj.active_tweens.length > 0) {
+            while (seq_obj.active_tweens.length > 0) {
                 TWEEN.update(cur_frame * frame_duration);
                 await seq_obj.AddFrame(frame_duration);
                 cur_frame++;
@@ -289,16 +285,15 @@ async function CreateSequence(viz_obj, sequence_name, fps){
                 await seq_obj.viz_obj.SaveImage(save_frame_name);
             }
 
-            if (!seq_obj.viz_obj.vizInfo.enable_video)
-            {
+            if (!seq_obj.viz_obj.vizInfo.enable_video) {
                 console.log("not AddFrame on dry run");
                 return seq_obj;
             }
 
             const frameAsDataURL = document.getElementById("render_container").children[0].toDataURL("image/png");
             let frame_info = {
-                viz_name: seq_obj.viz_name, 
-                sequence_name: seq_obj.sequence_name, 
+                viz_name: seq_obj.viz_name,
+                sequence_name: seq_obj.sequence_name,
                 sequence_fps: seq_obj.sequence_fps,
                 monotonic_frame: seq_obj.cur_frame++,
                 frame: frameAsDataURL
@@ -309,10 +304,10 @@ async function CreateSequence(viz_obj, sequence_name, fps){
             }
 
             return PerformRequest(HTTP_METHODS.POST, "/api/add_to_sequence", frame_info)
-            .then((result) => {
-                console.log("add_to_sequence result: " + result);
-                return seq_obj;
-            });
+                .then((result) => {
+                    console.log("add_to_sequence result: " + result);
+                    return seq_obj;
+                });
         },
         FinishSequence: () => {
             if (seq_obj.has_finished) {
@@ -320,40 +315,38 @@ async function CreateSequence(viz_obj, sequence_name, fps){
                 return seq_obj;
             }
 
-            if (!seq_obj.viz_obj.vizInfo.enable_video)
-            {
+            if (!seq_obj.viz_obj.vizInfo.enable_video) {
                 console.log("not AddFrame on dry run");
                 return seq_obj;
             }
 
-            return PerformRequest(HTTP_METHODS.POST, 
-                "/api/finish_sequence", 
+            return PerformRequest(HTTP_METHODS.POST,
+                "/api/finish_sequence",
                 {
-                    viz_name: seq_obj.viz_name, 
-                    sequence_name: seq_obj.sequence_name, 
+                    viz_name: seq_obj.viz_name,
+                    sequence_name: seq_obj.sequence_name,
                     sequence_fps: seq_obj.sequence_fps,
                 })
-            .then((result) => {
-                console.log("finish_sequence result: " + result);
-                seq_obj.has_finished = true;
-                return seq_obj;
-            });
+                .then((result) => {
+                    console.log("finish_sequence result: " + result);
+                    seq_obj.has_finished = true;
+                    return seq_obj;
+                });
         }
     };
 
-    if (!seq_obj.viz_obj.vizInfo.enable_video)
-    {
+    if (!seq_obj.viz_obj.vizInfo.enable_video) {
         console.log("not AddFrame on dry run");
         return seq_obj;
     }
 
-    return PerformRequest(HTTP_METHODS.POST, 
-        "/api/start_sequence", 
-        {viz_name: seq_obj.viz_name, sequence_name: sequence_name, sequence_fps: fps})
-    .then((result) => {
-        console.log("start_sequence result: " + result);
-        return seq_obj;
-    });
+    return PerformRequest(HTTP_METHODS.POST,
+        "/api/start_sequence",
+        { viz_name: seq_obj.viz_name, sequence_name: sequence_name, sequence_fps: fps })
+        .then((result) => {
+            console.log("start_sequence result: " + result);
+            return seq_obj;
+        });
 }
 
 function _create_padding_array(padding) {
@@ -363,7 +356,7 @@ function _create_padding_array(padding) {
     } else if (Array.isArray(padding)) {
         padding_arr = padding_arr.concat(padding);
         if (padding_arr.length < 3) {
-            for(let i = padding_arr.length; i < 3; ++i) {
+            for (let i = padding_arr.length; i < 3; ++i) {
                 padding_arr.push(0.2);
             }
         }
@@ -414,7 +407,7 @@ function Generate4dIterationSpace(viz, options) {
     );
 
     // Ensure all label coords are 2d
-    for(let i = 0; i < inner_space_label_coords.length; ++i) {
+    for (let i = 0; i < inner_space_label_coords.length; ++i) {
         if (inner_space_label_coords[i].length > 0) {
             if (inner_space_label_coords[i].length == 1) {
                 inner_space_label_coords[i].push(0);
@@ -426,14 +419,14 @@ function Generate4dIterationSpace(viz, options) {
     const overall_height = (outer_axis0_size * inner_space_layout.total_dim_size.y) + ((outer_axis0_size - 1) * (inner_space_padding[0])) + ((outer_axis0_size - 1) * (vertical_spacing));
 
     const getDistanceForCoord = (coord, axis_size, dim_size, spacing, padding) => {
-        return (dim_size/2) + (coord * dim_size) + (coord * spacing) + (coord * padding);
+        return (dim_size / 2) + (coord * dim_size) + (coord * spacing) + (coord * padding);
     };
 
     const starting_position = new THREE.Vector3(position.x - (overall_width / 2), position.y + (overall_height / 2), position.z);
     const ending_position = new THREE.Vector3(position.x + (overall_width / 2), position.y - (overall_height / 2), position.z);
 
-    for(let y = 0; y < outer_axis0_size; ++y) {
-        for(let x = 0; x < outer_axis1_size; ++x) {
+    for (let y = 0; y < outer_axis0_size; ++y) {
+        for (let x = 0; x < outer_axis1_size; ++x) {
             let this_space_pos = starting_position.clone();
             this_space_pos.x += getDistanceForCoord(x, 0, inner_space_layout.total_dim_size.x, horizontal_spacing, inner_space_padding[1]);
             this_space_pos.y -= getDistanceForCoord(y, 0, inner_space_layout.total_dim_size.y, vertical_spacing, inner_space_padding[0]);
@@ -444,10 +437,9 @@ function Generate4dIterationSpace(viz, options) {
             obj.root_object.attach(space.root_object);
 
             // Check if we are in a labeled coord
-            if (inner_space_label_coords.length > 0)
-            {
+            if (inner_space_label_coords.length > 0) {
                 let shouldLabel = false;
-                for(let i = 0; i < inner_space_label_coords.length; ++i) {
+                for (let i = 0; i < inner_space_label_coords.length; ++i) {
                     if (inner_space_label_coords[i].length > 0) {
                         shouldLabel = inner_space_label_coords[i][0] == y && inner_space_label_coords[i][1] == x;
                         if (shouldLabel) {
@@ -461,7 +453,7 @@ function Generate4dIterationSpace(viz, options) {
                 }
             }
 
-            const fullLabelData = { ...{space: space}, ...inner_axis_labels };
+            const fullLabelData = { ...{ space: space }, ...inner_axis_labels };
             const label = viz.CreateAxisLabel(fullLabelData);
             obj.iteration_space_labels[(outer_axis1_size * y) + x] = label;
             obj.root_object.attach(label.root_object);
@@ -475,13 +467,13 @@ function Generate4dIterationSpace(viz, options) {
 
         const distance_from_edge = (typeof axis_options.arrow_distance_from_edge === "number") ? axis_options.arrow_distance_from_edge : 1;
         const edge_start_x = axis_options.arrow_display_side == CUBE_SIDES.LEFT ? starting_position.x : ending_position.x;
-        const edge_normal_x = axis_options.arrow_display_side == CUBE_SIDES.LEFT ? -1: 1;
-        const edge_start_z_offset = axis_options.arrow_alignment_side == CUBE_SIDES.FRONT ? (inner_space_layout.total_dim_size.z/2) : -(inner_space_layout.total_dim_size.z/2);
-        const axis_label = GenerateSingleAxisLabel(viz, null, 
-            new THREE.Vector3(edge_start_x, starting_position.y, starting_position.z + edge_start_z_offset), 
+        const edge_normal_x = axis_options.arrow_display_side == CUBE_SIDES.LEFT ? -1 : 1;
+        const edge_start_z_offset = axis_options.arrow_alignment_side == CUBE_SIDES.FRONT ? (inner_space_layout.total_dim_size.z / 2) : -(inner_space_layout.total_dim_size.z / 2);
+        const axis_label = GenerateSingleAxisLabel(viz, null,
+            new THREE.Vector3(edge_start_x, starting_position.y, starting_position.z + edge_start_z_offset),
             new THREE.Vector3(edge_normal_x, 0, 0),
-            new THREE.Vector3(0, -1, 0), 
-            distance_from_edge, 
+            new THREE.Vector3(0, -1, 0),
+            distance_from_edge,
             axis_options);
 
         obj.axis0 = axis_label;
@@ -495,13 +487,13 @@ function Generate4dIterationSpace(viz, options) {
 
         const distance_from_edge = (typeof axis_options.arrow_distance_from_edge === "number") ? axis_options.arrow_distance_from_edge : 1;
         const edge_start_y = axis_options.arrow_display_side == CUBE_SIDES.TOP ? starting_position.y : ending_position.y;
-        const edge_normal_y = axis_options.arrow_display_side == CUBE_SIDES.TOP ? 1: -1;
-        const edge_start_z_offset = axis_options.arrow_alignment_side == CUBE_SIDES.FRONT ? (inner_space_layout.total_dim_size.z/2) : -(inner_space_layout.total_dim_size.z/2);
-        const axis_label = GenerateSingleAxisLabel(viz, null, 
-            new THREE.Vector3(starting_position.x, edge_start_y, starting_position.z + edge_start_z_offset), 
+        const edge_normal_y = axis_options.arrow_display_side == CUBE_SIDES.TOP ? 1 : -1;
+        const edge_start_z_offset = axis_options.arrow_alignment_side == CUBE_SIDES.FRONT ? (inner_space_layout.total_dim_size.z / 2) : -(inner_space_layout.total_dim_size.z / 2);
+        const axis_label = GenerateSingleAxisLabel(viz, null,
+            new THREE.Vector3(starting_position.x, edge_start_y, starting_position.z + edge_start_z_offset),
             new THREE.Vector3(0, edge_normal_y, 0),
-            new THREE.Vector3(1, 0, 0), 
-            distance_from_edge, 
+            new THREE.Vector3(1, 0, 0),
+            distance_from_edge,
             axis_options);
 
         obj.axis1 = axis_label;
@@ -577,13 +569,11 @@ function GenerateIterationSpace(viz, options) {
             const dim2 = child_coordinate.dim2 ? child_coordinate.dim2 : 0;
 
             const has_opactiy = typeof opacity === 'number';
-            if (has_opactiy && opacity < 1.0)
-            {
+            if (has_opactiy && opacity < 1.0) {
                 obj.child_spheres[dim0][dim1][dim2].material.transparent = true;
                 obj.child_spheres[dim0][dim1][dim2].material.opacity = opacity;
             }
-            else
-            {
+            else {
                 obj.child_spheres[dim0][dim1][dim2].material.transparent = false;
             }
         },
@@ -606,7 +596,7 @@ function GenerateIterationSpace(viz, options) {
             let arrow_options = options.arrow_options;
             let tail_child_pos = obj.get_child_position(positions.tail.child_coordinate);
             let head_child_pos = obj.get_child_position(positions.head.child_coordinate);
-            const additional_head_offset = typeof arrow_options.head_length === "number" ? arrow_options.head_length/2 : 0;
+            const additional_head_offset = typeof arrow_options.head_length === "number" ? arrow_options.head_length / 2 : 0;
 
             let tail_offset = typeof positions.tail.offset === "number" ? positions.tail.offset : 0;
             tail_offset += (obj.size / 2);
@@ -635,20 +625,17 @@ function GenerateIterationSpace(viz, options) {
                 arrow_options.tail_position = obj.get_child_position(tail_info.child_coordinate);
                 arrow_options.head_position = obj.get_child_position(positions.head.child_coordinate);
                 arrow_options.head_offset = base_head_offset + additional_head_offset;
-                const arrow = GenerateBentArrow(viz, arrow_options, idx!=0);
+                const arrow = GenerateBentArrow(viz, arrow_options, idx != 0);
                 obj.root_object.attach(arrow.root_object);
                 all_arrows.push(arrow);
             });
 
             return all_arrows;
         },
-        iterate: (fn) => { 
-            for(let x = 0; x < obj.shape[0]; ++x)
-            {
-                for(let y = 0; y < obj.shape[1]; ++y)
-                {
-                    for(let z = 0; z < obj.shape[2]; ++z)
-                    {
+        iterate: (fn) => {
+            for (let x = 0; x < obj.shape[0]; ++x) {
+                for (let y = 0; y < obj.shape[1]; ++y) {
+                    for (let z = 0; z < obj.shape[2]; ++z) {
                         fn(x, y, z, obj.child_spheres[x][y][z], [x, y, z]);
                     }
                 }
@@ -666,10 +653,8 @@ function GenerateIterationSpace(viz, options) {
 
         // Handle 1d / 2d
         let not3d = obj.shape.length < 3;
-        if (not3d)
-        {
-            for(let i = obj.shape.length; i < 3; ++i)
-            {
+        if (not3d) {
+            for (let i = obj.shape.length; i < 3; ++i) {
                 obj.shape.push(1);
             }
         }
@@ -682,12 +667,9 @@ function GenerateIterationSpace(viz, options) {
 
         obj.side_total_render_size = [space_info.total_dim_size.x, space_info.total_dim_size.y, space_info.total_dim_size.z];
         if (obj.child_spheres.length > 0) {
-            for(let x = 0; x < obj.shape[0]; ++x)
-            {
-                for(let y = 0; y < obj.shape[1]; ++y)
-                {
-                    for(let z = 0; z < obj.shape[2]; ++z)
-                    {
+            for (let x = 0; x < obj.shape[0]; ++x) {
+                for (let y = 0; y < obj.shape[1]; ++y) {
+                    for (let z = 0; z < obj.shape[2]; ++z) {
                         obj.root_object.remove(obj.child_spheres[x][y][z]);
                     }
                 }
@@ -695,37 +677,31 @@ function GenerateIterationSpace(viz, options) {
         }
 
         // Handle 3d
-        if (obj.shape.length == 3)
-        {
+        if (obj.shape.length == 3) {
             const starting_pos = [space_info.total_dim_size.x / 2, space_info.total_dim_size.y / 2, space_info.total_dim_size.z / 2];
 
             console.log("Creating 3d iteration space");
 
             obj.child_spheres = new Array(obj.shape[0]);
-            for(let x = 0; x < obj.shape[0]; ++x)
-            {
+            for (let x = 0; x < obj.shape[0]; ++x) {
                 obj.child_spheres[x] = new Array(obj.shape[1]);
-                for(let y = 0; y < obj.shape[1]; ++y)
-                {
+                for (let y = 0; y < obj.shape[1]; ++y) {
                     obj.child_spheres[x][y] = new Array(obj.shape[2]);
                 }
             }
 
-            for(let x = 0; x < obj.shape[0]; ++x)
-            {
-                for(let y = 0; y < obj.shape[1]; ++y)
-                {
-                    for(let z = 0; z < obj.shape[2]; ++z)
-                    {
+            for (let x = 0; x < obj.shape[0]; ++x) {
+                for (let y = 0; y < obj.shape[1]; ++y) {
+                    for (let z = 0; z < obj.shape[2]; ++z) {
                         const spherePos = new THREE.Vector3(
-                            -(starting_pos[0]) + (obj.size/2) + (obj.padding[1]/2) + (y * obj.size) + (y * obj.padding[1]),
-                            -(starting_pos[1]) + (obj.size/2) + (obj.padding[0]/2) + (x * obj.size) + (x * obj.padding[0]),
-                            -(starting_pos[2]) + (obj.size/2) + (obj.padding[2]/2) + (z * obj.size) + (z * obj.padding[2]),
+                            -(starting_pos[0]) + (obj.size / 2) + (obj.padding[1] / 2) + (y * obj.size) + (y * obj.padding[1]),
+                            -(starting_pos[1]) + (obj.size / 2) + (obj.padding[0] / 2) + (x * obj.size) + (x * obj.padding[0]),
+                            -(starting_pos[2]) + (obj.size / 2) + (obj.padding[2] / 2) + (z * obj.size) + (z * obj.padding[2]),
                         );
 
-                        const geometry = new THREE.SphereGeometry(obj.size/2, 32, 32);
-                        const material = new THREE.MeshStandardMaterial( {color: sphere_color} );
-                        const sphere = new THREE.Mesh(geometry, material );
+                        const geometry = new THREE.SphereGeometry(obj.size / 2, 32, 32);
+                        const material = new THREE.MeshStandardMaterial({ color: sphere_color });
+                        const sphere = new THREE.Mesh(geometry, material);
                         sphere.position.x = spherePos.x;
                         sphere.position.y = spherePos.y;
                         sphere.position.z = spherePos.z;
@@ -738,13 +714,11 @@ function GenerateIterationSpace(viz, options) {
                 }
             }
 
-            if (!not3d)
-            {
+            if (!not3d) {
                 obj.render_width = Math.sqrt((overall_x * overall_x) + (overall_y * overall_y));
                 obj.render_height = Math.sqrt((overall_x * overall_x) + (overall_y * overall_y));
             }
-            else
-            {
+            else {
                 obj.render_width = overall_x;
                 obj.render_height = overall_y;
             }
@@ -769,13 +743,13 @@ function GenerateIterationSpace(viz, options) {
     obj.root_object.position.z = position.z;
 
 
-    obj.axis0_axis1_face_normal = () => { return new THREE.Vector3( 0, 0, -1 ).applyQuaternion( obj.root_object.quaternion ); }
+    obj.axis0_axis1_face_normal = () => { return new THREE.Vector3(0, 0, -1).applyQuaternion(obj.root_object.quaternion); }
     //GenerateArrow(viz.scene, obj.root_object.position.clone().add(obj.axis0_axis1_face_normal.clone().multiplyScalar(50)), obj.root_object.position.clone(), 0.25, 0.5, 0.5, 0xFF0000, 0xFF0000, true);
 
-    obj.axis0_axis2_face_normal = () => { return new THREE.Vector3( 0, -1, 0 ).applyQuaternion( obj.root_object.quaternion ); }
+    obj.axis0_axis2_face_normal = () => { return new THREE.Vector3(0, -1, 0).applyQuaternion(obj.root_object.quaternion); }
     //GenerateArrow(viz.scene, obj.root_object.position.clone().add(obj.axis0_axis2_face_normal.clone().multiplyScalar(50)), obj.root_object.position.clone(), 0.25, 0.5, 0.5, 0x00FF00, 0x00FF00, true);
 
-    obj.axis1_axis2_face_normal = () => { return new THREE.Vector3( 1, 0, 0 ).applyQuaternion( obj.root_object.quaternion ); }
+    obj.axis1_axis2_face_normal = () => { return new THREE.Vector3(1, 0, 0).applyQuaternion(obj.root_object.quaternion); }
     //GenerateArrow(viz.scene, obj.root_object.position.clone().add(obj.axis1_axis2_face_normal.clone().multiplyScalar(50)), obj.root_object.position.clone(), 0.25, 0.5, 0.5, 0x0000FF, 0x0000FF, true);
 
     return obj;
@@ -809,8 +783,8 @@ const GenerateSingleAxisLabel = (viz, parent, edge_start_pos, edge_normal, edge_
 
     const axis_label = GenerateText(viz, {
         position: text_pos,
-        text: axis_info.label, 
-        size: axis_info.label_size, 
+        text: axis_info.label,
+        size: axis_info.label_size,
         font_family: axis_info.label_font,
         color: axis_info.color
     });
@@ -821,10 +795,10 @@ const GenerateSingleAxisLabel = (viz, parent, edge_start_pos, edge_normal, edge_
 };
 
 function SlerpVectors(vec1, vec2, amount) {
-    var mx1 = new THREE.Matrix4().lookAt(vec1, new THREE.Vector3(0,0,0), new THREE.Vector3(0,1,0));
+    var mx1 = new THREE.Matrix4().lookAt(vec1, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0));
     var qt1 = new THREE.Quaternion().setFromRotationMatrix(mx1);
 
-    var mx2 = new THREE.Matrix4().lookAt(vec2, new THREE.Vector3(0,0,0), new THREE.Vector3(0,1,0));
+    var mx2 = new THREE.Matrix4().lookAt(vec2, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0));
     var qt2 = new THREE.Quaternion().setFromRotationMatrix(mx2);
 
     let slerped_normal = new THREE.Vector3(0, 0, 1);
@@ -866,14 +840,14 @@ function GenerateAxisLabel(viz, options) {
 
         const dim1_start_coord = axis_options.arrow_display_side == CUBE_SIDES.LEFT ? 0 : iter_space.shape[1] - 1;
         const dim2_start_coord = axis_options.arrow_alignment_side == CUBE_SIDES.FRONT ? 0 : iter_space.shape[2] - 1;
-        const upper_left_sphere = iter_space.get_child_position({dim0: 0, dim1: dim1_start_coord, dim2: dim2_start_coord});
+        const upper_left_sphere = iter_space.get_child_position({ dim0: 0, dim1: dim1_start_coord, dim2: dim2_start_coord });
         const edge_normal = axis_options.arrow_display_side == CUBE_SIDES.LEFT ? iter_space.axis1_axis2_face_normal().clone().multiplyScalar(-1) : iter_space.axis1_axis2_face_normal().clone();
         const axis0 = GenerateSingleAxisLabel(
             viz,
             obj.root_object,
-            upper_left_sphere, 
-            edge_normal_new, 
-            iter_space.axis0_axis2_face_normal().clone().multiplyScalar(-1), 
+            upper_left_sphere,
+            edge_normal_new,
+            iter_space.axis0_axis2_face_normal().clone().multiplyScalar(-1),
             combined_space,
             axis_options
         );
@@ -888,19 +862,19 @@ function GenerateAxisLabel(viz, options) {
         }
 
         const edge_angle = (typeof axis_options.edge_angle === "number") ? axis_options.edge_angle : 0;
-        const edge_normal_base = axis_options.arrow_display_side == CUBE_SIDES.TOP ? iter_space.axis0_axis2_face_normal().clone() :  iter_space.axis0_axis2_face_normal().clone().multiplyScalar(-1);
+        const edge_normal_base = axis_options.arrow_display_side == CUBE_SIDES.TOP ? iter_space.axis0_axis2_face_normal().clone() : iter_space.axis0_axis2_face_normal().clone().multiplyScalar(-1);
         const edge_normal_full = iter_space.axis0_axis1_face_normal().clone();
         let edge_normal_new = SlerpVectors(edge_normal_base, edge_normal_full, edge_angle);
 
         const dim0_start_coord = axis_options.arrow_display_side == CUBE_SIDES.TOP ? 0 : iter_space.shape[0] - 1;
         const dim2_start_coord = axis_options.arrow_alignment_side == CUBE_SIDES.FRONT ? 0 : iter_space.shape[2] - 1;
-        const edge_normal = axis_options.arrow_display_side == CUBE_SIDES.TOP ? iter_space.axis0_axis2_face_normal().clone() :  iter_space.axis0_axis2_face_normal().clone().multiplyScalar(-1);
-        const lower_left_sphere = iter_space.get_child_position({dim0: dim0_start_coord, dim1: 0, dim2: dim2_start_coord});
+        const edge_normal = axis_options.arrow_display_side == CUBE_SIDES.TOP ? iter_space.axis0_axis2_face_normal().clone() : iter_space.axis0_axis2_face_normal().clone().multiplyScalar(-1);
+        const lower_left_sphere = iter_space.get_child_position({ dim0: dim0_start_coord, dim1: 0, dim2: dim2_start_coord });
         const axis1 = GenerateSingleAxisLabel(
             viz,
             obj.root_object,
-            lower_left_sphere, 
-            edge_normal_new, 
+            lower_left_sphere,
+            edge_normal_new,
             iter_space.axis1_axis2_face_normal().clone(),
             combined_space,
             axis_options);
@@ -920,13 +894,13 @@ function GenerateAxisLabel(viz, options) {
         let edge_normal_new = SlerpVectors(edge_normal_base, edge_normal_full, edge_angle);
 
         const dim1_start_coord = axis_options.arrow_display_side == CUBE_SIDES.LEFT ? 0 : iter_space.shape[1] - 1;
-        const lower_center_sphere = iter_space.get_child_position({dim0: iter_space.shape[0] - 1, dim1: dim1_start_coord, dim2: 0});
+        const lower_center_sphere = iter_space.get_child_position({ dim0: iter_space.shape[0] - 1, dim1: dim1_start_coord, dim2: 0 });
         const axis2 = GenerateSingleAxisLabel(
             viz,
             obj.root_object,
-            lower_center_sphere, 
-            edge_normal_new, 
-            iter_space.axis0_axis1_face_normal().clone().multiplyScalar(-1), 
+            lower_center_sphere,
+            edge_normal_new,
+            iter_space.axis0_axis1_face_normal().clone().multiplyScalar(-1),
             combined_space,
             axis_options);
 
@@ -977,8 +951,8 @@ function GenerateIterationSpaceLighting(viz, options) {
         let starting_corner = side_center.clone().add(side_normal.clone().multiplyScalar(panel_distance));
         starting_corner = starting_corner.add(side_right.clone().multiplyScalar(-half_grid_size_x)).add(side_up.clone().multiplyScalar(-half_grid_size_y));
         starting_corner = starting_corner.add(new THREE.Vector3(light_options.offset.x, light_options.offset.y))
-        for(var x = 0; x < light_options.light_count.x; ++x) {
-            for(var y = 0; y < light_options.light_count.y; ++y) {
+        for (var x = 0; x < light_options.light_count.x; ++x) {
+            for (var y = 0; y < light_options.light_count.y; ++y) {
                 const this_light_pos = new THREE.Vector3(x * light_options.light_stride.x, y * light_options.light_stride.y);
                 const light = new THREE.PointLight(color, intensity, distance, decay);
                 const final_pos = starting_corner.clone().add(side_right.clone().multiplyScalar(this_light_pos.x)).add(side_up.clone().multiplyScalar(this_light_pos.y));;
@@ -989,8 +963,8 @@ function GenerateIterationSpaceLighting(viz, options) {
 
                 if (show_lights) {
                     const geometry = new THREE.SphereGeometry(0.5, 32, 32);
-                    const material = new THREE.MeshStandardMaterial( {color: 0xFF8C00, emissive: 0xFF8C00, emissiveIntensity: 5} );
-                    const sphere = new THREE.Mesh(geometry, material );
+                    const material = new THREE.MeshStandardMaterial({ color: 0xFF8C00, emissive: 0xFF8C00, emissiveIntensity: 5 });
+                    const sphere = new THREE.Mesh(geometry, material);
                     sphere.position.set(final_pos.x, final_pos.y, final_pos.z);
                     sphere.castShadow = false;
                     sphere.receiveShadow = false;
@@ -1010,7 +984,7 @@ function GenerateIterationSpaceLighting(viz, options) {
     side_normal = iter_space.axis0_axis2_face_normal().clone();
     side_up = iter_space.axis1_axis2_face_normal().clone().multiplyScalar(-1);
     side_right = iter_space.axis0_axis1_face_normal().clone().multiplyScalar(-1);
-    center_point = iter_space.root_object.position.clone().add(side_normal.clone().multiplyScalar(axis0_side/2));
+    center_point = iter_space.root_object.position.clone().add(side_normal.clone().multiplyScalar(axis0_side / 2));
 
     CreateLightPanel(center_point, side_normal, side_up, side_right, axis1_side, axis2_side, options.top_light)
 
@@ -1018,7 +992,7 @@ function GenerateIterationSpaceLighting(viz, options) {
     side_normal = iter_space.axis0_axis1_face_normal().clone();
     side_up = iter_space.axis0_axis2_face_normal().clone();
     side_right = iter_space.axis1_axis2_face_normal().clone();
-    center_point = iter_space.root_object.position.clone().add(side_normal.clone().multiplyScalar(axis2_side/2));
+    center_point = iter_space.root_object.position.clone().add(side_normal.clone().multiplyScalar(axis2_side / 2));
 
     CreateLightPanel(center_point, side_normal, side_up, side_right, axis1_side, axis0_side, options.left_light)
 
@@ -1026,7 +1000,7 @@ function GenerateIterationSpaceLighting(viz, options) {
     side_normal = iter_space.axis1_axis2_face_normal().clone();
     side_up = iter_space.axis0_axis2_face_normal().clone();
     side_right = iter_space.axis0_axis1_face_normal().clone().multiplyScalar(1);
-    center_point = iter_space.root_object.position.clone().add(side_normal.clone().multiplyScalar(axis1_side/2));
+    center_point = iter_space.root_object.position.clone().add(side_normal.clone().multiplyScalar(axis1_side / 2));
 
     CreateLightPanel(center_point, side_normal, side_up, side_right, axis1_side, axis2_side, options.right_light)
 
@@ -1086,8 +1060,8 @@ function GenerateLightingCube(viz, options) {
         let starting_corner = panel_center.clone().add(side_info.side_up.clone().multiplyScalar(-half_grid_size_y));
         starting_corner = starting_corner.clone().add(side_info.side_right.clone().multiplyScalar(-half_grid_size_x));
 
-        for(var x = 0; x < panel_options.light_count.x; ++x) {
-            for(var y = 0; y < panel_options.light_count.y; ++y) {
+        for (var x = 0; x < panel_options.light_count.x; ++x) {
+            for (var y = 0; y < panel_options.light_count.y; ++y) {
                 const this_light_pos = new THREE.Vector3(x * panel_options.light_stride.x, y * panel_options.light_stride.y);
 
 
@@ -1115,13 +1089,13 @@ function GenerateLightingCube(viz, options) {
 
                 if (show_lights) {
                     const geometry = new THREE.SphereGeometry(0.5, 32, 32);
-                    const material = new THREE.MeshStandardMaterial( {color: color, emissive: color, emissiveIntensity: 5} );
-                    const sphere = new THREE.Mesh(geometry, material );
+                    const material = new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 5 });
+                    const sphere = new THREE.Mesh(geometry, material);
                     sphere.position.set(final_pos.x, final_pos.y, final_pos.z);
                     sphere.castShadow = false;
                     sphere.receiveShadow = false;
                     if (light_type === LIGHT_TYPES.DIRECTIONAL) {
-                        viz.scene.add( new THREE.CameraHelper( light.shadow.camera ) );
+                        viz.scene.add(new THREE.CameraHelper(light.shadow.camera));
                     }
                     obj.root_object.add(sphere);
                 }
@@ -1177,8 +1151,8 @@ function CreateThreeLightFromOptions(viz, light_options, directional_target_pare
 
     if (show_light) {
         const geometry = new THREE.SphereGeometry(0.5, 32, 32);
-        const material = new THREE.MeshStandardMaterial( {color: color, emissive: color, emissiveIntensity: 5} );
-        const sphere = new THREE.Mesh(geometry, material );
+        const material = new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 5 });
+        const sphere = new THREE.Mesh(geometry, material);
         sphere.castShadow = false;
         sphere.receiveShadow = false;
         three_light.add(sphere);
@@ -1299,9 +1273,9 @@ function GenerateBentArrow(viz, options, skip_cone) {
     TailPosV3 = TailPosV3.add(TailBendDir.clone().multiplyScalar(tail_offset));
 
     if (!skip_cone) {
-        const cone_geo = new THREE.ConeGeometry(head_thickness/2, head_length, 32);
-        let cone_mat = new THREE.MeshPhongMaterial({color: head_color, specular:  0x050505, shininess: 150});
-        if (ignore_lighting){cone_mat = new THREE.MeshBasicMaterial({color: head_color});}
+        const cone_geo = new THREE.ConeGeometry(head_thickness / 2, head_length, 32);
+        let cone_mat = new THREE.MeshPhongMaterial({ color: head_color, specular: 0x050505, shininess: 150 });
+        if (ignore_lighting) { cone_mat = new THREE.MeshBasicMaterial({ color: head_color }); }
         const cone = new THREE.Mesh(cone_geo, cone_mat);
         cone.position.x = HeadPosV3.x;
         cone.position.y = HeadPosV3.y;
@@ -1319,9 +1293,9 @@ function GenerateBentArrow(viz, options, skip_cone) {
     ], false, spline_curve_type, spline_tension);
 
     // path: path 40: number of subdivisions along the track 2: pipe radius 25: number of subdivisions of the pipe section circle
-    var tube_geo = new THREE.TubeGeometry(curve, 40, line_thickness/2, 25, false);
-    let tube_mat = new THREE.MeshPhongMaterial({color: line_color, specular:  0x050505, shininess: 150});
-    if (ignore_lighting){tube_mat = new THREE.MeshBasicMaterial({color: line_color});}
+    var tube_geo = new THREE.TubeGeometry(curve, 40, line_thickness / 2, 25, false);
+    let tube_mat = new THREE.MeshPhongMaterial({ color: line_color, specular: 0x050505, shininess: 150 });
+    if (ignore_lighting) { tube_mat = new THREE.MeshBasicMaterial({ color: line_color }); }
     const tube_mesh = new THREE.Mesh(tube_geo, tube_mat);
 
     obj.root_object.add(tube_mesh);
@@ -1354,12 +1328,12 @@ function GenerateArrow(viz, options) {
     const TailPosV3 = new THREE.Vector3(tail_pos.x, tail_pos.y, tail_pos.z);
 
     const length = HeadPosV3.distanceTo(TailPosV3);
-    const pos = TailPosV3.clone().add(HeadPosV3.clone().sub(TailPosV3).normalize().multiplyScalar(length/2));
+    const pos = TailPosV3.clone().add(HeadPosV3.clone().sub(TailPosV3).normalize().multiplyScalar(length / 2));
 
-    const cyl_geo = new THREE.CylinderGeometry(line_thickness/2, line_thickness/2, length, 32);
-    let cyl_mat = new THREE.MeshPhongMaterial({color: line_color, specular:  0x050505, shininess: 150});
-    if (ignore_lighting){cyl_mat = new THREE.MeshBasicMaterial({color: line_color});}
-    const cyl = new THREE.Mesh( cyl_geo, cyl_mat );
+    const cyl_geo = new THREE.CylinderGeometry(line_thickness / 2, line_thickness / 2, length, 32);
+    let cyl_mat = new THREE.MeshPhongMaterial({ color: line_color, specular: 0x050505, shininess: 150 });
+    if (ignore_lighting) { cyl_mat = new THREE.MeshBasicMaterial({ color: line_color }); }
+    const cyl = new THREE.Mesh(cyl_geo, cyl_mat);
     cyl.position.x = pos.x;
     cyl.position.y = pos.y;
     cyl.position.z = pos.z;
@@ -1367,9 +1341,9 @@ function GenerateArrow(viz, options) {
     cyl.quaternion.setFromUnitVectors(axis, HeadPosV3.clone().sub(TailPosV3).normalize());
     obj.root_object.add(cyl);
 
-    const cone_geo = new THREE.ConeGeometry(head_thickness/2, head_length, 32);
-    let cone_mat = new THREE.MeshPhongMaterial({color: head_color, specular:  0x050505, shininess: 150});
-    if (ignore_lighting){cone_mat = new THREE.MeshBasicMaterial({color: head_color});}
+    const cone_geo = new THREE.ConeGeometry(head_thickness / 2, head_length, 32);
+    let cone_mat = new THREE.MeshPhongMaterial({ color: head_color, specular: 0x050505, shininess: 150 });
+    if (ignore_lighting) { cone_mat = new THREE.MeshBasicMaterial({ color: head_color }); }
     const cone = new THREE.Mesh(cone_geo, cone_mat);
     cone.position.x = HeadPosV3.x;
     cone.position.y = HeadPosV3.y;
@@ -1381,6 +1355,19 @@ function GenerateArrow(viz, options) {
     obj.parent_object.add(obj.root_object);
 
     return obj;
+}
+
+function GenerateLine(viz, options) {
+    return GenerateArrow(viz, {
+        head_position: options.start_position,
+        tail_position: options.end_position,
+        line_thickness: options.line_thickness,
+        head_length: 0.1,
+        head_thickness: 0.1,
+        line_color: options.line_color,
+        head_color: options.line_color,
+        ignore_lighting: options.ignore_lighting
+    });
 }
 
 function ValidateColor(color, default_color) {
@@ -1438,7 +1425,7 @@ function GenerateText(viz, options) {
         fontSize: size,
         strokeWidth: 0,
         text: text,
-      });
+    });
 
     obj.root_object.add(text_instance);
     return obj;
@@ -1446,8 +1433,7 @@ function GenerateText(viz, options) {
 
 // Setup defaults scene and renderer
 const DEBUG_SCENE_DEFAULTS = false;
-function SetupSceneDefaults(viz)
-{
+function SetupSceneDefaults(viz) {
     const ambient_color = ValidateColor(viz.vizInfo.ambient_light_color, 0x404040);
     const ambient_intensity = (typeof viz.vizInfo.ambient_light_intensity === "number") ? viz.vizInfo.ambient_light_intensity : 0.4;
 
@@ -1497,28 +1483,27 @@ function SetupSceneDefaults(viz)
     plane.receiveShadow = true;
     //viz.scene.add( plane );
     */
-    
+
     //viz.camera.position.y = 10;
     viz.camera.position.z = 50;
     viz.camera.zoom = 1;
     console.log(viz.camera.rotation)
     viz.camera.updateProjectionMatrix();
 
-    if (DEBUG_SCENE_DEFAULTS)
-    {
+    if (DEBUG_SCENE_DEFAULTS) {
         const geometry = new THREE.BoxGeometry();
-        const material = new THREE.MeshBasicMaterial ( { color: 0x00ff00 } );
-        const cube = new THREE.Mesh( geometry, material );
-        viz.scene.add( cube );
+        const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const cube = new THREE.Mesh(geometry, material);
+        viz.scene.add(cube);
 
         const geometry2 = new THREE.BoxGeometry();
-        const material2 = new THREE.MeshBasicMaterial ( { color: 0x00ff00 } );
-        const cube2 = new THREE.Mesh( geometry2, material2 );
+        const material2 = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const cube2 = new THREE.Mesh(geometry2, material2);
         cube2.position.x = cube2.position.y = 5;
-        viz.scene.add( cube2 );
+        viz.scene.add(cube2);
 
-        GenerateArrow(viz.scene, {x: 0, y: 0, z: 1}, {x: 5, y: 5, z: 1}, 0.5, 1.0, 1.0, 0x00ffff);
-        GenerateText(viz.scene, {x: 0, y: 0, z: 1}, 'Wow is that some text?', 1.5, 0xFF0000)
+        GenerateArrow(viz.scene, { x: 0, y: 0, z: 1 }, { x: 5, y: 5, z: 1 }, 0.5, 1.0, 1.0, 0x00ffff);
+        GenerateText(viz.scene, { x: 0, y: 0, z: 1 }, 'Wow is that some text?', 1.5, 0xFF0000)
 
     }
 
@@ -1538,8 +1523,7 @@ function SetupSceneDefaults(viz)
 }
 
 // Create viz object from viz info
-async function CreateVizObject(vizInfo)
-{
+async function CreateVizObject(vizInfo) {
     let obj = {
         scene: new THREE.Scene(),
         name: vizInfo.name,
@@ -1560,7 +1544,8 @@ async function CreateVizObject(vizInfo)
         CreateLightingCube: (options) => { return GenerateLightingCube(obj, options); },
         CreateLightingRing: (options) => { return GenerateLightingRing(obj, options); },
         CreateArrow: (options) => { return GenerateArrow(obj, options); },
-        CreateText: (options) => { return GenerateText(obj, options)},
+        CreateLine: (options) => { return GenerateLine(obj, options); },
+        CreateText: (options) => { return GenerateText(obj, options); },
         SaveImage: (img_name) => {
             obj.render();
             return AutoSaveFrame(img_name, vizInfo);
@@ -1585,12 +1570,12 @@ async function CreateVizObject(vizInfo)
     }
 
     obj.renderer = new THREE.WebGLRenderer({
-        preserveDrawingBuffer : true, 
-        antialias: true, 
-        shadowMapType: THREE.PCFSoftShadowMap 
+        preserveDrawingBuffer: true,
+        antialias: true,
+        shadowMapType: THREE.PCFSoftShadowMap
     });
     obj.renderer.shadowMap.enabled = true;
-    obj.renderer.shadowMap.type = THREE.PCFSoftShadowMap ;
+    obj.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     obj.renderer.setSize(obj.scenePixelWidth, obj.scenePixelHeight);
     obj.renderer.setClearColor(new THREE.Color(obj.sceneBgColor));
     document.getElementById("render_container").appendChild(obj.renderer.domElement);

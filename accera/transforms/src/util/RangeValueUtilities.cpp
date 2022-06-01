@@ -54,13 +54,29 @@ using llvm::Instruction;
 
 namespace
 {
-int dimIndexToInteger(llvm::StringRef dim)
+
+RangeValue resolveThreadIdRange(Operation* op, llvm::StringRef dimId)
 {
-    return ::llvm::StringSwitch<int>(dim)
-        .Case("x", 0)
-        .Case("y", 1)
-        .Case("z", 2)
-        .Default(-1);
+    auto upperBound = GetBlockDimSize(op, dimId.str());
+    return RangeValue(0, upperBound - 1); // -1 because RangeValue will add 1 to the upper bound and the thread id never takes on the upperBound value
+}
+
+RangeValue resolveBlockIdRange(Operation* op, llvm::StringRef dimId)
+{
+    auto upperBound = GetGridDimSize(op, dimId.str());
+    return RangeValue(0, upperBound - 1); // -1 because RangeValue will add 1 to the upper bound and the block id never takes on the upperBound value
+}
+
+RangeValue resolveBlockDimRange(Operation* op, llvm::StringRef dimId)
+{
+    auto upperBound = GetBlockDimSize(op, dimId.str());
+    return RangeValue(upperBound, upperBound);
+}
+
+RangeValue resolveGridDimRange(Operation* op, llvm::StringRef dimId)
+{
+    auto upperBound = GetGridDimSize(op, dimId.str());
+    return RangeValue(upperBound, upperBound);
 }
 
 } // namespace
@@ -257,7 +273,11 @@ RangeValue RangeValueAnalysis::resolveRangeValue(ConstantIntOp op)
 RangeValue RangeValueAnalysis::resolveRangeValue(IndexCastOp op)
 {
     auto val = op.in();
-    if (auto defOp = val.getDefiningOp())
+    if (hasRange(val))
+    {
+        return getRange(val);
+    }
+    else if (auto defOp = val.getDefiningOp())
     {
         return resolveRangeValue(defOp);
     }
@@ -265,60 +285,82 @@ RangeValue RangeValueAnalysis::resolveRangeValue(IndexCastOp op)
     return RangeValue();
 }
 
-RangeValue resolveThreadIdRange(Operation* op, StringRef parentDim, const int parentDimIdx)
-{
-    auto gpuMod = op->getParentOfType<gpu::GPUFuncOp>();
-    if (!gpuMod)
-    {
-        return RangeValue();
-    }
-    auto blockIdxAttr = gpuMod->getAttrOfType<ArrayAttr>(parentDim);
-    if (!blockIdxAttr || parentDimIdx == -1)
-    {
-        return RangeValue();
-    }
-    auto upperBound = blockIdxAttr.getValue()[parentDimIdx].cast<IntegerAttr>().getInt();
-    return RangeValue(0, upperBound);
-}
-
 RangeValue RangeValueAnalysis::resolveRangeValue(gpu::ThreadIdOp op)
 {
-    return resolveThreadIdRange(op, "blockSize", dimIndexToInteger(op.dimension()));
+    return resolveThreadIdRange(op, op.dimension());
 }
 
 RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::ThreadIdXOp op)
 {
-    return resolveThreadIdRange(op, "blockSize", 0);
+    return resolveThreadIdRange(op, "x");
 }
 
 RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::ThreadIdYOp op)
 {
-    return resolveThreadIdRange(op, "blockSize", 1);
+    return resolveThreadIdRange(op, "y");
 }
 
 RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::ThreadIdZOp op)
 {
-    return resolveThreadIdRange(op, "blockSize", 2);
+    return resolveThreadIdRange(op, "z");
 }
 
 RangeValue RangeValueAnalysis::resolveRangeValue(gpu::BlockIdOp op)
 {
-    return resolveThreadIdRange(op, "gridSize", dimIndexToInteger(op.dimension()));
+    return resolveBlockIdRange(op, op.dimension());
 }
 
 RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::BlockIdXOp op)
 {
-    return resolveThreadIdRange(op, "gridSize", 0);
+    return resolveBlockIdRange(op, "x");
 }
 
 RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::BlockIdYOp op)
 {
-    return resolveThreadIdRange(op, "gridSize", 1);
+    return resolveBlockIdRange(op, "y");
 }
 
 RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::BlockIdZOp op)
 {
-    return resolveThreadIdRange(op, "gridSize", 2);
+    return resolveBlockIdRange(op, "z");
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(mlir::gpu::BlockDimOp op)
+{
+    return resolveBlockDimRange(op, op.dimension());
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::BlockDimXOp op)
+{
+    return resolveBlockDimRange(op, "x");
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::BlockDimYOp op)
+{
+    return resolveBlockDimRange(op, "y");
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::BlockDimZOp op)
+{
+    return resolveBlockDimRange(op, "z");
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(mlir::gpu::GridDimOp op)
+{
+    return resolveGridDimRange(op, op.dimension());
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::GridDimXOp op)
+{
+    return resolveGridDimRange(op, "x");
+}
+RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::GridDimYOp op)
+{
+    return resolveGridDimRange(op, "y");
+}
+RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::GridDimZOp op)
+{
+    return resolveGridDimRange(op, "z");
 }
 
 RangeValue RangeValueAnalysis::resolveRangeValue(Instruction::BinaryOps binOp, mlir::Operation* op)

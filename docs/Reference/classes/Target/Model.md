@@ -7,7 +7,11 @@
 Defines constants for some well-known CPU models.
 
 <!--
-# To generate the table entries, run this from build/lib.xxx:
+NOTE: This table should be in sync with accera/python/accera/Targets.py.
+To generate the table entries:
+1. Re-build Accera
+2. cd build/lib.xxx
+3. Run this code snippet and replace the entries in the tables:
 
 from accera.Targets import KNOWN_DEVICES, _MODEL_TRANSLATION_DICT, Target
 
@@ -204,6 +208,7 @@ type | description
 `accera.Target.Model.AMD_7F52` | AMD 7F52
 `accera.Target.Model.AMD_7F72` | AMD 7F72
 `accera.Target.Model.AMD_7H12` | AMD 7H12
+`accera.Target.Model.AMD_7V12` | AMD 7V12
 `accera.Target.Model.AMD_FIREFLIGHT` | AMD FireFlight
 `accera.Target.Model.AMD_PRO_1200` | AMD PRO 1200
 `accera.Target.Model.AMD_PRO_1300` | AMD PRO 1300
@@ -485,6 +490,8 @@ type | description
 `accera.Target.Model.INTEL_8260Y` | Intel 8260Y
 `accera.Target.Model.INTEL_8268` | Intel 8268
 `accera.Target.Model.INTEL_8270` | Intel 8270
+`accera.Target.Model.INTEL_8272CL` | Intel 8272CL
+`accera.Target.Model.INTEL_8273CL` | Intel 8273CL
 `accera.Target.Model.INTEL_8276` | Intel 8276
 `accera.Target.Model.INTEL_8276L` | Intel 8276L
 `accera.Target.Model.INTEL_8276M` | Intel 8276M
@@ -539,9 +546,14 @@ type | description
 `accera.Target.Model.INTEL_E3_1275_V6` | Intel E3-1275 v6
 `accera.Target.Model.INTEL_E3_1280_V6` | Intel E3-1280 v6
 `accera.Target.Model.INTEL_E3_1285_V6` | Intel E3-1285 v6
-`accera.Target.Model.INTEL_E5_1650V3` | Intel E5-1650v3
-`accera.Target.Model.INTEL_E5_1660V3` | Intel E5-1660v3
-`accera.Target.Model.INTEL_E5_1680V3` | Intel E5-1680v3
+`accera.Target.Model.INTEL_E5_1607_V2` | Intel E5-1607 v2
+`accera.Target.Model.INTEL_E5_1620_V2` | Intel E5-1620 v2
+`accera.Target.Model.INTEL_E5_1650_V2` | Intel E5-1650 v2
+`accera.Target.Model.INTEL_E5_1650_V3` | Intel E5-1650 v3
+`accera.Target.Model.INTEL_E5_1660_V2` | Intel E5-1660 v2
+`accera.Target.Model.INTEL_E5_1660_V3` | Intel E5-1660 v3
+`accera.Target.Model.INTEL_E5_1680_V2` | Intel E5-1680 v2
+`accera.Target.Model.INTEL_E5_1680_V3` | Intel E5-1680 v3
 `accera.Target.Model.INTEL_G3900` | Intel G3900
 `accera.Target.Model.INTEL_G3900T` | Intel G3900T
 `accera.Target.Model.INTEL_G3900TE` | Intel G3900TE
@@ -598,6 +610,7 @@ type | description
 `accera.Target.Model.AMD_RADEON7` | AMD Radeon7
 `accera.Target.Model.NVIDIA_A100` | NVidia A100
 `accera.Target.Model.NVIDIA_P100` | NVidia P100
+`accera.Target.Model.NVIDIA_RTX_A6000` | NVidia RTX A6000
 `accera.Target.Model.NVIDIA_V100` | NVidia V100
 
 <div style="page-break-after: always;"></div>

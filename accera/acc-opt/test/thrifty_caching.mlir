@@ -18,16 +18,16 @@ module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "
       %5 = accln.sym_index {name = "j_o"} #accln<"index{j_o,5}">
       "accv.lambda"() ( {
         %6 = "accxp.make_cache"() {memorySpace = 0 : i64, multiCacheAccessIndices = [], offsetAccessIndices = [], offsetArrayToCacheAccessMap = affine_map<(d0) -> (d0)>} : () -> memref<?xf32, 3>
-        %7 = "accxp.begin_cache_region"(%arg0, %6, %arg0, %1, %2, %0, %4, %1, %2) {activeBlockCache, cacheAccessMaps = {manualCacheDimOrder = [0, 1]}, cacheHierarchyLevel = 0 : i64, cacheIndex = #accln<"index{i_i,4}">, cacheRegionBaseIndices = [[#accln<"index{i,0}">], [#accln<"index{k,2}">]], cacheRegionRelevantIndexRanges = [#accln<"indexrange{i_i,4}={0:4:1}">, #accln<"indexrange{k_i,8}={0:32:1}">], dimReorderCache, id = 0 : i64, operand_segment_sizes = dense<[1, 1, 1, 4, 2]> : vector<5xi32>, thrifty, triggerIndex = #accln<"index{i_i,4}">} : (memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, memref<?xf32, 3>, memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, index, index, index, index, index, index) -> index
+        %7 = "accxp.begin_create_cache"(%arg0, %6, %arg0, %1, %2, %0, %4, %1, %2) {activeBlockCache, cacheAccessMaps = {manualCacheDimOrder = [0, 1]}, cacheHierarchyLevel = 0 : i64, cacheIndex = #accln<"index{i_i,4}">, cacheRegionBaseIndices = [[#accln<"index{i,0}">], [#accln<"index{k,2}">]], cacheRegionRelevantIndexRanges = [#accln<"indexrange{i_i,4}={0:4:1}">, #accln<"indexrange{k_i,8}={0:32:1}">], dimReorderCache, id = 0 : i64, operand_segment_sizes = dense<[1, 1, 1, 4, 2]> : vector<5xi32>, thrifty, triggerIndex = #accln<"index{i_i,4}">} : (memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, memref<?xf32, 3>, memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, index, index, index, index, index, index) -> index
         "accxp.end_cache_region"(%7) : (index) -> ()
         %8 = "accxp.make_cache"() {memorySpace = 0 : i64, multiCacheAccessIndices = [], offsetAccessIndices = [], offsetArrayToCacheAccessMap = affine_map<(d0) -> (d0)>} : () -> memref<?xf32, 3>
-        %9 = "accxp.begin_cache_region"(%arg1, %8, %arg1, %5, %2, %3, %4, %5) {activeBlockCache, cacheAccessMaps = {manualCacheDimOrder = [0, 1]}, cacheHierarchyLevel = 0 : i64, cacheIndex = #accln<"index{k_o,7}">, cacheRegionBaseIndices = [[#accln<"index{k,2}">], [#accln<"index{j,1}">], [#accln<"index{k,2}">]], cacheRegionRelevantIndexRanges = [#accln<"indexrange{k_o,7}={0:32:32}">, #accln<"indexrange{j_i,6}={0:16:1}">, #accln<"indexrange{k_i,8}={0:32:1}">], dimReorderCache, id = 1 : i64, operand_segment_sizes = dense<[1, 1, 1, 4, 1]> : vector<5xi32>, thrifty, triggerIndex = #accln<"index{k_o,7}">} : (memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, memref<?xf32, 3>, memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, index, index, index, index, index) -> index
+        %9 = "accxp.begin_create_cache"(%arg1, %8, %arg1, %5, %2, %3, %4, %5) {activeBlockCache, cacheAccessMaps = {manualCacheDimOrder = [0, 1]}, cacheHierarchyLevel = 0 : i64, cacheIndex = #accln<"index{k_o,7}">, cacheRegionBaseIndices = [[#accln<"index{k,2}">], [#accln<"index{j,1}">], [#accln<"index{k,2}">]], cacheRegionRelevantIndexRanges = [#accln<"indexrange{k_o,7}={0:32:32}">, #accln<"indexrange{j_i,6}={0:16:1}">, #accln<"indexrange{k_i,8}={0:32:1}">], dimReorderCache, id = 1 : i64, operand_segment_sizes = dense<[1, 1, 1, 4, 1]> : vector<5xi32>, thrifty, triggerIndex = #accln<"index{k_o,7}">} : (memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, memref<?xf32, 3>, memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, index, index, index, index, index) -> index
         "accxp.end_cache_region"(%9) : (index) -> ()
         affine.for %arg3 = 0 to 32 step 4 {
           affine.for %arg4 = 0 to 32 step 16 {
-            %10 = "accxp.begin_cache_region"(%arg1, %8, %arg1, %arg4, %2, %3, %4, %arg4) {activeBlockCache, cacheAccessMaps = {manualCacheDimOrder = [0, 1]}, cacheHierarchyLevel = 0 : i64, cacheIndex = #accln<"index{k_o,7}">, cacheRegionBaseIndices = [[#accln<"index{k,2}">], [#accln<"index{j,1}">], [#accln<"index{k,2}">]], cacheRegionRelevantIndexRanges = [#accln<"indexrange{k_o,7}={0:32:32}">, #accln<"indexrange{j_i,6}={0:16:1}">, #accln<"indexrange{k_i,8}={0:32:1}">], dimReorderCache, id = 1 : i64, operand_segment_sizes = dense<[1, 1, 1, 4, 1]> : vector<5xi32>, thrifty, triggerIndex = #accln<"index{k_o,7}">} : (memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, memref<?xf32, 3>, memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, index, index, index, index, index) -> index
+            %10 = "accxp.begin_create_cache"(%arg1, %8, %arg1, %arg4, %2, %3, %4, %arg4) {activeBlockCache, cacheAccessMaps = {manualCacheDimOrder = [0, 1]}, cacheHierarchyLevel = 0 : i64, cacheIndex = #accln<"index{k_o,7}">, cacheRegionBaseIndices = [[#accln<"index{k,2}">], [#accln<"index{j,1}">], [#accln<"index{k,2}">]], cacheRegionRelevantIndexRanges = [#accln<"indexrange{k_o,7}={0:32:32}">, #accln<"indexrange{j_i,6}={0:16:1}">, #accln<"indexrange{k_i,8}={0:32:1}">], dimReorderCache, id = 1 : i64, operand_segment_sizes = dense<[1, 1, 1, 4, 1]> : vector<5xi32>, thrifty, triggerIndex = #accln<"index{k_o,7}">} : (memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, memref<?xf32, 3>, memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, index, index, index, index, index) -> index
             affine.for %arg5 = 0 to 32 step 32 {
-              %11 = "accxp.begin_cache_region"(%arg0, %6, %arg0, %arg3, %arg5, %0, %4, %arg3, %arg5) {activeBlockCache, cacheAccessMaps = {manualCacheDimOrder = [0, 1]}, cacheHierarchyLevel = 0 : i64, cacheIndex = #accln<"index{i_i,4}">, cacheRegionBaseIndices = [[#accln<"index{i,0}">], [#accln<"index{k,2}">]], cacheRegionRelevantIndexRanges = [#accln<"indexrange{i_i,4}={0:4:1}">, #accln<"indexrange{k_i,8}={0:32:1}">], dimReorderCache, id = 0 : i64, operand_segment_sizes = dense<[1, 1, 1, 4, 2]> : vector<5xi32>, thrifty, triggerIndex = #accln<"index{i_i,4}">} : (memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, memref<?xf32, 3>, memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, index, index, index, index, index, index) -> index
+              %11 = "accxp.begin_create_cache"(%arg0, %6, %arg0, %arg3, %arg5, %0, %4, %arg3, %arg5) {activeBlockCache, cacheAccessMaps = {manualCacheDimOrder = [0, 1]}, cacheHierarchyLevel = 0 : i64, cacheIndex = #accln<"index{i_i,4}">, cacheRegionBaseIndices = [[#accln<"index{i,0}">], [#accln<"index{k,2}">]], cacheRegionRelevantIndexRanges = [#accln<"indexrange{i_i,4}={0:4:1}">, #accln<"indexrange{k_i,8}={0:32:1}">], dimReorderCache, id = 0 : i64, operand_segment_sizes = dense<[1, 1, 1, 4, 2]> : vector<5xi32>, thrifty, triggerIndex = #accln<"index{i_i,4}">} : (memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, memref<?xf32, 3>, memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, index, index, index, index, index, index) -> index
               affine.for %arg6 = 0 to 4 {
                 affine.for %arg7 = 0 to 16 {
                   affine.for %arg8 = 0 to 32 {
@@ -57,21 +57,18 @@ module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "
 // CHECK: #map = affine_map<(d0, d1) -> (d0 * 32 + d1)>
 // CHECK: module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"}  {
 // CHECK:   accv.module "test_thrifty_caching_simple_input_cache"  {
-// CHECK:     "accv.global"() {sym_name = "cache_3", type = memref<32x16xf32, 3>} : () -> ()
+// CHECK:     "accv.global"() {sym_name = "cache_[[CacheID:[0-9]+]]", type = memref<32x16xf32, 3>} : () -> ()
 // CHECK:     accv.func nested @test_thrifty_caching_simple_input_cache_1127a105_impl_6891397719071098712(%arg0: memref<32x32xf32, #map>, %arg1: memref<32x32xf32, #map>, %arg2: memref<32x32xf32, #map>) attributes {exec_target = 0 : i64} {
 // CHECK:       "accv.lambda"() ( {
-// CHECK:         %0 = "accv.ref_global"() {global_name = @cache_3} : () -> memref<32x16xf32, 3>
+// CHECK:         %0 = "accv.ref_global"() {global_name = @cache_[[CacheID]]} : () -> memref<32x16xf32, 3>
 // CHECK:         affine.for %arg3 = 0 to 32 step 4 {
 // CHECK:           affine.for %arg4 = 0 to 32 step 16 {
-// CHECK:             "accv.lambda"() ( {
-// CHECK:               affine.for %arg5 = 0 to 32 {
-// CHECK:                 affine.for %arg6 = 0 to 16 {
-// CHECK:                   %1 = affine.load %arg1[%arg5, %arg4 + %arg6] : memref<32x32xf32, #map>
-// CHECK:                   affine.store %1, %0[%arg5, %arg6] : memref<32x16xf32, 3>
-// CHECK:                 } {accxp.access_bounds_check, begin = 0 : i64, domain = #xdomain, end = 16 : i64, index = #accln<"index{j,5}">, kernels = ["cache_internal_loopnest_kernel_active_block_copy"], scheduledIndex = #accln<"index{j,5}">, subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">], subdomainSize = [1, 1]}
-// CHECK:               } {accxp.access_bounds_check, begin = 0 : i64, domain = #xdomain, end = 32 : i64, index = #accln<"index{i,4}">, scheduledIndex = #accln<"index{i,4}">, subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">], subdomainSize = [1, 16]}
-// CHECK:               accv.return
-// CHECK:             }) {exec_target = 0 : i64, sym_name = "NestFunction_2", type = () -> ()} : () -> ()
+// CHECK:             affine.for %arg5 = 0 to 32 {
+// CHECK:               affine.for %arg6 = 0 to 16 {
+// CHECK:                 %1 = affine.load %arg1[%arg5, %arg4 + %arg6] : memref<32x32xf32, #map>
+// CHECK:                 affine.store %1, %0[%arg5, %arg6] : memref<32x16xf32, 3>
+// CHECK:               } {accxp.access_bounds_check, begin = 0 : i64, domain = #xdomain, end = 16 : i64,
+// CHECK:             } {accxp.access_bounds_check, begin = 0 : i64, domain = #xdomain, end = 32 : i64,
 // CHECK:             affine.for %arg5 = 0 to 4 {
 // CHECK:               affine.for %arg6 = 0 to 16 {
 // CHECK:                 affine.for %arg7 = 0 to 32 {

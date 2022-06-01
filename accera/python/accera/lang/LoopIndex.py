@@ -20,7 +20,7 @@ class LoopIndex:
         child = LoopIndex(self._nest)
         child.base_index = self.base_index
         return child
-    
+
     @property
     def name(self):
         return self._name

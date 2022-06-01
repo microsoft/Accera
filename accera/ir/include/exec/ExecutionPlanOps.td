@@ -120,8 +120,8 @@ def accxp_MakeCacheOp : accxp_Op<"make_cache"> {
 
   let extraClassDeclaration = [{
     mlir::AffineValueMap insertCachePosition(const std::vector<mlir::Value>& multiCacheIndexIterationCounters, const std::vector<mlir::Value>& offsetAccessIVs, const std::vector<mlir::Value>& baseArrayIndices);
-    mlir::AffineValueMap insertCachePosition(mlir::Operation* where, const std::vector<mlir::Value>& baseArrayIndices, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices);
-    mlir::AffineValueMap insertCachePosition(mlir::Block* where, const std::vector<mlir::Value>& baseArrayIndices, const std::vector<std::pair<loopnest::Index, mlir::Value>>& unrealizedLoopNestIndices);
+    mlir::AffineValueMap insertCachePosition(mlir::Operation* where, const std::vector<mlir::Value>& baseArrayIndices);
+    mlir::AffineValueMap insertCachePosition(mlir::Block* where, const std::vector<mlir::Value>& baseArrayIndices);
     std::vector<mlir::Value> getBaseArrayPosition(mlir::AffineReadOpInterface loadOp);
     std::vector<mlir::Value> getBaseArrayPosition(mlir::AffineWriteOpInterface storeOp);
   }];
@@ -183,7 +183,6 @@ def accxp_ActiveBlockCacheCopyOp : accxp_Op<"active_block_cache_copy", [AttrSize
                         ArrayAttr:$ubMaps,
                         AffineMapAttr:$activeBlockToCacheMap,
                         UnitAttr:$toCache,
-                        StrAttr:$activeBlockTag,
                         UnitAttr:$thrifty,
                         UnitAttr:$skipBarriers, // TODO : remove this once barrier analysis hoists barriers out of loops
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
@@ -210,7 +209,6 @@ def accxp_MultiCacheCopyOp : accxp_Op<"multi_cache_copy"> {
                         ArrayAttr:$activeBlockUpperBoundMaps,
                         AffineMapAttr:$externalSymbolsPermutationMap,
                         AffineMapAttr:$activeBlockToCacheMap,
-                        StrAttr:$activeBlockTag,
                         UnitAttr:$thrifty,
                         UnitAttr:$toCache,
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
@@ -226,7 +224,6 @@ def accxp_CacheZeroOp : accxp_Op<"cache_zero"> {
   }];
 
   let arguments = (ins AnyMemRef:$cache,
-                       StrAttr:$activeBlockTag,
                        UnitAttr:$thrifty);
 }
 
@@ -287,7 +284,6 @@ def accxp_ActiveBlockCacheReduceOp : accxp_Op<"active_block_cache_reduce", [Attr
                         ArrayAttr:$ubMaps,
                         AffineMapAttr:$activeBlockToCacheMap,
                         Variadic<AnyType>:$scaleValues,
-                        StrAttr:$activeBlockTag,
                         UnitAttr:$thrifty,
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
 }
@@ -351,16 +347,16 @@ def accxp_EndCacheMappingOp : accxp_Op<"end_cache_mapping",
 }
 
 //
-// BeginCacheRegionOp
+// BeginCreateCacheOp
 //
-def accxp_BeginCacheRegionOp : accxp_Op<"begin_cache_region",
+def accxp_BeginCreateCacheOp : accxp_Op<"begin_create_cache",
   [AttrSizedOperandSegments,
    DeclareOpInterfaceMethods<accln_InjectableMappingOpInterface>,
    DeclareOpInterfaceMethods<accxp_BeginCacheRegionOpInterface>]> {
   let summary = "Denotes the beginning of the subgraph where a cache is active. Lowers to the appropriate cache data moving ops and cache mapping ops";
   let description = [{
-    The "accxp.begin_cache_region" operation marks the beginning of the subraph where the cache is active.
-    It is an error for there not to be a symmetric accxp.end_cache_region op in the same block as accxp.begin_cache_region
+    The "accxp.begin_create_cache" operation marks the beginning of the subraph where the cache is active.
+    It is an error for there not to be a symmetric accxp.end_cache_region op in the same block as accxp.begin_create_cache
   }];
 
   // Requires most of arguments for CacheCopyOp, CacheReduceOp, CacheZeroOp, and CacheMappingOp since it will lower to
@@ -411,6 +407,30 @@ def accxp_BeginCacheRegionOp : accxp_Op<"begin_cache_region",
 }
 
 //
+// BeginActiveCacheRegionOp
+//
+def accxp_BeginActiveCacheRegionOp : accxp_Op<"begin_active_cache_region",
+  [DeclareOpInterfaceMethods<accxp_BeginCacheRegionOpInterface>]> {
+  let summary = "Denotes the beginning of the region where a cache is active";
+  let description = [{
+    The "accxp.begin_active_cache_region" operation marks the beginning of the subgraph where the cache is active.
+    This is different from "accxp.begin_create_cache" in that it does not compute a cache based on the contents of the region,
+    but simply denotes where a previously-computed cache is active.
+    It is an error for there not to be a symmetric accxp.end_cache_region op in the same block as accxp.begin_active_cache_region
+  }];
+
+  let arguments = (ins AnyMemRef:$cache,
+                       I64Attr:$id);
+
+  let results = (outs Index:$resultId);
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins "Value":$cache, "int64_t":$id)>
+  ];
+}
+
+//
 // EndCacheRegionOp
 //
 def accxp_EndCacheRegionOp : accxp_Op<"end_cache_region",
@@ -419,22 +439,22 @@ def accxp_EndCacheRegionOp : accxp_Op<"end_cache_region",
   let description = [{
     The "accxp.end_cache_region" operation marks the end the of the subgraph to
     replace input usage and operations on the input with cache usage.
-    It is an error for there to not be a symmetric accxp.begin_cache_region op in the same block as accxp.end_cache_region
+    It is an error for there to not be a symmetric accxp.begin_active_cache_region, accxp.begin_create_cache, or accxp.begin_create_max_element_cache op in the same block as accxp.end_cache_region
   }];
 
   let arguments = (ins  Index:$regionId);
 }
 
 //
-// BeginMaxElementCacheRegionOp
+// BeginCreateMaxElementCacheOp
 //
-def accxp_BeginMaxElementCacheRegionOp : accxp_Op<"begin_max_element_cache_region",
+def accxp_BeginCreateMaxElementCacheOp : accxp_Op<"begin_create_max_element_cache",
   [DeclareOpInterfaceMethods<accln_InjectableMappingOpInterface>,
    DeclareOpInterfaceMethods<accxp_BeginCacheRegionOpInterface>]> {
-  let summary = "Denotes the beginning of the subgraph where a max element cache is active. Lowers to a begin_cache_region op at the appropriate level for the element budget";
+  let summary = "Denotes the beginning of the subgraph where a max element cache is active. Lowers to a begin_create_cache op at the appropriate level for the element budget";
   let description = [{
-    The "accxp.begin_max_element_cache_region" operation marks the beginning of the subraph where the max element cache is active.
-    It is an error for there not to be a symmetric accxp.end_cache_region op in the same block as accxp.begin_max_element_cache_region
+    The "accxp.begin_create_max_element_cache" operation marks the beginning of the subraph where the max element cache is active.
+    It is an error for there not to be a symmetric accxp.end_cache_region op in the same block as accxp.begin_create_max_element_cache
   }];
 
   // Requires most of arguments for CacheCopyOp, CacheReduceOp, CacheZeroOp, and CacheMappingOp since it will lower to

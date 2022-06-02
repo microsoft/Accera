@@ -18,6 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.7", "3.8", "3.9", "3.10"]
+        build-config: ["", "-g"]
 
     runs-on: ubuntu-latest
     container:
@@ -42,32 +43,18 @@ jobs:
         python -m pip install -U pip
         python -m pip install -r requirements.txt
     # miniconda needs to be activated each time
-    - name: Build
+    - name: Build ${{ matrix.build-config }}
       run: |
         eval "$($HOME/miniconda/bin/conda shell.bash hook)"
         conda init
         conda activate build
         export VCPKG_TOOLCHAIN=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-        python setup.py build
+        python setup.py build ${{ matrix.build-config }}
+        rm -rf external/vcpkg/buildtrees
     - name: Test
       run: |
         eval "$($HOME/miniconda/bin/conda shell.bash hook)"
         conda init
         conda activate build
         cd build/lib.linux-x86_64-${{ matrix.python-version }}
-        python -m unittest discover accera/test *.py
-        rm -rf build
-    - name: Build debug
-      run: |
-        eval "$($HOME/miniconda/bin/conda shell.bash hook)"
-        conda init
-        conda activate build
-        export VCPKG_TOOLCHAIN=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-        python setup.py build -b build_dbg -g 
-    - name: Test debug
-      run: |
-        eval "$($HOME/miniconda/bin/conda shell.bash hook)"
-        conda init
-        conda activate build
-        cd build_dbg/lib.linux-x86_64-${{ matrix.python-version }}
         python -m unittest discover accera/test *.py

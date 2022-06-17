@@ -34,10 +34,18 @@ enum class MMAShape
     M32xN32xK2_B1,
     M16xN16xK4_B1,
 
+    M64xN64xK2_B4,
+    M64xN64xK2_B2,
+    M32xN32xK4_B1,
+    M16xN16xK8_B1,
+
     M64xN64xK4_B4,
     M64xN64xK4_B2,
     M32xN32xK8_B1,
-    M16xN16xK16_B1
+    M16xN16xK16_B1,
+
+    M32xN8xK16_B1,
+    M8xN32xK16_B1
 };
 
 enum class MMAOperandType
@@ -74,16 +82,12 @@ public:
     std::array<int64_t, 2> getOffsetMapSize() const;
     std::pair<mlir::MemRefType, mlir::RankedTensorType> GetMFMAThreadOffsetMapType(mlir::IntegerType mlirElemType) const;
 
-    std::pair<mlir::Value, mlir::Value> GetThreadBlockOffsets(mlir::Operation* op, mlir::OpBuilder& builder, mlir::Location& loc) const;
-
 private:
     MMAShape shape;
     int m{};
     int n{};
     int k{};
     int blocks{};
-
-    int64_t getTileFactor() const;
 };
 
 } // namespace accera::ir::value

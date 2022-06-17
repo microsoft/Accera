@@ -55,7 +55,7 @@ configure_lit_site_cfg(
 
 configure_file(process_tests.py.in ${CMAKE_CURRENT_BINARY_DIR}/process_tests.py @ONLY)
 add_executable(${test_name} value_mlir_test.cpp)
-target_link_libraries(${test_name} PRIVATE value Catch2::Catch2)
+target_link_libraries(${test_name} PRIVATE value Catch2::Catch2WithMain)
 catch_discover_tests(${test_name})
 
 set(TEST_DEPENDS

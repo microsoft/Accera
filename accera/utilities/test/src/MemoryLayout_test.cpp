@@ -4,7 +4,7 @@
 //  Authors: Kern Handa
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 #include <utilities/include/Exception.h>
 #include <utilities/include/MemoryLayout.h>

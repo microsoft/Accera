@@ -13,6 +13,7 @@
 #include "ir/include/value/ValueEnums.h"
 #include "nest/LoopNestPasses.h"
 #include "nest/LoopNestToValueFunc.h"
+#include "util/DebugFunctionPass.h"
 #include "value/BarrierOptPass.h"
 #include "value/FunctionPointerResolutionPass.h"
 #include "value/RangeValueOptimizePass.h"

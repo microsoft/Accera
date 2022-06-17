@@ -11,6 +11,7 @@ set -x -e
 apt-get update && apt-get install --no-install-recommends \
     curl \
     ccache \
+    g++-10 \
     libomp-dev \
     libunwind-dev \
     libvulkan-dev \

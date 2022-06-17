@@ -1,6 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //  Copyright (c) Microsoft Corporation. All rights reserved.
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
+//  Authors:  Abdul Dakkak, Mason Remy, Captain Jack Sparrow
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "exec/ExecutionPlanToAffineLoweringPass.h"
@@ -99,14 +100,6 @@ const std::string ThreadZIndexName = "accxp_thread_z_loop_index";
 // Attribute names used for partially unrolling loops
 const std::string UnswitchPrefixItersName = "accxp_unswitch_prefix_iters";
 const std::string UnswitchSuffixItersName = "accxp_unswitch_suffix_iters";
-
-// #### TODO: move this somewhere that makes sense
-enum class GPUIndexDimension
-{
-    X,
-    Y,
-    Z
-};
 
 GPUIndexDimension GPUProcessorToDim(v::Processor gpuProc)
 {
@@ -5361,16 +5354,16 @@ LogicalResult MaxElementCacheRegionOpRewrite::matchAndRewrite(BeginCreateMaxElem
     auto cache = beginCreateMaxElementCacheOp.cache();
     auto baseInput = beginCreateMaxElementCacheOp.baseInput();
 
-    auto cacheType = cache.getType();
-    assert(cacheType.isa<mlir::MemRefType>());
-    auto cacheMemRefType = cacheType.cast<mlir::MemRefType>();
-    auto cacheMemorySpace = cacheMemRefType.getMemorySpace();
-
     int64_t maxElementBudget = beginCreateMaxElementCacheOp.maxElements();
 
     mlir::Block* newBlock = beginCreateMaxElementCacheOp->getBlock();
     mlir::Block::iterator newBeginPoint(beginCreateMaxElementCacheOp);
     mlir::Block::iterator newEndPoint(endOp);
+
+    auto cacheType = cache.getType();
+    assert(cacheType.isa<mlir::MemRefType>());
+    auto cacheMemRefType = cacheType.cast<mlir::MemRefType>();
+    auto cacheMemorySpace = cacheMemRefType.getMemorySpace();
 
     ArrayAccessInfo arrayAccessInfo = ComputeAccessInfoForArrayAtLevel(rewriter,
                                                                        baseInput,
@@ -6003,7 +5996,7 @@ std::vector<std::set<GPUIndexDimension>> GetGPUIndexDimensionsInAffineMemOp(OpT 
     std::vector<std::set<GPUIndexDimension>> result;
     auto map = op.getAffineMap();
     auto loops = GetLoopOpsForOperands(op.getMapOperands());
-    for (unsigned r = 0; r < map.getNumResults(); ++r)
+    for (unsigned r = map.getNumResults() - 2; r < map.getNumResults(); ++r)
     {
         auto expr = map.getResult(r);
         auto exprDims = GetGPUIndexDimensionsInExpr(expr, loops);
@@ -6012,22 +6005,11 @@ std::vector<std::set<GPUIndexDimension>> GetGPUIndexDimensionsInAffineMemOp(OpT 
     return result;
 }
 
-std::optional<GPUIndexDimension> GetSingleGPUDimension(std::set<GPUIndexDimension>& indexDimensions)
+bool ContainsDim(const std::vector<std::set<GPUIndexDimension>>& gpuIndexDims, const GPUIndexDimension& dim)
 {
-    if (indexDimensions.size() != 1)
-        return std::nullopt;
-    return *indexDimensions.begin();
-}
-
-std::optional<GPUIndexDimension> GetSingleGPUDimension(const std::vector<std::set<GPUIndexDimension>>& indexDimensions)
-{
-    std::set<GPUIndexDimension> unionSet;
-    for (const auto& dimSet : indexDimensions)
-    {
-        unionSet.insert(dimSet.begin(), dimSet.end());
-    }
-
-    return GetSingleGPUDimension(unionSet);
+    return std::find_if(gpuIndexDims.begin(), gpuIndexDims.end(), [&](const std::set<GPUIndexDimension>& perIndexDims) {
+               return std::find(perIndexDims.begin(), perIndexDims.end(), dim) != perIndexDims.end();
+           }) != gpuIndexDims.end();
 }
 
 template <typename OpT>
@@ -6036,7 +6018,7 @@ std::vector<std::vector<int64_t>> GetIndexLoopStepSizesInAffineMemOp(OpT op)
     std::vector<std::vector<int64_t>> result;
     auto map = op.getAffineMap();
     auto loops = GetLoopOpsForOperands(op.getMapOperands());
-    for (unsigned r = 0; r < map.getNumResults(); ++r)
+    for (unsigned r = map.getNumResults() - 2; r < map.getNumResults(); ++r)
     {
         auto expr = map.getResult(r);
         result.push_back(GetLoopStepsInExpr(expr, loops));
@@ -6070,59 +6052,59 @@ bool AreSameElement(OpT1 memOp1, OpT2 memOp2)
     return true;
 }
 
-auto LoadMatrixOpROCM(PatternRewriter& rewriter, Location& loc, AffineLoadOp loadOp, const int64_t warpSize, const v::MMAOp& mmaOp, MMAOperandType kind, const int numPassesInGroup, mlir::Value offset, std::pair<mlir::Value, mlir::Value> rowcol, const int loadAGPUIndexPos, const int loadBGPUIndexPos, GPUIndexDimension gpuDimsC0)
+auto GetCombinedAccessMap(PatternRewriter& rewriter, const int externalIndices, mlir::AffineMap& offsetMap)
+{
+    auto mfmaExternalDimsMap = mlir::AffineMap::getMultiDimIdentityMap(externalIndices, rewriter.getContext());
+    return util::ConcatenateAndShiftAffineDimsAndMaps(rewriter, mfmaExternalDimsMap, offsetMap);
+}
+
+auto LoadMatrixOpROCM(PatternRewriter& rewriter, Location& loc, AffineLoadOp loadOp, const int64_t warpSize, const v::MMAOp& mmaOp, MMAOperandType kind, const int numPassesInGroup, int64_t offset)
 {
     auto ctx = rewriter.getContext();
-    AffineMap offsetMap;
-    const auto rowThreadblockOffset = rowcol.first;
-    const auto colThreadblockOffset = rowcol.second;
-    const auto numInElementsPerGroup = numPassesInGroup * mmaOp.getInElementsPerThread(warpSize);
-    SmallVector<mlir::Value, 4> loadOpOperands(loadOp.getMapOperands());
+    mlir::AffineMap offsetMap;
+    llvm::SmallVector<mlir::Value, 4> loadOpOperands(loadOp.getMapOperands());
     auto elementType = loadOp.getMemRefType().getElementType();
-    MemRefType vecTy;
-    [[maybe_unused]] auto d0 = rewriter.getAffineDimExpr(0);
-    [[maybe_unused]] auto d1 = rewriter.getAffineDimExpr(1);
-    auto s0 = rewriter.getAffineSymbolExpr(0);
-    auto s1 = rewriter.getAffineSymbolExpr(1);
+    mlir::MemRefType vecTy;
+    auto d0 = rewriter.getAffineDimExpr(0);
+    auto d1 = rewriter.getAffineDimExpr(1);
+
+    const auto numInElementsPerGroup = numPassesInGroup * mmaOp.getInElementsPerThread(warpSize);
+
+    // Subtract the offset within the warp for A and B loads as they operate from the upper left corner of the warp's region
+    const auto mmaTileRows = mmaOp.getM();
+    const auto mmaTileCols = mmaOp.getN();
+    auto rowOffsetWithinWarp = d0 % mmaTileRows;
+    auto colOffsetWithinWarp = d1 % mmaTileCols;
+
     switch (kind)
     {
     case MMAOperandType::A:
         vecTy = mlir::MemRefType::get({ numInElementsPerGroup }, elementType);
-        if (loadAGPUIndexPos == 0)
-            offsetMap = AffineMap::get(2, 2, { s0, d1 + s1 }, ctx);
-        else
-            offsetMap = AffineMap::get(2, 2, { d0 + s1, s0 }, ctx);
-        loadOpOperands.push_back(rowThreadblockOffset);
-        loadOpOperands.push_back(offset);
+        offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp, d1 + offset }, ctx);
         break;
 
     case MMAOperandType::B:
         vecTy = mlir::MemRefType::get({ numInElementsPerGroup }, elementType);
-        if (loadBGPUIndexPos == 1)
-            offsetMap = AffineMap::get(2, 2, { d0 + s1, s0 }, ctx);
-        else
-            offsetMap = AffineMap::get(2, 2, { s0, d1 + s1 }, ctx);
-        loadOpOperands.push_back(colThreadblockOffset);
-        loadOpOperands.push_back(offset);
+        offsetMap = AffineMap::get(2, 0, { d0 + offset, d1 - colOffsetWithinWarp }, ctx);
         break;
 
     case MMAOperandType::Acc:
-        // For FP16 output, we need to load C in FP32 mode before passing to MFMA
-        if (elementType.isF16())
+        // For FP16 or BF16 output, we need to load C in FP32 mode before passing to MFMA
+        if (elementType.isF16() || elementType.isBF16())
             elementType = rewriter.getF32Type();
+        // For I8 output, we need to load C in I32 mode before passing to MFMA
+        else if (elementType.isInteger(8) || elementType.isInteger(16))
+            elementType = rewriter.getI32Type();
 
         vecTy = mlir::MemRefType::get({ mmaOp.getOutElementsPerThread(warpSize) / mmaOp.getNumBlocks() }, elementType);
-        if (gpuDimsC0 == GPUIndexDimension::Y)
-            offsetMap = AffineMap::get(2, 2, { s0, s1 }, ctx);
-        else
-            offsetMap = AffineMap::get(2, 2, { s1, s0 }, ctx);
-        loadOpOperands.push_back(rewriter.create<AddIOp>(loc, rowThreadblockOffset, offset));
-        loadOpOperands.push_back(colThreadblockOffset);
+        offsetMap = AffineMap::get(2, 0, { d0 + offset, d1 }, ctx);
         break;
 
     default:
         llvm::report_fatal_error("Unknown kind of matrix");
     }
+
+    auto fullMatrixAccessMap = GetCombinedAccessMap(rewriter, loadOp.getMemRefType().getRank() - 2, offsetMap);
 
     // llvm::dbgs() << "COp with offset " << offsetMap << " with load "
     //              << loadOp.getAffineMap() << " and composed = " << offsetMap.compose(loadOp.getAffineMap()) << "\n";
@@ -6132,67 +6114,64 @@ auto LoadMatrixOpROCM(PatternRewriter& rewriter, Location& loc, AffineLoadOp loa
                                                                  loadOp.memref(),
                                                                  mmaOp.getShapeType(),
                                                                  kind,
-                                                                 offsetMap.compose(loadOp.getAffineMap()),
+                                                                 fullMatrixAccessMap.compose(loadOp.getAffineMap()),
                                                                  loadOpOperands) };
     return ops;
 }
 
-auto LoadMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineLoadOp loadOp, const v::MMAOp& mmaOp, MMAOperandType kind, const int numPassesInGroup, mlir::Value offset, std::pair<mlir::Value, mlir::Value> rowcol, const int loadAGPUIndexPos, const int loadBGPUIndexPos, GPUIndexDimension gpuDimsC0)
+auto LoadMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineLoadOp loadOp, const v::MMAOp& mmaOp, MMAOperandType kind, const int numPassesInGroup, int64_t offset, const int loadAGPUIndexPos, const int loadBGPUIndexPos)
 {
     std::vector<mlir::Value> ops;
     auto ctx = rewriter.getContext();
     AffineMap offsetMap;
-    const auto rowThreadblockOffset = rowcol.first;
-    const auto colThreadblockOffset = rowcol.second;
     const auto passIncrements = mmaOp.getK();
     auto loadOperands = loadOp.getMapOperands();
     auto elementType = loadOp.getMemRefType().getElementType();
     gpu::MMAMatrixType destMemRefType;
-    [[maybe_unused]] auto d0 = rewriter.getAffineDimExpr(0);
-    [[maybe_unused]] auto d1 = rewriter.getAffineDimExpr(1);
-    auto s0 = rewriter.getAffineSymbolExpr(0);
-    auto s1 = rewriter.getAffineSymbolExpr(1);
-    for (int iPass = 0; iPass < numPassesInGroup; ++iPass, s1 = s1 + passIncrements)
+    auto d0 = rewriter.getAffineDimExpr(0);
+    auto d1 = rewriter.getAffineDimExpr(1);
+
+    // Subtract the offset within the warp for A and B loads as they operate from the upper left corner of the warp's region
+    const auto mmaTileRows = mmaOp.getM();
+    const auto mmaTileCols = mmaOp.getN();
+    auto rowOffsetWithinWarp = d0 % mmaTileRows;
+    auto colOffsetWithinWarp = d1 % mmaTileCols;
+    int64_t cumulativePassIncrement = 0;
+    for (int iPass = 0; iPass < numPassesInGroup; ++iPass, cumulativePassIncrement = cumulativePassIncrement + passIncrements)
     {
         std::vector<mlir::Value> loadOpOperands(loadOperands.begin(), loadOperands.end());
+        auto passIncrement = offset + cumulativePassIncrement;
         switch (kind)
         {
         case MMAOperandType::A:
             destMemRefType = gpu::MMAMatrixType::get({ mmaOp.getM(), mmaOp.getK() }, elementType, "AOp");
             if (loadAGPUIndexPos == 0)
-                offsetMap = AffineMap::get(2, 2, { s0, d1 + s1 }, ctx);
+                offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp, d1 + passIncrement }, ctx);
             else
-                offsetMap = AffineMap::get(2, 2, { d0 + s1, s0 }, ctx);
-            loadOpOperands.push_back(rowThreadblockOffset);
-            loadOpOperands.push_back(offset);
+                offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp + passIncrement, d1 }, ctx);
             break;
 
         case MMAOperandType::B:
             destMemRefType = gpu::MMAMatrixType::get({ mmaOp.getK(), mmaOp.getN() }, elementType, "BOp");
             if (loadBGPUIndexPos == 1)
-                offsetMap = AffineMap::get(2, 2, { d0 + s1, s0 }, ctx);
+                offsetMap = AffineMap::get(2, 0, { d0 + passIncrement, d1 - colOffsetWithinWarp }, ctx);
             else
-                offsetMap = AffineMap::get(2, 2, { s0, d1 + s1 }, ctx);
-            loadOpOperands.push_back(colThreadblockOffset);
-            loadOpOperands.push_back(offset);
+                offsetMap = AffineMap::get(2, 0, { d0, d1 - colOffsetWithinWarp + passIncrement }, ctx);
             break;
 
         case MMAOperandType::Acc:
             destMemRefType = gpu::MMAMatrixType::get({ mmaOp.getM(), mmaOp.getN() }, elementType, "COp");
-            if (gpuDimsC0 == GPUIndexDimension::Y)
-                offsetMap = AffineMap::get(2, 2, { s0, s1 }, ctx);
-            else
-                offsetMap = AffineMap::get(2, 2, { s1, s0 }, ctx);
-            loadOpOperands.push_back(rewriter.create<AddIOp>(loc, rowThreadblockOffset, offset));
-            loadOpOperands.push_back(colThreadblockOffset);
+            offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp + offset, d1 - colOffsetWithinWarp }, ctx);
             break;
 
         default:
             llvm::report_fatal_error("Unknown kind of matrix");
         }
 
-        // llvm::dbgs() << "COp with offset " << offsetMap << " with load "
-        //              << loadOp.getAffineMap() << " and composed = " << offsetMap.compose(loadOp.getAffineMap()) << "\n";
+        auto fullMatrixAccessMap = GetCombinedAccessMap(rewriter, loadOp.getMemRefType().getRank() - 2, offsetMap);
+
+        // llvm::dbgs() << "COp with offset " << fullMatrixAccessMap << " with load "
+        //              << loadOp.getAffineMap() << " and composed = " << fullMatrixAccessMap.compose(loadOp.getAffineMap()) << "\n";
 
         int64_t offset;
         SmallVector<int64_t, 2> strides;
@@ -6211,7 +6190,7 @@ auto LoadMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineLoadOp loa
             castMemref = rewriter.create<memref::CastOp>(loc, canonicalizeStridedLayout(transposeMemref.getType().cast<MemRefType>()), transposeMemref);
         }
 
-        auto mappedOperands = util::MultiDimAffineApply(rewriter, loc, offsetMap.compose(loadOp.getAffineMap()), loadOpOperands);
+        auto mappedOperands = util::MultiDimAffineApply(rewriter, loc, fullMatrixAccessMap.compose(loadOp.getAffineMap()), loadOpOperands);
         ops.push_back(rewriter.create<gpu::SubgroupMmaLoadMatrixOp>(loc,
                                                                     destMemRefType,
                                                                     castMemref,
@@ -6221,49 +6200,34 @@ auto LoadMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineLoadOp loa
     return ops;
 }
 
-void StoreMatrixOpROCM(PatternRewriter& rewriter, Location& loc, AffineStoreOp storeOp, const v::MMAOp& mmaOp, Value value, const int blockRowOffset, std::pair<mlir::Value, mlir::Value> rowcol, GPUIndexDimension gpuDimsC0)
+void StoreMatrixOpROCM(PatternRewriter& rewriter, Location& loc, AffineStoreOp storeOp, const v::MMAOp& mmaOp, Value value, const int blockRowOffset)
 {
     auto ctx = rewriter.getContext();
-    const auto rowThreadblockOffset = rowcol.first;
-    const auto colThreadblockOffset = rowcol.second;
-    auto rowOffsetSym = rewriter.getAffineSymbolExpr(0);
-    auto colOffsetSym = rewriter.getAffineSymbolExpr(1);
-    AffineMap offsetMap;
-    if (gpuDimsC0 == GPUIndexDimension::Y)
-        offsetMap = AffineMap::get(2, 2, { rowOffsetSym, colOffsetSym }, ctx);
-    else
-        offsetMap = AffineMap::get(2, 2, { colOffsetSym, rowOffsetSym }, ctx);
+    auto d0 = rewriter.getAffineDimExpr(0);
+    auto d1 = rewriter.getAffineDimExpr(1);
+    auto offsetMap = AffineMap::get(2, 0, { d0 + blockRowOffset, d1 }, ctx);
+    auto fullMatrixAccessMap = GetCombinedAccessMap(rewriter, storeOp.getMemRefType().getRank() - 2, offsetMap);
     SmallVector<mlir::Value, 4> storeOpOperands(storeOp.getMapOperands());
-    auto mfma_block_offset = rewriter.create<ConstantIndexOp>(loc, blockRowOffset);
-    storeOpOperands.push_back(rewriter.create<AddIOp>(loc, rowThreadblockOffset, mfma_block_offset));
-    storeOpOperands.push_back(colThreadblockOffset);
-    // llvm::dbgs() << "COpOut with offset " << offsetMap << " with load "
-    //              << storeOp.getAffineMap() << " and composed = " << offsetMap.compose(storeOp.getAffineMap()) << "\n";
     rewriter.create<MMAStoreSyncOp>(loc,
                                     value,
                                     storeOp.memref(),
                                     mmaOp.getShapeType(),
-                                    offsetMap.compose(storeOp.getAffineMap()),
+                                    fullMatrixAccessMap.compose(storeOp.getAffineMap()),
                                     storeOpOperands);
 }
 
-void StoreMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineStoreOp storeOp, const v::MMAOp& mmaOp, Value value, std::pair<mlir::Value, mlir::Value> rowcol, GPUIndexDimension gpuDimsC0)
+void StoreMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineStoreOp storeOp, const v::MMAOp& mmaOp, Value value)
 {
     auto ctx = rewriter.getContext();
-    const auto rowThreadblockOffset = rowcol.first;
-    const auto colThreadblockOffset = rowcol.second;
-    auto rowOffsetSym = rewriter.getAffineSymbolExpr(0);
-    auto colOffsetSym = rewriter.getAffineSymbolExpr(1);
-    AffineMap offsetMap;
-    if (gpuDimsC0 == GPUIndexDimension::Y)
-        offsetMap = AffineMap::get(2, 2, { rowOffsetSym, colOffsetSym }, ctx);
-    else
-        offsetMap = AffineMap::get(2, 2, { colOffsetSym, rowOffsetSym }, ctx);
+    auto d0 = rewriter.getAffineDimExpr(0);
+    auto d1 = rewriter.getAffineDimExpr(1);
+    const auto mmaTileRows = mmaOp.getM();
+    const auto mmaTileCols = mmaOp.getN();
+    auto offsetMap = AffineMap::get(2, 0, { d0 - (d0 % mmaTileRows), d1 - (d1 % mmaTileCols) }, ctx);
+    auto fullMatrixAccessMap = GetCombinedAccessMap(rewriter, storeOp.getMemRefType().getRank() - 2, offsetMap);
 
     auto storeOperands = storeOp.getMapOperands();
     std::vector<mlir::Value> storeOpOperands(storeOperands.begin(), storeOperands.end());
-    storeOpOperands.push_back(rowThreadblockOffset);
-    storeOpOperands.push_back(colThreadblockOffset);
 
     int64_t offset;
     SmallVector<int64_t, 2> strides;
@@ -6278,15 +6242,13 @@ void StoreMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineStoreOp s
         assert(strides[0] == 1);
 
         // SubgroupMmaStoreMatrixOp only takes as input memref which has identity maps, that is why we need to transpose (metadata only) before passing it
-        auto d0 = rewriter.getAffineDimExpr(0);
-        auto d1 = rewriter.getAffineDimExpr(1);
-        auto transposeMemref = rewriter.create<memref::TransposeOp>(loc, storeOp.memref(), mlir::AffineMapAttr::get(AffineMap::get(2, 0, { d1, d0 }, ctx)));
+        auto transposeMemref = rewriter.create<memref::TransposeOp>(loc, storeOp.memref(), mlir::AffineMapAttr::get(AffineMap::getPermutationMap({ 1, 0 }, ctx)));
         castMemref = rewriter.create<memref::CastOp>(loc, canonicalizeStridedLayout(transposeMemref.getType().cast<MemRefType>()), transposeMemref);
     }
 
-    auto mappedOperands = util::MultiDimAffineApply(rewriter, loc, offsetMap.compose(storeOp.getAffineMap()), storeOpOperands);
-    // llvm::dbgs() << "COpOut with offset " << offsetMap << " with load "
-    //              << storeOp.getAffineMap() << " and composed = " << offsetMap.compose(storeOp.getAffineMap()) << "\n";
+    auto mappedOperands = util::MultiDimAffineApply(rewriter, loc, fullMatrixAccessMap.compose(storeOp.getAffineMap()), storeOpOperands);
+    // llvm::dbgs() << "COpOut with offset " << fullMatrixAccessMap << " with load "
+    //              << storeOp.getAffineMap() << " and composed = " << fullMatrixAccessMap.compose(storeOp.getAffineMap()) << "\n";
     rewriter.create<gpu::SubgroupMmaStoreMatrixOp>(loc,
                                                    value,
                                                    castMemref,
@@ -6294,25 +6256,25 @@ void StoreMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineStoreOp s
                                                    rewriter.getIndexAttr(strides[0]));
 }
 
-std::vector<mlir::Value> LoadMatrixOp(ExecutionRuntime runtime, bool useRocWMMA, PatternRewriter& rewriter, Location& loc, AffineLoadOp loadOp, const int64_t warpSize, const v::MMAOp& mmaOp, MMAOperandType kind, const int numPassesInGroup, mlir::Value offset, std::pair<mlir::Value, mlir::Value> rowcol, const int loadAGPUIndexPos, const int loadBGPUIndexPos, GPUIndexDimension gpuDimsC0)
+std::vector<mlir::Value> LoadMatrixOp(ExecutionRuntime runtime, bool useRocWMMA, PatternRewriter& rewriter, Location& loc, AffineLoadOp loadOp, const int64_t warpSize, const v::MMAOp& mmaOp, MMAOperandType kind, const int numPassesInGroup, int64_t offset, const int loadAGPUIndexPos, const int loadBGPUIndexPos)
 {
     if (runtime == ExecutionRuntime::ROCM && !useRocWMMA)
     {
-        return LoadMatrixOpROCM(rewriter, loc, loadOp, warpSize, mmaOp, kind, numPassesInGroup, offset, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC0);
+        return LoadMatrixOpROCM(rewriter, loc, loadOp, warpSize, mmaOp, kind, numPassesInGroup, offset);
     }
 
-    return LoadMatrixOpCUDA(rewriter, loc, loadOp, mmaOp, kind, numPassesInGroup, offset, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC0);
+    return LoadMatrixOpCUDA(rewriter, loc, loadOp, mmaOp, kind, numPassesInGroup, offset, loadAGPUIndexPos, loadBGPUIndexPos);
 }
 
-void StoreMatrixOp(ExecutionRuntime runtime, bool useRocWMMA, PatternRewriter& rewriter, Location& loc, AffineStoreOp storeOp, const v::MMAOp& mmaOp, Value value, int blockRowOffset, std::pair<mlir::Value, mlir::Value> rowcol, GPUIndexDimension gpuDimsC0)
+void StoreMatrixOp(ExecutionRuntime runtime, bool useRocWMMA, PatternRewriter& rewriter, Location& loc, AffineStoreOp storeOp, const v::MMAOp& mmaOp, Value value, int blockRowOffset)
 {
     if (runtime == ExecutionRuntime::ROCM && !useRocWMMA)
     {
-        return StoreMatrixOpROCM(rewriter, loc, storeOp, mmaOp, value, blockRowOffset, rowcol, gpuDimsC0);
+        return StoreMatrixOpROCM(rewriter, loc, storeOp, mmaOp, value, blockRowOffset);
     }
 
     assert(blockRowOffset == 0);
-    return StoreMatrixOpCUDA(rewriter, loc, storeOp, mmaOp, value, rowcol, gpuDimsC0);
+    return StoreMatrixOpCUDA(rewriter, loc, storeOp, mmaOp, value);
 }
 
 mlir::Value ComputeMatrixOp(ExecutionRuntime runtime, bool useRocWMMA, PatternRewriter& rewriter, Location& loc, mlir::Value aMmaMatrix, mlir::Value bMmaMatrix, mlir::Value cMmaMatrix, const v::MMAOp& mmaOp, const int cbsz, const int abid)
@@ -6340,9 +6302,11 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     auto tensorizationInfo = GetTensorizationInfo(affineForOp);
 
-    SmallVector<AffineForOp, 4> loops;
-    mlir::getPerfectlyNestedLoops(loops, affineForOp);
-    if (loops.size() != 3) // there should be 3 loops in the nest
+    SmallVector<AffineForOp, 4> nestedLoops;
+    mlir::getPerfectlyNestedLoops(nestedLoops, affineForOp);
+    std::vector<mlir::AffineForOp> loops; // tensorized loops
+    std::copy_if(nestedLoops.begin(), nestedLoops.end(), std::back_inserter(loops), [](mlir::AffineForOp loop) { return HasTensorizationInfo(loop); });
+    if (loops.size() < 3) // there should be at least 3 loops in the nest
     {
         return failure();
     }
@@ -6361,15 +6325,12 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         {
             return failure();
         }
-        if (loop.getStep() != 1)
-        {
-            return failure();
-        }
     }
 
-    auto innerLoop = loops[2]; // the innermost loop
+    auto innerLoop = loops.back(); // the innermost loop
     auto innerLoopBodyIter = innerLoop.getBody()->begin();
     auto innerLoopBodyEnd = innerLoop.getBody()->end();
+    auto loc = innerLoop.getLoc();
 
     std::stack<Operation*> opsToErase;
 
@@ -6382,9 +6343,9 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     // Get indexing info for A
     auto aRank = loadAOp.getMemRefType().getRank();
-    if (aRank != 2)
+    if (aRank < 2)
     {
-        return reportMatchFailure(loadAOp.getOperation(), "A array has rank != 2");
+        return reportMatchFailure(loadAOp.getOperation(), "A array has rank < 2");
     }
     if (aRank != loadAOp.getAffineMap().getNumResults())
     {
@@ -6393,17 +6354,9 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     // scan loadAOperands and note which ones are loop vars that refer to GPU block/thread IDs (or are affine expressions of them)
     // get each affine expr from the loadMap and scan it for loops which are bound to GPU block/thread IDs
-    // One of the result exprs must depend on a single GPU index dimension, and the other must not depend on any
+    // None of the result exprs can depend on the Z dimension
     auto gpuDimsPerDimA = GetGPUIndexDimensionsInAffineMemOp(loadAOp);
-    auto maybeGpuDimA = GetSingleGPUDimension(gpuDimsPerDimA);
-    if (!maybeGpuDimA)
-    {
-        return reportMatchFailure(loadAOp.getOperation(), "Failed to match the load from A Op");
-    }
-
-    // Keep A's index dimension
-    auto gpuDimA = *maybeGpuDimA;
-    if (gpuDimA == GPUIndexDimension::Z)
+    if (ContainsDim(gpuDimsPerDimA, GPUIndexDimension::Z))
     {
         return reportMatchFailure(loadAOp.getOperation(), "Failed to match: A op uses GPU Z dimension");
     }
@@ -6420,9 +6373,9 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     // Get indexing info for B
     auto bRank = loadBOp.getMemRefType().getRank();
-    if (bRank != 2)
+    if (bRank < 2)
     {
-        return reportMatchFailure(loadBOp.getOperation(), "B array has rank != 2");
+        return reportMatchFailure(loadBOp.getOperation(), "B array has rank < 2");
     }
 
     if (bRank != loadBOp.getAffineMap().getNumResults())
@@ -6432,42 +6385,37 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     // scan loadBOperands and note which ones are loop vars that refer to GPU block/thread IDs (or are affine expressions of them)
     // get each affine expr from the loadMap and scan it for loops which are bound to GPU block/thread IDs
-    // One of the result exprs must depend on a single GPU index dimension, and the other must not depend on any
+    // None of the result exprs can depend on the Z dimension
     auto gpuDimsPerDimB = GetGPUIndexDimensionsInAffineMemOp(loadBOp);
-    auto maybeGpuDimB = GetSingleGPUDimension(gpuDimsPerDimB);
-    if (!maybeGpuDimB)
-    {
-        return reportMatchFailure(loadBOp.getOperation(), "Failed to match the load from B Op");
-    }
-
-    // Keep B's index dimension
-    auto gpuDimB = *(maybeGpuDimB);
-    if (gpuDimB == GPUIndexDimension::Z)
+    if (ContainsDim(gpuDimsPerDimB, GPUIndexDimension::Z))
     {
         return reportMatchFailure(loadBOp.getOperation(), "Failed to match: B op uses GPU Z dimension");
     }
 
     opsToErase.push(loadBOp);
 
-    if (gpuDimA == gpuDimB)
-    {
-        return reportMatchFailure(loadBOp.getOperation(), "Failed to match the indexing between A and B Ops");
-    }
-
-    // Canonicalize load ops: 'A' load op is the one that uses BlockY/ThreadY, and 'B' load op uses BlockX/ThreadX
-    if (gpuDimA == GPUIndexDimension::X)
-    {
-        std::swap(loadAOp, loadBOp);
-        std::swap(gpuDimA, gpuDimB); // unnecessary since these vars aren't used any more
-        std::swap(gpuDimsPerDimA, gpuDimsPerDimB);
-    }
-
+    // TODO : make these dims unneeded by composing any transposes into the access maps
+    // Validate that A and B only have gpu bindings on one of their access dimensions
     assert(gpuDimsPerDimA.size() == 2);
-    int loadAGPUIndexPos = gpuDimsPerDimA[0].empty() ? 1 : 0;
-    assert(gpuDimsPerDimA[1 - loadAGPUIndexPos].empty());
     assert(gpuDimsPerDimB.size() == 2);
+
+    int loadAGPUIndexPos = gpuDimsPerDimA[0].empty() ? 1 : 0;
     int loadBGPUIndexPos = gpuDimsPerDimB[0].empty() ? 1 : 0;
-    assert(gpuDimsPerDimB[1 - loadBGPUIndexPos].empty());
+    int loadAAccumulationIndexPos = 1 - loadAGPUIndexPos;
+    int loadBAccumulationIndexPos = 1 - loadBGPUIndexPos;
+
+    if (!gpuDimsPerDimA[1 - loadAGPUIndexPos].empty())
+    {
+        return reportMatchFailure(loadAOp, "A must be accessed with bindings on only 1 index");
+    }
+    if (!gpuDimsPerDimB[1 - loadBGPUIndexPos].empty())
+    {
+        return reportMatchFailure(loadBOp, "B must be accessed with bindings on only 1 index");
+    }
+    if (loadAAccumulationIndexPos != (1 - loadBAccumulationIndexPos))
+    {
+        return reportMatchFailure(loadBOp, "A and B must have opposite accumulation index positions");
+    }
 
     // 3. muliply A * B
     (void)innerLoopBodyIter++;
@@ -6499,9 +6447,9 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     auto cType = loadCOp.getMemRefType();
     auto cRank = cType.getRank();
     auto loadCMap = loadCOp.getAffineMap();
-    if (cRank != 2)
+    if (cRank < 2)
     {
-        return reportMatchFailure(loadCOp.getOperation(), "C array has rank != 2");
+        return reportMatchFailure(loadCOp.getOperation(), "C array has rank < 2");
     }
     if (cRank != loadCMap.getNumResults())
     {
@@ -6510,16 +6458,15 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     // scan loadCOperands and note which ones are loop vars that refer to GPU block/thread IDs (or are affine expressions of them)
     // get each affine expr from the loadMap and scan it for loops which are bound to GPU block/thread IDs
-    // One of the result exprs must depend on a single GPU index dimension, and the other must not depend on any
+    // None of the result exprs can depend on the Z dimension
     auto gpuDimsPerDimC = GetGPUIndexDimensionsInAffineMemOp(loadCOp);
 
-    if (gpuDimsPerDimC.size() != 2 || gpuDimsPerDimC[0].size() != 1 || gpuDimsPerDimC[1].size() != 1)
+    if (gpuDimsPerDimC.size() != 2)
     {
         return reportMatchFailure(loadCOp.getOperation(), "Failed to match the load from C Op");
     }
 
-    std::vector<GPUIndexDimension> gpuDimsC = { *GetSingleGPUDimension(gpuDimsPerDimC[0]), *GetSingleGPUDimension(gpuDimsPerDimC[1]) };
-    if (gpuDimsC[0] == GPUIndexDimension::Z || gpuDimsC[1] == GPUIndexDimension::Z)
+    if (ContainsDim(gpuDimsPerDimC, GPUIndexDimension::Z))
     {
         return reportMatchFailure(loadCOp.getOperation(), "Failed to match: C op uses GPU Z dimension");
     }
@@ -6598,24 +6545,124 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         return rewriter.notifyMatchFailure(&*innerLoopBodyIter, "The store into C was not the last instruction");
     }
 
-    // A * B + C is valid only if A and B are FP32 and C is FP32 or if A and B are FP16 and C is FP32
-    if (!((loadAOp.getMemRefType().getElementType().isF32() &&
-           loadBOp.getMemRefType().getElementType().isF32() &&
-           storeCOp.getMemRefType().getElementType().isF32()) ||
-          (loadAOp.getMemRefType().getElementType().isF16() &&
-           loadBOp.getMemRefType().getElementType().isF16() &&
-           (storeCOp.getMemRefType().getElementType().isF32() || storeCOp.getMemRefType().getElementType().isF16()))))
+    // C += A * A is valid matmul, however we need to assert that the indexing into the arrays are opposites of one another
+    // E.g. C[i, j] += A[i, k] * A[k, j] is valid matmul
+    //  but C[i, j] += A[i, k] * A[j, k] is not
+
+    // Compute the access positions for the A, B, and C loads
+    mlir::AffineLoadOp::Adaptor outputAdaptor{ loadCOp };
+    mlir::AffineLoadOp::Adaptor lhsAdaptor{ loadAOp };
+    mlir::AffineLoadOp::Adaptor rhsAdaptor{ loadBOp };
+
+    std::vector<mlir::Value> outputOperands(outputAdaptor.indices().begin(), outputAdaptor.indices().end());
+    std::vector<mlir::Value> lhsOperands(lhsAdaptor.indices().begin(), lhsAdaptor.indices().end());
+    std::vector<mlir::Value> rhsOperands(rhsAdaptor.indices().begin(), rhsAdaptor.indices().end());
+
+    // Temporary ops for the purposes of access position computation
+    auto outputLoadPosVals = util::MultiDimAffineApply(rewriter, loc, loadCOp.getAffineMap(), outputOperands, true);
+    auto lhsLoadPosVals = util::MultiDimAffineApply(rewriter, loc, loadAOp.getAffineMap(), lhsOperands, true);
+    auto rhsLoadPosVals = util::MultiDimAffineApply(rewriter, loc, loadBOp.getAffineMap(), rhsOperands, true);
+
+    std::vector<mlir::Operation*> outputLoadPosOps;
+    std::vector<mlir::Operation*> lhsLoadPosOps;
+    std::vector<mlir::Operation*> rhsLoadPosOps;
+    auto getLoadPosOp = [](mlir::Value loadPosVal) { return loadPosVal.getDefiningOp(); };
+    std::transform(outputLoadPosVals.begin(), outputLoadPosVals.end(), std::back_inserter(outputLoadPosOps), getLoadPosOp);
+    std::transform(lhsLoadPosVals.begin(), lhsLoadPosVals.end(), std::back_inserter(lhsLoadPosOps), getLoadPosOp);
+    std::transform(rhsLoadPosVals.begin(), rhsLoadPosVals.end(), std::back_inserter(rhsLoadPosOps), getLoadPosOp);
+
+    // Make a stack of ops to leverage the TempOpCleanupGuard, but in this case we don't really care about the deletion order
+    auto vectorToStack = [](const std::vector<mlir::Operation*>& ops) {
+        std::stack<mlir::Operation*> stack;
+        for (auto op : ops)
+        {
+            stack.push(op);
+        }
+        return stack;
+    };
+    std::stack<mlir::Operation*> outputLoadPosOpsStack = vectorToStack(outputLoadPosOps);
+    std::stack<mlir::Operation*> lhsLoadPosOpsStack = vectorToStack(lhsLoadPosOps);
+    std::stack<mlir::Operation*> rhsLoadPosOpsStack = vectorToStack(rhsLoadPosOps);
+
+    util::TempOpCleanupGuard outputTempOps(&outputLoadPosOpsStack, rewriter);
+    util::TempOpCleanupGuard lhsTempOps(&lhsLoadPosOpsStack, rewriter);
+    util::TempOpCleanupGuard rhsTempOps(&rhsLoadPosOpsStack, rewriter);
+
+    std::vector<mlir::AffineApplyOp> outputLoadPos;
+    std::vector<mlir::AffineApplyOp> lhsLoadPos;
+    std::vector<mlir::AffineApplyOp> rhsLoadPos;
+    auto getLoadPosApplyOp = [](mlir::Operation* op) { return mlir::cast<mlir::AffineApplyOp>(op); };
+    std::transform(outputLoadPosOps.begin(), outputLoadPosOps.end(), std::back_inserter(outputLoadPos), getLoadPosApplyOp);
+    std::transform(lhsLoadPosOps.begin(), lhsLoadPosOps.end(), std::back_inserter(lhsLoadPos), getLoadPosApplyOp);
+    std::transform(rhsLoadPosOps.begin(), rhsLoadPosOps.end(), std::back_inserter(rhsLoadPos), getLoadPosApplyOp);
+
+    if (outputLoadPos.size() < 2)
     {
-        return rewriter.notifyMatchFailure(&*innerLoopBodyIter,
-                                           "Invalid data types. "
-                                           "A * B + C is valid only if A, B, and C are FP32, or if A and B are FP16 and C is FP32");
+        return rewriter.notifyMatchFailure(loadCOp, "Invalid access pattern, C has to be at least 2-D");
+    }
+    if (lhsLoadPos.size() < 2)
+    {
+        return rewriter.notifyMatchFailure(loadAOp, "Invalid access pattern, A has to be at least 2-D");
+    }
+    if (rhsLoadPos.size() < 2)
+    {
+        return rewriter.notifyMatchFailure(loadBOp, "Invalid access pattern, B has to be at least 2-D");
+    }
+
+    auto sameAccessPattern = [](const mlir::AffineValueMap& lhs, const mlir::AffineValueMap& rhs) {
+        return lhs.getAffineMap() == rhs.getAffineMap() &&
+               lhs.getOperands().size() == rhs.getOperands().size() &&
+               std::equal(lhs.getOperands().begin(), lhs.getOperands().end(), rhs.getOperands().begin());
+    };
+
+    std::vector<mlir::AffineValueMap> outputAccess;
+    std::vector<mlir::AffineValueMap> lhsAccess;
+    std::vector<mlir::AffineValueMap> rhsAccess;
+    auto convertToAffineValueMap = [](const mlir::AffineApplyOp& op) { return util::AffineApplyToAffineValueMap(op); };
+    std::transform(outputLoadPos.end() - 2, outputLoadPos.end(), std::back_inserter(outputAccess), convertToAffineValueMap);
+    std::transform(lhsLoadPos.end() - 2, lhsLoadPos.end(), std::back_inserter(lhsAccess), convertToAffineValueMap);
+    std::transform(rhsLoadPos.end() - 2, rhsLoadPos.end(), std::back_inserter(rhsAccess), convertToAffineValueMap);
+
+    // Check that the accumulator index (K) accesses are the same
+    if (!sameAccessPattern(lhsAccess[loadAAccumulationIndexPos], rhsAccess[loadBAccumulationIndexPos]))
+    {
+        return rewriter.notifyMatchFailure(mulAB, "Invalid access pattern, A and B don't use the accumulator index in the same way");
+    }
+
+    // Finally, canonicalize which input is treated as the LHS and which is the RHS
+
+    // Here we assume that the indexing into the output array rows should match the indexing into the LHS input array rows
+    // and the indexing into the output array columns should match the indexing into the RHS input array columns,
+    // but eventually these checks should be relaxed to support more valid submatrix matmul scenarios
+
+    bool swapAB = false;
+
+    if (sameAccessPattern(outputAccess[0], lhsAccess[loadAGPUIndexPos]) &&
+        sameAccessPattern(outputAccess[1], rhsAccess[loadBGPUIndexPos]))
+    {
+        // Valid, don't swap
+        swapAB = false;
+    }
+    else if (sameAccessPattern(outputAccess[1], lhsAccess[loadAGPUIndexPos]) &&
+             sameAccessPattern(outputAccess[0], rhsAccess[loadBGPUIndexPos]))
+    {
+        // Valid and swap
+        swapAB = true;
+    }
+    else
+    {
+        return rewriter.notifyMatchFailure(loadCOp, "Invalid access pattern, C's row and col accesses must match A and B accesses");
+    }
+
+    if (swapAB)
+    {
+        std::swap(loadAOp, loadBOp);
     }
 
     mlir::OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(innerLoop.getBody(), innerLoop.getBody()->getTerminator()->getIterator());
 
     rewriter.startRootUpdate(affineForOp);
-    auto loc = innerLoop.getLoc();
     [[maybe_unused]] auto ctx = rewriter.getContext();
 
     const v::MMAOp mmaOp(tensorizationInfo.dim);
@@ -6637,14 +6684,6 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         return reportMatchFailure(loadBOp, "Failed to match load B step sizes");
     }
 
-    auto stepsC = GetIndexLoopStepSizesInAffineMemOp(loadCOp);
-    auto iStepsC = stepsC[gpuDimsC[0] == GPUIndexDimension::Y ? 0 : 1];
-    auto jStepsC = stepsC[gpuDimsC[1] == GPUIndexDimension::X ? 1 : 0];
-    if (iStepsC[0] != 1 || jStepsC[0] != 1)
-    {
-        return reportMatchFailure(loadCOp, "Failed to match load C step sizes");
-    }
-
     const auto execRuntime = util::ResolveExecutionRuntime(affineForOp).value();
     if (execRuntime == ExecutionRuntime::ROCM && tensorizationInfo.useStaticOffsets)
     {
@@ -6664,7 +6703,6 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     auto warpSizePair = util::ResolveWarpSize(ExecutionRuntime::ROCM).value();
     const auto warpSize = warpSizePair.first * warpSizePair.second;
-    auto&& rowcol = mmaOp.GetThreadBlockOffsets(affineForOp, rewriter, loc);
 
     const auto totalPasses = tensorizationInfo.numTotalPasses;
     const auto numPassesInGroup = tensorizationInfo.numFusedPasses == -1 ? totalPasses : tensorizationInfo.numFusedPasses;
@@ -6686,37 +6724,33 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         // Process blocks one by one sequentially
         if (numPassGroups == 1)
         {
-            auto int0 = rewriter.create<ConstantIndexOp>(loc, 0);
-            auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, int0, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC[0]);
-            auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, int0, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC[0]);
+            auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, 0, loadAGPUIndexPos, loadBGPUIndexPos);
+            auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, 0, loadAGPUIndexPos, loadBGPUIndexPos);
             for (int iBlock = 0, blockRowOffset = 0; iBlock < numBlocks; ++iBlock, blockRowOffset += blockRowOffsetIncrements)
             {
-                auto offset = rewriter.create<ConstantIndexOp>(loc, blockRowOffset);
-                mlir::Value cMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, 1, offset, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC[0])[0];
+                mlir::Value cMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, 1, blockRowOffset, loadAGPUIndexPos, loadBGPUIndexPos)[0];
                 for (auto&& [matA, matB] : llvm::zip(aMmaMatrix, bMmaMatrix))
                 {
                     cMmaMatrix = ComputeMatrixOp(execRuntime, useRocWMMA, rewriter, loc, matA, matB, cMmaMatrix, mmaOp, cbsz, iBlock);
                 }
-                StoreMatrixOp(execRuntime, useRocWMMA, rewriter, loc, storeCOp, mmaOp, cMmaMatrix, blockRowOffset, rowcol, gpuDimsC[0]);
+                StoreMatrixOp(execRuntime, useRocWMMA, rewriter, loc, storeCOp, mmaOp, cMmaMatrix, blockRowOffset);
             }
         }
         else
         {
             for (int iBlock = 0, blockRowOffset = 0; iBlock < numBlocks; ++iBlock, blockRowOffset += blockRowOffsetIncrements)
             {
-                auto offset = rewriter.create<ConstantIndexOp>(loc, blockRowOffset);
-                mlir::Value cMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, 1, offset, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC[0])[0];
+                mlir::Value cMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, 1, blockRowOffset, loadAGPUIndexPos, loadBGPUIndexPos)[0];
                 for (int passGroup = 0, passGroupOffset = 0; passGroup < numPassGroups; ++passGroup, passGroupOffset += passGroupIncrement)
                 {
-                    auto groupOffset = rewriter.create<ConstantIndexOp>(loc, passGroupOffset);
-                    auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, groupOffset, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC[0]);
-                    auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, groupOffset, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC[0]);
+                    auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, passGroupOffset, loadAGPUIndexPos, loadBGPUIndexPos);
+                    auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, passGroupOffset, loadAGPUIndexPos, loadBGPUIndexPos);
                     for (auto&& [matA, matB] : llvm::zip(aMmaMatrix, bMmaMatrix))
                     {
                         cMmaMatrix = ComputeMatrixOp(execRuntime, useRocWMMA, rewriter, loc, matA, matB, cMmaMatrix, mmaOp, cbsz, iBlock);
                     }
                 }
-                StoreMatrixOp(execRuntime, useRocWMMA, rewriter, loc, storeCOp, mmaOp, cMmaMatrix, blockRowOffset, rowcol, gpuDimsC[0]);
+                StoreMatrixOp(execRuntime, useRocWMMA, rewriter, loc, storeCOp, mmaOp, cMmaMatrix, blockRowOffset);
             }
         }
     }
@@ -6726,16 +6760,14 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         std::vector<mlir::Value> cMmaMatrix;
         for (int iBlock = 0, blockRowOffset = 0; iBlock < numBlocks; ++iBlock, blockRowOffset += blockRowOffsetIncrements)
         {
-            auto offset = rewriter.create<ConstantIndexOp>(loc, blockRowOffset);
-            cMmaMatrix.push_back(LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, 1, offset, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC[0])[0]);
+            cMmaMatrix.push_back(LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, 1, blockRowOffset, loadAGPUIndexPos, loadBGPUIndexPos)[0]);
         }
 
         // Load A, B and perform matmul
         for (int passGroup = 0, passGroupOffset = 0; passGroup < numPassGroups; ++passGroup, passGroupOffset += passGroupIncrement)
         {
-            auto groupOffset = rewriter.create<ConstantIndexOp>(loc, passGroupOffset);
-            auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, groupOffset, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC[0]);
-            auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, groupOffset, rowcol, loadAGPUIndexPos, loadBGPUIndexPos, gpuDimsC[0]);
+            auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, passGroupOffset, loadAGPUIndexPos, loadBGPUIndexPos);
+            auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, passGroupOffset, loadAGPUIndexPos, loadBGPUIndexPos);
             for (int iBlock = 0; iBlock < numBlocks; ++iBlock)
             {
                 for (auto&& [matA, matB] : llvm::zip(aMmaMatrix, bMmaMatrix))
@@ -6748,7 +6780,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         // Lastly, store all the data from C for all the blocks
         for (int iBlock = 0, blockRowOffset = 0; iBlock < numBlocks; ++iBlock, blockRowOffset += blockRowOffsetIncrements)
         {
-            StoreMatrixOp(execRuntime, useRocWMMA, rewriter, loc, storeCOp, mmaOp, cMmaMatrix[iBlock], blockRowOffset, rowcol, gpuDimsC[0]);
+            StoreMatrixOp(execRuntime, useRocWMMA, rewriter, loc, storeCOp, mmaOp, cMmaMatrix[iBlock], blockRowOffset);
         }
     }
 

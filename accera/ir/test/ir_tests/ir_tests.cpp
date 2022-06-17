@@ -7,7 +7,7 @@
 #include <optional>
 #define SNAPSHOT_ENABLED 1
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 #include <ir/include/DialectRegistry.h>
 #include <ir/include/value/ValueDialect.h>
@@ -17,10 +17,10 @@
 #include <value/include/FunctionDeclaration.h>
 #include <value/include/Kernel.h>
 #include <value/include/MLIREmitterContext.h>
+#include <value/include/MatrixFragment.h>
 #include <value/include/Nest.h>
 #include <value/include/Plan.h>
 #include <value/include/Schedule.h>
-#include <value/include/MatrixFragment.h>
 
 #include <transforms/include/AcceraPasses.h>
 
@@ -2510,101 +2510,115 @@ TEST_CASE_METHOD(Fixture, "parallelize_gemm_mlas_value", "[cpu][nest]")
 
     auto [M_, N_, K_] = GENERATE(std::tuple{ 256, 256, 256 }, std::tuple{ 512, 512, 512 }, std::tuple{ 1024, 1024, 1024 }, std::tuple{ 2048, 2048, 2048 });
     int64_t numThreads = GENERATE(1, 4, 8, 16);
+    bool debugMode = GENERATE(true, false);
+    std::vector<std::string> verifierFunctions;
 
     using namespace accera::value;
     using namespace accera::utilities;
     using accera::value::Value, accera::value::Matrix;
 
-    DeclareFunction("NestMatMul")
-        .Public(true)
-        .Parameters(
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M_, K_ }) }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ K_, N_ }) }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M_, N_ }) }))
-        .Define([=](Matrix A, Matrix B, Matrix C) {
-            // MLAS Value MatrixMatrixMultiply
+    if (debugMode)
+    {
+        // Opportunistically test lowering for a non-trivial schedule by providing
+        // a verifier function for the inputOutput parameter
+        verifierFunctions.push_back("dummy_check_function"); // just the symbol will suffice for lowering
+    }
 
-            // Declare and/or calculate constants
-            const int OutputRows = (int)(A.Rows()); // M
-            const int OutputColumns = (int)(B.Columns()); // N
-            const int InnerDimension = (int)(A.Columns()); // K
+    auto f = DeclareFunction("NestMatMul")
+                 .Public(true)
+                 .OutputVerifiers(verifierFunctions)
+                 .Parameters({ Value({ ValueType::Float, MemoryLayout(MemoryShape{ M_, K_ }) }),
+                               Value({ ValueType::Float, MemoryLayout(MemoryShape{ K_, N_ }) }),
+                               Value({ ValueType::Float, MemoryLayout(MemoryShape{ M_, N_ }) }) },
+                             std::vector<FunctionParameterUsage>{
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::inputOutput,
+                             })
+                 .Define([=](Matrix A, Matrix B, Matrix C) {
+                     // MLAS Value MatrixMatrixMultiply
 
-            // Schedule constants
-            // TODO : read these values from the target system
-            int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
-            int vectorBytes = vectorSize * 4; // 4 bytes per float
-            int vectorUnits = 16; // AVX-2 has 16 256-bit registers
-            int kUnroll = 4;
+                     // Declare and/or calculate constants
+                     const int OutputRows = (int)(A.Rows()); // M
+                     const int OutputColumns = (int)(B.Columns()); // N
+                     const int InnerDimension = (int)(A.Columns()); // K
 
-            int NumRowsInKernel = 6;
-            int NumColumnsInKernel = 2 * vectorSize;
+                     // Schedule constants
+                     // TODO : read these values from the target system
+                     int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
+                     int vectorBytes = vectorSize * 4; // 4 bytes per float
+                     int vectorUnits = 16; // AVX-2 has 16 256-bit registers
+                     int kUnroll = 4;
 
-            int columnBlock = std::min(128, (int)(OutputColumns / numThreads));
-            int innerDimensionBlock = std::min(256, InnerDimension);
+                     int NumRowsInKernel = 6;
+                     int NumColumnsInKernel = 2 * vectorSize;
 
-            if (OutputRows < NumRowsInKernel)
-            {
-                while (NumRowsInKernel > OutputRows)
-                {
-                    NumRowsInKernel /= 2;
-                    NumColumnsInKernel *= 2;
-                }
-            }
-            NumColumnsInKernel = std::min(NumColumnsInKernel, OutputColumns);
+                     int columnBlock = std::min(128, (int)(OutputColumns / numThreads));
+                     int innerDimensionBlock = std::min(256, InnerDimension);
 
-            // Define Nest
-            Nest nest({ OutputRows, OutputColumns, InnerDimension });
+                     if (OutputRows < NumRowsInKernel)
+                     {
+                         while (NumRowsInKernel > OutputRows)
+                         {
+                             NumRowsInKernel /= 2;
+                             NumColumnsInKernel *= 2;
+                         }
+                     }
+                     NumColumnsInKernel = std::min(NumColumnsInKernel, OutputColumns);
 
-            // Get indexes
-            auto indices = nest.GetIndices();
-            Scalar i = indices[0];
-            Scalar j = indices[1];
-            Scalar k = indices[2];
+                     // Define Nest
+                     Nest nest({ OutputRows, OutputColumns, InnerDimension });
 
-            nest.Set([&]() { C(i, j) += A(i, k) * B(k, j); });
+                     // Get indexes
+                     auto indices = nest.GetIndices();
+                     Scalar i = indices[0];
+                     Scalar j = indices[1];
+                     Scalar k = indices[2];
 
-            auto schedule = nest.CreateSchedule();
+                     nest.Set([&]() { C(i, j) += A(i, k) * B(k, j); });
 
-            // Declare splits
-            auto [jCache, jInner1] = schedule.Split(j, columnBlock);
-            auto [kCache, kInner1] = schedule.Split(k, innerDimensionBlock);
-            auto [kBlock, kInner2] = schedule.Split(kInner1, kUnroll);
-            auto [jKernelOuter2, jInner2] = schedule.Split(jInner1, NumColumnsInKernel);
-            auto [jKernelOuter, jInner3] = schedule.Split(jInner2, vectorSize);
-            auto [iKernelOuter, iInner] = schedule.Split(i, NumRowsInKernel);
+                     auto schedule = nest.CreateSchedule();
 
-            // Set the order
-            schedule.SetOrder({ jCache, kCache, iKernelOuter, jKernelOuter2, kBlock, kInner2, iInner, jKernelOuter, jInner3 });
+                     // Declare splits
+                     auto [jCache, jInner1] = schedule.Split(j, columnBlock);
+                     auto [kCache, kInner1] = schedule.Split(k, innerDimensionBlock);
+                     auto [kBlock, kInner2] = schedule.Split(kInner1, kUnroll);
+                     auto [jKernelOuter2, jInner2] = schedule.Split(jInner1, NumColumnsInKernel);
+                     auto [jKernelOuter, jInner3] = schedule.Split(jInner2, vectorSize);
+                     auto [iKernelOuter, iInner] = schedule.Split(i, NumRowsInKernel);
 
-            auto plan = schedule.CreatePlan();
-            std::vector<ScalarIndex> bIndices{ indices[2], indices[1] };
-            std::vector<ScalarIndex> cIndices{ indices[0], indices[1] };
-            if (OutputColumns > 128 && (OutputColumns * InnerDimension) > (128 * 128))
-            {
-                plan.AddCache(B, jKernelOuter2);
-            }
-            // plan.AddCache(C, iInner); // BUGBUG: fails correctness
+                     // Set the order
+                     schedule.SetOrder({ jCache, kCache, iKernelOuter, jKernelOuter2, kBlock, kInner2, iInner, jKernelOuter, jInner3 });
 
-            // Set unrolling
-            schedule.Unroll(jKernelOuter);
-            schedule.Unroll(iInner);
-            if (NumColumnsInKernel >= vectorSize)
-            {
-                plan.Vectorize(jInner3, { vectorBytes, vectorUnits });
-            }
+                     auto plan = schedule.CreatePlan();
+                     std::vector<ScalarIndex> bIndices{ indices[2], indices[1] };
+                     std::vector<ScalarIndex> cIndices{ indices[0], indices[1] };
+                     if (OutputColumns > 128 && (OutputColumns * InnerDimension) > (128 * 128))
+                     {
+                         plan.AddCache(B, jKernelOuter2);
+                     }
+                     // plan.AddCache(C, iInner); // BUGBUG: fails correctness
 
-            if (numThreads > 1)
-            {
-                // parallelize the outermost index
-                plan.Parallelize({ jCache }, numThreads, ParallelizationPolicy::Static);
-            }
-        });
+                     // Set unrolling
+                     schedule.Unroll(jKernelOuter);
+                     schedule.Unroll(iInner);
+                     if (NumColumnsInKernel >= vectorSize)
+                     {
+                         plan.Vectorize(jInner3, { vectorBytes, vectorUnits });
+                     }
+
+                     if (numThreads > 1)
+                     {
+                         // parallelize the outermost index
+                         plan.Parallelize({ jCache }, numThreads, ParallelizationPolicy::Static);
+                     }
+                 });
 
     accera::transforms::AcceraPassPipelineOptions options;
     // options.dumpPasses = true;
     // options.dumpIntraPassIR = true;
 
-    RunConversionPasses(target, "gemm_mlas_value_parallelized_" + std::to_string(M_) + "_" + std::to_string(N_) + "_" + std::to_string(K_) + "_" + "p" + std::to_string(numThreads) + "_" + stringify(target), options);
+    RunConversionPasses(target, "gemm_mlas_value_parallelized" + (debugMode ? std::string("_dbg_") : std::string("_")) + std::to_string(M_) + "_" + std::to_string(N_) + "_" + std::to_string(K_) + "_" + "p" + std::to_string(numThreads) + "_" + stringify(target), options);
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
 }
@@ -2653,7 +2667,7 @@ TEST_CASE_METHOD(Fixture, "unsigned_int_ops", "[cpu][nest]")
 
     RunConversionPasses(target, "unsigned_int_ops_" + stringify(target), options);
     SUCCEED("targeting " << stringify(target) << ":\n\n"
-                         << debugString(module));        
+                         << debugString(module));
 }
 
 // Testbed for unit testing / tweaking the debug_check_all_close function
@@ -2675,7 +2689,6 @@ TEST_CASE_METHOD(Fixture, "debug_check_all_close", "[cpu][nest]")
             Value({ type, MemoryLayout(MemoryShape{ M, M }) }),
             Value({ type, MemoryLayout(MemoryShape{ M, M }) }))
         .Define([=](Array actual, Array desired) {
-
             using namespace std::string_literals;
             auto diff = MakeArray(actual.Shape(), ValueType::Float, "diff");
             auto atol = Scalar(0.0001f);
@@ -2717,11 +2730,9 @@ TEST_CASE_METHOD(Fixture, "debug_check_all_close", "[cpu][nest]")
                 Print("\nDifferences:\n"s, toStderr);
                 Print(diff, toStderr);
                 Print("\n\n"s, toStderr);
-            })
-            .Else([&] {
+            }).Else([&] {
                 Print("\nOK (no mismatches detected)\n"s);
             });
-    
         });
 
     accera::transforms::AcceraPassPipelineOptions options;
@@ -2730,7 +2741,7 @@ TEST_CASE_METHOD(Fixture, "debug_check_all_close", "[cpu][nest]")
 
     RunConversionPasses(target, "debug_check_all_close_" + stringify(target), options);
     SUCCEED("targeting " << stringify(target) << ":\n\n"
-                         << debugString(module));        
+                         << debugString(module));
 }
 
 TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_mfma_rocm", "[gpu][nest][cache][main]")

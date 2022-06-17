@@ -1217,7 +1217,7 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
     UI32Attr:$mmaShapeType,
     I8Attr:$operandType,
     Variadic<acc_Indexlike>:$indices,
-    OptionalAttr<AffineMapAttr>:$map
+    AffineMapAttr:$map
   );
 
   let results = (outs MemRefRankOf<[I8, I32, F16, F32], [1]>:$result);
@@ -1283,7 +1283,7 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
         Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "",[MemWrite]>:$memref,
         UI32Attr:$mmaShapeType,
         Variadic<acc_Indexlike>:$indices,
-        OptionalAttr<AffineMapAttr>:$map);
+        AffineMapAttr:$map);
 
   let builders = [
     OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShape":$mmaShapeType, "AffineMap":$map, "ValueRange":$mapOperands), [{

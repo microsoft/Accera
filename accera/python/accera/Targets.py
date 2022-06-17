@@ -760,37 +760,73 @@ class TensorCoreInformation:
                 return True
         return False
 
+    def mma_shape_to_tuple(self, mma_shape: _MMAShape):
+        return {
+            _MMAShape.M64xN64xK1_B4 : (64, 64, 1),
+            _MMAShape.M64xN64xK1_B2 : (64, 64, 1),
+            _MMAShape.M32xN32xK2_B1 : (32, 32, 2),
+            _MMAShape.M16xN16xK4_B1 : (16, 16, 4),
+            _MMAShape.M64xN64xK4_B4 : (64, 64, 4),
+            _MMAShape.M64xN64xK4_B2 : (64, 64, 4),
+            _MMAShape.M32xN32xK8_B1 : (32, 32, 8),
+            _MMAShape.M16xN16xK16_B1 : (16, 16, 16),
+            _MMAShape.M64xN64xK2_B4: (64, 64, 2),
+            _MMAShape.M64xN64xK2_B2: (64, 64, 2),
+            _MMAShape.M32xN32xK4_B1: (32, 32, 4),
+            _MMAShape.M16xN16xK8_B1: (16, 16, 8),
+            _MMAShape.M32xN8xK16_B1: (32, 8, 16),
+            _MMAShape.M8xN32xK16_B1: (8, 32, 16)
+        }[mma_shape]
+
+    def compute_tensor_splits(self, mma_shape: _MMAShape, num_total_passes: int = 1):
+        tensor_splits = self.mma_shape_to_tuple(mma_shape)
+        mutable_tensor_splits = list(tensor_splits)
+        mutable_tensor_splits[2] *= num_total_passes
+        return tuple(mutable_tensor_splits)
+
 
 MI100_TENSORCORE_INFO = TensorCoreInformation([
-    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK4_B1, inType=ScalarType.float32,
-                               outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK2_B1, inType=ScalarType.float32,
-                               outType=ScalarType.float32),    # maps to the 32x32x2 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK1_B2, inType=ScalarType.float32,
-                               outType=ScalarType.float32),    # maps to the 32x32x1 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK1_B4, inType=ScalarType.float32,
-                               outType=ScalarType.float32),    # maps to the 16x16x1 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16,
-                               outType=ScalarType.float16),    # maps to the 16x16x16 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.float16,
-                               outType=ScalarType.float16),    # maps to the 32x32x8 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.float16,
-                               outType=ScalarType.float16),    # maps to the 32x32x4 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.float16,
-                               outType=ScalarType.float16),    # maps to the 16x16x4 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16,
-                               outType=ScalarType.float32),    # maps to the 16x16x16 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.float16,
-                               outType=ScalarType.float32),    # maps to the 32x32x8 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.float16,
-                               outType=ScalarType.float32),    # maps to the 32x32x4 mfma instruction
-    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.float16,
-                               outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK4_B1, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK2_B1, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 32x32x2 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK1_B2, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 32x32x1 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK1_B4, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 16x16x1 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.float16, outType=ScalarType.float16),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.float16, outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.int8, outType=ScalarType.int32),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.int8, outType=ScalarType.int32),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.int8, outType=ScalarType.int32),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.int8, outType=ScalarType.int32),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.int8, outType=ScalarType.int16),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.int8, outType=ScalarType.int16),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.int8, outType=ScalarType.int16),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.int8, outType=ScalarType.int16),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.int8, outType=ScalarType.int8),    # maps to the 16x16x16 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK8_B1, inType=ScalarType.int8, outType=ScalarType.int8),    # maps to the 32x32x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B2, inType=ScalarType.int8, outType=ScalarType.int8),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK4_B4, inType=ScalarType.int8, outType=ScalarType.int8),    # maps to the 16x16x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK8_B1, inType=ScalarType.bfloat16, outType=ScalarType.float32),    # maps to the 16x16x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK4_B1, inType=ScalarType.bfloat16, outType=ScalarType.float32),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK2_B2, inType=ScalarType.bfloat16, outType=ScalarType.float32),    # maps to the 32x32x2 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK2_B4, inType=ScalarType.bfloat16, outType=ScalarType.float32),    # maps to the 16x16x2 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK8_B1, inType=ScalarType.bfloat16, outType=ScalarType.bfloat16),    # maps to the 16x16x8 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN32xK4_B1, inType=ScalarType.bfloat16, outType=ScalarType.bfloat16),    # maps to the 32x32x4 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK2_B2, inType=ScalarType.bfloat16, outType=ScalarType.bfloat16),    # maps to the 32x32x2 mfma instruction
+    TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK2_B4, inType=ScalarType.bfloat16, outType=ScalarType.bfloat16),    # maps to the 16x16x2 mfma instruction
 ])
 
 NV_A6000_TENSORCORE_INFO = TensorCoreInformation([
     TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),
     TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN8xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN8xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),
+    TensorCoreInformationEntry(shape=_MMAShape.M8xN32xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),
+    TensorCoreInformationEntry(shape=_MMAShape.M8xN32xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),
 ])
 
 # Tensor Cores is current unused
@@ -837,7 +873,7 @@ class _TargetContainer:
     name: str = ""
     num_cores: int = 0
     num_threads: int = 0
-    tensor_core: TensorCoreInformation = field(default_factory=TensorCoreInformation)
+    tensor_core_info: TensorCoreInformation = field(default_factory=TensorCoreInformation)
     turbo_frequency_GHz: dict = field(default_factory=dict)    # Dictionary of number of cores needed => Turbo frequency
     vector_bytes: int = 0
     vector_registers: int = 0
@@ -938,7 +974,7 @@ def _recompute_known_devices():
             max_shared_memory_per_block=device["MaxSharedMemoryPerBlock"],
             frequency_GHz=device["Base Freq (GHz)"],
             max_registers_per_block=device["MaxRegistersPerBlock"],
-            tensor_core=device["TensorCoreInformation"],
+            tensor_core_info=device["TensorCoreInformation"],
             vector_bytes=device["Vector Bytes"],
             vector_registers=
             1,    # Setting this to 1 will enable vectorization but prevents unroll-and-jamming cache filling. TODO : get the right value for this
@@ -989,7 +1025,7 @@ class Target(_TargetContainer):
         vector_bytes: int = 0,
         vector_registers: int = None,
         frequency_GHz: float = None,
-        tensor_core: TensorCoreInformation = None,
+        tensor_core_info: TensorCoreInformation = None,
         turbo_frequency_GHz: float = None,
         cache_sizes: List[int] = None,
         cache_lines: List[int] = None
@@ -1052,7 +1088,7 @@ class Target(_TargetContainer):
         self.name = name or self.name
         self.num_cores = num_cores or self.num_cores
         self.num_threads = num_threads or self.num_threads
-        self.tensor_core = tensor_core or self.tensor_core
+        self.tensor_core_info = tensor_core_info or self.tensor_core_info
         self.turbo_frequency_GHz = turbo_frequency_GHz or self.turbo_frequency_GHz
         self.vector_bytes = vector_bytes or self.vector_bytes
         self.vector_registers = vector_registers or self.vector_registers

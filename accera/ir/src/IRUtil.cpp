@@ -246,14 +246,23 @@ namespace util
         return mlir::FileLineColLoc::get(builder.getIdentifier(filename), lineNumber, 0);
     }
 
-    std::vector<mlir::Value> MultiDimAffineApply(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineMap map, std::vector<mlir::Value>& operands)
+    std::vector<mlir::Value> MultiDimAffineApply(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineMap map, std::vector<mlir::Value>& operands, bool simplify)
     {
         std::vector<mlir::Value> result;
         result.reserve(map.getNumResults());
         for (unsigned int resultIdx = 0; resultIdx < map.getNumResults(); ++resultIdx)
         {
             auto singleResultSubMap = map.getSubMap({ resultIdx });
-            result.push_back(builder.create<mlir::AffineApplyOp>(loc, singleResultSubMap, operands));
+            mlir::AffineApplyOp applyOp;
+            if (simplify)
+            {
+                applyOp = mlir::makeComposedAffineApply(builder, loc, singleResultSubMap, operands);
+            }
+            else
+            {
+                applyOp = builder.create<mlir::AffineApplyOp>(loc, singleResultSubMap, operands);
+            }
+            result.push_back(applyOp);
         }
         return result;
     }
@@ -265,6 +274,12 @@ namespace util
         auto memRefType = type.cast<MemRefType>();
         auto valRank = memRefType.getRank();
         return AffineMap::getMultiDimIdentityMap(valRank, context);
+    }
+
+    mlir::AffineValueMap AffineApplyToAffineValueMap(mlir::AffineApplyOp applyOp)
+    {
+        mlir::AffineApplyOpAdaptor adaptor{ applyOp };
+        return mlir::AffineValueMap(applyOp.map(), adaptor.mapOperands());
     }
 
     mlir::Type GetElementType(mlir::Type type)
@@ -937,82 +952,37 @@ namespace util
         return builder.create<mlir::IndexCastOp>(loc, builder.create<_TyOp>(loc, builder.getI32Type()), builder.getIndexType());
     }
 
-    mlir::Value GetGPUIndex(const ir::value::ExecutionRuntime& runtime, value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc)
+    mlir::Value GetGPUIndex(value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc)
     {
-        if (runtime == value::ExecutionRuntime::ROCM)
+        switch (idxType)
         {
-            switch (idxType)
-            {
-            case value::Processor::ThreadX:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::ThreadIdXOp>(builder, loc);
-            case value::Processor::ThreadY:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::ThreadIdYOp>(builder, loc);
-            case value::Processor::ThreadZ:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::ThreadIdZOp>(builder, loc);
-            case value::Processor::BlockX:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockIdXOp>(builder, loc);
-            case value::Processor::BlockY:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockIdYOp>(builder, loc);
-            case value::Processor::BlockZ:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockIdZOp>(builder, loc);
-            case value::Processor::BlockDimX:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockDimXOp>(builder, loc);
-            case value::Processor::BlockDimY:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockDimYOp>(builder, loc);
-            case value::Processor::BlockDimZ:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::BlockDimZOp>(builder, loc);
-            case value::Processor::GridDimX:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::GridDimXOp>(builder, loc);
-            case value::Processor::GridDimY:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::GridDimYOp>(builder, loc);
-            case value::Processor::GridDimZ:
-                return util::GetROCDLGPUIndex<mlir::ROCDL::GridDimZOp>(builder, loc);
-            case value::Processor::Sequential:
-                [[fallthrough]];
-            default:
-                llvm_unreachable("Unexpected");
-            }
+        case value::Processor::ThreadX:
+            return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "x");
+        case value::Processor::ThreadY:
+            return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "y");
+        case value::Processor::ThreadZ:
+            return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "z");
+        case value::Processor::BlockX:
+            return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "x");
+        case value::Processor::BlockY:
+            return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "y");
+        case value::Processor::BlockZ:
+            return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "z");
+        case value::Processor::BlockDimX:
+            return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "x");
+        case value::Processor::BlockDimY:
+            return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "y");
+        case value::Processor::BlockDimZ:
+            return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "z");
+        case value::Processor::GridDimX:
+            return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "x");
+        case value::Processor::GridDimY:
+            return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "y");
+        case value::Processor::GridDimZ:
+            return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "z");
+        default:
+            llvm_unreachable("Unexpected");
         }
-        else
-        {
-            switch (idxType)
-            {
-            case value::Processor::ThreadX:
-                return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "x");
-            case value::Processor::ThreadY:
-                return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "y");
-            case value::Processor::ThreadZ:
-                return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "z");
-            case value::Processor::BlockX:
-                return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "x");
-            case value::Processor::BlockY:
-                return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "y");
-            case value::Processor::BlockZ:
-                return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "z");
-            case value::Processor::BlockDimX:
-                return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "x");
-            case value::Processor::BlockDimY:
-                return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "y");
-            case value::Processor::BlockDimZ:
-                return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "z");
-            case value::Processor::GridDimX:
-                return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "x");
-            case value::Processor::GridDimY:
-                return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "y");
-            case value::Processor::GridDimZ:
-                return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "z");
-            case value::Processor::Sequential:
-                [[fallthrough]];
-            default:
-                llvm_unreachable("Unexpected");
-            }
-        }
-    }
-
-    mlir::Value GetGPUIndex(mlir::Operation* op, const value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc)
-    {
-        const auto runtime = ResolveExecutionRuntime(op).value();
-        return GetGPUIndex(runtime, idxType, builder, loc);
     }
 
     value::Processor GetGPUProcessor(mlir::Operation* gpuOp)
@@ -1098,42 +1068,6 @@ namespace util
                     assert(false && "Unrecognized grid dimension");
                     return value::Processor::Sequential;
                 }
-            })
-            .Case([&](mlir::ROCDL::ThreadIdXOp) {
-                return value::Processor::ThreadX;
-            })
-            .Case([&](mlir::ROCDL::ThreadIdYOp) {
-                return value::Processor::ThreadY;
-            })
-            .Case([&](mlir::ROCDL::ThreadIdZOp) {
-                return value::Processor::ThreadZ;
-            })
-            .Case([&](mlir::ROCDL::BlockIdXOp) {
-                return value::Processor::BlockX;
-            })
-            .Case([&](mlir::ROCDL::BlockIdYOp) {
-                return value::Processor::BlockY;
-            })
-            .Case([&](mlir::ROCDL::BlockIdZOp) {
-                return value::Processor::BlockZ;
-            })
-            .Case([&](mlir::ROCDL::BlockDimXOp) {
-                return value::Processor::BlockDimX;
-            })
-            .Case([&](mlir::ROCDL::BlockDimYOp) {
-                return value::Processor::BlockDimY;
-            })
-            .Case([&](mlir::ROCDL::BlockDimZOp) {
-                return value::Processor::BlockDimZ;
-            })
-            .Case([&](mlir::ROCDL::GridDimXOp) {
-                return value::Processor::GridDimX;
-            })
-            .Case([&](mlir::ROCDL::GridDimYOp) {
-                return value::Processor::GridDimY;
-            })
-            .Case([&](mlir::ROCDL::GridDimZOp) {
-                return value::Processor::GridDimZ;
             })
             .Case([&](mlir::IndexCastOp castOp) {
                 // If this is an index cast, recurse to the arg of the index cast
@@ -1246,6 +1180,45 @@ namespace util
     int64_t GetGridDimSize(mlir::gpu::GridDimOp op)
     {
         return GetGridDimSize(op, op.dimension().str());
+    }
+
+    mlir::Value GetCurrentGPUBlockThreadID(mlir::OpBuilder& builder, mlir::Location loc)
+    {
+        auto threadXSym = builder.getAffineSymbolExpr(0);
+        auto threadYSym = builder.getAffineSymbolExpr(1);
+        auto threadZSym = builder.getAffineSymbolExpr(2);
+
+        auto blockDimXSym = builder.getAffineSymbolExpr(3);
+        auto blockDimYSym = builder.getAffineSymbolExpr(4);
+        [[maybe_unused]] auto blockDimZSym = builder.getAffineSymbolExpr(5);
+
+        auto flattenedTidExpr = (threadZSym * blockDimXSym * blockDimYSym) + (threadYSym * blockDimXSym) + threadXSym;
+        auto flattenedTidMap = mlir::AffineMap::get(0, 6, flattenedTidExpr);
+
+        auto threadXOp = GetGPUIndex(vir::Processor::ThreadX, builder, loc);
+        auto threadYOp = GetGPUIndex(vir::Processor::ThreadY, builder, loc);
+        auto threadZOp = GetGPUIndex(vir::Processor::ThreadZ, builder, loc);
+
+        auto blockDimXOp = GetGPUIndex(vir::Processor::BlockDimX, builder, loc);
+        auto blockDimYOp = GetGPUIndex(vir::Processor::BlockDimY, builder, loc);
+        auto blockDimZOp = GetGPUIndex(vir::Processor::BlockDimZ, builder, loc);
+
+        return builder.create<mlir::AffineApplyOp>(loc, flattenedTidMap, mlir::ValueRange{ threadXOp, threadYOp, threadZOp, blockDimXOp, blockDimYOp, blockDimZOp });
+    }
+
+    mlir::Value GetCurrentGPUWarpThreadID(mlir::OpBuilder& builder, mlir::Location loc)
+    {
+        auto insertionBlock = builder.getInsertionBlock();
+        auto parentOp = insertionBlock->getParentOp();
+        auto [warpSizeX, warpSizeY] = ResolveWarpSize(ResolveExecutionRuntime(parentOp).value()).value();
+        const auto warpSize = warpSizeX * warpSizeY;
+
+        auto blockTidSym = builder.getAffineSymbolExpr(0);
+        auto blockTidToWarpTidMap = mlir::AffineMap::get(0, 1, blockTidSym % warpSize);
+
+        auto blockTid = GetCurrentGPUBlockThreadID(builder, loc);
+
+        return builder.create<mlir::AffineApplyOp>(loc, blockTidToWarpTidMap, mlir::ValueRange{ blockTid });
     }
 
 } // namespace util

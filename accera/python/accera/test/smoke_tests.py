@@ -1514,8 +1514,6 @@ class SmokeTest(unittest.TestCase):
                           _quiet=quiet)
 
             if check_correctness:
-                print("Verifying...")
-
                 # Create the arrays with the appropriate layout
                 A_test, B_test, C_test = (np.ndarray(p.shape, dtype=np.dtype(p.element_type.name), order=p.requested_layout.to_numpy_order()) for p in function.requested_args)
 
@@ -4189,7 +4187,8 @@ class SmokeTest(unittest.TestCase):
         kkk = schedule.split(kk, k_inner_tile_size)
         schedule.reorder(i, j, k, kk, ii, jj, kkk)
 
-        target = Target(category=Target.Category.GPU, runtime=Target.Runtime.ROCM)
+        # TODO : make this run on nvidia gpus once cuda caching is enabled
+        target = Target(Target.Model.AMD_MI100)
         plan = schedule.create_plan(target=target)
         plan.bind(
             mapping={
@@ -4217,7 +4216,6 @@ class SmokeTest(unittest.TestCase):
             # Check for an accv.alloc of a { m_tile_size x N } buffer in the global memory space inside a lambda inside our value func
             checker.check_label('accv.func nested @test_gpu_cache_block_level_global_mem_')
             checker.check('"accv.lambda"() ( {')
-            # checker.check(f'%[[Cache_C:[0-9_]+]] = "accv.alloc"() : () -> memref<{m_tile_size}x{N}xf32>')
             checker.check(f'%[[Cache_C:[0-9_]+]] = "accv.ref_global"() {"{"}global_name = @cache_[[cache_id:[0-9]+]]{"}"} : () -> memref<{m_tile_size}x{N}xf32>')
 
             checker.run()
@@ -4227,7 +4225,7 @@ class SmokeTest(unittest.TestCase):
             package,
             package_name,
             file_check_fn=file_check_fn,
-            check_correctness=CUDA_AVAILABLE,
+            check_correctness=ROCM_AVAILABLE,
             file_list=[f"{package_name}.cu", f"{package_name}.hat"],
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
@@ -4283,96 +4281,90 @@ class SmokeTest(unittest.TestCase):
 
         self._verify_matrix_multiplication_function(function, package, f"test_vectorized_and_unvectorized_cpu_caches")
 
-    # @expectedFailure(FailedReason.BUG, "3d loads are not supported by tensorization")
-    # def test_rocm_cache_double_buffering_tensorize_batched(self) -> None:
-    #     from accera import Array, Nest, Package, ScalarType, Target
-    #     BS = 128
-    #     M = 128
-    #     N = 128
-    #     K = 128
-    #     outer_tile_b = 4
-    #     outer_tile_x = 64
-    #     outer_tile_y = outer_tile_x
-    #     outer_tile_k = 64
+    def test_rocm_cache_double_buffering__with_c_cache_tensorize(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
 
-    #     A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(BS, M, K), layout=Array.Layout.FIRST_MAJOR)
-    #     B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(BS, K, N), layout=Array.Layout.FIRST_MAJOR)
-    #     C = Array(
-    #         role=Array.Role.INPUT_OUTPUT,
-    #         element_type=ScalarType.float32,
-    #         shape=(BS, M, N),
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
+        M = 1024
+        N = 1024
+        K = 1024
+        outer_tile_x = 64
+        outer_tile_y = outer_tile_x
+        outer_tile_k = 64
 
-    #     nest = Nest(shape=(BS, M, N, K))
-    #     b, i, j, k = nest.get_indices()
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
 
-    #     @nest.iteration_logic
-    #     def _():
-    #         C[b, i, j] += A[b, i, k] * B[b, k, j]
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
 
-    #     schedule = nest.create_schedule()
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
 
-    #     bb, ii, jj, kk = schedule.tile({
-    #         b: outer_tile_b,
-    #         i: outer_tile_x,
-    #         j: outer_tile_y,
-    #         k: outer_tile_k
-    #     })
-    #     iii, jjj, kkk = schedule.tile({
-    #         ii: 2,
-    #         jj: 2,
-    #         kk: 16
-    #     })
+        schedule = nest.create_schedule()
 
-    #     schedule.reorder(i, j, k, ii, jj, b, kk, bb, iii, jjj, kkk)
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
 
-    #     target = Target(Target.Model.AMD_MI100)
-    #     plan = schedule.create_plan(target=target)
-    #     plan.bind(
-    #         mapping={
-    #             i: target.GridUnit.BLOCK_Y,
-    #             j: target.GridUnit.BLOCK_X,
-    #             ii: target.GridUnit.THREAD_Y,
-    #             jj: target.GridUnit.THREAD_X
-    #         }
-    #     )
-    #     plan.tensorize(indices=(iii, jjj, kkk))
-    #     plan.cache(
-    #         A,
-    #         index=ii,
-    #         double_buffer=True,
-    #         location=target.MemorySpace.SHARED,
-    #         double_buffer_location=target.MemorySpace.PRIVATE,
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
-    #     plan.cache(
-    #         B,
-    #         index=ii,
-    #         double_buffer=True,
-    #         location=target.MemorySpace.SHARED,
-    #         double_buffer_location=target.MemorySpace.PRIVATE,
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
+        mma_shape = _MMAShape.M16xN16xK4_B1
+        num_total_passes = 4
+        target = Target(Target.Model.AMD_MI100)
+        tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=num_total_passes)
 
-    #     test_name = "test_rocm_cache_double_buffering_tensorize_batched"
-    #     package = Package()
-    #     function = package.add(plan, args=(A, B, C), base_name=test_name)
+        iii, jjj, kkk = schedule.tile({
+            ii: tensor_splits[0],
+            jj: tensor_splits[1],
+            kk: tensor_splits[2]
+        })
+        outer_nest_order = (i, j, k, ii, jj, kk)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
-    #     output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-    #     shutil.rmtree(output_dir, ignore_errors=True)
+        plan.cache(
+            A,
+            index=ii,
+            double_buffer=True,
+            location=target.MemorySpace.SHARED,
+            double_buffer_location=target.MemorySpace.PRIVATE,
+            layout=Array.Layout.FIRST_MAJOR
+        )
+        plan.cache(
+            B,
+            index=ii,
+            double_buffer=True,
+            location=target.MemorySpace.SHARED,
+            double_buffer_location=target.MemorySpace.PRIVATE,
+            layout=Array.Layout.FIRST_MAJOR
+        )
+        plan.cache(
+            C,
+            index=iii,
+            location=target.MemorySpace.PRIVATE,
+            layout=Array.Layout.FIRST_MAJOR
+        )
 
-    #     with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-    #                                                                          f"{test_name}.hat"]) as v:
-    #         package.build(
-    #             name=test_name,
-    #             format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT,
-    #             mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-    #             output_dir=output_dir,
-    #             _quiet=False
-    #         )
+        test_name = "test_rocm_cache_double_buffering__with_c_cache_tensorize"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
 
-    # @expectedFailure(FailedReason.BUG, "Caching C with double buffering mode is not currently producing the right result")
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE,
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.DEFAULT
+        )
+
     # def test_rocm_cache_double_buffering__with_c_cache_tensorize(self) -> None:
     #     from accera import Array, Nest, Package, ScalarType, Target
 
@@ -4406,25 +4398,21 @@ class SmokeTest(unittest.TestCase):
     #         j: outer_tile_y,
     #         k: outer_tile_k
     #     })
-    #     iii, jjj, kkk = schedule.tile({
-    #         ii: 2,
-    #         jj: 2,
-    #         kk: 16
-    #     })
 
-    #     schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
+    #     mma_shape = _MMAShape.M16xN16xK4_B1
+    #     num_total_passes = 4
     #     target = Target(Target.Model.AMD_MI100)
-    #     plan = schedule.create_plan(target=target)
-    #     plan.bind(
-    #         mapping={
-    #             i: target.GridUnit.BLOCK_X,
-    #             j: target.GridUnit.BLOCK_Y,
-    #             ii: target.GridUnit.THREAD_X,
-    #             jj: target.GridUnit.THREAD_Y
-    #         }
-    #     )
-    #     plan.tensorize(indices=(iii, jjj, kkk))
+    #     tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=num_total_passes)
+
+    #     iii, jjj, kkk = schedule.tile({
+    #         ii: tensor_splits[0],
+    #         jj: tensor_splits[1],
+    #         kk: tensor_splits[2]
+    #     })
+    #     outer_nest_order = (i, j, k, ii, jj, kk)
+    #     plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape, num_total_passes=num_total_passes)
+    #     plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
+
     #     plan.cache(
     #         A,
     #         index=ii,
@@ -4452,187 +4440,81 @@ class SmokeTest(unittest.TestCase):
     #     package = Package()
     #     function = package.add(plan, args=(A, B, C), base_name=test_name)
 
-    #     output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-    #     shutil.rmtree(output_dir, ignore_errors=True)
-
-    #     with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-    #                                                                          f"{test_name}.hat"]) as v:
-    #         package.build(
-    #             name=test_name,
-    #             format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT,
-    #             mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-    #             output_dir=output_dir,
-    #             _quiet=False
-    #         )
-
-    # @expectedFailure(FailedReason.BUG, "Caching C with double buffering mode is not currently producing the right result")
-    # def test_rocm_cache_double_buffering__with_c_cache_tensorize(self) -> None:
-    #     from accera import Array, Nest, Package, ScalarType, Target
-
-    #     M = 1024
-    #     N = 1024
-    #     K = 1024
-    #     outer_tile_x = 64
-    #     outer_tile_y = outer_tile_x
-    #     outer_tile_k = 64
-
-    #     A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-    #     B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-    #     C = Array(
-    #         role=Array.Role.INPUT_OUTPUT,
-    #         element_type=ScalarType.float32,
-    #         shape=(M, N),
-    #         layout=Array.Layout.FIRST_MAJOR
+    #     self._verify_matrix_multiplication_function(
+    #         function,
+    #         package,
+    #         test_name,
+    #         check_correctness=ROCM_AVAILABLE,
+    #         file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+    #         package_format=Package.Format.DEFAULT
     #     )
 
-    #     nest = Nest(shape=(M, N, K))
-    #     i, j, k = nest.get_indices()
+    def test_rocm_c_cache_private(self) -> None:
+        from accera import Array, Nest, Package, ScalarType, Target
 
-    #     @nest.iteration_logic
-    #     def _():
-    #         C[i, j] += A[i, k] * B[k, j]
+        M = 1024
+        N = 1024
+        K = 1024
+        outer_tile_x = 64
+        outer_tile_y = outer_tile_x
+        outer_tile_k = 64
 
-    #     schedule = nest.create_schedule()
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
 
-    #     ii, jj, kk = schedule.tile({
-    #         i: outer_tile_x,
-    #         j: outer_tile_y,
-    #         k: outer_tile_k
-    #     })
-    #     iii, jjj, kkk = schedule.tile({
-    #         ii: 2,
-    #         jj: 2,
-    #         kk: 16
-    #     })
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
 
-    #     schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
 
-    #     target = Target(Target.Model.AMD_MI100)
-    #     plan = schedule.create_plan(target=target)
-    #     plan.bind(
-    #         mapping={
-    #             i: target.GridUnit.BLOCK_X,
-    #             j: target.GridUnit.BLOCK_Y,
-    #             ii: target.GridUnit.THREAD_X,
-    #             jj: target.GridUnit.THREAD_Y
-    #         }
-    #     )
-    #     plan.tensorize(indices=(iii, jjj, kkk))
-    #     plan.cache(
-    #         A,
-    #         index=ii,
-    #         double_buffer=True,
-    #         location=target.MemorySpace.SHARED,
-    #         double_buffer_location=target.MemorySpace.PRIVATE,
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
-    #     plan.cache(
-    #         B,
-    #         index=ii,
-    #         double_buffer=True,
-    #         location=target.MemorySpace.SHARED,
-    #         double_buffer_location=target.MemorySpace.PRIVATE,
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
-    #     plan.cache(
-    #         C,
-    #         index=iii,
-    #         location=target.MemorySpace.PRIVATE,
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
+        schedule = nest.create_schedule()
 
-    #     test_name = "test_rocm_cache_double_buffering__with_c_cache_tensorize"
-    #     package = Package()
-    #     function = package.add(plan, args=(A, B, C), base_name=test_name)
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
 
-    #     output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-    #     shutil.rmtree(output_dir, ignore_errors=True)
+        iii, jjj, kkk = schedule.tile({
+            ii: 2,
+            jj: 2,
+            kk: 16
+        })
 
-    #     with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-    #                                                                          f"{test_name}.hat"]) as v:
-    #         package.build(
-    #             name=test_name,
-    #             format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT,
-    #             mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-    #             output_dir=output_dir,
-    #             _quiet=False
-    #         )
+        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
-    # def test_rocm_c_cache_private(self) -> None:
-    #     from accera import Array, Nest, Package, ScalarType, Target
+        target = Target(Target.Model.AMD_MI100)
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            mapping={
+                i: target.GridUnit.BLOCK_X,
+                j: target.GridUnit.BLOCK_Y,
+                ii: target.GridUnit.THREAD_X,
+                jj: target.GridUnit.THREAD_Y
+            }
+        )
+        plan.cache(C, index=iii, location=target.MemorySpace.PRIVATE, layout=Array.Layout.FIRST_MAJOR)
 
-    #     M = 1024
-    #     N = 1024
-    #     K = 1024
-    #     outer_tile_x = 64
-    #     outer_tile_y = outer_tile_x
-    #     outer_tile_k = 64
+        test_name = "test_rocm_c_cache_private"
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
 
-    #     A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-    #     B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-    #     C = Array(
-    #         role=Array.Role.INPUT_OUTPUT,
-    #         element_type=ScalarType.float32,
-    #         shape=(M, N),
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
-
-    #     nest = Nest(shape=(M, N, K))
-    #     i, j, k = nest.get_indices()
-
-    #     @nest.iteration_logic
-    #     def _():
-    #         C[i, j] += A[i, k] * B[k, j]
-
-    #     schedule = nest.create_schedule()
-
-    #     ii, jj, kk = schedule.tile({
-    #         i: outer_tile_x,
-    #         j: outer_tile_y,
-    #         k: outer_tile_k
-    #     })
-    #     iii, jjj, kkk = schedule.tile({
-    #         ii: 2,
-    #         jj: 2,
-    #         kk: 16
-    #     })
-
-    #     schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
-    #     target = Target(Target.Model.AMD_MI100)
-    #     plan = schedule.create_plan(target=target)
-    #     plan.bind(
-    #         mapping={
-    #             i: target.GridUnit.BLOCK_X,
-    #             j: target.GridUnit.BLOCK_Y,
-    #             ii: target.GridUnit.THREAD_X,
-    #             jj: target.GridUnit.THREAD_Y
-    #         }
-    #     )
-    #     plan.cache(C, index=iii, location=target.MemorySpace.PRIVATE, layout=Array.Layout.FIRST_MAJOR)
-
-    #     test_name = "test_rocm_c_cache_private"
-    #     package = Package()
-    #     function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-    #     output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
-    #     shutil.rmtree(output_dir, ignore_errors=True)
-
-    #     with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
-    #                                                                          f"{test_name}.hat"]) as v:
-    #         package.build(
-    #             name=test_name,
-    #             format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT,
-    #             mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
-    #             output_dir=output_dir,
-    #             _quiet=False
-    #         )
-
-    #         if ROCM_AVAILABLE:
-    #             before = [np.random.rand(*p.shape).astype(np.float32) for p in function.args]
-    #             after = [before[0], before[1], before[2] + before[0] @ before[1]]
-
-    #             v.check_correctness(function.name, before=before, after=after)
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE,
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.DEFAULT
+        )
 
     def test_fill_fp16(self):
         from accera import Array, Nest, Package, ScalarType
@@ -4786,25 +4668,19 @@ class SmokeTest(unittest.TestCase):
             j: outer_tile_y,
             k: outer_tile_k
         })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
 
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
+        mma_shape = _MMAShape.M16xN16xK16_B1
         target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind(
-            mapping={
-                i: target.GridUnit.BLOCK_Y,
-                j: target.GridUnit.BLOCK_X,
-                ii: target.GridUnit.THREAD_Y,
-                jj: target.GridUnit.THREAD_X
-            }
-        )
-        plan.tensorize(indices=(iii, jjj, kkk), mma_shape=_MMAShape.M16xN16xK16_B1)
+        tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=1)
+
+        iii, jjj, kkk = schedule.tile({
+            ii: tensor_splits[0],
+            jj: tensor_splits[1],
+            kk: tensor_splits[2]
+        })
+        outer_nest_order = (i, j, k, ii, jj, kk)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape)
 
         test_name = "test_rocm_tensorize_fp16"
         package = Package()
@@ -4853,23 +4729,20 @@ class SmokeTest(unittest.TestCase):
             j: outer_tile_y,
             k: outer_tile_k
         })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
 
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
+        mma_shape = _MMAShape.M16xN16xK16_B1
         target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind({
-            i: target.GridUnit.BLOCK_Y,
-            j: target.GridUnit.BLOCK_X,
-            ii: target.GridUnit.THREAD_Y,
-            jj: target.GridUnit.THREAD_X
+        tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=1)
+
+        iii, jjj, kkk = schedule.tile({
+            ii: tensor_splits[0],
+            jj: tensor_splits[1],
+            kk: tensor_splits[2]
         })
-        plan.tensorize(indices=(iii, jjj, kkk), mma_shape=_MMAShape.M16xN16xK16_B1)
+        outer_nest_order = (i, j, k, ii, jj, kk)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape)
+
         plan.cache(
             A,
             index=ii,
@@ -4898,7 +4771,7 @@ class SmokeTest(unittest.TestCase):
             check_correctness=ROCM_AVAILABLE,
             tolerance=0.2, # Higher tolerance for fp16
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.DEFAULT
+            package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
 
     def test_rocm_double_buffer_small_cache_vectorized_unvectorized_tensorized(self) -> None:
@@ -4932,22 +4805,21 @@ class SmokeTest(unittest.TestCase):
             j: outer_tile_y,
             k: outer_tile_k
         })
-        iii, jjj, kkk = schedule.tile({
-            ii: 2,
-            jj: 2,
-            kk: 16
-        })
 
-        schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-
+        mma_shape = _MMAShape.M16xN16xK4_B1
+        num_total_passes = 4
         target = Target(Target.Model.AMD_MI100)
-        plan = schedule.create_plan(target=target)
-        plan.bind({
-            i: target.GridUnit.BLOCK_Y,
-            j: target.GridUnit.BLOCK_X,
-            ii: target.GridUnit.THREAD_Y,
-            jj: target.GridUnit.THREAD_X
+        tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=num_total_passes)
+
+        iii, jjj, kkk = schedule.tile({
+            ii: tensor_splits[0],
+            jj: tensor_splits[1],
+            kk: tensor_splits[2]
         })
+        outer_nest_order = (i, j, k, ii, jj, kk)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
+
         plan.cache(A,
             index=ii,
             double_buffer=True,
@@ -4964,8 +4836,6 @@ class SmokeTest(unittest.TestCase):
             double_buffer_location=target.MemorySpace.PRIVATE,
             layout=Array.Layout.FIRST_MAJOR
         )
-        plan.tensorize(indices=(iii, jjj, kkk), mma_shape=_MMAShape.M16xN16xK4_B1, num_total_passes=4)
-
 
         test_name = "test_rocm_double_buffer_small_cache_vectorized_unvectorized"
         package = Package()
@@ -4977,7 +4847,7 @@ class SmokeTest(unittest.TestCase):
             test_name,
             check_correctness=ROCM_AVAILABLE,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.DEFAULT
+            package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
 
 

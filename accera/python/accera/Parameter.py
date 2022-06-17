@@ -14,12 +14,14 @@ class DelayedParameter:
         operand1: Union["DelayedParameter", int, float] = None,
         operand2: Union["DelayedParameter", int, float] = None,
         operation: Callable[["DelayedParameter", "DelayedParameter"], Any] = None,
+        possible_values: list = None,
     ):
         self._value = None
         self._name = name
         self._operand1 = operand1
         self._operand2 = operand2
         self._operation = operation
+        self._possible_values = possible_values
 
     def get_value(self):
         """
@@ -45,6 +47,12 @@ class DelayedParameter:
             )
 
         return self._value
+ 
+    def get_possible_values(self):
+        if self._possible_values != None:
+            return self._possible_values
+        else:
+            raise Exception("Heuristic parameter must have a possible value")
 
     def __hash__(self):
         return id(self)
@@ -149,6 +157,11 @@ def create_parameters():
             "Caller didn't assign the return value(s) of create_parameters() directly to any variable(s)"
         )
 
+def create_and_set_parameters(possible_values: List, append_suffix_to_varnames: bool = False):
+    name = varname()
+    if append_suffix_to_varnames:
+         name += token_hex(4)
+    return DelayedParameter(name=name, possible_values=possible_values)
 
 def create_parameter_grid(
     parameter_choices: dict, filter_func: Callable = None, sample: int = 0, seed=None
@@ -203,3 +216,29 @@ def create_parameter_grid(
         filtered_choice_variants = random.sample(filtered_choice_variants, sample)
 
     return [dict(zip(keys, variant)) for variant in filtered_choice_variants]
+
+def get_parameters_from_grid(parameter_grid: dict) -> List[dict]:
+    """Get a list of parameters combinations from the parameter grid.
+
+    Args:
+        parameter_grid: A set of different values for each parameter, which will be used to generate a list of all valid parameter combinations.
+    """
+    import itertools
+
+    choices = []
+    keys = []
+    combinations_list = []
+
+    for key, value in parameter_grid.items():
+        try:
+            _ = iter(value)
+        except TypeError:
+            value = [value]
+        choices.append(value)
+        keys.append(key)
+
+    choice_variants = itertools.product(*choices)
+    for variant in choice_variants:
+        combinations_list.append(dict(zip(keys, variant)))
+
+    return combinations_list

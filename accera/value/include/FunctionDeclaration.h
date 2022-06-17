@@ -114,7 +114,7 @@ namespace value
         /// <remarks> If this function or `Imported` is not called, this function declaration is treated as an external function. Not all contexts may support an external
         /// function </remarks>
         template <typename Fn>
-        [[maybe_unused]] auto Define(Fn && fn);
+        [[maybe_unused]] auto Define(Fn&& fn);
 
         /// <summary> Specifies the code file that is to be imported to define this function
         /// <remarks> The specified file is imported when this function declaration is used to emit a call. </remarks>
@@ -126,7 +126,7 @@ namespace value
         /// <returns> A reference to this instance </returns>
         /// <remarks> If this function is not called, the instance defaults to taking no arguments </remarks>
         template <typename... Types>
-        FunctionDeclaration& Parameters(Types && ... paramTypes);
+        FunctionDeclaration& Parameters(Types&&... paramTypes);
 
         /// <summary> Sets the parameters this function requires </summary>
         /// <param name="parameters"> Zero or more Value instances describing the types of the arguments and their memory layout expected by the function </param>
@@ -147,7 +147,11 @@ namespace value
         /// <returns> A std::optional instance that holds a Value instance with the return value of the call, if it is expected, otherwise empty </returns>
         /// <remarks> If the function is not defined and the context is capable of it, this will emit a call to an external function </remarks>
         template <typename... Types>
-        [[maybe_unused]] std::optional<Value> Call(Types && ... arguments) const;
+        [[maybe_unused]] std::optional<Value> Call(Types&&... arguments) const;
+
+        /// <summary> Sets the output verification function names. </summary>
+        /// <param name="functionNames"> List of verifier function names, one per output parameter. </param>
+        FunctionDeclaration& OutputVerifiers(const std::vector<std::string>& functionNames = {});
 
         /// <summary> Gets the final function name, including any decoration if so applicable </summary>
         const std::string& GetFunctionName() const;
@@ -196,6 +200,8 @@ namespace value
 
         [[nodiscard]] std::string GetBaseName() const { return _baseName; }
 
+        [[nodiscard]] std::vector<std::string> GetOutputVerifiers() const { return _outputVerifiers; }
+
         static std::string GetTemporaryFunctionPointerPrefix() { return "__ACCERA_TEMPORARY__"; }
 
     private:
@@ -236,6 +242,7 @@ namespace value
         bool _rawPointerAPI = false;
         std::vector<std::string> _tags;
         std::string _baseName;
+        std::vector<std::string> _outputVerifiers;
     };
 
     [[nodiscard]] FunctionDeclaration DeclareFunction(std::string name);

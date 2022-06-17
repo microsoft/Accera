@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.5)
+[//]: # (Version: v1.2.6)
 
-# Accera v1.2.5 Reference
+# Accera v1.2.6 Reference
 ## `accera.ScalarType`
 
 type | description
@@ -10,6 +10,7 @@ type | description
 `accera.ScalarType.float16` | 16-bit floating point number
 `accera.ScalarType.float32` | 32-bit floating point number
 `accera.ScalarType.float64` | 64-bit floating point number
+`accera.ScalarType.bfloat16` | 16-bit Brain floating point number
 `accera.ScalarType.int8` | 8-bit signed integer
 `accera.ScalarType.int16` | 16-bit signed integer
 `accera.ScalarType.int32` | 32-bit signed integer

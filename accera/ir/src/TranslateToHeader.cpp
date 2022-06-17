@@ -93,6 +93,7 @@ namespace ir
             os << "#if !defined(ACCERA_FLOAT)\n";
             os << "#define ACCERA_FLOAT 1\n";
             os << "typedef uint16_t float16_t;\n";
+            os << "typedef uint16_t bfloat16_t;\n";
             os << "#endif // !defined(ACCERA_FLOAT)\n";
 
             os << "#if defined(__cplusplus)\n";
@@ -271,6 +272,10 @@ namespace ir
             if (t.type.isF16())
             {
                 os << "float16_t";
+            }
+            else if(t.type.isBF16())
+            {
+                os << "bfloat16_t";
             }
             else if (t.type.isF32())
             {

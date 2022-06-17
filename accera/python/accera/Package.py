@@ -16,7 +16,7 @@ from hashlib import md5
 from secrets import token_hex
 from typing import *
 
-from . import _lang_python, lang
+from . import _lang_python, lang, algorithms
 from .Targets import Target, Runtime
 from .Parameter import *
 from .Constants import inf
@@ -200,6 +200,20 @@ class Package:
 
         return _emit_module(gpu_utility_module, target, mode, output_dir, name)
 
+    def _create_mapping_of_heuristic_parameters_with_possible_values(
+        self,
+        source: Union["accera.Nest", "accera.Schedule", "accera.Plan", "accera.Function", Callable]
+    ):
+        parameter_dict = {}
+        heuristic_parameters = source._get_heuristic_parameters()
+        # heuristic_parameters is a list of list of params
+        if heuristic_parameters:
+            for heuristic_parameter_list in heuristic_parameters:
+                for heuristic_parameter in heuristic_parameter_list:
+                    possible_values = heuristic_parameter.get_possible_values()
+                    parameter_dict[heuristic_parameter] = possible_values
+            return parameter_dict
+
     def add(
         self,
         source: Union[
@@ -226,11 +240,25 @@ class Package:
             function_opts: A dictionary of advanced options to set on the function, e.g. {"no_inline" : True}
             auxiliary: A dictionary of auxiliary metadata to include in the HAT package.
         """
+
+        heuristic_parameters_dict = {}
+        if isinstance(source, lang.Plan):
+            heuristic_parameters_dict = self._create_mapping_of_heuristic_parameters_with_possible_values(source)
+
+        # TODO: Get product of user-defined parameters and heuristic parameters
+        # TODO: product_parameter_grid = get_product_of_parameters(parameters, heuristic_parameters_dict)
+        product_parameter_grid = []
+
+        # Create a list of delayed parameter for each possible value separately using `get_parameters_from_grid`
+        if heuristic_parameters_dict: 
+            product_parameter_grid = get_parameters_from_grid(heuristic_parameters_dict)
+
+        # TODO: Add functions for product parameter grid in next PR instead of adding fns separately for
+        # user-defined and heuristic parameters.
         if parameters and not isinstance(parameters, dict):
-            return [
-                self._add_function(source, args, base_name, p, function_opts, auxiliary)
-                for p in parameters
-            ]
+            return [self._add_function(source, args, base_name, p, function_opts, auxiliary) for p in parameters]
+        elif product_parameter_grid and not isinstance(product_parameter_grid, dict):
+            return [self._add_function(source, args, base_name, p, function_opts, auxiliary) for p in product_parameter_grid]
         else:
             return self._add_function(
                 source, args, base_name, parameters, function_opts, auxiliary
@@ -525,11 +553,11 @@ class Package:
             dynamic_dependencies,
         ) = self._generate_target_options(platform, mode)
 
-        if (
-            target.category == Target.Category.GPU
-            and target.runtime == Target.Runtime.NONE
-        ):
-            raise RuntimeError("GPU targets must specify a runtime")
+        if target.category == Target.Category.GPU:
+            if target.runtime == Target.Runtime.NONE:
+                raise ValueError("GPU targets must specify a runtime")
+            if mode == Package.Mode.DEBUG:
+                raise ValueError("GPU targets do not support Package.Mode.DEBUG")
 
         cross_compile = platform != Platform.HOST
 
@@ -559,18 +587,15 @@ class Package:
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(working_dir, exist_ok=True)
 
-        # Debug mode: add utility functions for checking results
-        debug_utilities = (
-            self._add_debug_utilities(tolerance) if mode == Package.Mode.DEBUG else {}
-        )
+        # Debug mode: add utility functions for checking results and mark target functions
+        if mode == Package.Mode.DEBUG:
+            debug_utilities = self._add_debug_utilities(tolerance)
+            for fn_name, utilities in debug_utilities.items():
+                self._fns[fn_name].output_verifiers = utilities
 
         # Create the package module
         package_module = _lang_python._Module(name=name, options=compiler_options)
         self._add_functions_to_module(package_module, fail_on_error)
-
-        # Debug mode: emit the debug function that uses the utility functions
-        for fn_name, utilities in debug_utilities.items():
-            package_module.EmitDebugFunction(fn_name, utilities)
 
         # Emit the package module
         if format & Package.Format.SOURCE:

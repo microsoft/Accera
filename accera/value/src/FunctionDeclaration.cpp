@@ -47,7 +47,7 @@ namespace value
         CheckNonEmpty();
         if (paramUsages.has_value())
         {
-            if(paramUsages->size() != paramTypes.size())
+            if (paramUsages->size() != paramTypes.size())
             {
                 throw InputException(InputExceptionErrors::invalidArgument, "Parameter usages, if specified, must match the number of parameter types");
             }
@@ -138,6 +138,14 @@ namespace value
         CheckNonEmpty();
 
         _rawPointerAPI = rawPointerAPI;
+        return *this;
+    }
+
+    FunctionDeclaration& FunctionDeclaration::OutputVerifiers(const std::vector<std::string>& functionNames)
+    {
+        CheckNonEmpty();
+
+        _outputVerifiers = functionNames;
         return *this;
     }
 
@@ -248,7 +256,10 @@ namespace value
         return !_importedSource.empty();
     }
 
-    bool FunctionDeclaration::IsEmpty() const { return _isEmpty; }
+    bool FunctionDeclaration::IsEmpty() const
+    {
+        return _isEmpty;
+    }
 
     FunctionInlining FunctionDeclaration::InlineState() const
     {

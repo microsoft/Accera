@@ -369,6 +369,18 @@ namespace cpp_printer
             }
         }
 
+        const std::string bfloat16T()
+        {
+            if (state.hasRuntime(Runtime::CUDA))
+            {
+                return "bfloat16_t";
+            }
+            else
+            {
+                return "bfloat16";
+            }
+        }
+
         const std::string float32T()
         {
             if (state.hasRuntime(Runtime::CUDA))

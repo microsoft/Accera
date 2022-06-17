@@ -137,6 +137,13 @@ struct NestedPassAdaptor
 namespace accera::transforms
 {
 
+void simplifyAndLowerAffine(PassManagerAdaptor& pmAdaptor)
+{
+    pmAdaptor.addPass(affine::createAffineSimplificationPass());
+    pmAdaptor.addPass(value::createRangeValueOptimizePass());
+    pmAdaptor.addPass(createLowerAffinePass());
+}
+
 void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOptions& options)
 {
     ir::InitializeAccera();
@@ -144,12 +151,12 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     accera::value::ExecutionRuntime execRuntime = options.runtime;
 
     PassManagerAdaptor pmAdaptor(pm, options.dumpPasses.getValue(), options.basename);
+    pmAdaptor.addPass(createEmitDebugFunctionPass());
 
     auto valueFuncOpPM = pmAdaptor.nestPassManager([&]() -> OpPassManager& { return pm.nest<v::ValueModuleOp>().nest<v::ValueFuncOp>(); });
 
     // Can't use ValueSimplify here because ExecToAffine doesn't know how to handle "simplified" ops (memref::SubView, etc.)
     // valueFuncOpPM.addPass(value::createValueSimplifyPass());
-
     valueFuncOpPM.addPass(createCanonicalizerPass());
     valueFuncOpPM.addPass(loopnest::createLoopNestToValueFuncPass({ { options.dumpIntraPassIR.getValue(), options.basename + "LoopNestToValueFuncPass_Subpasses" }, options.printLoops.getValue(), options.printVecOpDetails.getValue() }));
 
@@ -160,7 +167,6 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     funcOpPM.addPass(createConvertLinalgToAffineLoopsPass());
     funcOpPM.addPass(createSimplifyAffineStructuresPass());
     funcOpPM.addPass(createCanonicalizerPass());
-    funcOpPM.addPass(createLowerAffinePass());
     funcOpPM.addPass(createLoopInvariantCodeMotionPass());
     funcOpPM.addPass(createCSEPass());
     funcOpPM.addPass(createConvertSCFToOpenMPPass());
@@ -171,12 +177,34 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     pmAdaptor.addPass(createCanonicalizerPass());
     pmAdaptor.addPass(createCSEPass());
 
+    if (execRuntime == accera::value::ExecutionRuntime::VULKAN)
+    {
+        // The spirv lowering doesn't generate affine dialect ops, and the SPIRV dialect doesn't play nicely with them, so lower the affine ops before running the GPU lowering
+        simplifyAndLowerAffine(pmAdaptor);
+    }
+
     pmAdaptor.addPass(createGpuKernelOutliningPass());
     auto gpuPass = createAcceraToGPUPass(execRuntime);
     if (gpuPass)
     {
         pmAdaptor.addPass(std::move(gpuPass));
     }
+
+    if (execRuntime != accera::value::ExecutionRuntime::VULKAN)
+    {
+        // lowering to runtimes other than SPIRV generates affine dialect ops so optimize and lower those now
+        simplifyAndLowerAffine(pmAdaptor);
+        if (execRuntime == accera::value::ExecutionRuntime::ROCM)
+        {
+            pmAdaptor.addPass(createGPUToROCDLPass());
+        }
+    }
+
+    pmAdaptor.addPass(createLoopInvariantCodeMotionPass());
+    pmAdaptor.addPass(createCSEPass());
+    pmAdaptor.addPass(value::createRangeValueOptimizePass());
+    pmAdaptor.addPass(createCanonicalizerPass());
+    pmAdaptor.addPass(createCSEPass());
 
     if (execRuntime == accera::value::ExecutionRuntime::VULKAN)
     {

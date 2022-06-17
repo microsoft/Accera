@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.5)
+[//]: # (Version: v1.2.6)
 
-# Accera v1.2.5 Reference
+# Accera v1.2.6 Reference
 
 # Module functions
 * [`accera.create_parameters`](functions/create_parameters.md) `(number)`

@@ -117,8 +117,7 @@ ARM: fp16, neon, vfp3, d16, vfp4, hwdiv-arm, hwdiv
             .def("WriteHeader", &value::MLIRContext::writeHeader, "filename"_a = std::nullopt)
             .def("SetMetadata", &value::MLIRContext::setMetadata)
             .def("GetFullMetadata", &value::MLIRContext::getFullMetadata)
-            .def("SetDataLayout", &value::MLIRContext::setDataLayout)
-            .def("EmitDebugFunction", &value::MLIRContext::EmitDebugFunction);
+            .def("SetDataLayout", &value::MLIRContext::setDataLayout);
     }
 
     void DefineFunctionClass(py::module& module)
@@ -147,7 +146,7 @@ Sets whether this function should be decorated (mangled)
 Args:
     should_decorate: A bool value specifying whether this function should be decorated
 )pbdoc")
-            .def("public", &value::FunctionDeclaration::Public, "public"_a, py::return_value_policy::reference_internal, "If `public` is true, set the function to appear in the public header, otherwise the function is internal")
+            .def("public", &value::FunctionDeclaration::Public, "public"_a, py::return_value_policy::reference_internal, "If `public` is true, set the function to appear in the public header, otherwise the function is internal.")
             .def("external", &value::FunctionDeclaration::External, "external"_a, py::return_value_policy::reference_internal, "Sets whether the function declaration is an external declaration.")
             .def("cWrapper", &value::FunctionDeclaration::CWrapper, "cWrapper"_a, py::return_value_policy::reference_internal, "Sets whether an MLIR C wrapper function should be emitted for this function")
             .def("headerDecl", &value::FunctionDeclaration::HeaderDecl, "headerDecl"_a, py::return_value_policy::reference_internal, "Sets whether the function should be part of the generated header file.")
@@ -157,9 +156,12 @@ Args:
                     (void)fn.Inlined(inlinable ? value::FunctionInlining::always : value::FunctionInlining::never);
                     return fn;
                 },
-                "inlinable"_a, py::return_value_policy::reference_internal, "Sets whether the function is allowed to be inlined.")
+                "inlinable"_a,
+                py::return_value_policy::reference_internal,
+                "Sets whether the function is allowed to be inlined.")
             .def("addTag", &value::FunctionDeclaration::AddTag, "addTag"_a, py::return_value_policy::reference_internal, "A tag to add to a function as an attribute.")
             .def("baseName", &value::FunctionDeclaration::BaseName, "baseName"_a, py::return_value_policy::reference_internal, "Sets the base name for this function to use as an alias in the generated header file.")
+            .def("outputVerifiers", &value::FunctionDeclaration::OutputVerifiers, "outputVerifiers"_a, py::return_value_policy::reference_internal, "Sets the verification functions for output checking, one per output argument.")
             .def(
                 "define", [](value::FunctionDeclaration& fn, std::function<std::optional<value::Value>(std::vector<value::Value>)> defFn) -> value::FunctionDeclaration& {
                     (void)fn.Define(defFn);

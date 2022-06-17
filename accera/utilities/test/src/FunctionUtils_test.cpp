@@ -4,7 +4,7 @@
 //  Authors: Chuck Jacobs
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 #include <utilities/include/FunctionUtils.h>
 

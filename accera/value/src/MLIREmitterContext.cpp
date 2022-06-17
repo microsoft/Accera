@@ -126,6 +126,8 @@ mlir::Type ToMLIRType(mlir::OpBuilder& builder, ValueType type)
         return builder.getIndexType();
     case ValueType::Float16:
         return builder.getF16Type();
+    case ValueType::BFloat16:
+        return builder.getBF16Type();
     case ValueType::Float:
         return builder.getF32Type();
     case ValueType::Double:
@@ -455,6 +457,14 @@ auto ConstantDataToDenseElementAttr(mlir::ShapedType shape, const ConstantData& 
 
                 return mlir::DenseElementsAttr::get(shape, llvm::makeArrayRef(fp16Data));
             }
+            else if constexpr (std::is_same_v<ElementType, bfloat16_t>)
+            {
+                using bfloat16_underlying_type = typename bfloat16_t::underlying_type;
+                std::vector<bfloat16_underlying_type> bfp16Data(data_.size());
+                std::transform(data_.begin(), data_.end(), bfp16Data.begin(), [](bfloat16_t value) { return value.data; });
+
+                return mlir::DenseElementsAttr::get(shape, llvm::makeArrayRef(bfp16Data));
+            }
             else
             {
                 return mlir::DenseElementsAttr::get(shape, llvm::makeArrayRef(data_));
@@ -533,21 +543,21 @@ MemoryLayout InferLayoutFromMLIRValue(mlir::Value value)
 namespace accera::value
 {
 
-GPUIndex::GPUIndex(std::function<Scalar(const std::string&)> fn) :
+GPUIndex::GPUIndex(std::function<Scalar(const GPUIndexDimension)> fn) :
     _fn(std::move(fn))
 {}
 
 Scalar GPUIndex::X()
 {
-    return _fn("x");
+    return _fn(GPUIndexDimension::X);
 }
 Scalar GPUIndex::Y()
 {
-    return _fn("y");
+    return _fn(GPUIndexDimension::Y);
 }
 Scalar GPUIndex::Z()
 {
-    return _fn("z");
+    return _fn(GPUIndexDimension::Z);
 }
 
 struct MLIRContextBase::Impl : private InitAccera
@@ -782,6 +792,7 @@ void MLIRContext::setDataLayout(const CompilerOptions& options)
 
 void MLIRContext::setDebugMode(bool enable)
 {
+    // moduleOp-wide debug attribute for generating debug sprintfs in the module header file
     auto& builder = _impl->builder;
     auto context = _impl->_valueModuleOp.getContext();
     auto debugModeId = mlir::Identifier::get(accera::ir::GetDebugModeAttrName(), context);
@@ -795,46 +806,79 @@ void MLIRContext::setDebugMode(bool enable)
     }
 }
 
-void MLIRContext::EmitDebugFunction(const std::string& functionName, const std::vector<std::string>& utilityFunctionNames)
-{
-    for (const auto& fn : _definedFunctions)
-    {
-        // Attempt to do a basename comparison instead of the the full name
-        if (fn.first.GetFunctionName().compare(0, functionName.length(), functionName) == 0)
-        {
-            // Do a best effort emitting of the debug function
-            EmitNestDebugFunction(fn.first, utilityFunctionNames);
-        }
-    }
-}
-
-template <typename Op>
-Scalar CreateGPUIndexOp(mlir::OpBuilder& builder, const std::string& dim)
+Scalar CreateGPUIndexOp(mlir::OpBuilder& builder, accera::ir::value::Processor idxType)
 {
     auto loc = builder.getUnknownLoc();
     return Wrap(
         builder.create<mlir::IndexCastOp>(loc,
-                                          builder.create<Op>(
-                                              loc,
-                                              builder.getIndexType(),
-                                              builder.getStringAttr(dim)),
+                                          accera::ir::util::GetGPUIndex(idxType, builder, loc),
                                           builder.getI64Type()));
 }
 
-GPUIndex MLIRContext::GetGPUIndex(GPUIndexType type)
+template<GPUIndexType type>
+GPUIndex MLIRContext::GetGPUIndex()
 {
     switch (type)
     {
     case GPUIndexType::BlockDim:
-        return GPUIndex{ [this](const std::string& dim) { return CreateGPUIndexOp<mlir::gpu::BlockDimOp>(_impl->builder, dim); } };
+        return GPUIndex{ [this](const GPUIndexDimension dim) {
+            switch (dim)
+            {
+            case GPUIndexDimension::X:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::BlockDimX);
+            case GPUIndexDimension::Y:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::BlockDimY);
+            case GPUIndexDimension::Z:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::BlockDimZ);
+            default:
+                llvm_unreachable("Unknown GPU index dimension");
+            }
+        } };
     case GPUIndexType::BlockId:
-        return GPUIndex{ [this](const std::string& dim) { return CreateGPUIndexOp<mlir::gpu::BlockIdOp>(_impl->builder, dim); } };
+        return GPUIndex{ [this](const GPUIndexDimension dim) {
+            switch (dim)
+            {
+            case GPUIndexDimension::X:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::BlockX);
+            case GPUIndexDimension::Y:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::BlockY);
+            case GPUIndexDimension::Z:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::BlockZ);
+            default:
+                llvm_unreachable("Unknown GPU index dimension");
+            }
+        } };
     case GPUIndexType::GridDim:
-        return GPUIndex{ [this](const std::string& dim) { return CreateGPUIndexOp<mlir::gpu::GridDimOp>(_impl->builder, dim); } };
+        return GPUIndex{ [this](const GPUIndexDimension dim) {
+            switch (dim)
+            {
+            case GPUIndexDimension::X:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::GridDimX);
+            case GPUIndexDimension::Y:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::GridDimY);
+            case GPUIndexDimension::Z:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::GridDimZ);
+            default:
+                llvm_unreachable("Unknown GPU index dimension");
+            }
+        } };
     case GPUIndexType::ThreadId:
-        return GPUIndex{ [this](const std::string& dim) { return CreateGPUIndexOp<mlir::gpu::ThreadIdOp>(_impl->builder, dim); } };
+        return GPUIndex{ [this](const GPUIndexDimension dim) {
+            switch (dim)
+            {
+            case GPUIndexDimension::X:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::ThreadX);
+            case GPUIndexDimension::Y:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::ThreadY);
+            case GPUIndexDimension::Z:
+                return CreateGPUIndexOp(_impl->builder, accera::ir::value::Processor::ThreadZ);
+            default:
+                llvm_unreachable("Unknown GPU index dimension");
+            }
+        } };
+    default:
+        llvm_unreachable("Unknown GPU index type");
     }
-    llvm_unreachable("Unknown GPU index type");
 }
 
 Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t alignment, AllocateFlags flags)
@@ -1015,6 +1059,26 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
             if (decl.InlineState() == FunctionInlining::never)
             {
                 fnOp->setAttr(ir::NoInlineAttrName, b.getUnitAttr());
+            }
+            if (auto checkFunctions = decl.GetOutputVerifiers(); !checkFunctions.empty())
+            {
+                // For each input_output parameter, set its check function
+                // TODO: emit these in DebugFunctionPass by plumbing the tolerance and parameter usage
+                size_t checkFunctionIdx = 0;
+                std::vector<mlir::Attribute> checkFunctionAttrs;
+                for (const auto& usage : decl.GetParameterUsages())
+                {
+                    if (usage == FunctionParameterUsage::inputOutput)
+                    {
+                        checkFunctionAttrs.push_back(b.getStringAttr(checkFunctions[checkFunctionIdx++]));
+                    }
+                    else
+                    {
+                        // input parameter, set an empty string
+                        checkFunctionAttrs.push_back(b.getStringAttr(""));
+                    }
+                }
+                fnOp->setAttr(ir::GetOutputVerifiersAttrName(), b.getArrayAttr(checkFunctionAttrs));
             }
 
             // Collect function tags into a dictionary
@@ -1293,6 +1357,13 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
                     f.convert(llvm::APFloat::IEEEhalf(), llvm::APFloat::rmNearestTiesToEven, &losesInfo);
                     op = b.create<mlir::ConstantFloatOp>(loc, f, mlirElemTy.cast<mlir::Float16Type>());
                 }
+                else if constexpr (std::is_same_v<ElementType, bfloat16_t>)
+                {
+                    bool losesInfo = false;
+                    auto f = llvm::APFloat(data[0].data);
+                    f.convert(llvm::APFloat::BFloat(), llvm::APFloat::rmNearestTiesToEven, &losesInfo);
+                    op = b.create<mlir::ConstantFloatOp>(loc, f, mlirElemTy.cast<mlir::BFloat16Type>());
+                }
                 else if constexpr (std::is_integral_v<ElementType> || std::is_same_v<ElementType, Boolean>)
                 {
                     auto elem = static_cast<int64_t>(data[0]);
@@ -1348,6 +1419,14 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
                     std::transform(data.begin(), data.end(), fp16Data.begin(), [](float16_t value) { return value.data; });
 
                     dataAttribute = mlir::DenseElementsAttr::get(flattenedTensorShapeTy, llvm::makeArrayRef(fp16Data));
+                }
+                else if constexpr (std::is_same_v<ElementType, bfloat16_t>)
+                {
+                    using bfloat16_underlying_type = typename bfloat16_t::underlying_type;
+                    std::vector<bfloat16_underlying_type> bfp16Data(data.size());
+                    std::transform(data.begin(), data.end(), bfp16Data.begin(), [](bfloat16_t value) { return value.data; });
+
+                    dataAttribute = mlir::DenseElementsAttr::get(flattenedTensorShapeTy, llvm::makeArrayRef(bfp16Data));
                 }
                 else
                 {
@@ -2437,269 +2516,6 @@ ir::value::ValueFuncOp FindValueFuncOp(mlir::ModuleOp mod, const std::string& na
     return fnOp;
 }
 
-// Emit a wrapper function that will invoke the target function with debugging checks
-// This is best effort. If there is no ScheduleOp, we will skip the function.
-void MLIRContext::EmitNestDebugFunction(FunctionDeclaration targetFunc, const std::vector<std::string>& utilityFunctionNames)
-{
-    auto& builder = _impl->builder;
-    auto loc = builder.getUnknownLoc();
-    auto parentOp = builder.getBlock()->getParentOp();
-    auto moduleOp = accera::ir::util::CastOrGetParentOfType<mlir::ModuleOp>(parentOp);
-    assert(moduleOp);
-    auto targetFuncName = targetFunc.GetFunctionName();
-
-    // Find a ValueFuncOp matching the target function name
-    if (auto targetFnOp = FindValueFuncOp(moduleOp, targetFuncName))
-    {
-        // Find the ScheduleOp
-        ir::loopnest::ScheduleOp scheduleOp;
-        if (auto region = &targetFnOp.body())
-        {
-            region->walk([&scheduleOp](ir::loopnest::ScheduleOp op) {
-                scheduleOp = op;
-                return mlir::WalkResult::interrupt();
-            });
-        }
-        if (scheduleOp)
-        {
-            // Find the LaunchFuncOp that calls target function. This will be used for the debug function name prefix
-            // and also for replacement with a new LaunchFuncOp that calls the debug wrapper function.
-            // If no LaunchFuncOp exists (because this does not have a raw pointer API wrapper function), fallback to
-            // the target function name as the debug function name prefix.
-            ir::value::ValueFuncOp targetLaunchFnOp;
-            auto dbgFnName = [&targetLaunchFnOp, moduleOp, targetFuncName]() -> std::string {
-                moduleOp->walk([&targetLaunchFnOp, targetFuncName](ir::value::LaunchFuncOp op) {
-                    if (targetFuncName == op.callee().getLeafReference())
-                    {
-                        targetLaunchFnOp = accera::ir::util::CastOrGetParentOfType<ir::value::ValueFuncOp>(op);
-                        return mlir::WalkResult::interrupt();
-                    }
-                    return mlir::WalkResult::advance();
-                });
-                std::string namePrefix = targetLaunchFnOp ? std::string(targetLaunchFnOp.sym_name()) : targetFuncName;
-                return std::string("_debug_") + namePrefix;
-            }();
-
-            // Create a new function op with the same arguments and return value as the target function
-            //      void dbgFnOp(args, ...)
-            //      {
-            //          Copy output args to output targetFnArgs
-            //          Call targetFnOp(targetFnArgs, ...)
-            //          Run default schedule impl using (args, ...)
-            //          Call utility function to check output args vs output targetFnArgs
-            //          Copy output targetFnArgs to output args
-            //      }
-            // TODO: The last copy can be avoided if we wrap the default schedule impl within its own ValueFuncOp
-            auto dbgFnOp = [this, &builder, loc, &targetFnOp, &scheduleOp, dbgFnName]() -> ir::value::ValueFuncOp {
-                mlir::OpBuilder::InsertionGuard guard(builder);
-                builder.restoreInsertionPoint(_impl->getFunctionInsertPt());
-
-                auto argTypes = targetFnOp.getType().getInputs().vec();
-                auto callingFnType = builder.getFunctionType(argTypes, targetFnOp.getType().getResults());
-                auto wrapperFnOp = builder.create<ir::value::ValueFuncOp>(loc, dbgFnName + "_internal", callingFnType, targetFnOp.exec_target());
-
-                builder.setInsertionPointToStart(&wrapperFnOp.body().front());
-
-                // Map target function args to debug function args
-                mlir::BlockAndValueMapping valueMap;
-                for (auto [fromValue, toValue] : llvm::zip(targetFnOp.getArguments(), wrapperFnOp.getArguments()))
-                {
-                    valueMap.map(fromValue, toValue);
-                }
-
-                targetFnOp->walk([&builder, &valueMap](mlir::Operation* op) {
-                    mlir::TypeSwitch<mlir::Operation*>(op)
-                        .Case([&](ir::value::AllocOp allocOp) {
-                            // Replicate local allocations (e.g. TEMP arrays)
-                            auto newOp = mlir::cast<ir::value::AllocOp>(builder.clone(*allocOp.getOperation()));
-                            valueMap.map(allocOp.getResult(), newOp.getResult());
-                        })
-                        .Case([&](ir::value::ReferenceGlobalOp refGlobalOp) {
-                            // Replicate references to globals (e.g. CONST arrays)
-                            auto newOp = mlir::cast<ir::value::ReferenceGlobalOp>(builder.clone(*refGlobalOp.getOperation()));
-                            valueMap.map(refGlobalOp.getResult(), newOp.getResult());
-                        });
-                });
-
-                // Create the reference schedule(s)
-                auto targetNestOp = scheduleOp.getNest();
-                if (auto fusedDomains = scheduleOp.getFusedDomains(); !fusedDomains.empty())
-                {
-                    // Fusing case: split into multiple schedules (one per kernel), in kernel order
-                    auto kernels = targetNestOp.getKernels();
-
-                    // We currently only support 1 kernel per domain (corresponds to a "never-fused-before" schedule)
-                    // TODO: remove this limitation when the Python DSL supports adding multiple kernels to a schedule
-                    assert(fusedDomains.size() == kernels.size() && "Number of unfused domains != number of unfused kernels");
-                    for (auto [targetKernel, fusedDomain] : llvm::zip(kernels, fusedDomains))
-                    {
-                        auto nest = ir::loopnest::MakeNest(builder, fusedDomain);
-                        auto nestBuilder = nest.getBodyBuilder();
-
-                        // Map target symbolic indices to debug symbolic indices
-                        auto dims = fusedDomain.GetDimensions();
-                        std::unordered_set<ir::loopnest::Index> fusedDomainIndices(dims.begin(), dims.end());
-
-                        targetNestOp.walk([&](ir::loopnest::SymbolicIndexOp fromIndex) {
-                            if (!fromIndex.use_empty())
-                            {
-                                auto sourceIndex = fromIndex.getValue();
-                                for (auto fusedIndex : scheduleOp.getFusedIndices(sourceIndex))
-                                {
-                                    // A reverse mapping of fused index to original index exists AND the original index
-                                    // belongs in the unfused domain
-                                    if (fusedDomainIndices.find(fusedIndex) != fusedDomainIndices.end())
-                                    {
-                                        sourceIndex = fusedIndex;
-                                        break;
-                                    }
-                                }
-                                auto toIndex = nest.getOrCreateSymbolicIndex(nestBuilder, sourceIndex);
-                                valueMap.map(fromIndex.getResult(), toIndex.getResult());
-                            }
-                        });
-
-                        // Clone the kernel, referencing the re-mapped Values (this creates the symbolic indices)
-                        auto kernel = mlir::cast<ir::loopnest::KernelOp>(nestBuilder.clone(*targetKernel.getOperation(), valueMap));
-
-                        // Create the schedule and add the kernels (after the symbolic indices have been inserted into the IR)
-                        auto defaultSchedule = nest.getOrCreateSchedule();
-                        defaultSchedule.addKernel(kernel);
-                    }
-                }
-                else
-                {
-                    // Non-fusing case: duplicate the nest with its kernel(s)
-                    auto domain = targetNestOp.getDomain().getValue();
-                    auto nest = ir::loopnest::MakeNest(builder, domain);
-                    auto nestBuilder = nest.getBodyBuilder();
-
-                    // Map target symbolic indices to debug symbolic indices
-                    targetNestOp.walk([&nestBuilder, &nest, &valueMap](ir::loopnest::SymbolicIndexOp fromIndex) {
-                        if (!fromIndex.use_empty())
-                        {
-                            auto toIndex = nest.getOrCreateSymbolicIndex(nestBuilder, fromIndex.getValue());
-                            valueMap.map(fromIndex.getResult(), toIndex.getResult());
-                        }
-                    });
-
-                    // Clone the kernels, referencing the re-mapped Values (this creates the symbolic indices)
-                    std::vector<ir::loopnest::KernelOp> kernels;
-                    auto targetKernels = targetNestOp.getKernels();
-                    std::transform(targetKernels.cbegin(), targetKernels.cend(), std::back_inserter(kernels), [&nestBuilder, &valueMap](auto knl) {
-                        return mlir::cast<ir::loopnest::KernelOp>(nestBuilder.clone(*knl.getOperation(), valueMap));
-                    });
-
-                    // Create the schedule and add the kernels (after the symbolic indices have been inserted into the IR)
-                    auto defaultSchedule = nest.getOrCreateSchedule();
-                    for (auto& kernel : kernels)
-                    {
-                        defaultSchedule.addKernel(kernel);
-                    }
-                }
-                return wrapperFnOp;
-            }();
-
-            {
-                // Collect arguments for calling the target function, then inject a call to the target function
-                // Output arguments will be duplicated so that we can compare the results with the reference implementation
-                mlir::OpBuilder::InsertionGuard guard(builder);
-                builder.setInsertionPointToStart(&dbgFnOp.body().front());
-
-                // Replicate output args at the top of the function and copy the data
-                auto targetFnArgs = [this, &builder, loc, targetFunc, &dbgFnOp]() -> std::vector<mlir::Value> {
-                    std::string name = GetGlobalScopedName(dbgFnOp.getName().str() + "_target_output_arg");
-                    std::vector<mlir::Value> fnArgs;
-                    for (auto [blockArg, usage] : llvm::zip(dbgFnOp.getArguments(), targetFunc.GetParameterUsages()))
-                    {
-                        if (usage == FunctionParameterUsage::inputOutput)
-                        {
-                            if (auto memrefType = blockArg.getType().dyn_cast<mlir::MemRefType>())
-                            {
-                                // Simplify any identity affine maps, e.g. (d0, d1) -> (d0 * 256 + d1) can become (d0, d1) -> (d0, d1)
-                                // Required by ConvertToLLVMPattern::isConvertibleAndHasIdentityMaps() in GlobalMemrefOpLowering
-                                // First, try simplifying the layout as it is
-                                memrefType = mlir::canonicalizeStridedLayout(memrefType);
-                                if (!memrefType.getAffineMaps().empty())
-                                {
-                                    // The layout could not be simplified (e.g. SubArrays) - force an identity map
-                                    // The logical access indices will still work but there is a potential performance tradeoff with
-                                    // a change in the physical layout (acceptable for Debug mode)
-                                    memrefType = mlir::MemRefType::Builder(memrefType).setAffineMaps({});
-                                }
-                                auto argCopy = ir::util::CreateGlobalBuffer(builder, dbgFnOp, memrefType, name);
-
-                                // Replace the global-scoped ReferenceGlobalOp with one within the function context
-                                auto globalScopeGlobalRef = mlir::dyn_cast_or_null<ir::value::ReferenceGlobalOp>(argCopy.getDefiningOp());
-                                auto localScopeGlobalRef = builder.create<accera::ir::value::ReferenceGlobalOp>(loc, globalScopeGlobalRef.getGlobal());
-                                CopyData(Wrap(blockArg), Wrap(localScopeGlobalRef));
-                                fnArgs.push_back(localScopeGlobalRef);
-                                globalScopeGlobalRef.erase();
-                            }
-                            else
-                            {
-                                throw std::logic_error{ "Argument is not a memRefType" }; // TODO: support additional function arg types as needed
-                            }
-                        }
-                        else
-                        {
-                            fnArgs.push_back(blockArg); // pass-through any input args
-                        }
-                    }
-                    return fnArgs;
-                }();
-
-                // Make a call to targetFnOp with the collected arguments
-                auto msg = std::string("Checking " + targetFuncName + " ...\n");
-                Print(msg);
-
-                (void)builder.create<ir::value::LaunchFuncOp>(loc, targetFnOp, targetFnArgs);
-                {
-                    // Set insertion point past the debug nest
-                    mlir::OpBuilder::InsertionGuard guard(builder);
-                    builder.setInsertionPointToEnd(&dbgFnOp.body().front());
-
-                    // For each output arg, call its designated utility function to check that the expected values match
-                    unsigned utilityFnIndex = 0;
-                    for (auto [targetArg, debugArg, usage] : llvm::zip(targetFnArgs, dbgFnOp.getArguments(), targetFunc.GetParameterUsages()))
-                    {
-                        if (usage == FunctionParameterUsage::inputOutput)
-                        {
-                            // Expect the number of utility functions to match the number of outputs
-                            assert(utilityFnIndex < utilityFunctionNames.size() && "Too few debug utility functions were generated");
-                            if (auto utilityFnOp = FindValueFuncOp(moduleOp, utilityFunctionNames[utilityFnIndex++]))
-                            {
-                                (void)builder.create<ir::value::LaunchFuncOp>(loc, utilityFnOp, mlir::ValueRange{ targetArg, debugArg });
-                            }
-
-                            // Set the output arguments of this function so that the caller gets the target result
-                            // TODO: This last copy can be avoided if we wrap the default schedule impl within its own ValueFuncOp
-                            CopyData(Wrap(targetArg), Wrap(debugArg));
-                        }
-                    }
-
-                    // Finally, add the terminator
-                    assert(dbgFnOp.getNumResults() == 0 && "Nest functions must return no results"); // future work?
-                    builder.create<ir::value::ReturnOp>(loc);
-                }
-            }
-
-            if (targetLaunchFnOp)
-            {
-                // Replace the original launcher with one that calls the debug wrapper function
-                auto newLaunchFnOp = ir::value::CreateRawPointerAPIWrapperFunction(builder, dbgFnOp, targetLaunchFnOp.sym_name());
-
-                // Propagate the base name so that aliases can be created
-                if (auto baseName = targetLaunchFnOp->getAttrOfType<mlir::StringAttr>(ir::BaseNameAttrName))
-                {
-                    newLaunchFnOp->setAttr(ir::BaseNameAttrName, baseName);
-                }
-                targetLaunchFnOp.erase();
-            }
-        }
-    }
-}
-
 mlir::Value Unwrap(ViewAdapter view)
 {
     Value v = view;
@@ -2764,12 +2580,14 @@ ValueType MLIRTypeToValueType(mlir::Type ty)
         .Case<mlir::FloatType>([](mlir::FloatType fTy) {
             if (fTy.isF16())
                 return ValueType::Float16;
-            else if (fTy.isF32())
+            if (fTy.isBF16())
+                return ValueType::BFloat16;
+            if (fTy.isF32())
                 return ValueType::Float;
-            else if (fTy.isF64())
+            if (fTy.isF64())
                 return ValueType::Double;
-            else
-                return ValueType::Undefined;
+
+            return ValueType::Undefined;
         })
         .Default([](mlir::Type) {
             return ValueType::Undefined;
@@ -2840,19 +2658,19 @@ Value ResolveConstantDataReference(Value constantDataSource)
 
 /*static*/ GPUIndex GPU::BlockDim()
 {
-    return GetMLIRContext().GetGPUIndex(GPUIndexType::BlockDim);
+    return GetMLIRContext().GetGPUIndex<GPUIndexType::BlockDim>();
 }
 /*static*/ GPUIndex GPU::BlockId()
 {
-    return GetMLIRContext().GetGPUIndex(GPUIndexType::BlockId);
+    return GetMLIRContext().GetGPUIndex<GPUIndexType::BlockId>();
 }
 /*static*/ GPUIndex GPU::GridDim()
 {
-    return GetMLIRContext().GetGPUIndex(GPUIndexType::GridDim);
+    return GetMLIRContext().GetGPUIndex<GPUIndexType::GridDim>();
 }
 /*static*/ GPUIndex GPU::ThreadId()
 {
-    return GetMLIRContext().GetGPUIndex(GPUIndexType::ThreadId);
+    return GetMLIRContext().GetGPUIndex<GPUIndexType::ThreadId>();
 }
 
 static std::string GPUBarrierScopeToValueIRBarrierScope(GPU::BarrierScope scope)

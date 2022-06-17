@@ -24,7 +24,7 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-from accera import ScalarType, Array, Function, Nest, Target, Package
+from accera import ScalarType, Array, Function, Nest, Target, Package, algorithms
 from accera.test import verifiers
 
 TEST_MODE = Package.Mode.DEBUG if DEV_MODE else Package.Mode.RELEASE
@@ -2567,8 +2567,8 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
             package.build(
                 name=test_name,
                 format=Package.Format.MLIR | Package.Format.DEFAULT,
-                mode=Package.Mode.RELEASE,  # Package.Mode.DEBUG,
-                output_dir=output_dir,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
             )
 
     def test_gpu_multi_index_bind(self) -> None:
@@ -2620,7 +2620,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
             package.build(
                 name=test_name,
                 format=Package.Format.MLIR | Package.Format.DEFAULT,
-                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG,
+                mode=Package.Mode.RELEASE,    # Package.Mode.DEBUG not supported
                 output_dir=output_dir
             )
 
@@ -3832,6 +3832,59 @@ class DSLTest_09Parameters(unittest.TestCase):
                 output_dir=TEST_PACKAGE_DIR,
             )
 
+    def test_parameterization_gpu_bind(self) -> None:
+        from accera import create_parameters
+        P0, P1, P2, P3, P4, P5 = create_parameters()
+
+        M = 128
+        N = 256
+        K = 256
+        A = Array(role=Array.Role.INPUT, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        v100 = Target(Target.Model.NVIDIA_V100, category=Target.Category.GPU)
+        plan = nest.create_plan(v100)
+
+        plan.bind(mapping={
+            P0: P3,
+            P1: P4,
+            P2: P5
+        })
+
+        test_name = "test_parameterization_gpu_bind"
+        package = Package()
+        package.add(
+            plan, 
+            args=(A, B, C), 
+            parameters={
+                P0: i,
+                P1: j,
+                P2: k,
+                P3: v100.GridUnit.BLOCK_X,
+                P4: v100.GridUnit.THREAD_X,
+                P5: v100.GridUnit.THREAD_Y,
+            }, 
+            base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        with verifiers.VerifyPackage(self, test_name, output_dir, file_list=[f"{test_name}.cu",
+                                                                             f"{test_name}.hat"]) as v:
+            package.build(
+                name=test_name,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
+                mode=Package.Mode.RELEASE,  # Package.Mode.DEBUG not supported
+                output_dir=output_dir
+            )
+            
     def test_parameterization_subarray(self) -> None:
         from accera import create_parameters
 
@@ -4343,6 +4396,72 @@ class DSLTest_10Packages(unittest.TestCase):
         self.assertEqual(hat_file.description.author, "Microsoft Research")
         self.assertEqual(hat_file.description.license_url, "https://mit-license.org")
 
+class DSLTest_11AutoPlan(unittest.TestCase):
+    def _create_plan(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
+        M, N, S = shape
+
+        A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
+        B = Array(role=Array.Role.INPUT, element_type=type, shape=(S, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
+
+        nest = Nest(shape=(M, N, S))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] = A[i, k] * B[k, j]
+
+        sched = nest.create_schedule()
+        ii = sched.split(i, 64)
+        jj = sched.split(i, 64)
+        kk = sched.split(k, 64)
+        sched.reorder(i, j, k, ii, jj, kk)
+
+        plan = sched.create_plan()
+
+        return plan, [A, B, C], [i, j, k, ii, jj, kk]
+
+    def _verify_autoplan(self, plan, args: Tuple[Array], package_name, functions_counter) -> None:
+        # create a HAT package and add the function to it
+        package = Package()
+        functions = package.add(plan, args, base_name="autoplan_test")
+        # Assert the total number of functions added to a package are equal to 2.
+        # Each function is added for a unique value of layout as inferred by plan.auto()
+        if functions and isinstance(functions, list):
+            self.assertEqual(len(functions), functions_counter)
+
+    def test_autoplan(self) -> None:
+        plan, args, indices = self._create_plan((1024, 1024, 1024))
+        A, B, C = args
+        i, j, k, ii, jj, kk = indices
+
+        plan.auto(algorithms.NoneCacheHeuristics(source = B, index = j))
+        self._verify_autoplan(plan, [A, B, C], "test_autoplan_for_caching_1", 2)
+
+        plan.auto(algorithms.NoneCacheHeuristics(source = B, layout = Array.Layout.FIRST_MAJOR))
+        # Testing list of heuristics with a subsequent call to `plan.auto()`
+        # This will create a product of prameters, (2*6 = 12) and hence, 12 functions
+        # are added to a package
+        self._verify_autoplan(plan, [A, B, C], "test_autoplan_for_caching_2", 12)
+
+        # create a new plan
+        plan_2, args_2, indices_2 = self._create_plan((1024, 1024, 1024))
+        A, B, C = args_2
+        i, j, k, ii, jj, kk = indices_2
+
+        plan_2.auto(algorithms.NoneCacheHeuristics(source = B, layout = Array.Layout.FIRST_MAJOR))
+        # A total of 6 functions will be created, one for each unique value of index
+        self._verify_autoplan(plan_2, [A, B, C], "test_autoplan_for_caching_3", 6)
+
+        # create a new plan
+        plan_3, args_3, indices_3 = self._create_plan((1024, 1024, 1024))
+        A, B, C = args_3
+        i, j, k, ii, jj, kk = indices_3
+
+        plan_3.auto(algorithms.NoneCacheHeuristics(source = B))
+        # A total of 12 functions will be created, one for each unique combination of
+        # index and layout value.
+        self._verify_autoplan(plan_3, [A, B, C], "test_autoplan_for_caching_4", 12)
 
 if __name__ == "__main__":
     unittest.main(verbosity=10)

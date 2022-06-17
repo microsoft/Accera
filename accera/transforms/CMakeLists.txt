@@ -39,13 +39,17 @@ set(rcvalue_include
 
 set(rcnest_src
   src/nest/LoopNestPasses.cpp
-  src/nest/LoopNestToValue.cpp src/nest/LoopNestToValueFunc.cpp)
+  src/nest/LoopNestToValue.cpp
+  src/nest/LoopNestToValueFunc.cpp
+)
 
 set(include include/AcceraPasses.h)
 
 set(rcnest_include
   include/nest/LoopNestPasses.h
-  include/nest/LoopNestToValue.h include/nest/LoopNestToValueFunc.h)
+  include/nest/LoopNestToValue.h
+  include/nest/LoopNestToValueFunc.h
+)
 
 set(rcexec_src src/exec/ExecutionPlanToAffineLoweringPass.cpp)
 
@@ -72,6 +76,7 @@ set(accaffine_include
 )
 
 set(util_src
+  src/util/DebugFunctionPass.cpp
   src/util/MathUtilities.cpp
   src/util/RangeValueUtilities.cpp
   src/util/SnapshotUtilities.cpp
@@ -83,6 +88,7 @@ set(util_src
 )
 
 set(util_include
+  include/util/DebugFunctionPass.h
   include/util/MathUtilities.h
   include/util/RangeValueUtilities.h
   include/util/SnapshotUtilities.h

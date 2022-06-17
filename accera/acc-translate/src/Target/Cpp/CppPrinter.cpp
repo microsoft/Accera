@@ -160,6 +160,13 @@ namespace cpp_printer
         bool isNaN = apValue.isNaN();
         if (!isInf && !isNaN)
         {
+            // For 0 values just print something like: "{}"
+            if (apValue.isZero())
+            {
+                os << "{}";
+                return success();
+            }
+
             SmallString<128> strValue;
             apValue.toString(strValue, /*FormatPrecision=*/6, /*FormatMaxPadding=*/0,
                              /*TruncateZero=*/false);
@@ -477,14 +484,23 @@ namespace cpp_printer
 
     LogicalResult CppPrinter::printVectorType(VectorType type)
     {
+        auto elemType = type.getElementType();
         os << "v";
-        if (type.getElementType().isa<Float16Type>())
+        if (elemType.isa<Float16Type>())
         {
             os << "half";
         }
+        else if (elemType.isa<BFloat16Type>())
+        {
+            os << "bfloat16";
+        }
+        else if (elemType.isIntOrIndex() && !elemType.isIndex())
+        {
+            os << "int" << elemType.getIntOrFloatBitWidth();
+        }
         else
         {
-            RETURN_IF_FAILED(printType(type.getElementType()));
+            RETURN_IF_FAILED(printType(elemType));
         }
         os << "x";
         os << type.getNumElements();
@@ -508,7 +524,7 @@ namespace cpp_printer
         }
         else if (type.isa<BFloat16Type>())
         {
-            os << "bfloat16";
+            os << bfloat16T();
             return success();
         }
         else if (type.isa<Float16Type>())

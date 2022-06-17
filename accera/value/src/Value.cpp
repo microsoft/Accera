@@ -308,7 +308,7 @@ namespace value
 
     bool Value::IsFloatingPoint() const
     {
-        return (_type.first == ValueType::Float16 || _type.first == ValueType::Float || _type.first == ValueType::Double);
+        return (_type.first == ValueType::Float16 || _type.first == ValueType::Float || _type.first == ValueType::Double || _type.first == ValueType::BFloat16);
     }
 
     bool Value::IsFloat16() const { return _type.first == ValueType::Float16; }
@@ -386,6 +386,7 @@ namespace value
             ADD_TO_STRING_ENTRY(ValueType, Uint64);
             ADD_TO_STRING_ENTRY(ValueType, Index);
             ADD_TO_STRING_ENTRY(ValueType, Float16);
+            ADD_TO_STRING_ENTRY(ValueType, BFloat16);
             ADD_TO_STRING_ENTRY(ValueType, Float);
             ADD_TO_STRING_ENTRY(ValueType, Double);
 
@@ -410,6 +411,7 @@ namespace value
         ADD_FROM_STRING_ENTRY(ValueType, Uint64);
         ADD_FROM_STRING_ENTRY(ValueType, Index);
         ADD_FROM_STRING_ENTRY(ValueType, Float16);
+        ADD_FROM_STRING_ENTRY(ValueType, BFloat16);
         ADD_FROM_STRING_ENTRY(ValueType, Float);
         ADD_FROM_STRING_ENTRY(ValueType, Double);
 

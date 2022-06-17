@@ -122,6 +122,9 @@ void PrintMatrix(std::string indent, Matrix e)
             case ValueType::Float16:
                 std::cout << s.Get<float16_t>();
                 break;
+            case ValueType::BFloat16:
+                std::cout << s.Get<bfloat16_t>();
+                break;
             case ValueType::Float:
                 std::cout << s.Get<float>();
                 break;

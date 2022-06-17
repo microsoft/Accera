@@ -22,4 +22,4 @@ target_link_libraries(${library_name} utilities)
 set_property(TARGET ${library_name} PROPERTY FOLDER "accera")
 
 add_library(CatchWrapper OBJECT EXCLUDE_FROM_ALL src/CatchMain.cpp)
-target_link_libraries(CatchWrapper PUBLIC Catch2::Catch2)
+target_link_libraries(CatchWrapper PUBLIC Catch2::Catch2WithMain)

@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.5)
+[//]: # (Version: v1.2.6)
 
-# Accera v1.2.5 Reference
+# Accera v1.2.6 Reference
 
 ## `accera.Nest.create_plan([target])`
 Creates a plan using the default schedule for the nest.

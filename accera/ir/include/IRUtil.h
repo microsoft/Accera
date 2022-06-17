@@ -36,6 +36,8 @@ namespace mlir
 class AffineForOp;
 class AffineLoadOp;
 class AffineStoreOp;
+class AffineApplyOp;
+class AffineValueMap;
 class OpBuilder;
 
 namespace memref
@@ -250,8 +252,10 @@ namespace util
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string tag, mlir::Location opLocation);
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string filename, int64_t lineNumber);
 
-    std::vector<mlir::Value> MultiDimAffineApply(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineMap map, std::vector<mlir::Value>& operands);
+    std::vector<mlir::Value> MultiDimAffineApply(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineMap map, std::vector<mlir::Value>& operands, bool simplify = false);
     mlir::AffineMap MakeIdentityAccessMap(mlir::Value val, mlir::MLIRContext* context);
+
+    mlir::AffineValueMap AffineApplyToAffineValueMap(mlir::AffineApplyOp applyOp);
 
     mlir::Type GetElementType(mlir::Type type);
 
@@ -394,8 +398,7 @@ namespace util
     // d) nullptr otherwise (e.g. if it is a block argument for a non-for-loop op)
     mlir::Operation* GetDefiningOpOrForLoop(mlir::Value val);
 
-    mlir::Value GetGPUIndex(mlir::Operation* op, value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc);
-    mlir::Value GetGPUIndex(const ir::value::ExecutionRuntime& runtime, value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc);
+    mlir::Value GetGPUIndex(value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc);
 
     value::Processor GetGPUProcessor(mlir::Operation* gpuOp);
 
@@ -404,5 +407,12 @@ namespace util
 
     int64_t GetBlockDimSize(mlir::Operation* where, const std::string& dimId);
     int64_t GetGridDimSize(mlir::Operation* where, const std::string& dimId);
+
+    // Gets the flattened thread ID of the current GPU thread within the context of the current block
+    mlir::Value GetCurrentGPUBlockThreadID(mlir::OpBuilder& builder, mlir::Location loc);
+
+    // Gets the flattened thread ID of the current GPU thread within the context of the current warp
+    mlir::Value GetCurrentGPUWarpThreadID(mlir::OpBuilder& builder, mlir::Location loc);
+
 } // namespace util
 } // namespace accera::ir

@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.5)
+[//]: # (Version: v1.2.6)
 
-# Accera v1.2.5 Reference
+# Accera v1.2.6 Reference
 
 ## `accera.Plan.vectorize(index)`
 Only available for targets that have SIMD registers and support vector instructions. Marks a dimension of the iteration-space for vectorization.

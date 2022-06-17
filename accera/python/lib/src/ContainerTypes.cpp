@@ -34,6 +34,7 @@ namespace
             .value("uint64", value::ValueType::Uint64, "8 byte unsigned integer")
             .value("index", value::ValueType::Index, "index type")
             .value("float16", value::ValueType::Float16, "2 byte floating point")
+            .value("bfloat16", value::ValueType::BFloat16, "2 byte Brain floating point")
             .value("float32", value::ValueType::Float, "4 byte floating point")
             .value("float64", value::ValueType::Double, "8 byte floating point");
 

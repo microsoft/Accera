@@ -10,4 +10,11 @@
 #include <mlir/IR/BuiltinAttributes.h>
 
 #include "exec/ExecutionPlanEnums.h.inc" 
- 
+
+enum class GPUIndexDimension
+{
+    X,
+    Y,
+    Z,
+    Invalid = -1
+};

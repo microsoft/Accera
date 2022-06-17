@@ -67,18 +67,6 @@ private:
     RangeValue resolveRangeValue(mlir::ConstantIndexOp op);
     RangeValue resolveRangeValue(mlir::ConstantIntOp op);
     RangeValue resolveRangeValue(mlir::IndexCastOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::ThreadIdXOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::ThreadIdYOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::ThreadIdZOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::BlockIdXOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::BlockIdYOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::BlockIdZOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::BlockDimXOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::BlockDimYOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::BlockDimZOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::GridDimXOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::GridDimYOp op);
-    RangeValue resolveRangeValue(mlir::ROCDL::GridDimZOp op);
     RangeValue resolveRangeValue(mlir::gpu::ThreadIdOp op);
     RangeValue resolveRangeValue(mlir::gpu::BlockIdOp op);
     RangeValue resolveRangeValue(mlir::gpu::BlockDimOp op);

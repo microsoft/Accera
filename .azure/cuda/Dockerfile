@@ -22,6 +22,11 @@ RUN sh /tmp/scripts/install.builddeps.sh
 RUN sh /tmp/scripts/install.dbgdeps.sh
 RUN rm -rf /tmp/scripts
 
+ENV CC=gcc-10 \
+    CXX=g++-10 \
+    CMAKE_C_COMPILER=gcc-10 \
+    CMAKE_CXX_COMPILER=g++-10
+
 # Start the build agent
 # Can be 'linux-x64', 'linux-arm64', 'linux-arm', 'rhel.6-x64'.
 ENV TARGETARCH=linux-x64

@@ -67,6 +67,7 @@ class Function:
     no_inline: bool = False
     auxiliary: dict = field(default_factory=dict)
     target: Target = Target.HOST
+    output_verifiers: list = field(default_factory=list)
 
     def __post_init__(self):
         # automatically fill if not specified
@@ -86,6 +87,10 @@ class Function:
         if self.args:
             usages = [role_to_usage(arg.role) for arg in self.requested_args]
             self._native_fn.parameters(self.args, usages)
+
+            if self.output_verifiers:
+                self._native_fn.outputVerifiers(self.output_verifiers)
+
         self._native_fn.inlinable(not self.no_inline)
 
         sig = signature(self.definition)
@@ -107,7 +112,7 @@ class Function:
         if self.public:
             api_decl = _DeclareFunction(self.name)
             if self.args:
-                api_decl.parameters(self.args)
+                api_decl.parameters(self.args, usages)
             if self.base_name:
                 api_decl.baseName(self.base_name)
             api_decl.public(True).decorated(False).headerDecl(True).rawPointerAPI(True).define(self._native_fn)

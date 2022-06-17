@@ -47,7 +47,10 @@ void populateAcceraToNVVMPatterns(mlir::OwningRewritePatternList& patterns);
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createAcceraToNVVMPass();
 
 void populateAcceraToROCDLPatterns(mlir::OwningRewritePatternList& patterns);
+void populateGPUToROCDLPatterns(mlir::LLVMTypeConverter& converter, mlir::OwningRewritePatternList& patterns);
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createAcceraToROCDLPass();
+
+std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createGPUToROCDLPass();
 
 std::unique_ptr<mlir::OperationPass<mlir::gpu::GPUModuleOp>> createSerializeToHSACOPass();
 

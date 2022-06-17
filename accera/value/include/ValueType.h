@@ -19,7 +19,13 @@ namespace value
 {
 
     enum class index_t : int64_t {};
+
     struct float16_t {
+        using underlying_type = float;
+        float data;
+    };
+
+    struct bfloat16_t {
         using underlying_type = float;
         float data;
     };
@@ -53,6 +59,8 @@ namespace value
         Uint64,
         /// <summary> 2 byte floating point </summary>
         Float16,
+        /// <summary> 2 byte Brain floating point </summary>
+        BFloat16,
         /// <summary> 4 byte floating point </summary>
         Float,
         /// <summary> 8 byte floating point </summary>
@@ -144,6 +152,10 @@ namespace value
         else if constexpr (std::is_same_v<T, float16_t>)
         {
             return ValueType::Float16;
+        }
+        else if constexpr (std::is_same_v<T, bfloat16_t>)
+        {
+            return ValueType::BFloat16;
         }
         else if constexpr (std::is_same_v<T, float>)
         {

@@ -216,6 +216,11 @@ RangeValue RangeValueAnalysis::addOperation(mlir::Operation* op)
         {
             addOperation(definingOp);
         }
+        else
+        {
+            // Keep track of this value but it has arbitrary range
+            _rangeMap.insert({ operand, RangeValue() });
+        }
     }
 
     auto range = resolveRangeValue(op);
@@ -290,39 +295,9 @@ RangeValue RangeValueAnalysis::resolveRangeValue(gpu::ThreadIdOp op)
     return resolveThreadIdRange(op, op.dimension());
 }
 
-RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::ThreadIdXOp op)
-{
-    return resolveThreadIdRange(op, "x");
-}
-
-RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::ThreadIdYOp op)
-{
-    return resolveThreadIdRange(op, "y");
-}
-
-RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::ThreadIdZOp op)
-{
-    return resolveThreadIdRange(op, "z");
-}
-
 RangeValue RangeValueAnalysis::resolveRangeValue(gpu::BlockIdOp op)
 {
     return resolveBlockIdRange(op, op.dimension());
-}
-
-RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::BlockIdXOp op)
-{
-    return resolveBlockIdRange(op, "x");
-}
-
-RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::BlockIdYOp op)
-{
-    return resolveBlockIdRange(op, "y");
-}
-
-RangeValue RangeValueAnalysis::resolveRangeValue(ROCDL::BlockIdZOp op)
-{
-    return resolveBlockIdRange(op, "z");
 }
 
 RangeValue RangeValueAnalysis::resolveRangeValue(mlir::gpu::BlockDimOp op)
@@ -330,37 +305,9 @@ RangeValue RangeValueAnalysis::resolveRangeValue(mlir::gpu::BlockDimOp op)
     return resolveBlockDimRange(op, op.dimension());
 }
 
-RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::BlockDimXOp op)
-{
-    return resolveBlockDimRange(op, "x");
-}
-
-RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::BlockDimYOp op)
-{
-    return resolveBlockDimRange(op, "y");
-}
-
-RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::BlockDimZOp op)
-{
-    return resolveBlockDimRange(op, "z");
-}
-
 RangeValue RangeValueAnalysis::resolveRangeValue(mlir::gpu::GridDimOp op)
 {
     return resolveGridDimRange(op, op.dimension());
-}
-
-RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::GridDimXOp op)
-{
-    return resolveGridDimRange(op, "x");
-}
-RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::GridDimYOp op)
-{
-    return resolveGridDimRange(op, "y");
-}
-RangeValue RangeValueAnalysis::resolveRangeValue(mlir::ROCDL::GridDimZOp op)
-{
-    return resolveGridDimRange(op, "z");
 }
 
 RangeValue RangeValueAnalysis::resolveRangeValue(Instruction::BinaryOps binOp, mlir::Operation* op)
@@ -387,13 +334,7 @@ RangeValue RangeValueAnalysis::resolveRangeValue(mlir::Operation* op)
         .Case([&](ConstantIntOp op) { return resolveRangeValue(op); })
         .Case([&](IndexCastOp op) { return resolveRangeValue(op); })
         .Case([&](gpu::ThreadIdOp op) { return resolveRangeValue(op); })
-        .Case([&](ROCDL::ThreadIdXOp op) { return resolveRangeValue(op); })
-        .Case([&](ROCDL::ThreadIdYOp op) { return resolveRangeValue(op); })
-        .Case([&](ROCDL::ThreadIdZOp op) { return resolveRangeValue(op); })
         .Case([&](gpu::BlockIdOp op) { return resolveRangeValue(op); })
-        .Case([&](ROCDL::BlockIdXOp op) { return resolveRangeValue(op); })
-        .Case([&](ROCDL::BlockIdYOp op) { return resolveRangeValue(op); })
-        .Case([&](ROCDL::BlockIdZOp op) { return resolveRangeValue(op); })
         .Case([&](AddIOp op) { return resolveRangeValue(Instruction::BinaryOps::Add, op); })
         .Case([&](SubIOp op) { return resolveRangeValue(Instruction::BinaryOps::Sub, op); })
         .Case([&](MulIOp op) { return resolveRangeValue(Instruction::BinaryOps::Mul, op); })

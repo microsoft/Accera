@@ -927,7 +927,7 @@ LogicalResult GPUMappedAffineForOpRewrite::matchAndRewrite(mlir::AffineForOp aff
         OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPoint(&firstBlock, firstBlock.begin());
 
-        auto gpuValue = util::GetGPUIndex(affineForOp, processor, rewriter, loc);
+        auto gpuValue = util::GetGPUIndex(processor, rewriter, loc);
         auto replacementVal = rewriter.create<mlir::AffineApplyOp>(loc, bindingMap, mlir::ValueRange{ gpuValue });
 
         // We're going to replace all uses of the affine loop's induction variable with GPU hardware mapping instead, so

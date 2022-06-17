@@ -8,7 +8,7 @@
 // RUN:  value_mlir_test -r compact | python process_tests.py -p "jit_" | FileCheck --allow-empty --check-prefix=JIT %s
 
 #define CATCH_CONFIG_RUNNER
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 #include <value/include/Array.h>
 #include <value/include/EmitterContext.h>
@@ -37,11 +37,11 @@ using namespace std::string_literals;
 using namespace accera::value;
 using namespace accera::utilities;
 
-struct TestCaseWrapper : Catch::TestEventListenerBase
+struct TestCaseWrapper : Catch::EventListenerBase
 {
     bool first = true;
     std::optional<ContextGuard<MLIRContext>> _guard;
-    using TestEventListenerBase::TestEventListenerBase;
+    using EventListenerBase::EventListenerBase;
 
     void testCaseStarting(const Catch::TestCaseInfo& tci) override
     {
@@ -67,7 +67,7 @@ struct TestCaseWrapper : Catch::TestEventListenerBase
         auto tci = tcs.testInfo;
         auto& guard = *_guard;
         guard.GetContext().print();
-        guard.GetContext().save(tci.name + ".mlir");
+        guard.GetContext().save(tci->name + ".mlir");
 
         std::puts("\n\n");
     }

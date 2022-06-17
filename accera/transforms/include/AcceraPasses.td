@@ -428,6 +428,25 @@ def ConvertAcceraToROCDL : Pass<"convert-accera-to-rocdl", "::mlir::ModuleOp"> {
 
 
 //===----------------------------------------------------------------------===//
+// GPUToROCDL
+//===----------------------------------------------------------------------===//
+
+def ConvertGPUToROCDL : Pass<"convert-gpu-ops-to-rocdl", "::mlir::ModuleOp"> {
+  let summary = "Convert GPU dialects to ROCDL dialect";
+  let constructor = "accera::transforms::createGPUToROCDLPass()";
+  let dependentDialects = [
+    "accera::ir::value::ValueDialect",
+    "mlir::StandardOpsDialect",
+    "mlir::AffineDialect",
+    "mlir::vector::VectorDialect",
+    "mlir::memref::MemRefDialect",
+    "mlir::gpu::GPUDialect",
+    "mlir::ROCDL::ROCDLDialect"
+  ];
+}
+
+
+//===----------------------------------------------------------------------===//
 // AcceraToNVVM
 //===----------------------------------------------------------------------===//
 
@@ -444,5 +463,17 @@ def ConvertAcceraToNVVM : Pass<"convert-accera-to-nvvm", "::mlir::ModuleOp"> {
     "mlir::NVVM::NVVMDialect"
   ];
 }
+
+
+//===----------------------------------------------------------------------===//
+// EmitDebugFunction
+//===----------------------------------------------------------------------===//
+
+def EmitDebugFunction : accModulePass<"emit-debug-func"> {
+  let summary = "Emits a debug function with correctness-checking against default schedules";
+  let constructor = "accera::transforms::createEmitDebugFunctionPass()";
+  let dependentDialects = ["accera::ir::value::ValueDialect"];
+}
+
 
 #endif // ACCERA_CONVERSION_PASSES

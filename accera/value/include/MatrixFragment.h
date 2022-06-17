@@ -23,10 +23,18 @@ namespace value
             M32xN32xK2_B1,
             M16xN16xK4_B1,
 
+            M64xN64xK2_B4,
+            M64xN64xK2_B2,
+            M32xN32xK4_B1,
+            M16xN16xK8_B1,
+
             M64xN64xK4_B4,
             M64xN64xK4_B2,
             M32xN32xK8_B1,
             M16xN16xK16_B1,
+
+            M32xN8xK16_B1,
+            M8xN32xK16_B1,
 
             Invalid
         };

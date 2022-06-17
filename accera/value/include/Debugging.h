@@ -15,8 +15,11 @@
 
 #include "Array.h"
 
-#define GET_LOCATION() \
-    FileLocation { __FILE__, __LINE__ }
+#define GET_LOCATION()     \
+    FileLocation           \
+    {                      \
+        __FILE__, __LINE__ \
+    }
 
 namespace accera
 {
@@ -40,6 +43,7 @@ namespace value
         std::unique_ptr<LocationGuardImpl> _impl;
     };
 
+    // implementation of an output verifier function
     void CheckAllClose(Array actual, Array desired, float tolerance);
 
 } // namespace value
@@ -49,6 +53,11 @@ namespace ir
     inline std::string GetDebugModeAttrName()
     {
         return "accv.debug";
+    }
+
+    inline std::string GetOutputVerifiersAttrName()
+    {
+        return "accv.output_verifiers";
     }
 
     inline std::string GetPrintErrorFunctionName()

@@ -29,6 +29,8 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Dialect.h>
 
+#include <ir/include/exec/ExecutionPlanEnums.h>
+
 namespace mlir
 {
 class ModuleOp;
@@ -50,14 +52,14 @@ namespace value
 
     struct GPUIndex
     {
-        GPUIndex(std::function<Scalar(const std::string&)>);
+        GPUIndex(std::function<Scalar(const GPUIndexDimension)>);
 
         Scalar X();
         Scalar Y();
         Scalar Z();
 
     private:
-        std::function<Scalar(const std::string&)> _fn;
+        std::function<Scalar(const GPUIndexDimension)> _fn;
     };
 
     class MLIRContextBase
@@ -99,7 +101,6 @@ namespace value
         void setDataLayout(const CompilerOptions& options);
 
         void setDebugMode(bool enable);
-        void EmitDebugFunction(const std::string& functionName, const std::vector<std::string>& utilityFunctionNames);
 
         struct EmittableInfo
         {
@@ -108,7 +109,8 @@ namespace value
             bool isGlobal = false;
         };
 
-        GPUIndex GetGPUIndex(GPUIndexType);
+        template<GPUIndexType>
+        GPUIndex GetGPUIndex();
 
         friend mlir::Value Unwrap(accera::value::Value&);
         friend mlir::Value UnwrapScalar(Scalar&);
@@ -226,8 +228,6 @@ namespace value
 
         EmittableInfo& StoreGlobalEmittable(EmittableInfo);
         EmittableInfo& StoreLocalEmittable(EmittableInfo);
-
-        void EmitNestDebugFunction(FunctionDeclaration func, const std::vector<std::string>& utilityFunctionNames);
 
         class IfContextImpl;
         struct FunctionScope;

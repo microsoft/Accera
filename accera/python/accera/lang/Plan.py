@@ -25,11 +25,11 @@ from .._lang_python._lang import (
     _MMASchedulingPolicy,
     _MMAShape,
 )
+from ..algorithms import *
 
 
 def _ceildiv(x, y):
     return ((x - 1) // y) + 1
-
 
 class Plan:
     def __init__(self, schedule: Schedule, target: Target = Target.HOST):
@@ -40,6 +40,7 @@ class Plan:
         self._index_attrs: Mapping[LoopIndex, List[str]] = {}
         self._dynamic_dependencies = set()
         self._bindings = {}
+        self._heuristic_params = []
 
         if (
             target.category == Target.Category.GPU
@@ -54,6 +55,35 @@ class Plan:
 
     def print(self):
         self._sched.print(lambda index: self._index_attrs.get(index, []))
+
+    def _get_heuristic_parameters(self):
+        return self._heuristic_params
+
+    def auto(
+        self,
+        *heuristics
+    ):
+        """Invokes an AutoPlanner to synthesize transofrmations such as, cache, vectorize, parallelize, unroll, bind, etc.
+ 
+        Args:
+        List of heuristics in algorithms module.
+        """
+        for heuristic in heuristics:
+            # TODO: replace this check with an abstract base class of heuristics
+            if not(isinstance(heuristic, NoneCacheHeuristics)):
+                raise TypeError("Expected a NoneCacheHeuristic instance to be passed to plan.auto()")
+            heuristic.create_parameterized_args(self)
+            self._heuristic_params.append(heuristic._params_list)
+            heuristic.invoke_cache_dsl_command(self)
+        self._commands.append(partial(self._auto, heuristics))
+
+    def _auto(
+        self,
+        heuristics: List,
+        context: NativeLoopNestContext
+    ):
+        if not all(isinstance(heuristic, NoneCacheHeuristics) for heuristic in heuristics):
+            raise TypeError("Heuristic must be an instance of NoneCacheHeuristics\n")
 
     def unroll(self, index: Union[LoopIndex, DelayedParameter]):
         """Unrolls the loop along a dimension
@@ -195,19 +225,8 @@ class Plan:
 
         indices = [indices] if isinstance(indices, LoopIndex) else list(indices)
 
-        if len(indices) != 3:
-            raise ValueError("tensorization requires three input indices")
-
-        # ensure the indices are contiguous and follow the Schedule ordering
-        start = self._sched._indices.index(indices[0])
-        end = start + len(indices)
-        if (
-            end > len(self._sched._indices)
-            or indices != self._sched._indices[start:end]
-        ):
-            raise ValueError(
-                "indices must be contiguous in the Schedule dimension order"
-            )
+        if len(indices) < 3:
+            raise ValueError("tensorization requires at least three input indices")
 
         for index in indices:
             self._add_index_attr(index, "tensorized")
@@ -246,38 +265,67 @@ class Plan:
             )
 
         for index in list(map(self._sched._resolve_index, indices)):
-            index_map = self._sched._index_map
-            inners = index_map[index].inners
-            if len(inners) != 0:
-                raise ValueError("The tensorization index cannot be split")
             start, stop, step = self._sched.get_index_range(index)
             if start != 0:
                 raise ValueError("The tensorization index must start at 0")
-            if step != 1:
-                raise ValueError("The tensorization index stride must be contiguous")
         if (
-            not self._target.tensor_core.supports(
+            not self._target.tensor_core_info.supports(
                 input_type=ScalarType.float32,
                 output_type=ScalarType.float32,
                 shape=mma_shape,
                 num_total_passes=num_total_passes,
                 num_fused_passes=num_fused_passes,
             )
-            and not self._target.tensor_core.supports(
+            and not self._target.tensor_core_info.supports(
                 input_type=ScalarType.float16,
                 output_type=ScalarType.float32,
                 shape=mma_shape,
                 num_total_passes=num_total_passes,
                 num_fused_passes=num_fused_passes,
             )
-            and not self._target.tensor_core.supports(
+            and not self._target.tensor_core_info.supports(
                 input_type=ScalarType.float16,
                 output_type=ScalarType.float16,
                 shape=mma_shape,
                 num_total_passes=num_total_passes,
                 num_fused_passes=num_fused_passes,
             )
-        ):
+            and not self._target.tensor_core_info.supports(
+                input_type=ScalarType.bfloat16,
+                output_type=ScalarType.bfloat16,
+                shape=mma_shape,
+                num_total_passes=num_total_passes,
+                num_fused_passes=num_fused_passes
+            )
+            and not self._target.tensor_core_info.supports(
+                input_type=ScalarType.bfloat16,
+                output_type=ScalarType.float32,
+                shape=mma_shape,
+                num_total_passes=num_total_passes,
+                num_fused_passes=num_fused_passes
+            )
+            and not self._target.tensor_core_info.supports(
+                input_type=ScalarType.int8,
+                output_type=ScalarType.int32,
+                shape=mma_shape,
+                num_total_passes=num_total_passes,
+                num_fused_passes=num_fused_passes
+            )
+            and not self._target.tensor_core_info.supports(
+                input_type=ScalarType.int8,
+                output_type=ScalarType.int16,
+                shape=mma_shape,
+                num_total_passes=num_total_passes,
+                num_fused_passes=num_fused_passes
+            )
+            and not self._target.tensor_core_info.supports(
+                input_type=ScalarType.int8,
+                output_type=ScalarType.int8,
+                shape=mma_shape,
+                num_total_passes=num_total_passes,
+                num_fused_passes=num_fused_passes
+            )
+            ):
             raise ValueError(
                 "The target does not support the given tensorization dimensions with shape=",
                 mma_shape,
@@ -690,8 +738,7 @@ class Plan:
             target, packing_func_name, packed_buf_size_func_name, indexing
         )
 
-    # TODO: Support parameters
-    def bind(self, mapping: Mapping[Union[LoopIndex, Tuple[LoopIndex]], GridUnits]):
+    def bind(self, mapping: Mapping[Union[LoopIndex, Tuple[LoopIndex], DelayedParameter], Union[GridUnits, DelayedParameter]]):
         """Binds iteration space dimensions to GPU execution units
 
         Args:
@@ -699,6 +746,16 @@ class Plan:
         """
 
         if self._target is not None and self._target.category == Target.Category.GPU:
+            if any(
+                [
+                    isinstance(index, DelayedParameter)
+                    or isinstance(proc, DelayedParameter)
+                    for index, proc in mapping.items()
+                ]
+            ):
+                self._delayed_calls[partial(self.bind)] = mapping
+                return None
+
             self._commands.append(partial(self._bind, mapping))
 
             for index_or_tuple, proc in mapping.items():
@@ -838,6 +895,14 @@ class Plan:
                     # compute the grid size based on the block size
                     grid_dims[i] = _ceildiv(shape, block_dims[i])
 
+            # Validate block dim sizes
+            if len(target.max_block_size) == 3 and (block_dims[0] > target.max_block_size[0] or block_dims[1] > target.max_block_size[1] or block_dims[2] > target.max_block_size[2]):
+                raise ValueError (f"Invalid block dimensions: [{block_dims[0]}, {block_dims[1]}, {block_dims[2]}]. Largest supported block dimensions: {target.max_block_size}.")
+
+            block_size = block_dims[0] * block_dims[1] * block_dims[2]
+            if target.max_threads_per_block and block_size > target.max_threads_per_block:
+                raise ValueError(f"Invalid block size {block_size}. Max threads per block: {target.max_threads_per_block}.")
+
             context.options = _GPU(grid=_Dim3(*grid_dims), block=_Dim3(*block_dims))
             context.plan = context.schedule.create_gpu_plan(
                 gpu_options=context.options, runtime=target.runtime
@@ -864,12 +929,23 @@ class Plan:
             params = self._delayed_calls[delayed_call]
             if isinstance(params, dict):
                 resolved_params = {
-                    key: params[key].get_value()
-                    if isinstance(params[key], DelayedParameter)
-                    else params[key]
-                    for key in params
+                    key.get_value() if isinstance(key, DelayedParameter) \
+                        else key: params[key].get_value() if isinstance(params[key], DelayedParameter) \
+                        else params[key] \
+                            for key in params
                 }
-                delayed_call(**resolved_params)
+
+                # Some methods package the long list of arguments into a dict parameter, like Plan.cache, Plan.parallelize and Plan.kernelize
+                if delayed_call.func.__name__ == "bind":
+                    delayed_call(resolved_params)
+                elif delayed_call.func.__name__ == "cache" or \
+                    delayed_call.func.__name__ == "parallelize" or \
+                    delayed_call.func.__name__ == "kernelize":
+                    delayed_call(**resolved_params)
+                else:
+                    raise NotImplementedError(
+                        f"Please add the function Plan.{delayed_call.func.__name__} that supports parameters to the conditional list and indicate the way of dereferencing the dict parameter"
+                    )
             else:
                 resolved_params = [
                     param.get_value() if isinstance(param, DelayedParameter) else param

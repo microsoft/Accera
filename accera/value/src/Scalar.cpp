@@ -42,8 +42,9 @@ namespace value
                 MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int64, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Uint64);
                 MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Uint64, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Int64);
                 MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Float16, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16);
-                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Float, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Int64, ValueType::Uint64, ValueType::Float16);
-                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Double, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Int64, ValueType::Uint64, ValueType::Float16, ValueType::Float);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::BFloat16, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Float, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Int64, ValueType::Uint64, ValueType::Float16, ValueType::BFloat16);
+                MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Double, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Int64, ValueType::Uint64, ValueType::Float16, ValueType::BFloat16, ValueType::Float);
 
             default:
                 return false;

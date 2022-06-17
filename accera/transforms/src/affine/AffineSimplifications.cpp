@@ -36,11 +36,7 @@ struct AffineSimplifyHelper
     AffineSimplifyHelper(AffineOpTy op) :
         affineOp(op)
     {
-        mlir::Operation* parentValueFuncOp = affineOp->template getParentOfType<ValueFuncOp>();
-        mlir::Operation* parentGPUFuncOp = affineOp->template getParentOfType<mlir::gpu::GPUFuncOp>();
-        mlir::Operation* parentMLIRFuncOp = affineOp->template getParentOfType<mlir::FuncOp>();
-        mlir::Operation* parentFuncOp = parentValueFuncOp != nullptr ? parentValueFuncOp : (parentGPUFuncOp != nullptr ? parentGPUFuncOp : parentMLIRFuncOp);
-        rangeAnalysis = RangeValueAnalysis(parentFuncOp);
+        rangeAnalysis.addOperation(op);
 
         // Need to get the affine map for this access and the ranges for all of the operands to that map
         map = affineOp.getAffineMap();
@@ -520,57 +516,6 @@ struct PropagateGPUConstants : public OpRewritePattern<AffineOpTy>
                     .Case([&](gpu::GridDimOp gridDimOp) {
                         handleGridDimOp(gridDimOp);
                     })
-
-                    // TODO : we shouldn't need to lower to these rocdl ops until after affine simplifications run
-                    .Case([&](mlir::ROCDL::BlockDimXOp) {
-                        auto gpuBlockDimOp = rewriter.create<mlir::gpu::BlockDimOp>(loc, rewriter.getIndexType(), "x");
-                        opsToErase.push_back(gpuBlockDimOp);
-                        handleBlockDimOp(gpuBlockDimOp);
-                    })
-                    .Case([&](mlir::ROCDL::BlockDimYOp) {
-                        auto gpuBlockDimOp = rewriter.create<mlir::gpu::BlockDimOp>(loc, rewriter.getIndexType(), "y");
-                        opsToErase.push_back(gpuBlockDimOp);
-                        handleBlockDimOp(gpuBlockDimOp);
-                    })
-                    .Case([&](mlir::ROCDL::BlockDimZOp) {
-                        auto gpuBlockDimOp = rewriter.create<mlir::gpu::BlockDimOp>(loc, rewriter.getIndexType(), "z");
-                        opsToErase.push_back(gpuBlockDimOp);
-                        handleBlockDimOp(gpuBlockDimOp);
-                    })
-                    .Case([&](mlir::ROCDL::GridDimXOp) {
-                        auto gpuGridDimOp = rewriter.create<mlir::gpu::GridDimOp>(loc, rewriter.getIndexType(), "x");
-                        opsToErase.push_back(gpuGridDimOp);
-                        handleGridDimOp(gpuGridDimOp);
-                    })
-                    .Case([&](mlir::ROCDL::GridDimYOp) {
-                        auto gpuGridDimOp = rewriter.create<mlir::gpu::GridDimOp>(loc, rewriter.getIndexType(), "y");
-                        opsToErase.push_back(gpuGridDimOp);
-                        handleGridDimOp(gpuGridDimOp);
-                    })
-                    .Case([&](mlir::ROCDL::GridDimZOp) {
-                        auto gpuGridDimOp = rewriter.create<mlir::gpu::GridDimOp>(loc, rewriter.getIndexType(), "z");
-                        opsToErase.push_back(gpuGridDimOp);
-                        handleGridDimOp(gpuGridDimOp);
-                    })
-                    .Case([&](mlir::IndexCastOp indexCastOp) {
-                        // Canonicalize the constant int into the operation
-                        if (auto definingOp = indexCastOp.in().getDefiningOp())
-                        {
-                            if (mlir::isa<mlir::ConstantOp,
-                                          mlir::gpu::BlockDimOp,
-                                          mlir::gpu::GridDimOp,
-                                          mlir::ROCDL::BlockDimXOp,
-                                          mlir::ROCDL::BlockDimYOp,
-                                          mlir::ROCDL::BlockDimZOp,
-                                          mlir::ROCDL::GridDimXOp,
-                                          mlir::ROCDL::GridDimXOp,
-                                          mlir::ROCDL::GridDimXOp>(definingOp))
-                            {
-                                affineOp->replaceUsesOfWith(operand, indexCastOp.in());
-                                replaced = true;
-                            }
-                        }
-                    })
                     .Case([&](mlir::ConstantOp constantOp) {
                         // Canonicalize the constant int into the operation
                         replaced = true;
@@ -604,9 +549,12 @@ struct AffineSimplificationPass : public accera::transforms::AcceraAffineSimplif
         auto* context = &getContext();
         auto op = getOperation();
 
+        mlir::GreedyRewriteConfig singleIterationConfig;
+        singleIterationConfig.maxIterations = 1;
+
         OwningRewritePatternList patterns(context);
         accera::transforms::affine::populateAcceraAffineSimplificationPatterns(patterns);
-        (void)applyPatternsAndFoldGreedily(op, std::move(patterns));
+        (void)applyPatternsAndFoldGreedily(op, std::move(patterns), singleIterationConfig);
     }
 };
 

@@ -122,32 +122,13 @@ class BenchmarkResult:
         d['partitionKey'] = self.get_partition_key()
         return d
 
-def get_k(mfma_tile: _MMAShape):
-    if mfma_tile == _MMAShape.M64xN64xK4_B4 or mfma_tile == _MMAShape.M64xN64xK1_B4 or mfma_tile == _MMAShape.M64xN64xK4_B2 or mfma_tile == _MMAShape.M64xN64xK1_B2:
-        if mfma_tile == _MMAShape.M64xN64xK4_B4 or mfma_tile == _MMAShape.M64xN64xK4_B2:
-            return 4
-        else:
-            return 1
-    elif mfma_tile == _MMAShape.M32xN32xK8_B1 or mfma_tile == _MMAShape.M32xN32xK2_B1:
-        if mfma_tile == _MMAShape.M32xN32xK8_B1:
-            return 8
-        else:
-            return 2
-    elif mfma_tile == _MMAShape.M16xN16xK16_B1 or mfma_tile == _MMAShape.M16xN16xK4_B1:
-        if mfma_tile == _MMAShape.M16xN16xK16_B1:
-            return 16
-        else:
-            return 4
+def get_k(target: Target, mfma_tile: _MMAShape):
+    mma_shape = target.tensor_core_info.mma_shape_to_tuple(mfma_tile)
+    return mma_shape[2]
 
-    return 0
-
-def get_leading_dim(mfma_t: _MMAShape):
-    if mfma_t == _MMAShape.M16xN16xK4_B1 or mfma_t == _MMAShape.M16xN16xK16_B1:
-        return 16
-    elif mfma_t == _MMAShape.M32xN32xK2_B1 or mfma_t == _MMAShape.M32xN32xK8_B1:
-        return 32
-    else:
-        return 64
+def get_leading_dim(target: Target, mfma_tile: _MMAShape):
+    mma_shape = target.tensor_core_info.mma_shape_to_tuple(mfma_tile)
+    return mma_shape[0]
 
 def getLayout(transpose: bool):
     return Array.Layout.LAST_MAJOR if transpose else Array.Layout.FIRST_MAJOR
@@ -155,22 +136,10 @@ def getLayout(transpose: bool):
 def getType(typeStr: str):
     return ScalarType.float32 if typeStr == 's' else ScalarType.float16
 
-def get_mfma_split(runtime, mfma_tile):
-    if runtime == Target.Runtime.CUDA:
-        return (4, 2)
-
-    if mfma_tile == _MMAShape.M64xN64xK4_B4 or mfma_tile == _MMAShape.M64xN64xK1_B4:
-        return (4, 16)
-    if mfma_tile == _MMAShape.M64xN64xK4_B2 or mfma_tile == _MMAShape.M64xN64xK1_B2:
-        return (2, 32)
-    if mfma_tile == _MMAShape.M32xN32xK8_B1 or mfma_tile == _MMAShape.M32xN32xK2_B1:
-        return (4, 4)
-    return (2, 2)
-
-
 def _benchmark_kernel(
     target: Target, schedule: Schedule, args: Tuple[Array, Array, Array], outer_tile_x: int, outer_tile_y: int,
-    outer_tile_k: int, cacheALayout, cacheBLayout, mfma_tile, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy) -> Plan:
+    outer_tile_k: int, cacheALayout, cacheBLayout, mfma_tile, use_static_offsets, double_buffering, vectorize,
+    num_total_passes, num_fused_passes, scheduling_policy) -> Plan:
     A, B, C = args
     i, j, k = schedule.get_indices()
 
@@ -180,26 +149,19 @@ def _benchmark_kernel(
         k: outer_tile_k
     })
 
-    (ot_x, ot_y) = get_mfma_split(target.runtime, mfma_tile)
+    tensor_splits = target.tensor_core_info.compute_tensor_splits(mfma_tile, num_total_passes)
 
     iii, jjj, kkk = schedule.tile({
-        ii: ot_x,
-        jj: ot_y,
-        kk: num_total_passes * get_k(mfma_tile)
+        ii: tensor_splits[0],
+        jj: tensor_splits[1],
+        kk: tensor_splits[2]
     })
-
-    schedule.reorder((i, j, k, ii, jj, kk, iii, jjj, kkk))
-
-    plan = schedule.create_plan(target=target)
-    plan.bind(
-        mapping={
-            i: target.GridUnit.BLOCK_Y,
-            j: target.GridUnit.BLOCK_X,
-            ii: target.GridUnit.THREAD_Y,
-            jj: target.GridUnit.THREAD_X
-        }
-    )
-    plan.tensorize(indices=(iii, jjj, kkk), mma_shape=mfma_tile, use_static_offsets=use_static_offsets, num_total_passes=num_total_passes, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
+    outer_nest_order = (i, j, k, ii, jj, kk)
+    block_indices = (i, j)
+    warp_indices = (ii, jj)
+    tensor_indices = (iii, jjj, kkk)
+    plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=block_indices, warp_indices=warp_indices, tensor_indices=tensor_indices, outer_nest_order=outer_nest_order, mma_shape=mfma_tile)
+    plan.tensorize(indices=tensorization_indices, mma_shape=mfma_tile, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
 
     if target.runtime == Target.Runtime.ROCM:
         plan.cache(
@@ -220,6 +182,15 @@ def _benchmark_kernel(
             location=target.MemorySpace.SHARED,
             layout=cacheBLayout
         )
+        if mfma_tile == _MMAShape.M16xN16xK4_B1 or mfma_tile == _MMAShape.M16xN16xK16_B1:
+            # Output caching is only supported for 16x16 output tiles currently
+            plan.cache(
+                C,
+                index=k,
+                vectorize=vectorize,
+                location=target.MemorySpace.PRIVATE
+                # Don't specify layout so it defaults to the C array's layout
+            )
 
     return plan
 
@@ -264,7 +235,8 @@ def get_variants(opts: GemmOpts, target):
     datatype = getType(opts.type)
     outer_tiles = [16, 32, 64, 128, 256]
     mfma_tiles_all = [_MMAShape.M64xN64xK1_B4, _MMAShape.M64xN64xK1_B2, _MMAShape.M32xN32xK2_B1, _MMAShape.M16xN16xK4_B1,
-                        _MMAShape.M64xN64xK4_B4, _MMAShape.M64xN64xK4_B2, _MMAShape.M32xN32xK8_B1, _MMAShape.M16xN16xK16_B1]
+                        _MMAShape.M64xN64xK4_B4, _MMAShape.M64xN64xK4_B2, _MMAShape.M32xN32xK8_B1, _MMAShape.M16xN16xK16_B1,
+                        _MMAShape.M32xN8xK16_B1, _MMAShape.M8xN32xK16_B1]
 
     k_split = [256, 128, 64, 32, 16, 8, 4, 2, 1]
     k_split_reduced = []
@@ -281,7 +253,7 @@ def get_variants(opts: GemmOpts, target):
         for kk in k_split_reduced:
             if kk % tp == 0:
                 for mma_tile in mfma_tiles_all:
-                    if kk % (tp * get_k(mma_tile)) == 0:
+                    if kk % (tp * get_k(target, mma_tile)) == 0:
                         num_total_passes_reduced.append(tp)
                         found = True
                         break
@@ -297,21 +269,21 @@ def get_variants(opts: GemmOpts, target):
     cacheBLayout = [Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR]
 
     def valid_variant(outer_t, outer_k, mfma_t, total_passes, fuse_factor):
-        leadingDim = get_leading_dim(mfma_t)
+        leading_dim = get_leading_dim(target, mfma_t)
         cache_size_a = outer_t[0] * outer_k
         cache_size_b = outer_t[1] * outer_k
-        passWidth = total_passes * get_k(mfma_t)
+        pass_width = total_passes * get_k(target, mfma_t)
 
-        return total_passes % fuse_factor == 0 and (opts.m % leadingDim == 0) and (opts.n % leadingDim == 0) and \
-                (outer_t[0] % leadingDim == 0) and (outer_t[1] % leadingDim == 0) and outer_k % passWidth == 0 and \
+        return total_passes % fuse_factor == 0 and (opts.m % leading_dim == 0) and (opts.n % leading_dim == 0) and \
+                (outer_t[0] % leading_dim == 0) and (outer_t[1] % leading_dim == 0) and outer_k % pass_width == 0 and \
                 ((cache_size_a + cache_size_b) * ELEM_SIZE_BYTES <= target.max_shared_memory_per_block) and \
-                target.tensor_core.supports(datatype, datatype, mfma_t, total_passes, total_passes // fuse_factor)
+                target.tensor_core_info.supports(datatype, datatype, mfma_t, total_passes, total_passes // fuse_factor)
 
     if target.runtime == Target.Runtime.ROCM:
         mfma_tiles = [_MMAShape.M64xN64xK1_B4, _MMAShape.M64xN64xK1_B2, _MMAShape.M32xN32xK2_B1, _MMAShape.M16xN16xK4_B1,
                       _MMAShape.M64xN64xK4_B4, _MMAShape.M64xN64xK4_B2, _MMAShape.M32xN32xK8_B1, _MMAShape.M16xN16xK16_B1]
     elif target.runtime == Target.Runtime.CUDA:
-        mfma_tiles = [_MMAShape.M16xN16xK16_B1]
+        mfma_tiles = [_MMAShape.M16xN16xK16_B1, _MMAShape.M32xN8xK16_B1, _MMAShape.M8xN32xK16_B1]
 
     return list(filter(lambda v: valid_variant(v[0], v[1], v[2], v[8], v[9]), product(combinations_with_replacement(outer_tiles, 2), k_split_reduced, mfma_tiles,
                                                                                     use_static_offsets, double_buffering, vectorize, cacheALayout,

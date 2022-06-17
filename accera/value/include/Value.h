@@ -46,6 +46,7 @@ namespace value
                 std::vector<uint64_t>,
                 std::vector<index_t>,
                 std::vector<float16_t>,
+                std::vector<bfloat16_t>,
                 std::vector<float>,
                 std::vector<double>>;
 
@@ -71,6 +72,7 @@ namespace value
         inline static constexpr bool IsAcceptableDataType = std::is_same_v<std::decay_t<T>, T> &&
                                                             (std::is_arithmetic_v<T> ||
                                                              std::is_same_v<std::decay_t<T>, float16_t> ||
+                                                             std::is_same_v<std::decay_t<T>, bfloat16_t> ||
                                                              std::is_same_v<std::decay_t<T>, index_t> ||
                                                              std::is_same_v<std::decay_t<T>, Boolean>);
 

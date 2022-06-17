@@ -22,15 +22,19 @@ class CorrectnessChecker():
     def run(
         self, function_name: str, before: List["numpy.ndarray"], after: List["numpy.ndarray"], tolerance: float = 1e-5
     ):
-
         if function_name not in self.func_map.names:
             raise ValueError(f"{function_name} is not found")
 
         # use temporaries so that we don't have side effects
         input_outputs = deepcopy(before)
         self.func_map[function_name](*input_outputs)
+        print("Verifying...")
 
         for actual, desired in zip(input_outputs, after):
+            # Cast to double here since assert_allclose does not have support for bfloat 16
+            # and we don't want to take dependency on the bfloat16 extension to numpy
+            actual = actual.astype(np.double)
+            desired = desired.astype(np.double)
             np.testing.assert_allclose(actual, desired, rtol=tolerance)
 
 

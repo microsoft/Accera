@@ -184,23 +184,50 @@ namespace cpp_printer
 
     int64_t inferM(int64_t K, int64_t N)
     {
+        // M16xN16xK16_B1
         if (N == 16 && K == 16)
             return 16;
+
+        // M32xN8xK16_B1
+        if (N == 8 && K == 16)
+            return 32;
+
+        // M8xN32xK16_B1
+        if (N == 32 && K == 16)
+            return 8;
 
         return {};
     }
 
     int64_t inferN(int64_t M, int64_t K)
     {
+        // M16xN16xK16_B1
         if (M == 16 && K == 16)
             return 16;
+
+        // M32xN8xK16_B1
+        if (M == 32 && K == 16)
+            return 8;
+
+        // M8xN32xK16_B1
+        if (M == 8 && K == 16)
+            return 32;
 
         return {};
     }
 
     int64_t inferK(int64_t M, int64_t N)
     {
+        // M16xN16xK16_B1
         if (M == 16 && N == 16)
+            return 16;
+
+        // M32xN8xK16_B1
+        if (M == 32 && N == 8)
+            return 16;
+
+        // M8xN32xK16_B1
+        if (M == 8 && N == 32)
             return 16;
 
         return {};
@@ -232,12 +259,17 @@ namespace cpp_printer
         return "";
     }
 
-    std::string getMmaLayout(const bool row_major)
+    std::string getLayout(const bool row_major)
     {
         if (row_major)
-            return "::layout_t::mem_row_major";
+            return "row_major";
 
-        return "::layout_t::mem_col_major";
+        return "col_major";
+    }
+
+    std::string getMmaLayout(const bool row_major)
+    {
+        return "::layout_t::mem_" + getLayout(row_major);
     }
 
     std::string getOffset(std::string row, std::string col, const int64_t leadingDim, const bool row_major)
@@ -542,13 +574,32 @@ namespace cpp_printer
 #include <hip/hip_runtime.h>
 #endif
 
+using int8_t = unsigned char;
+using int16_t = short;
+using uint8_t = unsigned char;
+using uint16_t = unsigned short;
+namespace std {
+    using ::uint8_t;
+    using ::uint16_t;
+    using ::int8_t;
+    using ::int16_t;
+}
+
 using float16_t = _Float16;
+using bfloat16_t = uint16_t;
+
 using vhalfx2_t = float16_t __attribute__((ext_vector_type(2)));
 using vhalfx4_t = float16_t __attribute__((ext_vector_type(4)));
 using vhalfx8_t = float16_t __attribute__((ext_vector_type(8)));
 using vhalfx16_t = float16_t __attribute__((ext_vector_type(16)));
 using vhalfx32_t = float16_t __attribute__((ext_vector_type(32)));
 using vhalfx64_t = float16_t __attribute__((ext_vector_type(64)));
+using vbfloat16x2_t = bfloat16_t __attribute__((ext_vector_type(2)));
+using vbfloat16x4_t = bfloat16_t __attribute__((ext_vector_type(4)));
+using vbfloat16x8_t = bfloat16_t __attribute__((ext_vector_type(8)));
+using vbfloat16x16_t = bfloat16_t __attribute__((ext_vector_type(16)));
+using vbfloat16x32_t = bfloat16_t __attribute__((ext_vector_type(32)));
+using vbfloat16x64_t = bfloat16_t __attribute__((ext_vector_type(64)));
 using vfloatx2_t = float __attribute__((ext_vector_type(2)));
 using vfloatx3_t = float __attribute__((ext_vector_type(3)));
 using vfloatx4_t = float __attribute__((ext_vector_type(4)));
@@ -556,17 +607,9 @@ using vfloatx8_t = float __attribute__((ext_vector_type(8)));
 using vfloatx16_t = float __attribute__((ext_vector_type(16)));
 using vfloatx32_t = float __attribute__((ext_vector_type(32)));
 using vfloatx64_t = float __attribute__((ext_vector_type(64)));
-using int8_t = char;
-using int16_t = short;
-using uint8_t = unsigned char;
-using uint16_t = unsigned short;
-namespace std {
-using ::uint8_t;
-using ::uint16_t;
-using ::int8_t;
-using ::int16_t;
-}
-
+using vint32x4_t = int __attribute__((ext_vector_type(4)));
+using vint32x16_t = int __attribute__((ext_vector_type(16)));
+using vint32x32_t = int __attribute__((ext_vector_type(32)));
 )CUDA";
         }
         else if (state.hasRuntime(Runtime::CUDA))
@@ -577,6 +620,7 @@ using ::int16_t;
 using namespace nvcuda;
 
 using float16_t = __half;
+using bfloat16_t = __nv_bfloat16;
 using uint32_t = unsigned int;
 using int32_t = int;
 

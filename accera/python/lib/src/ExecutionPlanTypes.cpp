@@ -73,10 +73,16 @@ namespace
             .value("M64xN64xK1_B2", ir::value::MMAShape::M64xN64xK1_B2)
             .value("M32xN32xK2_B1", ir::value::MMAShape::M32xN32xK2_B1)
             .value("M16xN16xK4_B1", ir::value::MMAShape::M16xN16xK4_B1)
+            .value("M64xN64xK2_B4", ir::value::MMAShape::M64xN64xK2_B4)
+            .value("M64xN64xK2_B2", ir::value::MMAShape::M64xN64xK2_B2)
+            .value("M32xN32xK4_B1", ir::value::MMAShape::M32xN32xK4_B1)
+            .value("M16xN16xK8_B1", ir::value::MMAShape::M16xN16xK8_B1)
             .value("M64xN64xK4_B4", ir::value::MMAShape::M64xN64xK4_B4)
             .value("M64xN64xK4_B2", ir::value::MMAShape::M64xN64xK4_B2)
             .value("M32xN32xK8_B1", ir::value::MMAShape::M32xN32xK8_B1)
-            .value("M16xN16xK16_B1", ir::value::MMAShape::M16xN16xK16_B1);
+            .value("M16xN16xK16_B1", ir::value::MMAShape::M16xN16xK16_B1)
+            .value("M32xN8xK16_B1", ir::value::MMAShape::M32xN8xK16_B1)
+            .value("M8xN32xK16_B1", ir::value::MMAShape::M8xN32xK16_B1);
 
         py::enum_<ir::value::MMASchedulingPolicy>(module, "_MMASchedulingPolicy", "Used for configuring scheduling policy of MMA ops")
             .value("PASS_ORDER", ir::value::MMASchedulingPolicy::PassOrder)

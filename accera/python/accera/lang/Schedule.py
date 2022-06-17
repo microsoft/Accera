@@ -13,6 +13,7 @@ from .NativeLoopNestContext import NativeLoopNestContext
 from .Nest import Nest, LoopIndex
 from ..Targets import Target
 from ..Parameter import DelayedParameter
+from .._lang_python._lang import _MMAShape
 
 
 @dataclass
@@ -543,6 +544,199 @@ class Schedule:
             )
 
         return index_map_copy
+
+    def _create_tensorizable_plan(self, target, block_indices, warp_indices, tensor_indices, outer_nest_order, mma_shape):
+        i, j = block_indices
+        ii, jj = warp_indices
+        iii, jjj, kk = tensor_indices
+
+        # Compute the split sizes within the warp tile
+        warp_tile_shape = target.tensor_core_info.mma_shape_to_tuple(mma_shape)
+        threads_per_warp = target.warp_size
+        
+        if target.runtime == Target.Runtime.CUDA:
+            preferred_block_dim_x = min(warp_tile_shape[1], threads_per_warp)
+            thread_y_count_per_warp = threads_per_warp // preferred_block_dim_x
+            iiii, jjjj = self.tile({
+                iii: warp_tile_shape[0] // thread_y_count_per_warp,
+                jjj: preferred_block_dim_x
+            })
+            self.reorder(*outer_nest_order,
+                             # note (ii, jj) together will map to which warp in the block is active
+                             iii, # which chunk of 4 rows in [0, 16) step 4, handle consumed by tensorization
+                             jjj, # which column in [0, 16) step 16, handle needed for thread_y binding (this handle is here more for symmetry with the other cases)
+                             iiii, # which row in [0, 4), handle consumed by tensorization
+                             jjjj, # which column in [0, 16), handle needed for thread_x binding
+                             kk) # which channel in [0, 4), handle consumed by tensorization
+
+            plan = self.create_plan(target=target)
+            plan.bind(
+                mapping={
+                    i: target.GridUnit.BLOCK_Y,
+                    j: target.GridUnit.BLOCK_X,
+                    (ii, jj, iii): target.GridUnit.THREAD_Y,
+                    jjjj: target.GridUnit.THREAD_X
+                }
+            )
+            return plan, (iiii, jjj, kk)
+
+        # Since we're implicitly binding warps, pick a block_dim_x that is convenient for binding inside the per-thread regions of each warp tile
+        # 16 is a convenient gcd of the sub-warp thread assignments, so prefer block_dim_x = 16
+        preferred_block_dim_x = 16
+        thread_y_count_per_warp = threads_per_warp // preferred_block_dim_x
+        if mma_shape in [_MMAShape.M16xN16xK4_B1, _MMAShape.M16xN16xK16_B1, _MMAShape.M16xN16xK8_B1]:
+            iiii, jjjj = self.tile({
+                iii: warp_tile_shape[0] // thread_y_count_per_warp,
+                jjj: preferred_block_dim_x
+            })
+            jjjjj = self.split(jjjj, 1) # create a loop handle for tensorization
+            self.reorder(*outer_nest_order,
+                             # note (ii, jj) together will map to which warp in the block is active
+                             iii, # which chunk of 4 rows in [0, 16) step 4, handle consumed by tensorization
+                             jjj, # which column in [0, 16) step 16, handle needed for thread_y binding (this handle is here more for symmetry with the other cases)
+                             iiii, # which row in [0, 4), handle consumed by tensorization
+                             jjjj, # which column in [0, 16), handle needed for thread_x binding
+                             jjjjj, # which column in [0, 1), handle consumed by tensorization
+                             kk) # which channel in [0, 4), handle consumed by tensorization
+
+            plan = self.create_plan(target=target)
+            plan.bind(
+                mapping={
+                    i: target.GridUnit.BLOCK_Y,
+                    j: target.GridUnit.BLOCK_X,
+                    (ii, jj, iii, jjj): target.GridUnit.THREAD_Y,
+                    jjjj: target.GridUnit.THREAD_X
+                }
+            )
+            return plan, (iiii, jjjjj, kk)
+
+        elif mma_shape in [_MMAShape.M32xN32xK2_B1, _MMAShape.M32xN32xK8_B1, _MMAShape.M32xN32xK4_B1]:
+            thread_y_column_sections = warp_tile_shape[1] // preferred_block_dim_x
+            thread_y_row_sections = thread_y_count_per_warp // thread_y_column_sections
+            row_pattern_repeat_count = 4 # The thread assignments are repeated 4 times down the rows
+            outer_row_split_size = warp_tile_shape[0] // row_pattern_repeat_count
+            inner_row_split_size = outer_row_split_size // thread_y_row_sections
+
+            iiii, jjjj = self.tile({
+                iii: outer_row_split_size, # Tile down the rows in chunks of 8
+                jjj: preferred_block_dim_x # ensure we have exactly block_dim_x iterations of jjj so we can bind it appropriately
+                # Now jjj = [0, 32) step 16
+            })
+            iiiii, jjjjj = self.tile({
+                iiii: inner_row_split_size, # Tile down the rows in chunks of 4, note now iiii has 2 iterations
+                jjjj: 1 # Create a handle to tensorize
+            })
+
+            self.reorder(*outer_nest_order,
+                             # note (ii, jj) together will map to which warp in the block is active
+                             iii, # which chunk of 8 rows in [0, 32) step 8, handle consumed by tensorization
+                             iiii, # which chunk of 4 rows in [0, 8) step 4, handle needed for thread_y binding
+                             jjj, # which chunk of 16 columns in [0, 32) step 16, handle needed for thread_y binding
+                             jjjj, # which column in [0, 16), handle needed for thread_x binding
+                             iiiii, # which row in [0, 4), handle consumed by tensorization
+                             jjjjj, # which column in [0, 1), handle needed for tensorization (ugh) TODO : remove this need
+                             kk) # which column in [0, 2), handle consumed by tensorization
+
+            plan = self.create_plan(target=target)
+            plan.bind(
+                mapping={
+                    i: target.GridUnit.BLOCK_Y,
+                    j: target.GridUnit.BLOCK_X,
+                    (ii, jj, iiii, jjj): target.GridUnit.THREAD_Y,
+                    jjjj: target.GridUnit.THREAD_X
+                }
+            )
+            return plan, (iii, iiiii, jjjjj, kk)
+
+        elif mma_shape in [_MMAShape.M64xN64xK1_B2, _MMAShape.M64xN64xK4_B2, _MMAShape.M64xN64xK2_B2]:
+            mma_subtile = (32, 32)
+            thread_y_column_sections = mma_subtile[1] // preferred_block_dim_x
+            thread_y_row_sections = thread_y_count_per_warp // thread_y_column_sections
+            row_pattern_repeat_count = 4 # The thread assignments are repeated 4 times down the rows within each 32x32 subtile
+            outer_row_split_size = mma_subtile[0] // row_pattern_repeat_count
+            inner_row_split_size = outer_row_split_size // thread_y_row_sections
+
+            iiii, jjjj = self.tile({
+                iii: mma_subtile[0], # Tile down the rows in chunks of 32 to separate block 0 and block 1
+                # Now iii = [0, 64) step 32
+                jjj: mma_subtile[1] # tile across the columns in chunks of 32
+                # Now jjj = [0, 64) step 32
+            })
+            iiiii, jjjjj = self.tile({
+                iiii: outer_row_split_size, # Tile down the rows in chunks of 8
+                # Now iiii = [0, 8) step 4
+                jjjj: preferred_block_dim_x # ensure we have exactly block_dim_x iterations of jjjj so we can bind it appropriately
+            })
+            iiiiii, jjjjjj = self.tile({
+                iiiii: inner_row_split_size, # Tile down the rows in chunks of 4
+                jjjjj: 1 # Create a handle to tensorize
+            })
+
+            self.reorder(*outer_nest_order,
+                             # note (ii, jj) together will map to which warp in the block is active
+                             iii, # which chunk of 32 rows in [0, 64) step 32, handle consumed by tensorization, maps to block 0/1
+                             jjj, # which chunk of 32 columns in [0, 64) step 32, handle consumed by tensorization
+                             iiii, # which chunk of 8 rows in [0, 32) step 8, handle consumed by tensorization
+                             iiiii, # which chunk of 4 rows in [0, 8) step 4, handle needed for thread_y binding
+                             jjjj, # which chunk of 16 columns in [0, 32) step 16, handle needed for thread_y binding
+                             jjjjj, # which column in [0, 16), handle needed for thread_x binding
+                             iiiiii, # which row in [0, 4), handle consumed by tensorization
+                             jjjjjj, # which column in [0, 1), handle consumed by tensorization
+                             kk) # which column in [0, 1), handle consumed by tensorization
+
+            plan = self.create_plan(target=target)
+            plan.bind(
+                mapping={
+                    i: target.GridUnit.BLOCK_Y,
+                    j: target.GridUnit.BLOCK_X,
+                    (ii, jj, iiiii, jjjj): target.GridUnit.THREAD_Y,
+                    jjjjj: target.GridUnit.THREAD_X
+                }
+            )
+            return plan, (iii, jjj, iiii, iiiiii, jjjjjj, kk)
+
+        elif mma_shape in [_MMAShape.M64xN64xK1_B4, _MMAShape.M64xN64xK4_B4, _MMAShape.M64xN64xK2_B4]:
+            mma_subtile = (16, 16)
+            thread_y_column_sections = mma_subtile[1] // preferred_block_dim_x # This is just 1 but it's included for symmetry with the other cases
+            thread_y_row_sections = thread_y_count_per_warp // thread_y_column_sections
+            row_pattern_repeat_count = 1 # The thread assignments are repeated once times down the rows within each 16x16 subtile
+            outer_row_split_size = mma_subtile[0] // row_pattern_repeat_count # This split isn't needed for this pattern, but include it for symmetry with the other cases
+            inner_row_split_size = outer_row_split_size // thread_y_row_sections
+
+            iiii, jjjj = self.tile({
+                iii: mma_subtile[0], # Tile down the rows in chunks of 16 to separate block 0, 1, 2, 3
+                # Now iii = [0, 64) step 16
+                jjj: mma_subtile[1] # tile across the columns in chunks of 16, also maps to thread_x
+                # Now jjj = [0, 64) step 16
+            })
+            iiiii, jjjjj = self.tile({
+                iiii: inner_row_split_size, # Tile down the rows in chunks of 4
+                # Now iiii = [0, 16) step 4
+                jjjj: 1 # Create a handle to tensorize
+            })
+
+            self.reorder(*outer_nest_order,
+                             # note (ii, jj) together will map to which warp in the block is active
+                             iii, # which chunk of 16 rows in [0, 64) step 16, handle consumed by tensorization, maps to block 0,1,2,3
+                             jjj, # which chunk of 16 columns in [0, 64) step 16, handle consumed by tensorization
+                             iiii, # which chunk of 4 rows in [0, 16) step 4, handle used for thread_y binding
+                             jjjj, # which column in [0, 16), handle needed for thread_x binding
+                             iiiii, # which row in [0, 4), handle consumed by tensorization
+                             jjjjj, # which column in [0, 1), handle consumed by tensorization
+                             kk) # which channel in [0, 1), handle consumed by tensorization
+
+            plan = self.create_plan(target=target)
+            plan.bind(
+                mapping={
+                    i: target.GridUnit.BLOCK_Y,
+                    j: target.GridUnit.BLOCK_X,
+                    (ii, jj, iiii): target.GridUnit.THREAD_Y,
+                    jjjj: target.GridUnit.THREAD_X
+                }
+            )
+            return plan, (iii, jjj, iiiii, jjjjj, kk)
+        else:
+            raise ValueError("Unsupported MMAShape")
 
 
 class FusedSchedule(Schedule):

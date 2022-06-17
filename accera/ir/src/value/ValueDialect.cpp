@@ -418,6 +418,18 @@ MMAOp::MMAOp(MMAShape shape_) :
         k = 1;
         blocks = 2;
         break;
+    case MMAShape::M64xN64xK2_B4:
+        m = 64;
+        n = 64;
+        k = 2;
+        blocks = 4;
+        break;
+    case MMAShape::M64xN64xK2_B2:
+        m = 64;
+        n = 64;
+        k = 2;
+        blocks = 2;
+        break;
     case MMAShape::M64xN64xK4_B4:
         m = 64;
         n = 64;
@@ -436,6 +448,12 @@ MMAOp::MMAOp(MMAShape shape_) :
         k = 2;
         blocks = 1;
         break;
+    case MMAShape::M32xN32xK4_B1:
+        m = 32;
+        n = 32;
+        k = 4;
+        blocks = 1;
+        break;
     case MMAShape::M32xN32xK8_B1:
         m = 32;
         n = 32;
@@ -448,9 +466,27 @@ MMAOp::MMAOp(MMAShape shape_) :
         k = 4;
         blocks = 1;
         break;
+    case MMAShape::M16xN16xK8_B1:
+        m = 16;
+        n = 16;
+        k = 8;
+        blocks = 1;
+        break;
     case MMAShape::M16xN16xK16_B1:
         m = 16;
         n = 16;
+        k = 16;
+        blocks = 1;
+        break;
+    case MMAShape::M32xN8xK16_B1:
+        m = 32;
+        n = 8;
+        k = 16;
+        blocks = 1;
+        break;
+    case MMAShape::M8xN32xK16_B1:
+        m = 8;
+        n = 32;
         k = 16;
         blocks = 1;
         break;
@@ -478,17 +514,6 @@ int64_t MMAOp::getOutElementsPerThread(const int64_t warpSize) const
 int64_t MMAOp::getNumBlocks() const
 {
     return blocks;
-}
-
-int64_t MMAOp::getTileFactor() const
-{
-    if (getNumBlocks() == 2)
-        return 4;
-
-    if (getNumBlocks() == 4)
-        return 2;
-
-    return 1;
 }
 
 std::pair<int, int> MMAOp::getTileShape(const int warpSizeX, const int warpSizeY) const
@@ -521,40 +546,6 @@ std::pair<mlir::MemRefType, mlir::RankedTensorType> MMAOp::GetMFMAThreadOffsetMa
     return std::make_pair(mlir::MemRefType::get(vecSize, mlirElemType, {}, mlir::gpu::GPUDialect::getPrivateAddressSpace()), mlir::RankedTensorType::get(vecSize, mlirElemType));
 }
 
-std::pair<mlir::Value, mlir::Value> MMAOp::GetThreadBlockOffsets(mlir::Operation* op, mlir::OpBuilder& builder, mlir::Location& loc) const
-{
-    const auto [warpSizeX, warpSizeY] = util::ResolveWarpSize(util::ResolveExecutionRuntime(op).value()).value();
-    auto warpSize = builder.create<mlir::ConstantIndexOp>(loc, warpSizeX * warpSizeY);
-    auto leadingDim = builder.create<mlir::ConstantIndexOp>(loc, getM());
-    auto tileFactor = builder.create<mlir::ConstantIndexOp>(loc, getTileFactor());
-    auto tidX = util::GetGPUIndex(op, value::Processor::ThreadX, builder, loc);
-    auto tidY = util::GetGPUIndex(op, value::Processor::ThreadY, builder, loc);
-    auto bidX = util::GetGPUIndex(op, value::Processor::BlockX, builder, loc);
-    auto bidY = util::GetGPUIndex(op, value::Processor::BlockY, builder, loc);
-    auto bdimX = util::GetGPUIndex(op, value::Processor::BlockDimX, builder, loc);
-    auto bdimY = util::GetGPUIndex(op, value::Processor::BlockDimY, builder, loc);
-
-    // We reshape the physical block dimensions to compute the correct offsets.
-    // Multiplying blockDim.x and dividing blockDim.y by tile factor to keep the size same.
-    auto reshapedBlockDimX = builder.create<mlir::MulIOp>(loc, bdimX, tileFactor);
-    auto reshapedBlockDimY = builder.create<mlir::UnsignedDivIOp>(loc, bdimY, tileFactor);
-    auto blockTid = builder.create<mlir::AddIOp>(loc, tidX, builder.create<mlir::MulIOp>(loc, tidY, bdimX));
-    auto warpId = builder.create<mlir::UnsignedDivIOp>(loc, blockTid, warpSize);
-    auto warpsX = builder.create<mlir::UnsignedDivIOp>(loc, reshapedBlockDimX, builder.create<mlir::ConstantIndexOp>(loc, warpSizeX));
-    auto warpsY = builder.create<mlir::UnsignedDivIOp>(loc, reshapedBlockDimY, builder.create<mlir::ConstantIndexOp>(loc, warpSizeY));
-    auto warpIdX = builder.create<mlir::UnsignedRemIOp>(loc, warpId, warpsX);
-    auto warpIdY = builder.create<mlir::UnsignedDivIOp>(loc, warpId, warpsX);
-    auto singleBlockOffsetCol = builder.create<mlir::MulIOp>(loc, warpsX, leadingDim);
-    auto singleBlockOffsetRow = builder.create<mlir::MulIOp>(loc, warpsY, leadingDim);
-    auto rowOffset = builder.create<mlir::AddIOp>(loc,
-                                                  builder.create<mlir::MulIOp>(loc, warpIdY, leadingDim),
-                                                  builder.create<mlir::MulIOp>(loc, bidY, singleBlockOffsetRow));
-    auto colOffset = builder.create<mlir::AddIOp>(loc,
-                                                  builder.create<mlir::MulIOp>(loc, warpIdX, leadingDim),
-                                                  builder.create<mlir::MulIOp>(loc, bidX, singleBlockOffsetCol));
-    return std::make_pair(rowOffset, colOffset);
-}
-
 //===----------------------------------------------------------------------===//
 // MFMA Ops
 //===----------------------------------------------------------------------===//
@@ -562,6 +553,7 @@ std::pair<mlir::Value, mlir::Value> MMAOp::GetThreadBlockOffsets(mlir::Operation
 static const auto kGenericMemorySpace = 0;
 static const auto kGlobalMemorySpace = 1;
 static const auto kSharedMemorySpace = mlir::gpu::GPUDialect::getWorkgroupAddressSpace();
+static const auto kPrivateMemorySpace = mlir::gpu::GPUDialect::getPrivateAddressSpace();
 
 static LogicalResult verify(MMAComputeSyncOp op)
 {
@@ -592,9 +584,9 @@ static LogicalResult verify(MMALoadSyncOp op)
     auto srcMemSpace = srcType.getMemorySpaceAsInt();
 
     if (srcMemSpace != kGenericMemorySpace && srcMemSpace != kSharedMemorySpace &&
-        srcMemSpace != kGlobalMemorySpace)
+        srcMemSpace != kGlobalMemorySpace && srcMemSpace != kPrivateMemorySpace)
         return op.emitError(
-            "source memorySpace kGenericMemorySpace, kSharedMemorySpace or "
+            "source memorySpace kGenericMemorySpace, kSharedMemorySpace, kPrivateMemorySpace, or"
             "kGlobalMemorySpace only allowed");
 
     if (operand != MMAOperandType::A && operand != MMAOperandType::B &&
@@ -610,10 +602,10 @@ static LogicalResult verify(MMAStoreSyncOp op)
     auto dstMemSpace = dstMemrefType.getMemorySpaceAsInt();
 
     if (dstMemSpace != kGenericMemorySpace && dstMemSpace != kSharedMemorySpace &&
-        dstMemSpace != kGlobalMemorySpace)
+        dstMemSpace != kGlobalMemorySpace && dstMemSpace != kPrivateMemorySpace)
         return op.emitError(
             "destination memorySpace of kGenericMemorySpace, "
-            "kGlobalMemorySpace or kSharedMemorySpace only allowed");
+            "kGlobalMemorySpace, kSharedMemorySpace, or kPrivateMemorySpace only allowed");
 
     return success();
 }

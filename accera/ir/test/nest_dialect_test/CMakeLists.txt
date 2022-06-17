@@ -4,7 +4,7 @@
 ####################################################################################################
 
 add_executable(nest_dialect_test ir_test_main.cpp LowLevelIRTests.cpp NestUtilTests.cpp NestIRTests.cpp IRTestVerification.cpp)
-target_link_libraries(nest_dialect_test PRIVATE ir mlirHelpers transforms Catch2::Catch2)
+target_link_libraries(nest_dialect_test PRIVATE ir mlirHelpers transforms Catch2::Catch2WithMain)
 
 catch_discover_tests(nest_dialect_test)
 

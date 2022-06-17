@@ -599,6 +599,8 @@ namespace value
                 _packedBuffer = EmbedPackedBuffer<uint64_t>(builder, constData, packedBufferName);
                 break;
             case ValueType::Float16:
+            [[fallthrough]];
+            case ValueType::BFloat16:
                 _packedBuffer = EmbedPackedBuffer<short>(builder, constData, packedBufferName);
                 break;
             case ValueType::Float:

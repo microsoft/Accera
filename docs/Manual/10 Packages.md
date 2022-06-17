@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.5)
+[//]: # (Version: v1.2.6)
 
 # Section 10: Building Packages
 The `Package` class represents a collection of Accera-generated functions. Whenever a package is built, it creates a stand-alone function library that other pieces of software can use. Currently, Accera supports two package formats: HAT and MLIR.
@@ -44,6 +44,8 @@ A package can be built with` mode=acc.Package.Mode.DEBUG`. Doing so creates a sp
 ```python
 package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", mode=acc.Package.Mode.DEBUG, tolerance=1.0e-6)
 ```
+
+__Not yet implemented:__ Debug mode is not supported for GPU targets.
 
 ## Adding descriptions
 Accera allows us to specify some standard descriptive fields in a package:

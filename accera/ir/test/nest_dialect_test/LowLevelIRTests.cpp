@@ -3,7 +3,7 @@
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 #include "IRTestVerification.h"
 #include "TestContext.h"

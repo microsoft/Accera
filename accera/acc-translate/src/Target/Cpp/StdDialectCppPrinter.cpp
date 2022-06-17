@@ -269,16 +269,31 @@ namespace cpp_printer
             return op->emitError() << "<<toTy is not an Integer type>>";
         }
 
-        RETURN_IF_FAILED(
-            printer->printIntegerType(intTy, /*forceSignedness*/ true, isSigned));
-        os << " ";
-        os << state.nameState.getOrCreateName(op->getResult(0),
-                                              SSANameState::SSANameKind::Variable);
+        auto printIntType = [&]() {
+            RETURN_IF_FAILED(
+                printer->printIntegerType(intTy, /*forceSignedness*/ true, isSigned));
+            return success();
+        };
+
+        auto printDecl = [&]() {
+            RETURN_IF_FAILED(printIntType());
+            os << " ";
+            os << state.nameState.getOrCreateName(op->getResult(0),
+                                                  SSANameState::SSANameKind::Variable);
+            return success();
+        };
+
+        os << "#if defined(__cplusplus)\n";
+        RETURN_IF_FAILED(printDecl());
+        os << " = static_cast<";
+        RETURN_IF_FAILED(printIntType());
+        os << ">(" << state.nameState.getName(op->getOperand(0)) << ");\n";
+        os << "#else\n";
+        RETURN_IF_FAILED(printDecl());
         os << " = (";
-        RETURN_IF_FAILED(
-            printer->printIntegerType(intTy, /*forceSignedness*/ true, isSigned));
-        os << ")"
-           << "(" << state.nameState.getName(op->getOperand(0)) << ")";
+        RETURN_IF_FAILED(printIntType());
+        os << ")(" << state.nameState.getName(op->getOperand(0)) << ");\n";
+        os << "#endif // __cplusplus\n";
 
         return success();
     }
@@ -297,11 +312,28 @@ namespace cpp_printer
             return op->emitError() << "<<casting on VectorType is not supported yet>>";
         }
 
+        if (isa<FPExtOp, FPTruncOp>(op) && state.hasRuntime(Runtime::ROCM))
+        {
+            auto fromTy = op->getOperand(0).getType();
+            if (fromTy.isBF16() || toTy.isBF16())
+            {
+                RETURN_IF_FAILED(printer->printDeclarationForOpResult(op));
+                os << " = cast(" << state.nameState.getName(op->getOperand(0)) << ")";
+                return success();
+            }
+        }
+
+        os << "#if defined(__cplusplus)\n";
+        RETURN_IF_FAILED(printer->printDeclarationForOpResult(op));
+        os << " = static_cast<";
+        RETURN_IF_FAILED(printer->printType(toTy));
+        os << ">(" << state.nameState.getName(op->getOperand(0)) << ");\n";
+        os << "#else\n";
         RETURN_IF_FAILED(printer->printDeclarationForOpResult(op));
         os << " = (";
         RETURN_IF_FAILED(printer->printType(toTy));
-        os << ")"
-           << "(" << state.nameState.getName(op->getOperand(0)) << ")";
+        os << ")(" << state.nameState.getName(op->getOperand(0)) << ");\n";
+        os << "#endif // __cplusplus\n";
         return success();
     }
 
@@ -665,11 +697,32 @@ namespace cpp_printer
         if (state.hasRuntime(Runtime::ROCM))
         {
             os << R"STD(
-
 #ifndef __forceinline__
 #define __forceinline__ __inline__ __attribute__((always_inline))
 #endif // __forceinline__
 
+__device__ __forceinline__ float cast(const bfloat16_t val)
+{
+    // Copied from /opt/rocm/include/hip/hip_bfloat16.h
+    union
+    {
+        uint32_t int32;
+        float    fp32;
+    } u = {uint32_t(val) << 16};
+    return u.fp32;
+}
+
+__device__ __forceinline__ bfloat16_t cast(const float f)
+{
+    // Copied from /opt/rocm/include/hip/hip_bfloat16.h
+    // This does trucation instead of proper rounding (which is slower)
+    union
+    {
+        float    fp32;
+        uint32_t int32;
+    } u = {f};
+    return uint16_t(u.int32 >> 16) | (!(~u.int32 & 0x7f800000) && (u.int32 & 0xffff));
+}
 )STD";
         }
         else if (!state.hasRuntime(Runtime::CUDA))

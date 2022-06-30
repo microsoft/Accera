@@ -68,6 +68,7 @@ set(include
     include/Range.h
     include/AcceraParameters.h
     include/Scalar.h
+    include/ScalarDimension.h
     include/ScalarIndex.h
     include/ScalarOperations.h
     include/Schedule.h

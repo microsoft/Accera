@@ -184,7 +184,7 @@ def accln_NestOp : accln_Op<"nest",[SingleBlockImplicitTerminator<"TerminatorOp"
   let builders = [
     OpBuilder<(ins "ArrayRef<int64_t>":$loopRanges)>,
     OpBuilder<(ins "ArrayRef<mlir::Value>":$loopRanges)>,
-    OpBuilder<(ins "const IterationDomain&":$domain)>
+    OpBuilder<(ins "const IterationDomain&":$domain, "const std::vector<mlir::Value>&":$runtimeSizes)>
   ];
 
   let extraClassDeclaration = [{
@@ -223,10 +223,12 @@ def accln_ScheduledLoopOp : accln_Op<"scheduled_loop",
   [SingleBlockImplicitTerminator<"TerminatorOp">]> {
   let summary = "Represents a scheduled loop and separates prologue, body, and epilogue regions";
   let description = [{
-    The "accln.ScheduledLoopOp" operation represents a scheduled loop level and separates prolgoue, body, and epilogue regions
+    The "accln.ScheduledLoopOp" operation represents a scheduled loop level and separates prologue, body, and epilogue regions
   }];
 
-  let arguments = (ins I64Attr:$begin, I64Attr:$end, I64Attr:$step, accln_IndexAttr:$index, Index:$symbolicIndex, ArrayAttr:$subdomainSize, ArrayAttr:$subdomainIndexOrder);
+  // TODO: merge $end and $endValue into one (they are kept separate for a less intrusive change)
+  // TODO: endValue is Variadic<AnyType> because we just need an optional Value argument, any better representation?
+  let arguments = (ins I64Attr:$begin, I64Attr:$end, Variadic<AnyType>:$endValue, I64Attr:$step, accln_IndexAttr:$index, Index:$symbolicIndex, ArrayAttr:$subdomainSize, ArrayAttr:$subdomainIndexOrder);
   let regions = (region AnyRegion:$prologue, AnyRegion:$body, AnyRegion:$epilogue);
 
   let printer = [{ return ::print(p, *this); }];
@@ -237,6 +239,14 @@ def accln_ScheduledLoopOp : accln_Op<"scheduled_loop",
     OpBuilder<(ins
       "int64_t":$begin,
       "int64_t":$end,
+      "int64_t":$step,
+      "Value":$symbolicIndex,
+      "const std::vector<int64_t>&":$subdomainSize,
+      "const std::vector<Index>&":$subdomainIndexOrder)>,
+
+    OpBuilder<(ins
+      "int64_t":$begin,
+      "Value":$endValue,
       "int64_t":$step,
       "Value":$symbolicIndex,
       "const std::vector<int64_t>&":$subdomainSize,
@@ -287,6 +297,10 @@ def accln_ScheduledLoopOp : accln_Op<"scheduled_loop",
     {
       mlir::Builder builder(getContext());
       (*this)->setAttr("step", builder.getI64IntegerAttr(step));
+    }
+    bool hasVariableEnd()
+    {
+      return !endValue().empty();
     }
     std::vector<int64_t> getSubdomainSize();
     void setSubdomainSize(const std::vector<int64_t>&);

@@ -45,7 +45,11 @@ namespace loopnest
         mlir::Value stop;
         mlir::Value step;
 
+        // TODO: consolidate
         Range GetConstantRange() const;
+        Range GetVariableRange() const;
+        Range GetRange() const;
+        bool IsVariable() const;
     };
 
     /// <summary>
@@ -133,6 +137,7 @@ namespace loopnest
         SymbolicIndexOp GetSymbolicIndex(Index index);
         mlir::ConstantIndexOp GetConstantIndex(mlir::OpBuilder& builder, int64_t value);
         LoopRange MakeLoopRange(mlir::OpBuilder& builder, int64_t start, int64_t stop, int64_t increment);
+        LoopRange MakeLoopRange(mlir::OpBuilder& builder, const Range& range);
         std::vector<ScheduledLoopOp> FindAllScheduledLoops(Index index);
         mlir::OpBuilder GetCurrentLoopBuilder(const LoopVisitSchedule& schedule);
         ScheduledLoopOp FindLatestScheduledLoop(Index index);

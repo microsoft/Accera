@@ -54,6 +54,11 @@ namespace loopnest
         {
             printer << range.EndIndex();
         }
+        else if (range.HasVariableEnd())
+        {
+            auto arg = range.VariableEnd().dyn_cast<mlir::BlockArgument>();
+            printer << arg;
+        }
         else
         {
             printer << range.EndOperandIndex();
@@ -804,6 +809,10 @@ namespace loopnest
         else if (range.HasOperandIndexEnd())
         {
             return llvm::hash_combine(range.Begin(), range.EndOperandIndex(), range.Increment());
+        }
+        else if (range.HasVariableEnd())
+        {
+            return llvm::hash_combine(range.Begin(), hash_value(range.VariableEnd()), range.Increment());
         }
         llvm_unreachable("Unhandled Range case");
     }

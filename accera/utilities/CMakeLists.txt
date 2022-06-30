@@ -71,7 +71,7 @@ set(test_src
 source_group("src" FILES ${test_src})
 
 add_executable(${test_name} ${test_src})
-target_link_libraries(${test_name} PRIVATE utilities CatchWrapper)
+target_link_libraries(${test_name} PRIVATE utilities CatchWrapper LLVMSupport)
 catch_discover_tests(${test_name} )
 
 #

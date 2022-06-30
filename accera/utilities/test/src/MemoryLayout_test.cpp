@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <numeric>
 
+#include <mlir/IR/BuiltinTypes.h>
+
 namespace accera
 {
 using namespace utilities;
@@ -374,4 +376,60 @@ TEST_CASE("TestInflateNullMemoryLayout")
         CHECK(layout3.GetDimensionOrder() == DimensionOrder{ 0, 1 });
     }
 }
+
+TEST_CASE("TestVariableSliceLayout")
+{
+    SECTION("Variable Outer Dimension")
+    {
+        MemoryLayout layout(MemoryShape{ mlir::ShapedType::kDynamicSize, 1024, 16 });
+        auto slice0 = layout.GetSliceLayout(0); // (? x 1024) x 16
+        CHECK(slice0.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, 16 });
+
+        auto slice1 = layout.GetSliceLayout(1); // ? x (1024 x 16)
+        CHECK(slice1.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, 1024 * 16 });
+
+        auto slice2 = layout.GetSliceLayout(2); // ? x 1024
+        CHECK(slice2.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, 1024 });
+    }
+
+    SECTION("Variable Middle Dimension")
+    {
+        MemoryLayout layout(MemoryShape{ 256, mlir::ShapedType::kDynamicSize, 16 });
+        auto slice0 = layout.GetSliceLayout(0); // (256 x ?) x 16
+        CHECK(slice0.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, 16 });
+
+        auto slice1 = layout.GetSliceLayout(1); // 256 x (? x 16)
+        CHECK(slice1.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize }); // TODO: correct?
+
+        auto slice2 = layout.GetSliceLayout(2); // 256 x ?
+        CHECK(slice2.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize }); // TODO: correct?
+    }
+
+    SECTION("Variable Inner Dimension")
+    {
+        MemoryLayout layout(MemoryShape{ 256, 1024, mlir::ShapedType::kDynamicSize });
+        auto slice0 = layout.GetSliceLayout(0);
+        CHECK(slice0.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize }); // TODO: correct?
+
+        auto slice1 = layout.GetSliceLayout(1);
+        CHECK(slice1.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize }); // TODO: correct?
+
+        auto slice2 = layout.GetSliceLayout(2);
+        CHECK(slice2.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize }); // TODO: correct?
+    }
+
+    SECTION("Variable All Dimensions")
+    {
+        MemoryLayout layout(MemoryShape{ mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize });
+        auto slice0 = layout.GetSliceLayout(0);
+        CHECK(slice0.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize });
+
+        auto slice1 = layout.GetSliceLayout(1);
+        CHECK(slice1.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize });
+
+        auto slice2 = layout.GetSliceLayout(2);
+        CHECK(slice2.GetExtent() == MemoryShape{ mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize });
+    }
+}
+
 } // namespace accera

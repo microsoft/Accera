@@ -12,6 +12,8 @@
 #include <numeric>
 #include <sstream>
 
+#include <mlir/IR/BuiltinTypes.h>
+
 #define BOUNDS_CHECK 0
 
 namespace accera
@@ -20,30 +22,32 @@ namespace utilities
 {
     namespace
     {
-        MemoryShape ContiguousCumulativeIncrement(const MemoryShape& extent)
-        {
-            const auto numDimensions = extent.NumDimensions();
-            std::vector<int64_t> result(numDimensions);
-            int64_t prevScale = 1;
-            for (int64_t index = numDimensions - 1; index >= 0; --index)
-            {
-                result[index] = prevScale;
-                prevScale = prevScale * extent[index];
-            }
-            return { result };
-        }
-
         MemoryShape ContiguousCumulativeIncrement(const MemoryShape& extent, const DimensionOrder& order)
         {
             const auto numDimensions = extent.NumDimensions();
             std::vector<int64_t> result(numDimensions);
             int64_t prevScale = 1;
+            bool hasVariableSize = false;
+
             for (int64_t index = numDimensions - 1; index >= 0; --index)
             {
                 result[order[index]] = prevScale;
-                prevScale = prevScale * extent[order[index]];
+                if (extent[order[index]] != mlir::ShapedType::kDynamicSize && !hasVariableSize)
+                {
+                    prevScale = prevScale * extent[order[index]];
+                }
+                else // variable size
+                {
+                    prevScale = mlir::ShapedType::kDynamicStrideOrOffset;
+                    hasVariableSize = true; // stop the cumulative increment computation
+                }
             }
             return { result };
+        }
+
+        MemoryShape ContiguousCumulativeIncrement(const MemoryShape& extent)
+        {
+            return ContiguousCumulativeIncrement(extent, DimensionOrder(extent.NumDimensions()));
         }
 
         MemoryShape StridedIncrement(const MemoryShape& extent, const MemoryShape& strides)
@@ -53,6 +57,13 @@ namespace utilities
             int64_t prevScale = 1;
             for (int64_t index = numDimensions - 1; index >= 0; --index)
             {
+                if (extent[index] == mlir::ShapedType::kDynamicSize)
+                {
+                    // Unsupported until there is a use case
+                    throw accera::utilities::InputException(accera::utilities::InputExceptionErrors::invalidArgument,
+                                                            "Runtime-sizes are not supported for strided increments.");
+                }
+
                 result[index] = prevScale * strides[index];
                 prevScale *= extent[index];
             }
@@ -170,7 +181,7 @@ namespace utilities
     {
         for (int index = 0; index < _size.NumDimensions(); ++index)
         {
-            if (_size[index] + _offset[index] > _extent[index])
+            if (!IsVariableSized(index) && _size[index] + _offset[index] > _extent[index])
             {
                 throw InputException(InputExceptionErrors::invalidArgument,
                                      "Extent must be larger or equal to the size plus offset.");
@@ -200,7 +211,7 @@ namespace utilities
     {
         for (int index = 0; index < _size.NumDimensions(); ++index)
         {
-            if (_size[index] + _offset[index] > _extent[index])
+            if (!IsVariableSized(index) && _size[index] + _offset[index] > _extent[index])
             {
                 throw InputException(InputExceptionErrors::invalidArgument,
                                      "Extent must be larger or equal to the size plus offset.");
@@ -219,6 +230,12 @@ namespace utilities
         {
             return 1u;
         }
+
+        if (IsVariableSized())
+        {
+            return mlir::ShapedType::kDynamicSize;
+        }
+
         auto outermostDimension = GetOutermostDimension();
         return static_cast<size_t>(_extent[outermostDimension] * _increment[outermostDimension]);
     }
@@ -262,6 +279,11 @@ namespace utilities
         return _size != _extent;
     }
 
+    bool MemoryLayout::IsVariableSized() const
+    {
+        return std::any_of(_size.begin(), _size.end(), [](auto s) { return s == mlir::ShapedType::kDynamicSize; });
+    }
+
     int64_t MemoryLayout::GetFirstEntryOffset() const
     {
         return GetEntryOffset(GetOrigin());
@@ -274,14 +296,32 @@ namespace utilities
         return firstEntry;
     }
 
-    MemoryShape MemoryLayout::LogicalToPhysical(const MemoryShape& logicalShape) const { return detail::Permute(logicalShape, _dimensionOrder); }
-    MemoryCoordinates MemoryLayout::LogicalToPhysical(const MemoryCoordinates& logicalCoordinates) const { return detail::Permute(logicalCoordinates, _dimensionOrder); }
-    MemoryShape MemoryLayout::PhysicalToLogical(const MemoryShape& physicalShape) const { return detail::Permute(physicalShape, _dimensionOrder); }
-    MemoryCoordinates MemoryLayout::PhysicalToLogical(const MemoryCoordinates& physicalCoordinates) const { return detail::Permute(physicalCoordinates, _dimensionOrder); }
+    MemoryShape MemoryLayout::LogicalToPhysical(const MemoryShape& logicalShape) const
+    {
+        return detail::Permute(logicalShape, _dimensionOrder);
+    }
+    MemoryCoordinates MemoryLayout::LogicalToPhysical(const MemoryCoordinates& logicalCoordinates) const
+    {
+        return detail::Permute(logicalCoordinates, _dimensionOrder);
+    }
+    MemoryShape MemoryLayout::PhysicalToLogical(const MemoryShape& physicalShape) const
+    {
+        return detail::Permute(physicalShape, _dimensionOrder);
+    }
+    MemoryCoordinates MemoryLayout::PhysicalToLogical(const MemoryCoordinates& physicalCoordinates) const
+    {
+        return detail::Permute(physicalCoordinates, _dimensionOrder);
+    }
+
+    bool MemoryLayout::IsVariableSized(size_t index) const
+    {
+        return _extent[index] == mlir::ShapedType::kDynamicSize || _increment[index] == mlir::ShapedType::kDynamicStrideOrOffset;
+    }
 
     int64_t MemoryLayout::GetActiveSize(size_t index) const
     {
         BoundsCheckDimensionIndex(index);
+        ConstantSizeCheckDimensionIndex(index); // computed value, enforce
         return GetActiveSize()[index];
     }
 
@@ -415,13 +455,14 @@ namespace utilities
         }
 
         // Recompute extent from increment
-        auto prevIncrement = GetMemorySize();
+        int64_t prevIncrement = IsVariableSized() ? mlir::ShapedType::kDynamicStrideOrOffset : GetMemorySize();
+
         std::transform(
             increment.begin(),
             increment.end(),
             extent.begin(),
             [&](int64_t thisIncrement) {
-                auto temp = prevIncrement / thisIncrement;
+                int64_t temp = (prevIncrement == mlir::ShapedType::kDynamicStrideOrOffset) ? mlir::ShapedType::kDynamicSize : prevIncrement / thisIncrement;
                 prevIncrement = thisIncrement;
                 return temp;
             });
@@ -590,6 +631,14 @@ namespace utilities
         if (static_cast<int>(index) >= NumDimensions())
         {
             throw InputException(InputExceptionErrors::indexOutOfRange, "Dimension index out-of-bounds.");
+        }
+    }
+
+    void MemoryLayout::ConstantSizeCheckDimensionIndex(size_t index) const
+    {
+        if (IsVariableSized(index))
+        {
+            throw LogicException(LogicExceptionErrors::notImplemented, "Not implemented for variable sizes.");
         }
     }
 

@@ -31,6 +31,11 @@ namespace loopnest
         }
 
         auto loopRange = domain.GetIndexRange(loopIndex);
+        if (loopRange.HasVariableEnd())
+        {
+            return loopRange; // TODO: handle transformations on variable ranges
+        }
+
         int begin = loopRange.Begin();
         int end = loopRange.End();
 

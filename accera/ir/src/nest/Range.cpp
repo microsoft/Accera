@@ -46,6 +46,10 @@ namespace loopnest
             auto constantVal = constantAttr.cast<mlir::IntegerAttr>().getInt();
             _end = static_cast<int64_t>(constantVal);
         }
+        else if (end.isa<mlir::BlockArgument>())
+        {
+            _end = end;
+        }
         else
         {
             assert(false && "Unknown value type");
@@ -64,7 +68,10 @@ namespace loopnest
         _increment(increment)
     {}
 
-    int64_t Range::Begin() const { return _begin; }
+    int64_t Range::Begin() const
+    {
+        return _begin;
+    }
 
     int64_t Range::End() const
     {
@@ -81,9 +88,38 @@ namespace loopnest
                     assert(false && "Range must be resolved before requesting End()");
                     return 0;
                 },
+                [](mlir::Value endIndex) -> int64_t {
+                    return mlir::ShapedType::kDynamicSize;
+                },
                 [](auto&& endVal) -> int64_t {
                     assert(false && "Unsupported end value type");
                     return -1;
+                } },
+            _end);
+    }
+
+    mlir::Value Range::VariableEnd() const
+    {
+        return std::visit(
+            VariantVisitor{
+                [](int64_t endDynIdx) -> mlir::Value {
+                    assert(false && "Calling VariableEnd() on a constant range");
+                    return {};
+                },
+                [](Index endDynIdx) -> mlir::Value {
+                    assert(false && "Calling VariableEnd() on an Index range");
+                    return {};
+                },
+                [](OperandIndex endDynIdx) -> mlir::Value {
+                    assert(false && "Calling VariableEnd() on an OperandIndex range");
+                    return {};
+                },
+                [](mlir::Value endDynIdx) -> mlir::Value {
+                    return endDynIdx;
+                },
+                [](auto&& endDynIdx) -> mlir::Value {
+                    assert(false && "Unsupported end value type");
+                    return {};
                 } },
             _end);
     }
@@ -101,6 +137,10 @@ namespace loopnest
                 },
                 [](OperandIndex endIndex) -> Index {
                     assert(false && "Calling EndIndex() on an OperandIndex range");
+                    return {};
+                },
+                [](mlir::Value endIndex) -> Index {
+                    assert(false && "Calling EndIndex() on a variable range");
                     return {};
                 },
                 [](auto&& endVal) -> Index {
@@ -125,6 +165,10 @@ namespace loopnest
                 [](OperandIndex endOpIdx) -> OperandIndex {
                     return endOpIdx;
                 },
+                [](mlir::Value endOpIdx) -> OperandIndex {
+                    assert(false && "Calling EndOperandIndex() on a variable range");
+                    return {};
+                },
                 [](auto&& endOpIdx) -> OperandIndex {
                     assert(false && "Unsupported end value type");
                     return {};
@@ -147,9 +191,20 @@ namespace loopnest
         return std::holds_alternative<OperandIndex>(_end);
     }
 
-    int64_t Range::Size() const { return End() - Begin(); }
+    bool Range::HasVariableEnd() const
+    {
+        return std::holds_alternative<mlir::Value>(_end);
+    }
 
-    int64_t Range::Increment() const { return _increment; }
+    int64_t Range::Size() const
+    {
+        return End() - Begin();
+    }
+
+    int64_t Range::Increment() const
+    {
+        return _increment;
+    }
 
     int64_t Range::NumIterations() const
     {
@@ -168,7 +223,17 @@ namespace loopnest
 
     std::ostream& operator<<(std::ostream& os, const Range& r)
     {
-        os << "[" << r.Begin() << "," << r.End() << ":" << r.Increment() << ")";
+        os << "[" << r.Begin() << ",";
+        if (r.HasVariableEnd())
+        {
+            auto arg = r.VariableEnd().dyn_cast<mlir::BlockArgument>();
+            os << "arg" << arg.getArgNumber();
+        }
+        else
+        {
+            os << r.End();
+        }
+        os << ":" << r.Increment() << ")";
         return os;
     }
 
@@ -187,6 +252,11 @@ namespace loopnest
         {
             // Both i1 and i2 are unresolved OperandIndex values, now they're only equal if they have the same index
             return i1.EndOperandIndex() == i2.EndOperandIndex();
+        }
+        else if (i1.HasVariableEnd() && i2.HasVariableEnd())
+        {
+            // Both i1 and i2 have variable end values, now they're only equal if they have the same mlir::Value
+            return i1.VariableEnd() == i2.VariableEnd();
         }
         else
         {

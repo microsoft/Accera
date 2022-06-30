@@ -134,6 +134,25 @@ TEST_CASE("function_decl1")
                 Value{ ValueType::Int64, ScalarLayout })
             .Define([](Value, Value) {});
     CHECK(f5);
+    // CHECK: accv.func nested @f6_{{[0-9]+}}(%arg0: index, %arg1: memref<?x16xf32, #map{{[0-9]*}}>) attributes {exec_target = 0 : i64} {
+    // CHECK-NEXT: return
+    // CHECK-NEXT: }
+    auto f6 =
+        DeclareFunction("f6")
+            .Parameters(
+                Value{ ValueType::Index, ScalarLayout },
+                Value{ ValueType::Float, MemoryLayout{ { mlir::ShapedType::kDynamicSize, 16 } } })
+            .Define([](Value, Value) {});
+    // CHECK: accv.func nested @f7_{{[0-9]+}}(%arg0: index, %arg1: index, %arg2: memref<?x?xf32, #map{{[0-9]*}}>) attributes {exec_target = 0 : i64} {
+    // CHECK-NEXT: return
+    // CHECK-NEXT: }
+    auto f7 =
+        DeclareFunction("f7")
+            .Parameters(
+                Value{ ValueType::Index, ScalarLayout },
+                Value{ ValueType::Index, ScalarLayout },
+                Value{ ValueType::Float, MemoryLayout{ { mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize } } })
+            .Define([](Value, Value, Value) {});
     // CHECK-NEXT: }
 }
 

@@ -26,6 +26,7 @@ from gemm_opts import GemmOpts
 @dataclass
 class BenchmarkResult:
     opts: InitVar[GemmOpts]
+    dtype: InitVar[str]
     gpu_id: int
     commit_id: str
     commit_datetime: str
@@ -54,8 +55,8 @@ class BenchmarkResult:
     num_fused_passes: int=-1
     scheduling_policy: int=-1
     target_rt: str=''
-    time_ms: float= -1.0
-    TFlops: float= -1.0
+    time_ms: float= 0.0
+    TFlops: float= 0.0
     dt: str= datetime.now().ctime()
     compiler_version: str=''
     compilable: bool=False
@@ -65,7 +66,7 @@ class BenchmarkResult:
     kernelCode: str=''
     prog_out: str=''
 
-    def __post_init__(self, opts):
+    def __post_init__(self, opts, dtype):
         if opts is None or self.gpu_id is None or self.commit_id is None or self.commit_datetime is None \
             or self.commit_branch is None or self.target_name is None or self.deviceProperties is None:
             raise ValueError("One of the mandatory parameters were not set.")
@@ -77,8 +78,8 @@ class BenchmarkResult:
         self.beta=opts.beta
         self.trans_A=opts.transA
         self.trans_B=opts.transB
-        self.in_type=opts.type
-        self.out_type=opts.type
+        self.in_type=dtype
+        self.out_type=dtype
 
     # Encode all the input arguments to gemm into the partitionKey for efficient queries
     def get_partition_key(self) -> str:
@@ -116,7 +117,7 @@ class BenchmarkResult:
         }
         return "_".join([f"{key}{str(key_info[key])}" for key in key_info])
 
-    def getResultRow(self) ->Dict[str, Any]:
+    def get_result_row(self) -> Dict[str, Any]:
         d = self.__dict__
         d['id'] = self.get_id()
         d['partitionKey'] = self.get_partition_key()
@@ -130,10 +131,10 @@ def get_leading_dim(target: Target, mfma_tile: _MMAShape):
     mma_shape = target.tensor_core_info.mma_shape_to_tuple(mfma_tile)
     return mma_shape[0]
 
-def getLayout(transpose: bool):
+def get_layout(transpose: bool):
     return Array.Layout.LAST_MAJOR if transpose else Array.Layout.FIRST_MAJOR
 
-def getType(typeStr: str):
+def get_type(typeStr: str):
     return ScalarType.float32 if typeStr == 's' else ScalarType.float16
 
 def _benchmark_kernel(
@@ -200,23 +201,24 @@ def get_dir(output_prefix):
 def get_hat_path(output_prefix, package_name):
     return os.path.join(get_dir(output_prefix), package_name + ".hat")
 
-def create_gemm_nest_args(opts: GemmOpts):
+
+def create_gemm_nest_args(opts: GemmOpts, dtype):
     M = int(opts.m)
     N = int(opts.n)
     K = int(opts.k)
-    datatype = getType(opts.type)
+    datatype = get_type(dtype)
 
     A = Array(
         role=Array.Role.INPUT,
         element_type=datatype,
         shape=(M, K),
-        layout=getLayout(bool(opts.transA))
+        layout=get_layout(bool(opts.transA))
     )
     B = Array(
         role=Array.Role.INPUT,
         element_type=datatype,
         shape=(K, N),
-        layout=getLayout(bool(opts.transB))
+        layout=get_layout(bool(opts.transB))
     )
     C = Array(role=Array.Role.INPUT_OUTPUT, element_type=datatype, shape=(M, N))
 
@@ -230,9 +232,9 @@ def create_gemm_nest_args(opts: GemmOpts):
     return nest, (A, B, C)
 
 
-def get_variants(opts: GemmOpts, target):
-    ELEM_SIZE_BYTES = 4 if opts.type == 's' else 2
-    datatype = getType(opts.type)
+def get_variants(opts: GemmOpts, dtype, target):
+    ELEM_SIZE_BYTES = 4 if dtype == 's' else 2
+    datatype = get_type(dtype)
     outer_tiles = [16, 32, 64, 128, 256]
     mfma_tiles_all = [_MMAShape.M64xN64xK1_B4, _MMAShape.M64xN64xK1_B2, _MMAShape.M32xN32xK2_B1, _MMAShape.M16xN16xK4_B1,
                         _MMAShape.M64xN64xK4_B4, _MMAShape.M64xN64xK4_B2, _MMAShape.M32xN32xK8_B1, _MMAShape.M16xN16xK16_B1,
@@ -290,7 +292,7 @@ def get_variants(opts: GemmOpts, target):
                                                                                     cacheBLayout, num_total_passes_reduced, fuse_factor, scheduling_policy)))
 
 
-def benchmark_gemm(opts: GemmOpts, output_prefix: str, available_gpus, containerName, verbose_logs, compilerVersion, commit_id, commit_datetime, commit_branch, target_name, check_result, dev_props):
+def benchmark_gemm(opts: GemmOpts, dtype, output_prefix: str, available_gpus, container_name, verbose_logs, compiler_ver, commit_id, commit_datetime: str, commit_branch, target_name, check_result, dev_props):
     """
     Architecture Overview:
     --------------------------------------------------------------------------------------------
@@ -378,25 +380,25 @@ def benchmark_gemm(opts: GemmOpts, output_prefix: str, available_gpus, container
 
     total_gpus = len(gpu_devices)
     target = Target(target_name)
-    variants = get_variants(opts, target)
+    variants = get_variants(opts, dtype, target)
 
     if len(variants) == 0: # this means we failed to find any valid kernel configuration for this input
         if verbose_logs:
             print(colored('No valid kernel configurations found.', "magenta"))
-        if containerName:
-            result = BenchmarkResult(opts=opts, gpu_id=-1, commit_id=commit_id, commit_datetime=str(commit_datetime), commit_branch=commit_branch, target_name=target_name, deviceProperties='')
+        if container_name:
+            result = BenchmarkResult(opts=opts, dtype=dtype, gpu_id=-1, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties='')
             result.target_rt = 'ROCM' if target.runtime == Target.Runtime.ROCM else 'CUDA'
-            result.compiler_version = compilerVersion
-            cosmosdb.upsert_benchmark_results([result.getResultRow()], containerName, verbose_logs)
+            result.compiler_version = compiler_ver
+            cosmosdb.upsert_benchmark_results([result.get_result_row()], container_name, verbose_logs)
     else:
         # Create golden data for verification if required
         golden_data = None
         if check_result:
             # Create the arrays with the appropriate layout
-            datatype = getType(opts.type)
+            datatype = get_type(dtype)
             npdatatype = np.dtype(datatype.name)
-            A_test, B_test, C_test = (np.ndarray((opts.m, opts.k), dtype=npdatatype, order=getLayout(bool(opts.transA)).to_numpy_order()),
-                                      np.ndarray((opts.k, opts.n), dtype=npdatatype, order=getLayout(bool(opts.transB)).to_numpy_order()),
+            A_test, B_test, C_test = (np.ndarray((opts.m, opts.k), dtype=npdatatype, order=get_layout(bool(opts.transA)).to_numpy_order()),
+                                      np.ndarray((opts.k, opts.n), dtype=npdatatype, order=get_layout(bool(opts.transB)).to_numpy_order()),
                                       np.ndarray((opts.m, opts.n), dtype=npdatatype, order=Array.Layout.FIRST_MAJOR.to_numpy_order()))
 
             # Create all the random input data
@@ -421,7 +423,7 @@ def benchmark_gemm(opts: GemmOpts, output_prefix: str, available_gpus, container
             for i in range(wave, min(wave + waveSize, len(variants))):
                 gpu_idx = i % total_gpus
                 gpu_id = gpu_devices[gpu_idx]
-                p = Process(name=f"builder{i}", target=run_variant, args=(variants[i], gpu_id, device_q[gpu_idx], opts, target, output_prefix, compilerVersion, commit_id, commit_datetime, commit_branch, target_name, dev_props[gpu_id], verbose_logs, check_result))
+                p = Process(name=f"builder{i}", target=run_variant, args=(variants[i], gpu_id, device_q[gpu_idx], opts, dtype, target, output_prefix, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props[gpu_id], verbose_logs, check_result))
                 p.start()
 
             time.sleep(5)
@@ -457,17 +459,18 @@ def benchmark_gemm(opts: GemmOpts, output_prefix: str, available_gpus, container
                 if not verbose_logs:
                     bar.finish()
 
-            if containerName:
-                cosmosdb.upsert_benchmark_results(result_rows, containerName, verbose_logs)
+            if container_name:
+                cosmosdb.upsert_benchmark_results(result_rows, container_name, verbose_logs)
 
-def run_variant(variant, gpu_id, device_q, opts, target, output_prefix, compilerVersion, commit_id, commit_datetime, commit_branch, target_name, dev_props, verbose_logs, check_result):
-    nest, (A, B, C) = create_gemm_nest_args(opts)
+
+def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props, verbose_logs, check_result):
+    nest, (A, B, C) = create_gemm_nest_args(opts, dtype)
 
     try:
         assert float(opts.alpha) == 1., "alpha must be 1"
 
         (outer_tile_x, outer_tile_y), k_split, mfma_tile, use_static_offsets, double_buffering, vectorize, cacheALayout, cacheBLayout, num_total_passes, fuse_factor, scheduling_policy = variant
-        result = BenchmarkResult(opts=opts, gpu_id=gpu_id, commit_id=commit_id, commit_datetime=str(commit_datetime), commit_branch=commit_branch, target_name=target_name, deviceProperties=dev_props)
+        result = BenchmarkResult(opts=opts, dtype=dtype, gpu_id=gpu_id, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=dev_props)
         result.mma_shape = mfma_tile.name
         result.use_static_offsets = use_static_offsets
         result.double_buffering = double_buffering
@@ -479,10 +482,11 @@ def run_variant(variant, gpu_id, device_q, opts, target, output_prefix, compiler
         result.scheduling_policy = 0 if scheduling_policy == _MMASchedulingPolicy.PASS_ORDER else 1
         result.block_tile = (outer_tile_x, outer_tile_y)
         result.k_split = k_split
-        result.compiler_version = compilerVersion
+        result.compiler_version = compiler_ver
         result.check = check_result
         if target.runtime == Target.Runtime.ROCM:
             result.target_rt = 'ROCM'
+            result.cache_C = (mfma_tile == _MMAShape.M16xN16xK4_B1 or mfma_tile == _MMAShape.M16xN16xK16_B1)
         elif target.runtime == Target.Runtime.CUDA:
             result.target_rt = 'CUDA'
 
@@ -542,7 +546,7 @@ def gemm_runner(gpu_id, output_prefix, device_q, result_rows, golden_data, verbo
                     hat_package, func_map = hatlib.load(get_hat_path(output_prefix, package_name))
                     C_copy = deepcopy(C_test)
                     func_map[fn_name](A_test, B_test, C_copy, gpu_id=gpu_id)
-                    np.testing.assert_allclose(C_ref, C_copy, rtol=1e-4 if opts.type == 's' else 1e-2)
+                    np.testing.assert_allclose(C_ref, C_copy, rtol=1e-4 if result.in_type == 's' else 1e-2)
 
                     if verbose_logs:
                         print(colored(f'Passed correctness for package: {package_name} on gpu {gpu_id}', 'green'))
@@ -581,4 +585,4 @@ def gemm_runner(gpu_id, output_prefix, device_q, result_rows, golden_data, verbo
                         if verbose_logs:
                             print(colored(f"Throughput of {fn_name}: {tflops} TFlops on gpu {gpu_id}", 'blue'))
 
-        result_rows.append(result.getResultRow())
+        result_rows.append(result.get_result_row())

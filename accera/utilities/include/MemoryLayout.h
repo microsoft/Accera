@@ -373,12 +373,11 @@ namespace utilities
         /// <summary> Checks if the memory defined by this layout is in the canonical memory order (0, 1, 2, ...) </summary>
         bool IsCanonicalOrder() const;
 
-        /// <summary>
-        /// Indicates if this layout has any extra padding
-        /// </summary>
-        ///
-        /// <returns> Returns `true` if there is any extra padding around the active area. </returns>
+        /// <summary> Returns `true` if there is any extra padding around the active area. </summary>
         bool HasPadding() const;
+
+        /// <summary> Returns `true` if the layout is variable-sized. </summary>
+        bool IsVariableSized() const;
 
         /// <summary> Gets the offset into memory for the first active entry </summary>
         ///
@@ -391,6 +390,15 @@ namespace utilities
         //
         // Getting information about logical layout
         //
+
+        /// <summary>
+        /// Checks if the size of the given logical dimension is variable (i.e. defined at runtime).
+        /// </summary>
+        ///
+        /// <param name="index"> The dimension. </param>
+        ///
+        /// <returns> `true` if the dimension is variable-sized. </returns>
+        bool IsVariableSized(size_t index) const;
 
         /// <summary>
         /// Returns the size of the "active" memory area (not counting any padding), in the logical coordinates for this layout.
@@ -563,6 +571,7 @@ namespace utilities
     private:
         MemoryLayout(const MemoryShape& size, const MemoryShape& extent, const MemoryShape& offset, const MemoryShape& increment, const DimensionOrder& order);
         void BoundsCheckDimensionIndex(size_t index) const;
+        void ConstantSizeCheckDimensionIndex(size_t index) const;
         size_t GetDataOffset() const; // offset for entry {0,0,0...}
 
         MemoryCoordinates LogicalToPhysical(const MemoryCoordinates& logicalCoordinates) const;

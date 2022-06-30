@@ -2189,7 +2189,7 @@ TEST_CASE_METHOD(Fixture, "basic_matmul_pad", "[cpu][nest][pad]")
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
-        .Define([=, &testName](Array A, Array B, Array C) {
+        .Define([=](Array A, Array B, Array C) {
             const int M = (int)(A.Shape()[0]);
             const int K = (int)(B.Shape()[0]);
             const int N = (int)(C.Shape()[1]);
@@ -2255,7 +2255,7 @@ TEST_CASE_METHOD(Fixture, "fused_unequal_shapes", "[cpu][nest][pad]")
         .Parameters(
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N0 }) }),
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N0 }) }))
-        .Define([=, &testName](Array A, Array B) {
+        .Define([=](Array A, Array B) {
             Nest nest0({ M, N0 });
             auto indices0 = nest0.GetIndices();
             auto i0 = indices0[0];
@@ -2336,7 +2336,7 @@ TEST_CASE_METHOD(Fixture, "fused_unequal_shapes_smaller_first", "[cpu][nest][pad
         .Parameters(
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N1 }) }),
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N1 }) }))
-        .Define([=, &testName](Array A, Array B) {
+        .Define([=](Array A, Array B) {
             Nest nest0({ M, N0 });
             auto indices0 = nest0.GetIndices();
             auto i0 = indices0[0];
@@ -2409,7 +2409,7 @@ TEST_CASE_METHOD(Fixture, "fused_unequal_shapes_tiled", "[cpu][nest][pad]")
         .Parameters(
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N0 }) }),
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N0 }) }))
-        .Define([=, &testName](Array A, Array B) {
+        .Define([=](Array A, Array B) {
             Nest nest0({ M, N0 });
             auto indices0 = nest0.GetIndices();
             auto i0 = indices0[0];
@@ -3108,6 +3108,186 @@ TEST_CASE_METHOD(Fixture, "test_rocm_cache_tensorize", "[gpu][nest][cache][tenso
     opts.runtime = accera::value::ExecutionRuntime::ROCM;
 
     RunConversionPasses(target, "test_rocm_cache_tensorize_", opts);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "runtime_sizes_K", "[cpu][runtime_sizes]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    const int64_t M = 1024;
+    const int64_t N = 512;
+    const int64_t K = mlir::ShapedType::kDynamicSize;
+
+    DeclareFunction("NestMatMul")
+        .Decorated(false)
+        .Public(true)
+        .Parameters(
+            Value({ ValueType::Index, ScalarLayout }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+        .Define([=](ScalarDimension KValue, Array A, Array B, Array C) {
+            Nest nest(MemoryShape{ M, N, K }, std::vector{ KValue });
+
+            auto indices = nest.GetIndices();
+            Scalar i_ = indices[0];
+            Scalar j_ = indices[1];
+            Scalar k_ = indices[2];
+
+            nest.Set([&]() { C(i_, j_) += A(i_, k_) * B(k_, j_); });
+
+            auto sched = nest.CreateSchedule();
+            // TODO: splits
+        });
+
+    accera::transforms::AcceraPassPipelineOptions opts;
+    // opts.printLoops = true;
+    // opts.dumpPasses = true;
+    // opts.dumpIntraPassIR = true;
+
+    RunConversionPasses(target, "runtime_sizes_K_" + stringify(target), opts);
+
+    /* Resulting affine.for loops:
+    accv.func @NestMatMul(%arg0: index, %arg1: memref<1024x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>, %arg2: memref<?x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>, %arg3: memref<1024x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>) attributes {exec_target = 0 : i64} {
+      "accv.lambda"() ( {
+        affine.for %arg4 = 0 to 1024 {
+          affine.for %arg5 = 0 to 512 {
+            affine.for %arg6 = 0 to %arg0 {
+              %0 = affine.load %arg1[%arg4, %arg6] : memref<1024x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>
+              %1 = affine.load %arg2[%arg6, %arg5] : memref<?x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>
+              %2 = "accv.bin_op"(%0, %1) {predicate = 2 : i64} : (f32, f32) -> f32
+              %3 = affine.load %arg3[%arg4, %arg5] : memref<1024x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>
+              %4 = "accv.bin_op"(%3, %2) {predicate = 0 : i64} : (f32, f32) -> f32
+              affine.store %4, %arg3[%arg4, %arg5] : memref<1024x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>
+            } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,4}, {j,5}, {k,7}}, indices: {{{k,7} : {0:<block argument> of type 'index' at index: 0:1}}, {{j,5} : {0:512:1}}, {{i,4} : {0:1024:1}}}}">, end = -1 : i64, index = #accln<"index{k,7}">, kernels = ["body_1"], subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">, #accln<"index{k,7}">], subdomainSize = [1, 1, -1]}
+          } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,4}, {j,5}, {k,7}}, indices: {{{k,7} : {0:<block argument> of type 'index' at index: 0:1}}, {{j,5} : {0:512:1}}, {{i,4} : {0:1024:1}}}}">, end = 512 : i64, index = #accln<"index{j,5}">, subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">, #accln<"index{k,7}">], subdomainSize = [1, 1, -1]}
+        } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,4}, {j,5}, {k,7}}, indices: {{{k,7} : {0:<block argument> of type 'index' at index: 0:1}}, {{j,5} : {0:512:1}}, {{i,4} : {0:1024:1}}}}">, end = 1024 : i64, index = #accln<"index{i,4}">, subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">, #accln<"index{k,7}">], subdomainSize = [1, 512, -1]}
+        accv.return
+      }) {exec_target = 0 : i64, sym_name = "NestFunction_2", type = () -> ()} : () -> ()
+      accv.return
+    }
+    */
+
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "runtime_sizes_M_N", "[cpu][runtime_sizes]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    const int64_t M = mlir::ShapedType::kDynamicSize;
+    const int64_t N = mlir::ShapedType::kDynamicSize;
+    const int64_t K = 1024;
+
+    DeclareFunction("NestMatMul")
+        .Decorated(false)
+        .Public(true)
+        .Parameters(
+            Value({ ValueType::Index, ScalarLayout }),
+            Value({ ValueType::Index, ScalarLayout }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+        .Define([=](ScalarDimension MValue, ScalarDimension NValue, Array A, Array B, Array C) {
+            Nest nest(MemoryShape{ M, N, K }, std::vector{ MValue, NValue });
+
+            auto indices = nest.GetIndices();
+            Scalar i_ = indices[0];
+            Scalar j_ = indices[1];
+            Scalar k_ = indices[2];
+
+            nest.Set([&]() { C(i_, j_) += A(i_, k_) * B(k_, j_); });
+
+            auto sched = nest.CreateSchedule();
+            // TODO: splits
+        });
+
+    accera::transforms::AcceraPassPipelineOptions opts;
+    // opts.printLoops = true;
+    // opts.dumpPasses = true;
+    // opts.dumpIntraPassIR = true;
+
+    RunConversionPasses(target, "runtime_sizes_M_N_" + stringify(target), opts);
+
+    /* Resulting affine.for loops:
+    accv.func @NestMatMul(%arg0: index, %arg1: index, %arg2: memref<?x1024xf32, affine_map<(d0, d1) -> (d0 * 1024 + d1)>>, %arg3: memref<1024x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>, %arg4: memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>) attributes {exec_target = 0 : i64} {
+      "accv.lambda"() ( {
+        affine.for %arg5 = 0 to %arg0 {
+          affine.for %arg6 = 0 to %arg1 {
+            affine.for %arg7 = 0 to 1024 {
+              %0 = affine.load %arg2[%arg5, %arg7] : memref<?x1024xf32, affine_map<(d0, d1) -> (d0 * 1024 + d1)>>
+              %1 = affine.load %arg3[%arg7, %arg6] : memref<1024x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>
+              %2 = "accv.bin_op"(%0, %1) {predicate = 2 : i64} : (f32, f32) -> f32
+              %3 = affine.load %arg4[%arg5, %arg6] : memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>
+              %4 = "accv.bin_op"(%3, %2) {predicate = 0 : i64} : (f32, f32) -> f32
+              affine.store %4, %arg4[%arg5, %arg6] : memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>
+            } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,13}, {j,14}, {k,12}}, indices: {{{k,12} : {0:1024:1}}, {{j,14} : {0:<block argument> of type 'index' at index: 1:1}}, {{i,13} : {0:<block argument> of type 'index' at index: 0:1}}}}">, end = 1024 : i64, index = #accln<"index{k,12}">, kernels = ["body_3"], subdomainIndexOrder = [#accln<"index{i,13}">, #accln<"index{j,14}">, #accln<"index{k,12}">], subdomainSize = [-1, -1, 1]}
+          } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,13}, {j,14}, {k,12}}, indices: {{{k,12} : {0:1024:1}}, {{j,14} : {0:<block argument> of type 'index' at index: 1:1}}, {{i,13} : {0:<block argument> of type 'index' at index: 0:1}}}}">, end = -1 : i64, index = #accln<"index{j,14}">, subdomainIndexOrder = [#accln<"index{i,13}">, #accln<"index{j,14}">, #accln<"index{k,12}">], subdomainSize = [-1, -1, 1024]}
+        } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,13}, {j,14}, {k,12}}, indices: {{{k,12} : {0:1024:1}}, {{j,14} : {0:<block argument> of type 'index' at index: 1:1}}, {{i,13} : {0:<block argument> of type 'index' at index: 0:1}}}}">, end = -1 : i64, index = #accln<"index{i,13}">, subdomainIndexOrder = [#accln<"index{i,13}">, #accln<"index{j,14}">, #accln<"index{k,12}">], subdomainSize = [-1, -1, 1024]}
+        accv.return
+      }) {exec_target = 0 : i64, sym_name = "NestFunction_4", type = () -> ()} : () -> ()
+      accv.return
+    }
+    */
+
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "runtime_sizes_all", "[cpu][runtime_sizes]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    const int64_t M = mlir::ShapedType::kDynamicSize;
+    const int64_t N = mlir::ShapedType::kDynamicSize;
+    const int64_t K = mlir::ShapedType::kDynamicSize;
+
+    DeclareFunction("NestMatMul")
+        .Decorated(false)
+        .Public(true)
+        .Parameters(
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }),
+            Value({ ValueType::Index, ScalarLayout }),
+            Value({ ValueType::Index, ScalarLayout }),
+            Value({ ValueType::Index, ScalarLayout }))
+        .Define([=](Array A, Array B, Array C, ScalarDimension MValue, ScalarDimension NValue, ScalarDimension KValue) {
+            Nest nest(MemoryShape{ M, N, K }, std::vector{ MValue, NValue, KValue });
+
+            auto indices = nest.GetIndices();
+            Scalar i_ = indices[0];
+            Scalar j_ = indices[1];
+            Scalar k_ = indices[2];
+
+            nest.Set([&]() { C(i_, j_) += A(i_, k_) * B(k_, j_); });
+
+            auto sched = nest.CreateSchedule();
+            // TODO: splits
+        });
+
+    accera::transforms::AcceraPassPipelineOptions opts;
+    // opts.printLoops = true;
+    // opts.dumpPasses = true;
+    // opts.dumpIntraPassIR = true;
+
+    RunConversionPasses(target, "runtime_sizes_all_" + stringify(target), opts);
+
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
 }

@@ -13,8 +13,8 @@
 #include "Util.h"
 
 #include <ir/include/value/ValueEnums.h>
-
 #include <utilities/include/FunctionUtils.h>
+#include <value/include/ScalarDimension.h>
 
 #include <mlir/Dialect/Affine/IR/AffineValueMap.h>
 #include <mlir/IR/Attributes.h>
@@ -119,7 +119,7 @@ using SplitSymbolicIndex = SplitIndexT<SymbolicIndexOp>;
 //
 // Utility functions and EDSC-type intrinsics
 //
-NestOp MakeNest(mlir::OpBuilder& builder, const IterationDomain& domain);
+NestOp MakeNest(mlir::OpBuilder& builder, const IterationDomain& domain, const std::vector<mlir::Value>& runtimeSizes = {});
 NestOp MakeNest(mlir::OpBuilder& builder, mlir::ArrayRef<int64_t> sizes);
 NestOp MakeNest(mlir::OpBuilder& builder, mlir::ArrayRef<mlir::Value> sizes);
 

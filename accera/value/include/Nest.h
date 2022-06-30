@@ -15,6 +15,7 @@
 #include "IterationDomain.h"
 #include "Range.h"
 #include "Scalar.h"
+#include "ScalarDimension.h"
 #include "ScalarIndex.h"
 
 #include <utilities/include/MemoryLayout.h>
@@ -40,19 +41,23 @@ namespace value
     using ScalarIndexPair = std::pair<ScalarIndex, ScalarIndex>;
     class Schedule;
     class NestImpl;
+    class RuntimeNestImpl;
 
     class Nest
     {
     public:
         /// <summary> Constructor that creates a nest from a MemoryShape </summary>
         /// <param name="sizes"> Memory shape describing the sizes </param>
-        Nest(const utilities::MemoryShape& sizes);
+        /// <param name="runtimeSizes"> A vector of runtime sizes </param>
+        Nest(const utilities::MemoryShape& sizes, const std::vector<ScalarDimension>& runtimeSizes = {});
 
         /// <summary> Constructor that creates a nest from a vector of ranges </summary>
-        /// <param name="ranges"> A vector of accera::ir::loopnest::Range 's</param>
-        Nest(const std::vector<Range>& ranges);
+        /// <param name="ranges"> A vector of accera::ir::loopnest::Range's </param>
+        /// <param name="runtimeSizes"> A vector of runtime sizes </param>
+        Nest(const std::vector<Range>& ranges, const std::vector<ScalarDimension>& runtimeSizes = {});
 
-        Nest(const IterationDomain& domain);
+        Nest(const IterationDomain& domain, const std::vector<ScalarDimension>& runtimeSizes = {});
+
         Nest(Nest&& other);
 
         ~Nest();

@@ -415,6 +415,11 @@ void ResolveRange(ScheduleOp& op, PatternRewriter& rewriter, lnir::Range& range)
             assert(dimSize.has_value());
             range = lnir::Range{ range.Begin(), *dimSize, range.Increment() };
         }
+        else if (endVal.isa<mlir::BlockArgument>())
+        {
+            // A runtime size was provided as an argument to the nestOp
+            range = lnir::Range{ range.Begin(), endVal, range.Increment() };
+        }
         else
         {
             assert(false && "Unhandled Range end type");
@@ -782,12 +787,23 @@ LogicalResult ScheduledLoopOpRewrite::matchAndRewrite(ScheduledLoopOp op, Patter
 {
     auto loc = op.getLoc();
 
-    int64_t begin = op.beginAttr().getInt();
-    int64_t end = op.endAttr().getInt();
-    int64_t step = op.stepAttr().getInt();
-
     // First create the body loop and move the nested region into it
-    auto bodyLoop = rewriter.create<AffineForOp>(loc, begin, end, step);
+    auto bodyLoop = [loc, &rewriter, &op]() -> AffineForOp {
+        int64_t begin = op.beginAttr().getInt();
+        int64_t step = op.stepAttr().getInt();
+
+        if (op.hasVariableEnd())
+        {
+            auto beginValue = rewriter.create<ConstantIndexOp>(loc, begin).getResult();
+            auto endValue = op.endValue().front();
+            return rewriter.create<AffineForOp>(loc, beginValue, rewriter.getDimIdentityMap(), endValue, rewriter.getDimIdentityMap(), step);
+        }
+        else
+        {
+            int64_t end = op.endAttr().getInt();
+            return rewriter.create<AffineForOp>(loc, begin, end, step);
+        }
+    }();
 
     // Transfer attributes
     auto scheduledLoopOpAttrs = op->getAttrs();

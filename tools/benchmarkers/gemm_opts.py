@@ -5,14 +5,13 @@
 
 from dataclasses import dataclass
 
-CONFIG_HEADERS = ["type", "m", "n", "k", "transA", "transB", "alpha", "beta", "lda", "ldb", "ldc"]
+CONFIG_HEADERS = ["m", "n", "k", "transA", "transB", "alpha", "beta", "lda", "ldb", "ldc"]
 
 @dataclass(eq=True, unsafe_hash=True)
 class GemmOpts:
     m: int = 0
     n: int = 0
     k: int = 0
-    type: str = ''
     transA: bool = False
     transB: bool = False
     alpha: float = 1.
@@ -34,4 +33,4 @@ class GemmOpts:
         self.ldc = int(self.ldc)
 
     def __str__(self):
-        return f'{self.type}, {self.m}, {self.n}, {self.k}, {self.transA}, {self.transB}, {self.alpha}, {self.beta}, {self.lda}, {self.ldb}, {self.ldc}'
+        return f'{self.m}, {self.n}, {self.k}, {self.transA}, {self.transB}, {self.alpha}, {self.beta}, {self.lda}, {self.ldb}, {self.ldc}'

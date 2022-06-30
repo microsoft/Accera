@@ -38,7 +38,17 @@ namespace loopnest
 
         llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Range& r)
         {
-            os << "[" << r.Begin() << "," << r.End() << ":" << r.Increment() << ")";
+            os << "[" << r.Begin() << ",";
+            if (r.HasVariableEnd())
+            {
+                auto arg = r.VariableEnd().dyn_cast<mlir::BlockArgument>();
+                os << "arg" << arg.getArgNumber();
+            }
+            else
+            {
+                os << r.End();
+            }
+            os << ":" << r.Increment() << ")";
             return os;
         }
 
@@ -213,10 +223,34 @@ namespace loopnest
 
     Range LoopRange::GetConstantRange() const
     {
+        assert(!IsVariable() && "GetConstantRange called on a variable range");
+
         auto startInt = GetValue<int64_t>(start);
         auto stopInt = GetValue<int64_t>(stop);
         auto stepInt = GetValue<int64_t>(step);
         return { startInt, stopInt, stepInt };
+    }
+
+    Range LoopRange::GetVariableRange() const
+    {
+        assert(IsVariable() && "GetVariableRange called on a constant range");
+
+        // TODO: support variable increment
+        auto startInt = GetValue<int64_t>(start);
+        auto stopVar = stop;
+        auto stepInt = GetValue<int64_t>(step);
+        return { startInt, stopVar, stepInt };
+    }
+
+    Range LoopRange::GetRange() const
+    {
+        return IsVariable() ? GetVariableRange() : GetConstantRange();
+    }
+
+    bool LoopRange::IsVariable() const
+    {
+        auto constOp = stop.getDefiningOp<mlir::ConstantIndexOp>();
+        return (constOp == nullptr);
     }
 
     //
@@ -314,7 +348,7 @@ namespace loopnest
         auto newState = state;
         for (const auto& p : partitions)
         {
-            auto partitionRange = MakeLoopRange(_builder, p.range.Begin(), p.range.End(), p.range.Increment());
+            LoopRange partitionRange = MakeLoopRange(_builder, p.range);
             UpdateSubdomainSizes(loopIndex, partitionRange, newState.subdomainSize);
 
             auto loop = EmitLoopOp(partitionRange, newState, schedule); // This creates the (empty) loop op
@@ -360,7 +394,7 @@ namespace loopnest
             _loops[loopIndex].push_back(loop);
 
             SymbolicIndexOp loopIndexOp = loop.getSymbolicIndex();
-            newState.loopIndices.insert_or_assign(loopIndex, LoopIndexSymbolTableEntry{ loopIndexOp, partitionRange.GetConstantRange(), LoopIndexState::inProgress });
+            newState.loopIndices.insert_or_assign(loopIndex, LoopIndexSymbolTableEntry{ loopIndexOp, partitionRange.GetRange(), LoopIndexState::inProgress });
             GenerateLoopBody(loop, partitionRange, newState, schedule); // This contains the recursive call to GenerateLoopStructure
             EndLoopRange(partitionRange, newState, schedule);
         }
@@ -522,14 +556,15 @@ namespace loopnest
     }
 
     // This function figures out the correct place to put the insertion point, but makes no guarantees about where it leaves it
-    ScheduledLoopOp LoopNestBuilder::EmitLoopOp(const LoopRange& range, const RecursionState& state, const LoopVisitSchedule& schedule)
+    ScheduledLoopOp LoopNestBuilder::EmitLoopOp(const LoopRange& loopRange, const RecursionState& state, const LoopVisitSchedule& schedule)
     {
         auto loopIndex = schedule.CurrentLoopIndex();
-        auto constRange = range.GetConstantRange();
+        auto range = loopRange.GetRange();
+
         if (_printLoops)
         {
-            llvm::errs().indent(2 * schedule.CurrentLoopLevel()) << "for " << loopIndex << " in " << constRange << " {";
-            if (constRange.NumIterations() == 1)
+            llvm::errs().indent(2 * schedule.CurrentLoopLevel()) << "for " << loopIndex << " in " << range << " {";
+            if (!range.HasVariableEnd() && range.NumIterations() == 1)
             {
                 llvm::errs() << " -- single iteration";
             }
@@ -539,35 +574,41 @@ namespace loopnest
         // Emit a ScheduledLoopOp
         auto builder = GetCurrentLoopBuilder(schedule);
 
-        int begin = constRange.Begin();
-        int end = constRange.End();
-        int step = constRange.Increment();
+        auto begin = range.Begin();
+        auto step = range.Increment();
 
         auto loc = GetLocation();
         auto symbolicIndex = GetSymbolicIndex(loopIndex);
         assert(symbolicIndex && "Error: bad symbolic index");
         auto domain = GetDomain();
         auto domainIndexOrder = domain.GetDimensions();
-        auto loop = builder.create<ScheduledLoopOp>(loc, begin, end, step, symbolicIndex, state.subdomainSize, domainIndexOrder);
+
+        auto loop = range.HasVariableEnd() ?
+            builder.create<ScheduledLoopOp>(loc, begin, range.VariableEnd(), step, symbolicIndex, state.subdomainSize, domainIndexOrder) :
+            builder.create<ScheduledLoopOp>(loc, begin, range.End(), step, symbolicIndex, state.subdomainSize, domainIndexOrder);
 
         // TODO : move these attributes to the loop attribute infra
         loop->setAttr("index", IndexAttr::get(loopIndex, builder.getContext()));
-        if (auto val = GetUnrollIfRangeSmallerThan(loopIndex))
+
+        if (!range.HasVariableEnd())
         {
-            if (constRange.NumIterations() < (int64_t)*val)
+            if (auto val = GetUnrollIfRangeSmallerThan(loopIndex))
             {
-                loop->setAttr("accv_unrolled", builder.getUnitAttr());
+                if (range.NumIterations() < (int64_t)*val)
+                {
+                    loop->setAttr("accv_unrolled", builder.getUnitAttr());
+                }
             }
-        }
 
-        if (auto val = GetUnrollAndJamFactor(loopIndex))
-        {
-            loop->setAttr("accv_unroll_jam", builder.getI64IntegerAttr((int64_t)*val));
-        }
+            if (auto val = GetUnrollAndJamFactor(loopIndex))
+            {
+                loop->setAttr("accv_unroll_jam", builder.getI64IntegerAttr((int64_t)*val));
+            }
 
-        if (IsSaturated(loopIndex))
-        {
-            loop->setAttr("accv_saturated", builder.getUnitAttr());
+            if (IsSaturated(loopIndex))
+            {
+                loop->setAttr("accv_saturated", builder.getUnitAttr());
+            }
         }
 
         auto execPlan = GetScheduleOp().getOrCreateExecPlan();
@@ -826,6 +867,11 @@ namespace loopnest
 
     std::vector<Partition> LoopNestBuilder::GetPartitions(const Index& loopIndex, Range loopRange, const RecursionState& state, const LoopVisitSchedule& schedule) const
     {
+        if (loopRange.HasVariableEnd())
+        {
+            return std::vector<Partition>({ { loopIndex, loopRange } }); // TODO: handle transformations on variable ranges
+        }
+
         // Find conditions involving this index and add any relevant partition split points
         std::set<int64_t> splits;
         for (auto k : GetPossiblyValidKernels(state))
@@ -1183,6 +1229,9 @@ namespace loopnest
 
     void LoopNestBuilder::UpdateSubdomainSizes(const Index& loopIndex, const LoopRange& range, std::vector<int64_t>& subdomainSize)
     {
+        if (range.IsVariable())
+            return;
+
         auto constantRange = range.GetConstantRange();
         auto partitionIncrement = std::min(constantRange.Size(), constantRange.Increment());
         for (auto pos : GetLogicalDimensionPositions(loopIndex))
@@ -1442,6 +1491,19 @@ namespace loopnest
             GetConstantIndex(builder, stop).getResult(),
             GetConstantIndex(builder, step).getResult()
         };
+    }
+
+    LoopRange LoopNestBuilder::MakeLoopRange(mlir::OpBuilder& builder, const Range& range)
+    {
+        if (range.HasVariableEnd())
+        {
+            return {
+                GetConstantIndex(builder, range.Begin()).getResult(),
+                range.VariableEnd(),
+                GetConstantIndex(builder, range.Increment()).getResult()
+            };
+        }
+        return MakeLoopRange(builder, range.Begin(), range.End(), range.Increment());
     }
 
     void LoopNestBuilder::DefinePostLoopIndex(OpBuilder& builder, const Index& loopIndex, LoopIndexSymbolTable& runtimeLoopIndices, const LoopVisitSchedule& schedule)

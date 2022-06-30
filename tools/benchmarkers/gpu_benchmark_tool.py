@@ -26,21 +26,21 @@ def get_current_commit_id():
 
 def get_current_commit_datetime():
     repo = git.Repo(search_parent_directories=True)
-    return repo.head.object.committed_datetime
+    return str(repo.head.object.committed_datetime)
 
 def get_current_branch():
     repo = git.Repo(search_parent_directories=True)
     return repo.active_branch.name
 
-def exec_ext_benchmarker(gpu_id: int, gemm: gemm_opts.GemmOpts, benchmark_tool):
+def exec_ext_benchmarker(gpu_id: int, gemm: gemm_opts.GemmOpts, datatype, benchmark_tool):
     proc = subprocess.run([benchmark_tool] + list(
-        map(str, [gemm.type, gemm.m, gemm.n, gemm.k, int(gemm.transA), int(gemm.transB), gemm.alpha, gemm.beta, gemm.lda, gemm.ldb, gemm.ldc, gpu_id])),
+        map(str, [datatype, gemm.m, gemm.n, gemm.k, int(gemm.transA), int(gemm.transB), gemm.alpha, gemm.beta, gemm.lda, gemm.ldb, gemm.ldc, gpu_id])),
         capture_output=True,
         text=True)
     proc.check_returncode()
     return proc.stdout
 
-def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], git_branch: str, target_name: str, output_prefix: str, rocblas: str, composable_kernel: str, cublas: str, cutlass: str, available_gpus, containerName, verboseLogs, checkResult, compilerVersion, deviceProperties):
+def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, git_branch: str, target_name: str, output_prefix: str, rocblas: str, composable_kernel: str, cublas: str, cutlass: str, available_gpus, container_name, verbose, check, compiler_ver, deviceProperties):
     result_dir = os.path.split(output_prefix)[0] or '.'
     if not os.path.isdir(result_dir):
         os.makedirs(result_dir)
@@ -54,7 +54,7 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], git_branch: str, targe
         benchmark_tool = rocblas if rocblas else cublas
         print(f'Running {benchmark_tool_name} baseline benchmarks')
 
-        resultRows = []
+        result_rows = []
         for gemm in data:
             best_time = 0.0
             best_throughput = 0.0
@@ -63,7 +63,7 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], git_branch: str, targe
             for gpu_id in range(len(available_gpus)):
                 if available_gpus[gpu_id]:
                     print(f"Processing input: {gemm} on GPU {gpu_id}")
-                    output = exec_ext_benchmarker(gpu_id, gemm, benchmark_tool)
+                    output = exec_ext_benchmarker(gpu_id, gemm, dtype, benchmark_tool)
                     print(output)
                     tokens = output.split(",")
                     if float(tokens[len(tokens) - 1].rstrip()) > best_throughput:
@@ -72,24 +72,24 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], git_branch: str, targe
                         gpu = gpu_id
                         prog_out = output
             else:
-                benchmarkResult = accera_gemm.BenchmarkResult(opts=gemm, gpu_id=gpu, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=deviceProperties[gpu])
-                benchmarkResult.compiler_version = compilerVersion
+                benchmarkResult = accera_gemm.BenchmarkResult(opts=gemm, dtype=dtype, gpu_id=gpu, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=deviceProperties[gpu])
+                benchmarkResult.compiler_version = compiler_ver
                 benchmarkResult.target_rt = 'ROCM' if rocblas else 'CUDA'
                 benchmarkResult.compilable = True
                 benchmarkResult.executable = True
                 benchmarkResult.time_ms = best_time
                 benchmarkResult.TFlops = str(best_throughput)
                 benchmarkResult.prog_out = prog_out
-                resultRows.append(benchmarkResult.getResultRow())
+                result_rows.append(benchmarkResult.get_result_row())
         else:
-            cosmosdb.upsert_benchmark_results(resultRows, benchmark_tool_name, verboseLogs)
+            cosmosdb.upsert_benchmark_results(result_rows, benchmark_tool_name, verbose)
             cosmosdb.show_benchmark_summary(benchmark_tool_name)
     elif composable_kernel:
         print('Running composable_kernel baseline benchmarks')
-        resultRows = []
+        result_rows = []
         for gemm in data:
             print(f"Processing input: {gemm} on GPU 0")
-            datatype = '0' if gemm.type == 's' else '1'
+            datatype = '0' if dtype == 's' else '1'
             if gemm.transA and gemm.transB:
                 layout = '3'
             elif gemm.transA and not gemm.transB:
@@ -101,36 +101,39 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], git_branch: str, targe
             lda = gemm.m if not gemm.transA else gemm.k
             ldb = gemm.k if not gemm.transB else gemm.n
             ldc = gemm.m
-            benchmarkResult = accera_gemm.BenchmarkResult(opts=gemm, gpu_id=0, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=deviceProperties[0])
+            benchmarkResult = accera_gemm.BenchmarkResult(opts=gemm, dtype=dtype, gpu_id=0, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=deviceProperties[0])
             proc = subprocess.run([composable_kernel, 'gemm', datatype, layout, '0', '0', '0', '2', str(gemm.m), str(gemm.n), str(gemm.k), str(lda), str(ldb), str(ldc)], capture_output=True, text=True)
-            benchmarkResult.compiler_version = compilerVersion
+            print(proc.stdout)
+            benchmarkResult.compiler_version = compiler_ver
             benchmarkResult.target_rt = 'ROCM'
             benchmarkResult.compilable = True
             benchmarkResult.executable = True
             benchmarkResult.prog_out = proc.stdout
-            matches = re.search('Best Perf: (.+) ms, (.+) TFlops', proc.stdout)
+            matches = re.search('Best Perf.*: (.+) ms, (.+) TFlops', proc.stdout)
             if matches:
                 benchmarkResult.time_ms = matches.group(1)
                 benchmarkResult.TFlops = matches.group(2)
                 print(matches.group(0))
-                resultRows.append(benchmarkResult.getResultRow())
+                result_rows.append(benchmarkResult.get_result_row())
+            else:
+                raise Exception("Did not find a match for the result.")
         else:
-            cosmosdb.upsert_benchmark_results(resultRows, "composable_kernel", verboseLogs)
+            cosmosdb.upsert_benchmark_results(result_rows, "composable_kernel", verbose)
             cosmosdb.show_benchmark_summary("composable_kernel")
     elif cutlass:
         print('Running CUTLASS baseline benchmarks')
-        resultRows = []
+        result_rows = []
         for gemm in data:
             print(f"Processing input: {gemm} on GPU 0")
-            datatype = 'f32' if gemm.type == 's' else 'f16'
+            datatype = 'f32' if dtype == 's' else 'f16'
             layoutA = 't' if gemm.transA else 'n'
             layoutB = 't' if gemm.transB else 'n'
             result_filename = f'{output_prefix}_cutlass'
-            benchmarkResult = accera_gemm.BenchmarkResult(opts=gemm, gpu_id=0, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=deviceProperties[0])
+            benchmarkResult = accera_gemm.BenchmarkResult(opts=gemm, dtype=dtype, gpu_id=0, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=deviceProperties[0])
             proc = subprocess.run([cutlass, '--operation=Gemm', f'--A={datatype}:{layoutA}', f'--B={datatype}:{layoutB}', f'--C={datatype}:*', f'--m={gemm.m}', f'--n={gemm.n}', f'--k={gemm.k}',
                                    f'--alpha={gemm.alpha}', f'--beta={gemm.beta}', '--op_class=tensorop', f'--output={result_filename}'], capture_output=True, text=True)
             print(proc.stdout)
-            benchmarkResult.compiler_version = compilerVersion
+            benchmarkResult.compiler_version = compiler_ver
             benchmarkResult.target_rt = 'CUDA'
             benchmarkResult.compilable = True
             benchmarkResult.executable = True
@@ -149,22 +152,22 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], git_branch: str, targe
                 min_time = min(min_time, float(tokens[len(tokens) - 3]))
             benchmarkResult.time_ms = min_time
             benchmarkResult.TFlops = maxThroughput
-            resultRows.append(benchmarkResult.getResultRow())
+            result_rows.append(benchmarkResult.get_result_row())
             print(f'Max throughput: {maxThroughput} TFlops')
         else:
-            cosmosdb.upsert_benchmark_results(resultRows, "cutlass", verboseLogs)
+            cosmosdb.upsert_benchmark_results(result_rows, "cutlass", verbose)
             cosmosdb.show_benchmark_summary("cutlass")
     else:
         for gemm in data:
             print(f"\nProcessing input: {gemm}")
-            accera_gemm.benchmark_gemm(gemm, output_prefix, available_gpus, containerName, verboseLogs, compilerVersion, commit_id, commit_datetime, commit_branch, target_name, checkResult, deviceProperties)
-        else:
-            if containerName:
-                cosmosdb.show_benchmark_summary(containerName)
+            accera_gemm.benchmark_gemm(gemm, dtype, output_prefix, available_gpus, container_name, verbose, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, check, deviceProperties)
+        # else:
+        #     if container_name:
+        #         cosmosdb.show_benchmark_summary(container_name)
 
 def prepare_system_for_benchmark(target, available_gpus):
     deviceProperties = []
-    compilerVersion = ''
+    compiler_ver = ''
     if target == 'AMD MI100':
         # fix shader clock speeds
         proc = subprocess.run(["rocm-smi", '--setsclk', '15'], capture_output=True, text=True)
@@ -174,8 +177,8 @@ def prepare_system_for_benchmark(target, available_gpus):
         print(proc.stdout)
 
         proc = subprocess.run(["hipcc", '--version'], capture_output=True, text=True)
-        compilerVersion = proc.stdout
-        print(compilerVersion)
+        compiler_ver = proc.stdout
+        print(compiler_ver)
 
         for deviceId in range(len(available_gpus)):
             proc = subprocess.run(["rocm-smi", '-a', '-d', str(deviceId), '--json'], capture_output=True, text=True)
@@ -195,19 +198,20 @@ def prepare_system_for_benchmark(target, available_gpus):
         print(proc.stdout)
 
         proc = subprocess.run(["nvcc", '--version'], capture_output=True, text=True)
-        compilerVersion = proc.stdout
-        print(compilerVersion)
+        compiler_ver = proc.stdout
+        print(compiler_ver)
 
         for deviceId in range(len(available_gpus)):
             proc = subprocess.run(["nvidia-smi", '-q', '-i', str(deviceId)], capture_output=True, text=True)
             deviceProperties.append(proc.stdout)
 
-    return deviceProperties, compilerVersion
+    return deviceProperties, compiler_ver
 
 def main(args=[]):
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--devices', help='The input config file (csv)', required=False, default="0,1,2,3")
+    parser.add_argument('-d', '--devices', help='The devices to use for the benchmark', required=False, default="0,1,2,3")
     parser.add_argument('-i', '--input', help='The input config file (csv)', required=False)
+    parser.add_argument('-y', '--type', help='The data type for the input set, h or fp16, s for fp32', required=False)
     parser.add_argument('-b', '--branch', help='The git branch to use to tag the results to', required=False)
     parser.add_argument('-z', '--string', help='input config string (csv, semi-colon per row)', required=False)
     parser.add_argument('-t', '--target', help='The target the emitter is emitting HAT package for')
@@ -228,6 +232,9 @@ def main(args=[]):
 
     if args.rocblas and args.composable_kernel:
         raise RuntimeError("rocblas and composable_kernel options are mutually exclusive")
+
+    if not args.type:
+        raise RuntimeError("No type argument passed")
 
     f = None
     if args.string:
@@ -262,9 +269,9 @@ def main(args=[]):
 
     print(datetime.now())
 
-    deviceProperties, compilerVersion = prepare_system_for_benchmark(args.target, available_gpus)
+    deviceProperties, compiler_ver = prepare_system_for_benchmark(args.target, available_gpus)
 
-    benchmark_gemm_shapes(gemm_inputs, args.branch, args.target, args.output, args.rocblas, args.composable_kernel, args.cublas, args.cutlass, available_gpus, args.upload, args.verbose, args.check, compilerVersion, deviceProperties)
+    benchmark_gemm_shapes(gemm_inputs, args.type, args.branch, args.target, args.output, args.rocblas, args.composable_kernel, args.cublas, args.cutlass, available_gpus, args.upload, args.verbose, args.check, compiler_ver, deviceProperties)
 
     print("Cleaning up output directory after benchmark")
     if args.janitor:

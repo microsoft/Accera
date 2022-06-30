@@ -70,9 +70,12 @@ namespace value
     class NestImpl
     {
     public:
-        NestImpl(mlir::OpBuilder& builder, const IterationDomain& domain)
+        NestImpl(mlir::OpBuilder& builder, const IterationDomain& domain, const std::vector<ScalarDimension>& runtimeSizes)
         {
-            _op = MakeNest(builder, domain);
+            std::vector<mlir::Value> sizes;
+            std::transform(runtimeSizes.cbegin(), runtimeSizes.cend(), std::back_inserter(sizes), [](ScalarDimension d) { return Unwrap(d); });
+
+            _op = MakeNest(builder, domain, sizes);
         }
 
         ScalarIndex GetIndex(int pos)
@@ -152,17 +155,17 @@ namespace value
     // Main class implementation
     //
 
-    Nest::Nest(const utilities::MemoryShape& sizes) :
-        Nest(MakeDomain(sizes, ""))
+    Nest::Nest(const utilities::MemoryShape& sizes, const std::vector<ScalarDimension>& runtimeSizes) :
+        Nest(MakeDomain(sizes, ""), runtimeSizes)
     {}
 
-    Nest::Nest(const std::vector<Range>& ranges) :
-        Nest(MakeDomain(ranges, ""))
+    Nest::Nest(const std::vector<Range>& ranges, const std::vector<ScalarDimension>& runtimeSizes) :
+        Nest(MakeDomain(ranges, ""), runtimeSizes)
     {
     }
 
-    Nest::Nest(const IterationDomain& domain) :
-        _impl(std::make_unique<NestImpl>(::accera::value::GetMLIRContext().GetOpBuilder(), domain))
+    Nest::Nest(const IterationDomain& domain, const std::vector<ScalarDimension>& runtimeSizes) :
+        _impl(std::make_unique<NestImpl>(::accera::value::GetMLIRContext().GetOpBuilder(), domain, runtimeSizes))
     {
     }
 

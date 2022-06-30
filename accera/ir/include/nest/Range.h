@@ -34,7 +34,9 @@ namespace loopnest
 
         int64_t Begin() const;
         int64_t End() const;
+        mlir::Value VariableEnd() const;
         bool HasConstantEnd() const;
+        bool HasVariableEnd() const;
         bool HasIndexEnd() const;
         bool HasOperandIndexEnd() const;
         Index EndIndex() const;
@@ -46,7 +48,7 @@ namespace loopnest
 
     private:
         int64_t _begin;
-        std::variant<int64_t, Index, OperandIndex> _end;
+        std::variant<int64_t, Index, OperandIndex, mlir::Value> _end;
         int64_t _increment;
     };
 

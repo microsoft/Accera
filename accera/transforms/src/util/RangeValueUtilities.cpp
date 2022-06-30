@@ -322,6 +322,11 @@ RangeValue RangeValueAnalysis::resolveRangeValue(AffineForOp op)
 RangeValue RangeValueAnalysis::resolveRangeValue(scf::ForOp op)
 {
     assert(op.getNumInductionVars() == 1);
+    if (op.upperBound().isa<mlir::BlockArgument>()) // variable upper bound
+    {
+        return RangeValue();
+    }
+
     RangeValue lowerBound = resolveRangeValue(op.lowerBound().getDefiningOp());
     RangeValue upperBound = resolveRangeValue(op.upperBound().getDefiningOp());
     return lowerBound.isConstant() && upperBound.isConstant() ? RangeValue(lowerBound.range.getLower(), upperBound.range.getUpper() - 1) : RangeValue();

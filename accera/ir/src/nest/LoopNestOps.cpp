@@ -770,9 +770,12 @@ namespace loopnest
         std::vector<InjectableMapping> result;
         for (auto op = operand_begin(); op != operand_end(); ++op)
         {
-            if (auto injectableMapping = dyn_cast<InjectableMapping>((*op).getDefiningOp()))
+            if (auto definingOp = (*op).getDefiningOp())
             {
-                result.push_back(injectableMapping);
+                if (auto injectableMapping = dyn_cast<InjectableMapping>(definingOp))
+                {
+                    result.push_back(injectableMapping);
+                }
             }
         }
 
@@ -1101,7 +1104,7 @@ namespace loopnest
 
         // Create new loop nest
         IterationDomain fusedNestDomain{ dimensionRanges };
-        auto fusedNest = builder.create<NestOp>(loc, fusedNestDomain);
+        auto fusedNest = MakeNest(builder, fusedNestDomain);
         auto nestBuilder = fusedNest.getBodyBuilder();
 
         // Create a schedule for the fused nest
@@ -1467,10 +1470,35 @@ namespace loopnest
     //
 
     // This is the main build method
-    void NestOp::build(OpBuilder& builder, OperationState& result, const IterationDomain& domain)
+    void NestOp::build(OpBuilder& builder, OperationState& result, const IterationDomain& domain, const std::vector<mlir::Value>& runtimeSizes)
     {
-        auto domainAttr = IterationDomainAttr::get(domain, builder.getContext());
-        build(builder, result, builder.getArrayAttr({}), domainAttr, {}, llvm::None);
+        size_t numSymbols = 0;
+        std::vector<IndexRange> constantOrSymbolicRanges;
+        for (auto range : domain.GetRanges())
+        {
+            // Reference symbolic ranges to operand indices
+            if (range.End() == mlir::ShapedType::kDynamicSize)
+            {
+                constantOrSymbolicRanges.push_back(
+                    IndexRange(range.GetName(),
+                               Range(range.Begin(), OperandIndex(numSymbols++), range.Increment())));
+            }
+            else
+            {
+                constantOrSymbolicRanges.push_back(range);
+            }
+        }
+
+        IterationDomain symbolicDomain(constantOrSymbolicRanges);
+        auto domainAttr = IterationDomainAttr::get(symbolicDomain, builder.getContext());
+
+        if (runtimeSizes.size() != numSymbols)
+        {
+            throw std::logic_error("Runtime sizes don't match the number of symbolic ranges in the iteration domain");
+        }
+
+        // Pass the runtimeSizes as operands
+        build(builder, result, builder.getArrayAttr({}), domainAttr, {}, runtimeSizes.size() > 0 ? ArrayRef(runtimeSizes) : llvm::None);
         ensureTerminator(*result.regions.front(), builder, result.location);
     }
 
@@ -1483,7 +1511,7 @@ namespace loopnest
         }
 
         IterationDomain domain(ranges);
-        build(builder, result, domain);
+        build(builder, result, domain, {});
     }
 
     void NestOp::build(OpBuilder& builder, OperationState& result, ArrayRef<mlir::Value> loopRanges)
@@ -1624,10 +1652,10 @@ namespace loopnest
         return mlir::success();
     }
 
-    NestOp MakeNest(mlir::OpBuilder& builder, const IterationDomain& domain)
+    NestOp MakeNest(mlir::OpBuilder& builder, const IterationDomain& domain, const std::vector<mlir::Value>& runtimeSizes)
     {
         auto ranges = domain.GetRanges();
-        auto nest = builder.create<NestOp>(builder.getUnknownLoc(), domain);
+        auto nest = builder.create<NestOp>(builder.getUnknownLoc(), domain, runtimeSizes);
         return nest;
     }
 
@@ -1637,6 +1665,8 @@ namespace loopnest
         return nest;
     }
 
+    // Used by caching for creating child loopnests where the ranges are not yet resolved
+    // (assumes ranges are constant)
     NestOp MakeNest(mlir::OpBuilder& builder, ArrayRef<mlir::Value> loopRanges)
     {
         auto nest = builder.create<NestOp>(builder.getUnknownLoc(), loopRanges);
@@ -1646,14 +1676,8 @@ namespace loopnest
     //
     // ScheduledLoopOp
     //
-    void ScheduledLoopOp::build(OpBuilder& builder, OperationState& result, int64_t begin, int64_t end, int64_t step, Value symbolicIndex, const std::vector<int64_t>& subdomainSize, const std::vector<Index>& subdomainIndexOrder)
+    void InitScheduledLoopOpRegions(OpBuilder& builder, OperationState& result)
     {
-        ArrayAttr subdomainIndexOrderAttr = util::ConvertIndexVectorToArrayAttr(subdomainIndexOrder, builder.getContext());
-
-        auto index = cast<SymbolicIndexOp>(symbolicIndex.getDefiningOp()).index();
-
-        build(builder, result, builder.getI64IntegerAttr(begin), builder.getI64IntegerAttr(end), builder.getI64IntegerAttr(step), index, symbolicIndex, builder.getI64ArrayAttr(subdomainSize), subdomainIndexOrderAttr);
-
         result.regions.clear();
 
         Region* prologueRegion = result.addRegion();
@@ -1669,8 +1693,37 @@ namespace loopnest
         epilogueRegion->front().addArgument(builder.getIndexType());
     }
 
+    // Create a constant range ScheduledLoopOp
+    void ScheduledLoopOp::build(OpBuilder& builder, OperationState& result, int64_t begin, int64_t end, int64_t step, Value symbolicIndex, const std::vector<int64_t>& subdomainSize, const std::vector<Index>& subdomainIndexOrder)
+    {
+        ArrayAttr subdomainIndexOrderAttr = util::ConvertIndexVectorToArrayAttr(subdomainIndexOrder, builder.getContext());
+
+        auto index = cast<SymbolicIndexOp>(symbolicIndex.getDefiningOp()).index();
+
+        build(builder, result, builder.getI64IntegerAttr(begin), builder.getI64IntegerAttr(end), /*endVal=*/llvm::None, builder.getI64IntegerAttr(step), index, symbolicIndex, builder.getI64ArrayAttr(subdomainSize), subdomainIndexOrderAttr);
+
+        InitScheduledLoopOpRegions(builder, result);
+    }
+
+    // Create a variable range ScheduledLoopOp
+    void ScheduledLoopOp::build(OpBuilder& builder, OperationState& result, int64_t begin, mlir::Value endValue, int64_t step, Value symbolicIndex, const std::vector<int64_t>& subdomainSize, const std::vector<Index>& subdomainIndexOrder)
+    {
+        ArrayAttr subdomainIndexOrderAttr = util::ConvertIndexVectorToArrayAttr(subdomainIndexOrder, builder.getContext());
+
+        auto index = cast<SymbolicIndexOp>(symbolicIndex.getDefiningOp()).index();
+        auto endSentinel = builder.getI64IntegerAttr(mlir::ShapedType::kDynamicSize);
+
+        build(builder, result, builder.getI64IntegerAttr(begin), endSentinel, { endValue }, builder.getI64IntegerAttr(step), index, symbolicIndex, builder.getI64ArrayAttr(subdomainSize), subdomainIndexOrderAttr);
+
+        InitScheduledLoopOpRegions(builder, result);
+    }
+
     int64_t ScheduledLoopOp::getNumIterations()
     {
+        if (static_cast<int64_t>(end()) == mlir::ShapedType::kDynamicSize)
+        {
+            throw std::runtime_error("Num iterations unknown for variable range ScheduledLoopOp");
+        }
         return Range(begin(), end(), step()).NumIterations();
     }
 
@@ -1705,7 +1758,18 @@ namespace loopnest
         bool printBlockTerminators = false;
         auto indexAttr = op.index();
         p << op.getOperationName() << " " << op.symbolicIndex() << " (" << indexAttr << ")";
-        p << " = " << op.begin() << " to " << op.end() << " step " << op.step();
+        p << " = " << op.begin() << " to ";
+
+        if (op.hasVariableEnd())
+        {
+            assert(op.endValue().size() == 1 && "Only 1 variable end Value is expected per op");
+            p << op.endValue().front();
+        }
+        else
+        {
+            p << op.end();
+        }
+        p << " step " << op.step();
 
         p << "  prologue(" << op.getPrologue()->getArgument(0) << ")";
         p.printRegion(op.prologue(),
@@ -1730,6 +1794,7 @@ namespace loopnest
         Type i64Type = builder.getIntegerType(64);
 
         OpAsmParser::OperandType symbolicIndex;
+        OpAsmParser::OperandType endValue;
 
         // Parse the SSA index variable followed by '(', then the index as an attribute, then ')' and '='
         if (failed(parser.parseOperand(symbolicIndex)) ||
@@ -1755,7 +1820,9 @@ namespace loopnest
             return failure();
         if (failed(parser.parseKeyword("to")))
             return failure();
-        if (failed(parser.parseAttribute(boundsAttr, i64Type, "end", result.attributes)))
+        if (failed(parser.parseAttribute(boundsAttr, i64Type, "end", result.attributes)) ||
+            failed(parser.parseOperand(endValue)) || // TODO: verify
+            failed(parser.resolveOperand(endValue, indexType, result.operands)))
             return failure();
         if (failed(parser.parseKeyword("step")))
             return failure();

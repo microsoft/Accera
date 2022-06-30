@@ -11,25 +11,25 @@ HOST = config.settings['host']
 MASTER_KEY = config.settings['master_key']
 DATABASE_ID = config.settings['database_id']
 
-def get_container(containerName, verboseLogs):
+def get_container(container_name, verbose):
     client = CosmosClient(HOST, credential=MASTER_KEY)
     db = client.get_database_client(DATABASE_ID)
 
-    container = db.create_container_if_not_exists(id=containerName, partition_key=PartitionKey(path='/partitionKey'))
-    if verboseLogs:
-        print('Fetched container with id \'{0}\''.format(containerName))
+    container = db.create_container_if_not_exists(id=container_name, partition_key=PartitionKey(path='/partitionKey'))
+    if verbose:
+        print('Fetched container with id \'{0}\''.format(container_name))
 
     return container
 
-def upsert_benchmark_results(resultRows, containerName, verboseLogs):
-    if verboseLogs:
-        print(f"Uploading {len(resultRows)} results to Cosmos DB {DATABASE_ID} in container {containerName}...")
-    container = get_container(containerName, verboseLogs)
+def upsert_benchmark_results(result_rows, container_name, verbose):
+    if verbose:
+        print(f"Uploading {len(result_rows)} results to Cosmos DB {DATABASE_ID} in container {container_name}...")
+    container = get_container(container_name, verbose)
 
-    for row in resultRows:
+    for row in result_rows:
         container.upsert_item(row)
 
-    if verboseLogs:
+    if verbose:
         print("Finished Uploading results to Cosmos DB storage.")
 
 def getTopResultFromParition(container, partitionKey):
@@ -46,8 +46,8 @@ def getTopResultFromParition(container, partitionKey):
 
     return items[0]
 
-def show_benchmark_summary(containerName):
-    container = get_container(containerName, False)
+def show_benchmark_summary(container_name):
+    container = get_container(container_name, False)
     partitions = list(container.query_items(query="SELECT DISTINCT c.partitionKey from c", enable_cross_partition_query=True))
     partitions = list(list(partitionDict.values())[0] for partitionDict in partitions)
     for partitionKey in partitions:

@@ -101,6 +101,7 @@ def accxp_MakeCacheOp : accxp_Op<"make_cache"> {
     corresponding position in the cache.
   }];
   let arguments = (ins MemorySpaceAttr:$memorySpace,
+                   AffineMapAttr:$activeBlockToCacheMap,
                    AffineMapAttr:$offsetArrayToCacheAccessMap,
                    ArrayAttr:$offsetAccessIndices,
                    ArrayAttr:$multiCacheAccessIndices);
@@ -112,6 +113,7 @@ def accxp_MakeCacheOp : accxp_Op<"make_cache"> {
     OpBuilder<(ins
       "mlir::MemRefType":$cache,
       "MemorySpace":$memorySpace,
+      "AffineMap":$activeBlockToCacheMap,
       "AffineMap":$offsetArrayToCacheAccessMap,
       "const std::vector<Index>&":$offsetAccessIndices,
       "const std::vector<Index>&":$multiCacheAccessIndices
@@ -184,7 +186,7 @@ def accxp_ActiveBlockCacheCopyOp : accxp_Op<"active_block_cache_copy", [AttrSize
                         AffineMapAttr:$activeBlockToCacheMap,
                         UnitAttr:$toCache,
                         UnitAttr:$thrifty,
-                        UnitAttr:$skipBarriers, // TODO : remove this once barrier analysis hoists barriers out of loops
+                        UnitAttr:$skipBarriers, // TODO : remove this once barrier analysis hoists barriers out of loops 
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
 }
 

@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.60)
+[//]: # (Version: v1.2.70)
 
-# Accera v1.2.6 Reference
+# Accera v1.2.7 Reference
 
 ## `accera.Target([architecture, cache_lines, cache_sizes, category, extensions, family, frequency_GHz, known_name, model, name, num_cores, num_threads, runtime, tensor_core_info, turbo_frequency_GHz, vector_bytes, vector_registers)`
 

@@ -171,6 +171,61 @@ namespace value
         }
     }
 
+    constexpr inline bool IsSignedType(ValueType t)
+    {
+        switch (t)
+        {
+        case ValueType::BFloat16:
+            [[fallthrough]];
+        case ValueType::Float16:
+            [[fallthrough]];
+        case ValueType::Float:
+            [[fallthrough]];
+        case ValueType::Double:
+            [[fallthrough]];
+        case ValueType::Int8:
+            [[fallthrough]];
+        case ValueType::Int16:
+            [[fallthrough]];
+        case ValueType::Int32:
+            [[fallthrough]];
+        case ValueType::Int64:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    constexpr inline bool IsUnsignedType(ValueType t)
+    {
+        switch (t)
+        {
+        case ValueType::Boolean:
+            [[fallthrough]];
+        case ValueType::Byte:
+            [[fallthrough]];
+        case ValueType::Uint16:
+            [[fallthrough]];
+        case ValueType::Uint32:
+            [[fallthrough]];
+        case ValueType::Uint64:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    constexpr inline bool IsSignlessType(ValueType t)
+    {
+        switch (t)
+        {
+        case ValueType::Index:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     /// <summary> Get a string representation of the enum value </summary>
     std::string ToString(ValueType t);
     ValueType FromString(std::string name);

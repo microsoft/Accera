@@ -139,6 +139,15 @@ namespace value
 
     Value EmitterContext::StoreConstantData(ConstantData data, MemoryLayout layout, const std::string& name) { return StoreConstantDataImpl(data, layout, name); }
 
+    bool EmitterContext::IsConstantData(Value v) const
+    {
+        if (!v.IsDefined() || v.IsEmpty()) return false;
+
+        if (!std::holds_alternative<Emittable>(v.GetUnderlyingData())) return true;
+
+        return IsConstantDataImpl(v);
+    }
+
     Value EmitterContext::ResolveConstantDataReference(Value source) { return ResolveConstantDataReferenceImpl(source); }
 
     void EmitterContext::For(MemoryLayout layout, std::function<void(std::vector<Scalar>)> fn, const std::string& name)
@@ -249,11 +258,6 @@ namespace value
     Scalar EmitterContext::Cast(Scalar value, ValueType type)
     {
         return CastImpl(value, type);
-    }
-
-    Scalar EmitterContext::UnsignedCast(Scalar value, ValueType type)
-    {
-        return UnsignedCastImpl(value, type);
     }
 
     Scalar EmitterContext::Bitcast(Scalar value, ValueType type)

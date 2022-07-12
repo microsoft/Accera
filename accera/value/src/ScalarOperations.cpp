@@ -13,6 +13,7 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <stdexcept>
+#include <tuple>
 
 namespace accera
 {
@@ -96,31 +97,36 @@ namespace value
     Scalar Add(Scalar s1, Scalar s2)
     {
         Scalar copy = s1.Copy();
-        return copy += s2;
+        auto&& [lhs, rhs] = Scalar::MakeTypeCompatible(copy, s2);
+        return lhs += rhs;
     }
 
     Scalar Subtract(Scalar s1, Scalar s2)
     {
         Scalar copy = s1.Copy();
-        return copy -= s2;
+        auto&& [lhs, rhs] = Scalar::MakeTypeCompatible(copy, s2);
+        return lhs -= rhs;
     }
 
     Scalar Multiply(Scalar s1, Scalar s2)
     {
         Scalar copy = s1.Copy();
-        return copy *= s2;
+        auto&& [lhs, rhs] = Scalar::MakeTypeCompatible(copy, s2);
+        return lhs *= rhs;
     }
 
     Scalar Divide(Scalar s1, Scalar s2)
     {
         Scalar copy = s1.Copy();
-        return copy /= s2;
+        auto&& [lhs, rhs] = Scalar::MakeTypeCompatible(copy, s2);
+        return lhs /= rhs;
     }
 
     Scalar Modulo(Scalar s1, Scalar s2)
     {
         Scalar copy = s1.Copy();
-        return copy %= s2;
+        auto&& [lhs, rhs] = Scalar::MakeTypeCompatible(copy, s2);
+        return lhs %= rhs;
     }
 
     Scalar FusedMultiplyAdd(Scalar a, Scalar b, Scalar c)
@@ -194,16 +200,24 @@ namespace value
 
     Scalar Max(Scalar s1, Scalar s2)
     {
+        std::tie(s1, s2) = Scalar::MakeTypeCompatible(s1, s2);
+        
         return Select(s1 > s2, s1, s2);
     }
 
     Scalar Min(Scalar s1, Scalar s2)
     {
+        std::tie(s1, s2) = Scalar::MakeTypeCompatible(s1, s2);
+
         return Select(s1 < s2, s1, s2);
     }
 
     Scalar Clamp(Scalar s, Scalar min, Scalar max)
     {
+        std::tie(min, max) = Scalar::MakeTypeCompatible(min, max);
+        std::tie(s, min) = Scalar::MakeTypeCompatible(s, min);
+        std::tie(s, max) = Scalar::MakeTypeCompatible(s, max);
+
         return Min(max, Max(s, min));
     }
 
@@ -220,6 +234,7 @@ namespace value
 
     Scalar Select(Scalar cmp, Scalar a, Scalar b)
     {
+        std::tie(a, b) = Scalar::MakeTypeCompatible(a, b);
         return ScalarOpBuilder<mlir::SelectOp>(cmp, a, b);
     }
 

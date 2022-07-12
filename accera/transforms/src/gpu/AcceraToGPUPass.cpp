@@ -498,9 +498,7 @@ struct ValueMMALoadSyncOpToRocDLConversion final : public OpConversionPattern<vi
         const auto warpStride = warpSize / leadingDim;
 
         // Get per-thread computation handles
-        auto upperLeftCornerRowDim = rewriter.getAffineDimExpr(0);
-        auto upperLeftCornerColDim = rewriter.getAffineDimExpr(1);
-        auto inductionVarDim = rewriter.getAffineDimExpr(2);
+        auto inductionVarDim = rewriter.getAffineDimExpr(0);
         auto warpTidSym = rewriter.getAffineSymbolExpr(0);
 
         mlir::AffineExpr fullRowOffsetExpr, fullColOffsetExpr;
@@ -522,19 +520,49 @@ struct ValueMMALoadSyncOpToRocDLConversion final : public OpConversionPattern<vi
         }
 
         auto warpTidVal = utilir::GetCurrentGPUWarpThreadID(rewriter, loc);
-        std::vector<mlir::AffineExpr> intraTileOffsetExprs = { upperLeftCornerRowDim + fullRowOffsetExpr, upperLeftCornerColDim + fullColOffsetExpr };
-        auto intraTileOffsetMap = mlir::AffineMap::get(3, 1, intraTileOffsetExprs, rewriter.getContext());
-        auto mfmaExternalDimsMap = mlir::AffineMap::getMultiDimIdentityMap(externalIndices, rewriter.getContext());
-        auto fullMatrixAccessMap = utilir::ConcatenateAndShiftAffineDimsAndMaps(rewriter, mfmaExternalDimsMap, intraTileOffsetMap);
 
         auto loop = rewriter.replaceOpWithNewOp<mlir::AffineForOp>(op, 0, vecSize, 1, vec);
         auto loopBuilder = utilir::MakeBodyBuilder(loop);
         auto inductionVar = loop.getInductionVar();
         auto destVec = loop.getRegionIterArgs()[0];
 
+        // 1 dim for the induction var, 1 symbol for the warp thread ID
+        auto warpTileOffsetMap = mlir::AffineMap::get(1, 1, { fullRowOffsetExpr, fullColOffsetExpr }, rewriter.getContext());
+
+        // Shift the dims in warpTileOffsetMap by the mfma external dim count
+        auto mfmaExternalDimsMap = mlir::AffineMap::getMultiDimIdentityMap(externalIndices, loopBuilder.getContext());
+        warpTileOffsetMap = utilir::ConcatenateAndShiftAffineDimsAndMaps(loopBuilder, mfmaExternalDimsMap, warpTileOffsetMap);
+
+        // The buffer being accessed may hold the tile data in a physical order different from the logical order,
+        // so use the tileAccessMap map attr if it exists to map how offsets within the logical tile translate
+        // to offsets within the physical buffer layout
+        auto tileAccessMapOpt = op.tileAccessMap();
+        if (tileAccessMapOpt.hasValue())
+        {
+            auto tileAccessMap = tileAccessMapOpt.getValue();
+            warpTileOffsetMap = tileAccessMap.compose(warpTileOffsetMap);
+        }
+
+        mlir::Value zeroIndex = rewriter.create<mlir::ConstantIndexOp>(loc, 0);
+        std::vector<mlir::Value> warpTileOffsetOperands(upperLeftCornerPos.size(), zeroIndex);
+        warpTileOffsetOperands[warpTileOffsetOperands.size() - 2] = inductionVar;
+        warpTileOffsetOperands[warpTileOffsetOperands.size() - 1] = warpTidVal;
+        auto warpTileOffsetPhysicalPos = utilir::MultiDimAffineApply(loopBuilder, loc, warpTileOffsetMap, warpTileOffsetOperands);
+
+        // Now that we have the offsets within the physical buffer for this thread in the warp, add that to the physical upper left corner position
+        // To get the full position in the memref
+
+        std::vector<mlir::AffineExpr> matrixAccessExprs;
+        for (size_t i = 0; i < upperLeftCornerPos.size(); ++i)
+        {
+            matrixAccessExprs.emplace_back(loopBuilder.getAffineDimExpr(i) + loopBuilder.getAffineDimExpr(i + upperLeftCornerPos.size()));
+        }
+
+        auto fullMatrixAccessMap = mlir::AffineMap::get(2 * upperLeftCornerPos.size(), 0, matrixAccessExprs, loopBuilder.getContext());
+
         std::vector<mlir::Value> accessOperands(upperLeftCornerPos);
-        accessOperands.push_back(inductionVar);
-        accessOperands.push_back(warpTidVal);
+        accessOperands.insert(accessOperands.end(), warpTileOffsetPhysicalPos.begin(), warpTileOffsetPhysicalPos.end());
+
         auto accessPos = utilir::MultiDimAffineApply(loopBuilder, loc, fullMatrixAccessMap, accessOperands);
 
         auto load = loopBuilder.create<memref::LoadOp>(loc, memref, accessPos);

@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.6)
+[//]: # (Version: v1.2.7)
 
-# Accera v1.2.6 Reference
+# Accera v1.2.7 Reference
 
 ## `accera.Schedule.create_plan([target])`
 Creates a plan for running this schedule.

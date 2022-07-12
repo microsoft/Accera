@@ -210,7 +210,7 @@ def prepare_system_for_benchmark(target, available_gpus):
 def main(args=[]):
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--devices', help='The devices to use for the benchmark', required=False, default="0,1,2,3")
-    parser.add_argument('-i', '--input', help='The input config file (csv)', required=False)
+    parser.add_argument('-i', '--input', help='Comma-separated list of input config files (csv)', required=False)
     parser.add_argument('-y', '--type', help='The data type for the input set, h or fp16, s for fp32', required=False)
     parser.add_argument('-b', '--branch', help='The git branch to use to tag the results to', required=False)
     parser.add_argument('-z', '--string', help='input config string (csv, semi-colon per row)', required=False)
@@ -241,15 +241,18 @@ def main(args=[]):
         args.string = ','.join(gemm_opts.CONFIG_HEADERS) + '\n' + '\n'.join(args.string.split(';'))
         f = StringIO(args.string)
 
-    try:
-        if f is None:
-            f = open(args.input)
+    gemm_inputs = []
+    if f is None:
+        input_files = args.input.split(",")
+        for file in input_files:
+            try:
+                f = open(file)
 
-        reader = csv.DictReader(f, gemm_opts.CONFIG_HEADERS)
-        gemm_inputs = [gemm_opts.GemmOpts(**data) for data in islice(reader, 1, None)]
+                reader = csv.DictReader(f, gemm_opts.CONFIG_HEADERS)
+                gemm_inputs += [gemm_opts.GemmOpts(**data) for data in islice(reader, 1, None)]
 
-    finally:
-        f.close()
+            finally:
+                f.close()
 
     available_gpus = []
     devices = args.devices.split(",")

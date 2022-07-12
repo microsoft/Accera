@@ -76,6 +76,10 @@ namespace value
         /// <returns> The type </returns>
         ValueType GetType() const;
 
+        // Returns [s1, s2] with either s1 casted to s2's type or s2 casted to s1's type or unchanged if
+        // there is no implicit type conversion that can be done.
+        static std::pair<Scalar, Scalar> MakeTypeCompatible(Scalar s1, Scalar s2);
+
     private:
         friend Scalar operator+(Scalar, Scalar);
         friend Scalar operator*(Scalar, Scalar);
@@ -110,7 +114,6 @@ namespace value
     {
         return MakeScalar(GetValueType<T>(), name);
     }
-
 } // namespace value
 } // namespace accera
 

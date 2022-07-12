@@ -974,6 +974,7 @@ namespace executionPlan
             cacheType,
             memorylocation,
             mlir::AffineMap::getMultiDimIdentityMap(cacheType.getRank(), builder.getContext()),
+            mlir::AffineMap::getMultiDimIdentityMap(cacheType.getRank(), builder.getContext()),
             std::vector<Index>{},
             std::vector<Index>{});
     }
@@ -982,6 +983,7 @@ namespace executionPlan
                             OperationState& result,
                             mlir::MemRefType cacheType,
                             accera::ir::value::MemorySpace memorylocation,
+                            AffineMap activeBlockToCacheMap,
                             AffineMap offsetArrayToCacheAccessMap,
                             const std::vector<Index>& offsetAccessIndices,
                             const std::vector<Index>& multiCacheAccessIndices)
@@ -993,6 +995,7 @@ namespace executionPlan
               result,
               cacheType,
               memorylocation,
+              activeBlockToCacheMap,
               offsetArrayToCacheAccessMap,
               offsetAccessIndexAttrs,
               multiCacheAccessIndexAttrs);

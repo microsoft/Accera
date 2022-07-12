@@ -99,7 +99,7 @@ class TensorizeTest(unittest.TestCase):
         )
         checker.check_not('__builtin_amdgcn_mfma_')
         checker.run()
-        
+
     def _get_np_datatype(self, p):
         from bfloat16 import bfloat16
         if p.element_type == ScalarType.bfloat16:
@@ -109,7 +109,8 @@ class TensorizeTest(unittest.TestCase):
 
     def _get_random_data(self, p):
         datatype = self._get_np_datatype(p)
-        if p.element_type == ScalarType.int8 or p.element_type == ScalarType.int32:
+        if p.element_type in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64, ScalarType.uint8,
+                              ScalarType.uint16, ScalarType.uint32, ScalarType.uint64]:
             return np.random.randint(-2, 2, p.shape, datatype)
 
         return np.random.random(p.shape).astype(datatype)
@@ -183,7 +184,7 @@ class TensorizeTest(unittest.TestCase):
 
         if thread_tile is None:
             thread_tile = block_tile
-        
+
         if inner_tile_k is None:
             inner_tile_k = outer_tile_k
 
@@ -285,7 +286,7 @@ class TensorizeTest(unittest.TestCase):
 
         if thread_tile is None:
             thread_tile = block_tile
-        
+
         if inner_tile_k is None:
             inner_tile_k = outer_tile_k
 
@@ -308,7 +309,7 @@ class TensorizeTest(unittest.TestCase):
                 i: block_tile[0],
                 j: block_tile[1],
                 k: outer_tile_k
-        })
+            })
         else:
             ii, jj, kk = schedule.tile({
                 i: block_tile[0],
@@ -538,7 +539,7 @@ class TensorizeTest(unittest.TestCase):
             i: outer_tile_x,
             j: outer_tile_y
         })
- 
+
         mma_shape = _MMAShape.M16xN16xK4_B1
         num_total_passes = 4
         target = Target(Target.Model.AMD_MI100)
@@ -834,7 +835,7 @@ class TensorizeTest(unittest.TestCase):
             if ROCM_AVAILABLE:
                 self._verify_matmul(function, A, B, C, v)
 
-    
+
     # This should produce MFMA instructions
     def test_rocm_tensorize_multi_block_multi_warp_output_reordered_indices(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -1406,7 +1407,7 @@ class TensorizeTest(unittest.TestCase):
         shutil.rmtree(output_dir, ignore_errors=True)
 
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
-            package.build(test_name, 
+            package.build(test_name,
                 format=Package.Format.MLIR_DYNAMIC,
                 mode=Package.Mode.RELEASE,
                 output_dir=output_dir
@@ -1561,7 +1562,7 @@ class TensorizeTest(unittest.TestCase):
             j: outer_tile_n,
             k: outer_tile_k
         })
-        
+
         target = Target(Target.Model.NVIDIA_RTX_A6000)
         if tensorize:
             tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes)
@@ -1583,7 +1584,7 @@ class TensorizeTest(unittest.TestCase):
                 kk: default_thread_splits[2]
             })
             schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
-            
+
             plan = schedule.create_plan(target=target)
             plan.bind(
                 mapping={
@@ -1643,7 +1644,7 @@ class TensorizeTest(unittest.TestCase):
     def test_cuda_non_square_last_major_inputs_output(self) -> None:
         self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
                                    test_name="test_cuda_non_square_last_major_inputs_output", tensorize=False,
-                                   cache=False, vectorize=False, element_type=ScalarType.float32, 
+                                   cache=False, vectorize=False, element_type=ScalarType.float32,
                                    array_layouts=[Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR])
 
     def test_cuda_tensorize_non_square_last_major_inputs(self) -> None:
@@ -2301,6 +2302,197 @@ class TensorizeTest(unittest.TestCase):
         self._rocm_batch_matmul(batch_count=32, b_split=2, M=128, N=128, K=128, block_tile=(16, 16), outer_tile_k=16,
                                 test_name="test_batchgemm_rocm_vectorized_cache_double_buffering_tensorize_square_bsplit",
                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, use_static_offsets=False)
+
+    def _test_rocm_cache_memory_order_helper(self, a_layout, a_cache_layout, double_buffer, vectorize, tensorize) -> None:
+
+        from accera import Array, Nest, Package, ScalarType, Target
+
+        M = 512
+        N = 512
+        K = 512
+
+        # Pick the A and B tile sizes to be smaller than the number of threads per block
+        outer_tile_x = 64
+        outer_tile_y = 64
+        outer_tile_k = 64
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=a_layout)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii, jj, kk = schedule.tile({
+            i: outer_tile_x,
+            j: outer_tile_y,
+            k: outer_tile_k
+        })
+
+        mma_shape = _MMAShape.M16xN16xK4_B1
+        num_total_passes = 4
+        target = Target(Target.Model.AMD_MI100)
+        tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=num_total_passes)
+
+        iii, jjj, kkk = schedule.tile({
+            ii: tensor_splits[0],
+            jj: tensor_splits[1],
+            kk: tensor_splits[2]
+        })
+        if tensorize:
+            outer_nest_order = (i, j, k, ii, jj, kk)
+            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+            plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
+        else:
+            schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
+            plan = schedule.create_plan(target)
+            plan.bind(
+                mapping={
+                    i: target.GridUnit.BLOCK_Y,
+                    j: target.GridUnit.BLOCK_X,
+                    iii: target.GridUnit.THREAD_Y,
+                    jjj: target.GridUnit.THREAD_X
+                }
+            )
+
+        plan.cache(A,
+            index=ii,
+            double_buffer=double_buffer,
+            vectorize=vectorize,
+            location=target.MemorySpace.SHARED,
+            layout=a_cache_layout
+        )
+
+        layout_str_map = {
+            Array.Layout.FIRST_MAJOR : "F",
+            Array.Layout.LAST_MAJOR : "L"
+        }
+        name_parts = [
+            "test_rocm_cache_tensorized",
+            layout_str_map[a_layout],
+            layout_str_map[a_cache_layout],
+            f"_db_{double_buffer}",
+            f"_vec_{vectorize}",
+            f"_tens_{tensorize}"
+        ]
+        test_name = "_".join(name_parts)
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE,
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.DEFAULT | Package.Format.MLIR
+        )
+
+    # FIRST-FIRST
+    def test_rocm_memory_order_cache_tensorized_F_F_T_T_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, True)
+
+    def test_rocm_memory_order_cache_tensorized_F_F_T_T_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, False)
+
+    def test_rocm_memory_order_cache_tensorized_F_F_T_F_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, True)
+
+    def test_rocm_memory_order_cache_tensorized_F_F_F_T_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, True)
+
+    def test_rocm_memory_order_cache_tensorized_F_F_T_F_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, False)
+
+    def test_rocm_memory_order_cache_tensorized_F_F_F_F_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, True)
+
+    def test_rocm_memory_order_cache_tensorized_F_F_F_T_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, False)
+
+    def test_rocm_memory_order_cache_tensorized_F_F_F_F_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, False)
+
+    # FIRST-LAST
+    def test_rocm_memory_order_cache_tensorized_F_L_T_T_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, True, True)
+
+    def test_rocm_memory_order_cache_tensorized_F_L_T_T_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, True, False)
+
+    def test_rocm_memory_order_cache_tensorized_F_L_T_F_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, False, True)
+
+    def test_rocm_memory_order_cache_tensorized_F_L_F_T_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, True, True)
+
+    def test_rocm_memory_order_cache_tensorized_F_L_T_F_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, False, False)
+
+    def test_rocm_memory_order_cache_tensorized_F_L_F_F_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, False, True)
+
+    def test_rocm_memory_order_cache_tensorized_F_L_F_T_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, True, False)
+
+    def test_rocm_memory_order_cache_tensorized_F_L_F_F_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, False, False)
+
+    # LAST-FIRST
+    def test_rocm_memory_order_cache_tensorized_L_F_T_T_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, True)
+
+    def test_rocm_memory_order_cache_tensorized_L_F_T_T_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, False)
+
+    def test_rocm_memory_order_cache_tensorized_L_F_T_F_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, True)
+
+    def test_rocm_memory_order_cache_tensorized_L_F_F_T_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, True)
+
+    def test_rocm_memory_order_cache_tensorized_L_F_T_F_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, False)
+
+    def test_rocm_memory_order_cache_tensorized_L_F_F_F_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, True)
+
+    def test_rocm_memory_order_cache_tensorized_L_F_F_T_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, False)
+
+    def test_rocm_memory_order_cache_tensorized_L_F_F_F_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, False)
+
+    # LAST-LAST
+    def test_rocm_memory_order_cache_tensorized_L_L_T_T_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, True, True)
+
+    def test_rocm_memory_order_cache_tensorized_L_L_T_T_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, True, False)
+
+    def test_rocm_memory_order_cache_tensorized_L_L_T_F_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, False, True)
+
+    def test_rocm_memory_order_cache_tensorized_L_L_F_T_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, True, True)
+
+    def test_rocm_memory_order_cache_tensorized_L_L_T_F_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, False, False)
+
+    def test_rocm_memory_order_cache_tensorized_L_L_F_F_T(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, False, True)
+
+    def test_rocm_memory_order_cache_tensorized_L_L_F_T_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, True, False)
+
+    def test_rocm_memory_order_cache_tensorized_L_L_F_F_F(self) -> None:
+        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, False, False)
 
 
 if __name__ == '__main__':

@@ -29,7 +29,7 @@ void DefineScheduleClass(py::module& module)
             "split", [](value::Schedule& sched, value::ScalarIndex& i, int factor) {
                 auto ret = sched.Split(i, factor);
                 using std::swap;
-                swap(i, ret.first);
+                i = std::move(ret.first);
                 return ret.second;
             },
             "i"_a,

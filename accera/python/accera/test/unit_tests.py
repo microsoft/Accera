@@ -101,7 +101,7 @@ class ContainerTypesTests(unittest.TestCase):
         self.assertIsInstance(s != 10, Scalar)
 
     def test_cast(self) -> None:
-        from accera import _cast, Array, Nest, ScalarType
+        from accera import cast, Array, Nest, ScalarType
         for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64, ScalarType.float16,
                   ScalarType.float32, ScalarType.float64]:
             M, S, N = 16, 11, 10
@@ -114,10 +114,10 @@ class ContainerTypesTests(unittest.TestCase):
 
             @nest.iteration_logic
             def _():
-                C[i, j] += A[i, k] + _cast(B[k, j], t)
-                C[i, j] += A[i, k] - _cast(B[k, j], t)
-                C[i, j] += A[i, k] * _cast(B[k, j], t)
-                C[i, j] += A[i, k] / _cast(B[k, j], t)
+                C[i, j] += A[i, k] + cast(B[k, j], t)
+                C[i, j] += A[i, k] - cast(B[k, j], t)
+                C[i, j] += A[i, k] * cast(B[k, j], t)
+                C[i, j] += A[i, k] / cast(B[k, j], t)
 
             package = Package()
             package.add(nest, args=(A, B, C), base_name=f"test_cast_{t.name}")
@@ -126,8 +126,8 @@ class ContainerTypesTests(unittest.TestCase):
                 package.build(package_name, output_dir=TEST_PACKAGE_DIR)
 
     def test_unsigned_cast(self) -> None:
-        from accera import _unsigned_cast, Array, Nest, ScalarType
-        for t in [ScalarType.uint8, ScalarType.uint16]:    # TODO: , ScalarType.uint32, ScalarType.uint64]:
+        from accera import cast, Array, Nest, ScalarType
+        for t in [ScalarType.uint8, ScalarType.uint16, ScalarType.uint32, ScalarType.uint64]:
             M, S, N = 16, 11, 10
             A = Array(role=Array.Role.INPUT, element_type=t, shape=(M, S))
             B = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(S, N))
@@ -138,10 +138,10 @@ class ContainerTypesTests(unittest.TestCase):
 
             @nest.iteration_logic
             def _():
-                C[i, j] += A[i, k] + _unsigned_cast(B[k, j], t)
-                C[i, j] += A[i, k] - _unsigned_cast(B[k, j], t)
-                C[i, j] += A[i, k] * _unsigned_cast(B[k, j], t)
-                C[i, j] += A[i, k] / _unsigned_cast(B[k, j], t)
+                C[i, j] += A[i, k] + cast(B[k, j], t)
+                C[i, j] += A[i, k] - cast(B[k, j], t)
+                C[i, j] += A[i, k] * cast(B[k, j], t)
+                C[i, j] += A[i, k] / cast(B[k, j], t)
 
             package = Package()
             package.add(nest, args=(A, B, C), base_name=f"test_unsigned_cast_{t.name}")

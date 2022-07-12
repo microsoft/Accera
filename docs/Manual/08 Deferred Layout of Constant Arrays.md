@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.6)
+[//]: # (Version: v1.2.7)
 
 # Section 8: Deferred layout of constant arrays
 Let's revisit the memory layout of constant arrays. As explained in [Section 1](<01%20Arrays.md>), the contents of constant arrays are known at compile-time, and these contents are immutable. Accera stores constant arrays in a non-standard memory layout optimized for a particular plan. In some cases, storing multiple copies of each array element may even prove advantageous (e.g., storing a matrix in row-major and column-major layouts).

@@ -1735,7 +1735,7 @@ TEST_CASE("jit_int8_simple_matrix_multiply_test1")
                                  });
 
                                  auto computeKernel = Kernel("compute", [&, i = i, j = j, k = k]() {
-                                     auto a = UnsignedCast(A(i, k), cType);
+                                     auto a = Cast(A(i, k), cType);
                                      auto b = Cast(B(k, j), cType);
                                      auto prod = a * b;
 
@@ -1860,7 +1860,7 @@ TEST_CASE("jit_int8_simple_matrix_multiply_test3")
                              auto [kOuter, kInner] = schedule.Split(k, kernelK);
 
                              auto computeKernel = Kernel("compute", [&, i = i, j = j, k = k]() {
-                                 auto a = UnsignedCast(A(i, k), cType);
+                                 auto a = Cast(A(i, k), cType);
                                  auto b = Cast(B(k, j), cType);
                                  auto prod = a * b;
                                  C(i, j) += prod;

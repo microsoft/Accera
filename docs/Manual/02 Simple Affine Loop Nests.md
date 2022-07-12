@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.6)
+[//]: # (Version: v1.2.7)
 
 # Section 2: Simple affine loop nests
 This section introduces *loop nests* and their different types that are provided in Accera programming model.
@@ -79,7 +79,7 @@ nest.iteration_logic(logic_fn)
 ```
 
 ## Supported operations
-The iteration logic can include the following operations (assuming `accera` was imported as `rp`):
+The iteration logic can include the following operations (assuming `accera` was imported as `acc`):
 
 ### Assignment operators
 
@@ -155,6 +155,35 @@ Comment: Accera also supports the corresponding compound-assignment operators, s
 | `acc.sinh(a)` | `acc.ScalarType.float16/32/64` | Returns the hyperbolic sine of scalar *a*, where *a* is in radians |
 | `acc.cosh(a)` | `acc.ScalarType.float16/32/64` | Returns the hyperbolic cosine of scalar *a*, where *a* is in radians |
 | `acc.tanh(a)` | `acc.ScalarType.float16/32/64` | Returns the hyperbolic tangent of scalar *a*, where *a* is in radians |
+
+### Implicit type casting
+
+Accera operators require operands to be the same type. Computations that use multiple types can take advantage of Accera's implicit type casting support when converting from smaller-sized types to larger-sized types.
+
+To do implicit casting, simply assign a source type to its implicitly-castable destination type. No additional casting operation is needed for converting between these types.
+
+| Source types | Destination type (implicitly-castable) |
+| ------------ | -------------------------------------- |
+| `acc.ScalarType.bool`, `acc.ScalarType.uint8` | `acc.ScalarType.int8` |
+| `acc.ScalarType.bool`,  `acc.ScalarType.int8` | `acc.ScalarType.uint8` |
+| `acc.ScalarType.bool`, `acc.ScalarType.int8`, `acc.ScalarType.uint8`, `acc.ScalarType.uint16` | `acc.ScalarType.int16` |
+| `acc.ScalarType.bool`, `acc.ScalarType.int8`, `acc.ScalarType.uint8`, `acc.ScalarType.int16` | `acc.ScalarType.uint16` |
+| `acc.ScalarType.bool`, `acc.ScalarType.int8`, `acc.ScalarType.uint8`, `acc.ScalarType.int16`, `acc.ScalarType.uint16`, `acc.ScalarType.uint32` | `acc.ScalarType.int32` |
+| `acc.ScalarType.bool`, `acc.ScalarType.int8`, `acc.ScalarType.uint8`, `acc.ScalarType.int16`, `acc.ScalarType.uint16`, `acc.ScalarType.int32` | `acc.ScalarType.uint32` |
+| `acc.ScalarType.bool`, `acc.ScalarType.int8`, `acc.ScalarType.uint8`, `acc.ScalarType.int16`, `acc.ScalarType.uint16`, `acc.ScalarType.int32`, `acc.ScalarType.uint32`, `acc.ScalarType.uint64` | `acc.ScalarType.int64` |
+| `acc.ScalarType.bool`, `acc.ScalarType.int8`, `acc.ScalarType.uint8`, `acc.ScalarType.int16`, `acc.ScalarType.uint16`, `acc.ScalarType.int32`, `acc.ScalarType.uint32`, `acc.ScalarType.int64` | `acc.ScalarType.uint64` |
+| `acc.ScalarType.bool`, `acc.ScalarType.int8`, `acc.ScalarType.uint8`, `acc.ScalarType.int16`, `acc.ScalarType.uint16` | `acc.ScalarType.float16` |
+| `acc.ScalarType.bool`, `acc.ScalarType.int8`, `acc.ScalarType.uint8`, `acc.ScalarType.int16`, `acc.ScalarType.uint16` | `acc.ScalarType.bfloat16` |
+| `acc.ScalarType.bool`, `acc.ScalarType.int8`, `acc.ScalarType.uint8`, `acc.ScalarType.int16`, `acc.ScalarType.uint16`, `acc.ScalarType.int32`, `acc.ScalarType.uint32`, `acc.ScalarType.int64`, `acc.ScalarType.float16`, `acc.ScalarType.bfloat16` | `acc.ScalarType.float32` |
+| `acc.ScalarType.bool`, `acc.ScalarType.int8`, `acc.ScalarType.uint8`, `acc.ScalarType.int16`, `acc.ScalarType.uint16`, `acc.ScalarType.int32`, `acc.ScalarType.uint32`, `acc.ScalarType.int64`, `acc.ScalarType.float16`, `acc.ScalarType.bfloat16`, `acc.ScalarType.float32` | `acc.ScalarType.float64` | 
+
+[comment]: # (bool, int8, uint8, int16, uint16, int32, uint32, int64, uint64 | index)
+
+To override the casting behavior above, or cast a larger-sized type to a smaller-sized type, use the `acc.cast` operation.
+
+Comment: implicit casting of constants may result in truncation.
+
+[comment]: # (MISSING: examples for constant implicit casting that cause unexpected truncation)
 
 ## Accera program stages
 Let’s take a step back to describe the stages of Accera program:

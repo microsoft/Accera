@@ -222,6 +222,9 @@ namespace value
         /// <returns> An instance of Value that contains a reference to the allocated memory </returns>
         Value StoreConstantData(ConstantData data, MemoryLayout layout, const std::string& name);
 
+        /// <summary> Returns true or false depending on whether the data stored is known to be a constant </summary>
+        bool IsConstantData(Value) const;
+
         /// <summary> Makes a reference to a constant data source. This data source may originate from another context </summary>
         /// <param name="constantDataSource"> The constant data source that will be referenced from this context </param>
         /// <returns> An instance of Value that contains a reference to the source Value </returns>
@@ -349,8 +352,6 @@ namespace value
 
         Scalar Cast(Scalar value, ValueType type);
 
-        Scalar UnsignedCast(Scalar value, ValueType type);
-
         Scalar Bitcast(Scalar value, ValueType type);
 
         IfContext If(Scalar test, std::function<void()> fn);
@@ -444,6 +445,7 @@ namespace value
         virtual bool IsFunctionDefinedImpl(FunctionDeclaration decl) const = 0;
 
         virtual Value StoreConstantDataImpl(ConstantData data, MemoryLayout layout, const std::string& name) = 0;
+        virtual bool IsConstantDataImpl(Value) const = 0;
         virtual Value ResolveConstantDataReferenceImpl(Value constantDataSource) = 0;
 
         virtual void ForImpl(MemoryLayout layout, std::function<void(std::vector<Scalar>)> fn, const std::string& name) = 0;
@@ -480,8 +482,6 @@ namespace value
         virtual Scalar SumImpl(Vector input) = 0;
 
         virtual Scalar CastImpl(Scalar value, ValueType type) = 0;
-
-        virtual Scalar UnsignedCastImpl(Scalar value, ValueType type) = 0;
 
         virtual Scalar BitcastImpl(Scalar value, ValueType type) = 0;
 

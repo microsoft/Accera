@@ -735,7 +735,7 @@ class SmokeTest(unittest.TestCase):
 
     @expectedFailure(FailedReason.NOT_IN_CORE, "function that contains multiple nests")
     def test_int8_matmul(self) -> None:
-        from accera import _cast, _unsigned_cast
+        from accera import cast
 
         # Define our matrix sizes
         M = 128
@@ -756,7 +756,7 @@ class SmokeTest(unittest.TestCase):
 
             @compute_col_sums_nest.iteration_logic
             def _():
-                b = _unsigned_cast(B[k, j], ScalarType.int32)
+                b = cast(B[k, j], ScalarType.int32)
                 col_sums[j] += b
 
             return compute_col_sums_nest.create_schedule()
@@ -777,7 +777,7 @@ class SmokeTest(unittest.TestCase):
 
             @compute_row_sums_nest.iteration_logic
             def _():
-                a = _cast(A[i, k], ScalarType.int32)
+                a = cast(A[i, k], ScalarType.int32)
                 row_sums[i] += a
 
             return compute_row_sums_nest.create_schedule()
@@ -818,8 +818,8 @@ class SmokeTest(unittest.TestCase):
 
             @matmul_nest.iteration_logic
             def _():
-                a = _cast(A[i, k], ScalarType.int32)
-                b = _unsigned_cast(B[k, j], ScalarType.int32)
+                a = cast(A[i, k], ScalarType.int32)
+                b = cast(B[k, j], ScalarType.int32)
                 C[i, j] += a * b
 
             return matmul_nest.create_schedule()
@@ -3955,9 +3955,8 @@ class SmokeTest(unittest.TestCase):
             checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
             checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
-            checker.check('%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][%[[lpt_iv]] * 8 + symbol(%[[Block_X]]) * 16 - (symbol(%[[Block_X]]) floordiv 160) * 2560  + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16, %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32] : memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>')
-            # Note: (16*thread_y) % 32 == (16*thread_y) - 32((16*thread_y) floordiv 32) == (16*thread_y) - 32(thread_y floordiv 2)
-            checker.check('affine.store %[[Loaded_A_Val]], %[[Cache_A]][(%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) mod 16, symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32] : memref<16x32xf32, 3>')
+            checker.check('%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][symbol(%[[Block_X]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Block_X]]) floordiv 160) * 2560, %[[lpt_iv]] * 16 + %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]])] : memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>')
+            checker.check('affine.store %[[Loaded_A_Val]], %[[Cache_A]][symbol(%[[Thread_X]]), %[[lpt_iv]] * 16 + symbol(%[[Thread_Y]])] : memref<16x32xf32, 3>')
 
             # check the B matrix load / store
             checker.check('"accv.lambda"() ( {')
@@ -4518,7 +4517,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_fill_fp16(self):
         from accera import Array, Nest, Package, ScalarType
-        from accera import _cast
+        from accera import cast
 
         # Define our vector sizes
         N = 2**16
@@ -4530,7 +4529,7 @@ class SmokeTest(unittest.TestCase):
 
         @nest.iteration_logic
         def _():
-            Out[i] = _cast(2, ScalarType.float16)
+            Out[i] = cast(2, ScalarType.float16)
 
         schedule = nest.create_schedule()
         plan = schedule.create_plan()
@@ -4849,7 +4848,6 @@ class SmokeTest(unittest.TestCase):
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
-
 
 if __name__ == '__main__':
     unittest.main(verbosity=10)

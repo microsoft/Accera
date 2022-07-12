@@ -18,7 +18,6 @@
 #include <ir/include/value/ValueDialect.h>
 #include <ir/include/value/ValueEnums.h>
 
-#include <mlir/Support/LLVM.h>
 #include <utilities/include/Boolean.h>
 #include <utilities/include/MathUtil.h>
 #include <utilities/include/TypeTraits.h>
@@ -26,6 +25,7 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_os_ostream.h>
 
@@ -41,11 +41,13 @@
 #include <mlir/Dialect/Vector/VectorOps.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BlockAndValueMapping.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Dominance.h>
 #include <mlir/IR/Identifier.h>
 #include <mlir/IR/IntegerSet.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Pass/Pass.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/InliningUtils.h>
@@ -1724,6 +1726,7 @@ MakeCacheOp UpdateActiveBlockCacheAccess(PatternRewriter& rewriter,
     auto replacementOp = rewriter.create<MakeCacheOp>(shapedMakeCacheOp.getLoc(),
                                                       shapedMakeCacheOp.getType(),
                                                       shapedMakeCacheOp.memorySpace(),
+                                                      activeBlockToCacheMap,
                                                       arrayToCacheMap,
                                                       offsetAccessIndices,
                                                       multiCacheAccessIndices);
@@ -1950,7 +1953,8 @@ v::MMALoadSyncOp CreateMMALoad(mlir::OpBuilder& builder,
     if (auto srcCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(src.getDefiningOp()))
     {
         mlir::AffineValueMap loadAccessInfo = srcCacheOp.insertCachePosition(builder.getInsertionBlock(), baseArrayPosition);
-        return builder.create<v::MMALoadSyncOp>(loc, resultType, src, mmaShapeType, operandType, loadAccessInfo.getAffineMap(), loadAccessInfo.getOperands());
+        mlir::AffineMap tileAccessMap = srcCacheOp.activeBlockToCacheMap();
+        return builder.create<v::MMALoadSyncOp>(loc, resultType, src, mmaShapeType, operandType, loadAccessInfo.getAffineMap(), loadAccessInfo.getOperands(), tileAccessMap);
     }
     else
     {
@@ -1968,7 +1972,8 @@ v::MMAStoreSyncOp CreateMMAStore(mlir::OpBuilder& builder,
     if (auto dstCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(dst.getDefiningOp()))
     {
         mlir::AffineValueMap storeAccessInfo = dstCacheOp.insertCachePosition(builder.getInsertionBlock(), baseArrayPosition);
-        return builder.create<v::MMAStoreSyncOp>(loc, value, dst, mmaShapeType, storeAccessInfo.getAffineMap(), storeAccessInfo.getOperands());
+        mlir::AffineMap tileAccessMap = dstCacheOp.activeBlockToCacheMap();
+        return builder.create<v::MMAStoreSyncOp>(loc, value, dst, mmaShapeType, storeAccessInfo.getAffineMap(), storeAccessInfo.getOperands(), tileAccessMap);
     }
     else
     {
@@ -2725,23 +2730,25 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
 
                 mlir::AffineMap cacheFillNestMap = mlir::AffineMap::get(5, 0, cacheFillNestToFlatExpr);
 
-                llvm::SmallVector<int64_t, 4> multiCacheStrides;
+                llvm::SmallVector<int64_t, 4> outerArrayStrides;
                 int64_t activeBlockOffset; // TODO : do we need to leverage this in any way? we're currently just arranging the threads according to fast/slow dimensions of the logical memref
-                auto strideResult = mlir::getStridesAndOffset(memRefType, multiCacheStrides, activeBlockOffset);
+                auto strideResult = mlir::getStridesAndOffset(memRefType, outerArrayStrides, activeBlockOffset);
                 assert(succeeded(strideResult));
-                auto numMultiCacheDims = multiCacheStrides.size() - activeBlockRank;
-                std::vector<int64_t> activeBlockStrides(multiCacheStrides.begin() + numMultiCacheDims, multiCacheStrides.end());
+                auto numOuterArrayMultiCacheDims = outerArrayStrides.size() - activeBlockRank;
+                std::vector<int64_t> outerArrayActiveBlockStrides(outerArrayStrides.begin() + numOuterArrayMultiCacheDims, outerArrayStrides.end());
 
                 // We want to traverse the dimensions of the active block in increasing stride order, so keep track of the logical dimensions and sort them
                 std::vector<std::pair<size_t, int64_t>> activeBlockLogicalDimAndStride;
                 size_t dimIdxCounter = 0;
-                std::transform(activeBlockStrides.begin(), activeBlockStrides.end(), std::back_inserter(activeBlockLogicalDimAndStride), [&](int64_t stride) {
+                std::transform(outerArrayActiveBlockStrides.begin(), outerArrayActiveBlockStrides.end(), std::back_inserter(activeBlockLogicalDimAndStride), [&](int64_t stride) {
                     return std::make_pair(dimIdxCounter++, stride);
                 });
 
+#if 0 // TODO : re-enable for coalesced reads and fix transpose caching with double-buffering case
                 std::sort(activeBlockLogicalDimAndStride.begin(), activeBlockLogicalDimAndStride.end(), [](const std::pair<size_t, int64_t>& left, const std::pair<size_t, int64_t>& right) {
                     return left.second < right.second;
                 });
+#endif
 
                 auto cumulativeStride = 1;
                 std::vector<mlir::AffineExpr> flatToActiveBlockExprs(activeBlockRank);
@@ -4708,6 +4715,7 @@ MakeCacheOp CreateDoubleBufferTempArray(mlir::OpBuilder& builder,
     return builder.create<MakeCacheOp>(parentLambda.getLoc(),
                                        tempArrayType,
                                        memorySpaceEnum,
+                                       info.activeBlockToCacheMap,
                                        tempArrayAccessMap,
                                        tempArrayOffsetIndices,
                                        tempArrayMultiCacheAccessIndices);
@@ -6437,6 +6445,29 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     // 4. load C
     (void)innerLoopBodyIter++;
+    mlir::Operation* castOp = nullptr;
+    // TODO: Figure out if there's a better way to list the possible OPs that can be used to change type but still be valid IR (maybe an Accera specific cast OP that takes an attr instead?)
+    if (innerLoopBodyIter != innerLoopBodyEnd && isa<
+                                                     // Ops that have CastOpInterface
+                                                     mlir::FPExtOp,
+                                                     mlir::FPToSIOp,
+                                                     mlir::FPToUIOp,
+                                                     mlir::FPTruncOp,
+                                                     mlir::IndexCastOp,
+                                                     mlir::SIToFPOp,
+                                                     mlir::UIToFPOp,
+                                                     mlir::UnrealizedConversionCastOp,
+
+                                                     // Ops that don't have CastOpInterface
+                                                     mlir::SignExtendIOp,
+                                                     mlir::TruncateIOp,
+                                                     mlir::ZeroExtendIOp>(
+                                                     innerLoopBodyIter))
+    {
+        castOp = &(*innerLoopBodyIter++);
+        opsToErase.push(castOp);
+    }
+
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<mlir::AffineLoadOp>(*innerLoopBodyIter))
     {
         return reportMatchFailure(affineForOp, "Failed to match the load from C Op");
@@ -6449,11 +6480,11 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     auto loadCMap = loadCOp.getAffineMap();
     if (cRank < 2)
     {
-        return reportMatchFailure(loadCOp.getOperation(), "C array has rank < 2");
+        return reportMatchFailure(loadCOp, "C array has rank < 2");
     }
     if (cRank != loadCMap.getNumResults())
     {
-        return reportMatchFailure(loadCOp.getOperation(), "Failed to match the load from C Op");
+        return reportMatchFailure(loadCOp, "Failed to match the load from C Op");
     }
 
     // scan loadCOperands and note which ones are loop vars that refer to GPU block/thread IDs (or are affine expressions of them)
@@ -6463,12 +6494,12 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     if (gpuDimsPerDimC.size() != 2)
     {
-        return reportMatchFailure(loadCOp.getOperation(), "Failed to match the load from C Op");
+        return reportMatchFailure(loadCOp, "Failed to match the load from C Op");
     }
 
     if (ContainsDim(gpuDimsPerDimC, GPUIndexDimension::Z))
     {
-        return reportMatchFailure(loadCOp.getOperation(), "Failed to match: C op uses GPU Z dimension");
+        return reportMatchFailure(loadCOp, "Failed to match: C op uses GPU Z dimension");
     }
 
     opsToErase.push(loadCOp);
@@ -6484,8 +6515,10 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     {
         return reportMatchFailure(accumC, "Failed to match the accumulation op");
     }
+
     // Check that the operands for the addition op are in fact (A*B) and the load from C
-    if (!((accumC.lhs() == mulAB && accumC.rhs() == loadCOp) || (accumC.rhs() == mulAB && accumC.lhs() == loadCOp)))
+    auto mulABresolved = (castOp ? castOp : mulAB)->getResult(0);
+    if (!((accumC.lhs() == mulABresolved && accumC.rhs() == loadCOp) || (accumC.rhs() == mulABresolved && accumC.lhs() == loadCOp)))
     {
         return reportMatchFailure(accumC, "Failed to match the accumulation operands");
     }

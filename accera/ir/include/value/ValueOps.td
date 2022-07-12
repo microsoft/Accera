@@ -1217,12 +1217,23 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
     UI32Attr:$mmaShapeType,
     I8Attr:$operandType,
     Variadic<acc_Indexlike>:$indices,
-    AffineMapAttr:$map
+    AffineMapAttr:$map, // TODO : maybe rename this positionMap or something?
+    OptionalAttr<AffineMapAttr>:$tileAccessMap
   );
 
   let results = (outs MemRefRankOf<[I8, I32, F16, F32], [1]>:$result);
 
   let builders = [
+    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "AffineMap":$map, "ValueRange":$mapOperands, "AffineMap":$tileAccessMap), [{
+        assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
+        $_state.addOperands(memref);
+        $_state.addOperands(mapOperands);
+        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
+        $_state.addAttribute("operandType", $_builder.getI8IntegerAttr((int8_t)operandType));
+        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
+        $_state.addAttribute(getTileAccessMapAttrName(), AffineMapAttr::get(tileAccessMap));
+        $_state.addTypes(resultType);
+    }]>,
     OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "AffineMap":$map, "ValueRange":$mapOperands), [{
         assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
         $_state.addOperands(memref);
@@ -1255,6 +1266,7 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
     }
 
     static StringRef getMapAttrName() { return "map"; }
+    static StringRef getTileAccessMapAttrName() { return "tileAccessMap"; }
   }];
 
   let assemblyFormat = [{
@@ -1283,9 +1295,20 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
         Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "",[MemWrite]>:$memref,
         UI32Attr:$mmaShapeType,
         Variadic<acc_Indexlike>:$indices,
-        AffineMapAttr:$map);
+        AffineMapAttr:$map, // TODO : maybe rename this positionMap or something?
+        OptionalAttr<AffineMapAttr>:$tileAccessMap);
 
   let builders = [
+    OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShape":$mmaShapeType, "AffineMap":$map, "ValueRange":$mapOperands, "AffineMap":$tileAccessMap), [{
+        assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
+        $_state.addOperands(src);
+        $_state.addOperands(memref);
+        $_state.addOperands(mapOperands);
+        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
+        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
+        $_state.addAttribute(getTileAccessMapAttrName(), AffineMapAttr::get(tileAccessMap));
+        
+    }]>,
     OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShape":$mmaShapeType, "AffineMap":$map, "ValueRange":$mapOperands), [{
         assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
         $_state.addOperands(src);
@@ -1320,6 +1343,7 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
     }
 
     static StringRef getMapAttrName() { return "map"; }
+    static StringRef getTileAccessMapAttrName() { return "tileAccessMap"; }
   }];
 
   let assemblyFormat = [{

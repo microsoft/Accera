@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.6)
+[//]: # (Version: v1.2.7)
 
-# Accera v1.2.6 Reference
+# Accera v1.2.7 Reference
 ## `accera.MMAShape`
 
 The following table shows the matrix multiplication parameters associated with the different enum values, for different data types for a single pass. So for example a single pass of the `M32xN32xK2_B1` operation would take input matrices of dimensions [32x2] (A) and [2x32] (B) to produce a matrix multiplication result of dimensions [32x32] (C). These operations can then be composed together to perform matrix multiplication of larger matrices.

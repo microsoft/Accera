@@ -151,11 +151,8 @@ Args:
         module.def("logical_or", [](value::Scalar s1, value::Scalar s2) {
             return value::Cast(s1 || s2, s1.GetType());
         });
-        module.def("_cast", [](value::Scalar s, value::ValueType type) {
+        module.def("cast", [](value::Scalar s, value::ValueType type) {
             return value::Cast(s, type);
-        });
-        module.def("_unsigned_cast", [](value::Scalar s, value::ValueType type) {
-            return value::UnsignedCast(s, type);
         });
     }
 
@@ -358,6 +355,18 @@ specific to the EmitterContext, specified by the Emittable type.
             .def(float() * py::self)
             .def(py::self * int())
             .def(int() * py::self)
+            .def(py::self + float())
+            .def(float() + py::self)
+            .def(py::self + int())
+            .def(int() + py::self)
+            .def(py::self / float())
+            .def(float() / py::self)
+            .def(py::self / int())
+            .def(int() / py::self)
+            .def(py::self - float())
+            .def(float() - py::self)
+            .def(py::self - int())
+            .def(int() - py::self)
             .def("__rshift__", [](value::Scalar& s, value::Scalar& shift) {
                 return value::UnsignedShiftRight(s, value::Cast(shift, s.GetType()));
             })

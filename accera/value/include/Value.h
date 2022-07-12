@@ -27,6 +27,12 @@ namespace accera
 {
 namespace value
 {
+    class TypeMismatchException : public utilities::GenericException
+    {
+    public:
+        TypeMismatchException(ValueType expected, ValueType actual) :
+            GenericException(ToString(actual) + " type is incompatible with " + ToString(expected)) {}
+    };
 
     class Value;
     class Scalar;
@@ -305,7 +311,7 @@ namespace value
         /// <summary> Returns true if the instance is undefined </summary>
         bool IsUndefined() const;
 
-        /// <summary> Returns true if the instance holds data </summary>
+        /// <summary> Returns true if the instance does not hold data </summary>
         bool IsEmpty() const;
 
         /// <summary> Returns true if the instance holds constant data </summary>
@@ -374,6 +380,9 @@ namespace value
 
         /// <summary> Clear the data, if any, on this instance </summary>
         void ClearData();
+
+        /// <summary> Resets this instance </summary>
+        void Clear();
 
         /// <summary> Returns the number of pointer indirections on the data referred to by this instance </summary>
         /// <returns> The number of pointer indirections </returns>
@@ -494,6 +503,8 @@ namespace value
     {
         return Cast(value, GetValueType<T>());
     }
+
+    bool IsImplicitlyCastable(ViewAdapter v1, ViewAdapter v2);
 
 } // namespace value
 } // namespace accera

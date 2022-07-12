@@ -438,7 +438,8 @@ class DSLTest_01Arrays(unittest.TestCase):
 
     def test_array_value_type_cast(self) -> None:
         A = Array(
-            shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR
+            shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR,
+            element_type=ScalarType.float32,
         )
         B = Array(
             shape=(256, 32),
@@ -452,7 +453,7 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         @nest.iteration_logic
         def _():
-            A[i, j] = 5  # implicit cast from int8 to float
+            A[i, j] = 5  # implicit cast from int8 to float32
             B[i, j] = 10  # implicit cast from int8 to int32
 
         A_test = np.random.random((256, 32)).astype(np.float32)
@@ -691,12 +692,36 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             nest, A, B, C = self._create_nest((16, 10, 11), type=t)
             i, j, k = nest.get_indices()
 
+            int_val = 2
+            float_val = 1.5
+
             @nest.iteration_logic
             def _():
                 C[i, j] = A[i, k] + B[k, j]  # test assignment
                 C[i, j] += A[i, k] - B[k, j]
                 C[i, j] += A[i, k] * B[k, j]
                 C[i, j] += A[i, k] / B[k, j]
+
+                if t != ScalarType.float16:
+                    C[i, j] += int_val + A[i,k]
+                    C[i, j] += int_val - A[i, k]
+                    C[i, j] += int_val * A[i,k]
+                    C[i, j] += int_val / A[i, k]
+                    C[i, j] += A[i, k] + int_val
+                    C[i, j] += A[i, k] - int_val
+                    C[i, j] += A[i, k] * int_val
+                    C[i, j] += A[i, k] / int_val
+
+                if t in FLOAT_TYPES:
+                    C[i, j] += float_val + A[i,k]
+                    C[i, j] += float_val - A[i, k]
+                    C[i, j] += float_val * A[i,k]
+                    C[i, j] += float_val / A[i, k]
+                    C[i, j] += A[i, k] + float_val
+                    C[i, j] += A[i, k] - float_val
+                    C[i, j] += A[i, k] * float_val
+                    C[i, j] += A[i, k] / float_val
+
                 C[i, j] += -A[i, k]
                 C[i, j] += A[i, k] // B[k, j]
                 C[i, j] += A[i, k] % B[k, j]

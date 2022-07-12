@@ -70,15 +70,5 @@ namespace value
         return GetContext().Cast(value, type);
     }
 
-    Scalar UnsignedCast(Scalar value, ValueType type)
-    {
-        if (value.GetType() == type)
-        {
-            return value;
-        }
-
-        return GetContext().UnsignedCast(value, type);
-    }
-
 } // namespace value
 } // namespace accera

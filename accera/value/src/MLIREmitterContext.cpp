@@ -6,6 +6,7 @@
 
 #include "MLIREmitterContext.h"
 #include "CompilerOptions.h"
+#include "ValueType.h"
 
 #include <ir/include/DialectRegistry.h>
 #include <ir/include/IRUtil.h>
@@ -17,6 +18,7 @@
 #include <ir/include/value/ValueAttributes.h>
 #include <ir/include/value/ValueFuncOp.h>
 
+#include <llvm/Support/Casting.h>
 #include <transforms/include/value/ValueToStandardLoweringPass.h>
 
 #include <utilities/include/Exception.h>
@@ -302,7 +304,7 @@ mlir::FunctionType ToMLIRType(mlir::OpBuilder& builder, const FunctionDeclaratio
 [[nodiscard]] mlir::Value ToMLIRValue(mlir::OpBuilder& builder, const ViewAdapter& view)
 {
     auto value = view.GetValue();
-    if (value.IsEmpty() || value.IsUndefined() || value.IsConstant())
+    if (value.IsEmpty() || value.IsUndefined())
     {
         return {};
     }
@@ -1449,6 +1451,19 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
     return Value(emittable, layout);
 }
 
+bool MLIRContext::IsConstantDataImpl(Value v) const
+{
+    auto data = Unwrap(v);
+
+    // TODO: Extend this check to handle constant data arrays. Right now, this only works for scalar values
+    if (llvm::isa_and_nonnull<mlir::ConstantIntOp, mlir::ConstantIndexOp, mlir::ConstantFloatOp>(data.getDefiningOp()))
+    {
+        return true;
+    }
+
+    return false;
+}
+
 Value MLIRContext::ResolveConstantDataReferenceImpl(Value constantDataSource)
 {
     auto sourceRefGlobalOp = mlir::Value::getFromOpaquePointer(constantDataSource.Get<Emittable>().GetDataAs<EmittableInfo*>()->data).getDefiningOp();
@@ -2013,7 +2028,7 @@ Value MLIRContext::MMAComputeSyncImpl(const MatrixFragment& A, const MatrixFragm
     return Value(emittable, C.GetValue().GetLayout());
 }
 
-Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)
+Scalar MLIRContext::CastImpl(Scalar value, ValueType type)
 {
     auto& builder = _impl->builder;
     mlir::Value mlirValue = ResolveMLIRScalar(builder, ToMLIRValue(builder, value));
@@ -2027,6 +2042,8 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)
         return Wrap(mlirValue);
     }
 
+    auto doSignedCast = IsSignedType(type);
+
     return mlir::TypeSwitch<mlir::Type, Scalar>(fromType)
         .Case([&](mlir::IntegerType fromIntType) {
             auto signlessMlirValue = accera::ir::util::ToSignlessMLIRValue(builder, mlirValue);
@@ -2034,22 +2051,31 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)
             return mlir::TypeSwitch<mlir::Type, Scalar>(toType)
                 .Case([&](mlir::IntegerType toIntType) {
                     auto toIntTypeSignless = accera::ir::util::ToSignlessMLIRType(builder, toIntType);
+
+                    mlir::Value casted;
                     if (fromIntType.getWidth() == toIntType.getWidth())
                     {
-                        return Wrap(signlessMlirValue);
+                        // do nothing
                     }
                     else if (fromIntType.getWidth() > toIntType.getWidth())
                     {
-                        return Wrap(builder.create<mlir::TruncateIOp>(loc, signlessMlirValue, toIntTypeSignless));
-                    }
-                    else if (doSignedCast || !fromIntType.isUnsigned())
-                    {
-                        return Wrap(builder.create<mlir::SignExtendIOp>(loc, signlessMlirValue, toIntTypeSignless));
+
+                        signlessMlirValue = builder.create<mlir::TruncateIOp>(loc, signlessMlirValue, toIntTypeSignless);
                     }
                     else
                     {
-                        return Wrap(builder.create<mlir::ZeroExtendIOp>(loc, signlessMlirValue, toIntTypeSignless));
+                        if (doSignedCast)
+                        {
+                            signlessMlirValue = builder.create<mlir::SignExtendIOp>(loc, signlessMlirValue, toIntTypeSignless);
+                        }
+                        else
+                        {
+                            signlessMlirValue = builder.create<mlir::ZeroExtendIOp>(loc, signlessMlirValue, toIntTypeSignless);
+                        }
                     }
+
+                    casted = builder.create<mlir::UnrealizedConversionCastOp>(signlessMlirValue.getLoc(), toType, signlessMlirValue)->getResult(0);
+                    return Wrap(casted);
                 })
                 .Case([&](mlir::IndexType) {
                     return Wrap(builder.create<mlir::IndexCastOp>(loc, signlessMlirValue, toType));
@@ -2057,10 +2083,8 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)
                 .Case([&](mlir::FloatType) {
                     return fromIntType.isUnsigned() ? Wrap(builder.create<mlir::UIToFPOp>(loc, signlessMlirValue, toType)) : Wrap(builder.create<mlir::SIToFPOp>(loc, signlessMlirValue, toType));
                 })
-                .Default([&](mlir::Type) {
+                .Default([&](mlir::Type) -> Scalar {
                     throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-                    llvm_unreachable("unexpected");
-                    return Scalar();
                 });
         })
         .Case([&](mlir::IndexType) {
@@ -2073,10 +2097,8 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)
                     auto int64Value = builder.create<mlir::IndexCastOp>(loc, mlirValue, builder.getI64Type()); // index->int64
                     return Wrap(builder.create<mlir::SIToFPOp>(loc, int64Value, toType)); // int64->fp
                 })
-                .Default([&](mlir::Type) {
+                .Default([&](mlir::Type) -> Scalar {
                     throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-                    llvm_unreachable("unexpected");
-                    return Scalar();
                 });
         })
         .Case([&](mlir::FloatType fromFloatType) {
@@ -2088,27 +2110,13 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type, bool doSignedCast)
                 .Case([&](mlir::FloatType toFloatType) {
                     return fromFloatType.getWidth() > toFloatType.getWidth() ? Wrap(builder.create<mlir::FPTruncOp>(loc, mlirValue, toType)) : Wrap(builder.create<mlir::FPExtOp>(loc, mlirValue, toType));
                 })
-                .Default([&](mlir::Type) {
+                .Default([&](mlir::Type) -> Scalar {
                     throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-                    llvm_unreachable("unexpected");
-                    return Scalar();
                 });
         })
-        .Default([&](mlir::Type) {
+        .Default([&](mlir::Type) -> Scalar {
             throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-            llvm_unreachable("unexpected");
-            return Scalar();
         });
-}
-
-Scalar MLIRContext::CastImpl(Scalar value, ValueType type)
-{
-    return CastImpl(value, type, /*doSignedCast=*/true);
-}
-
-Scalar MLIRContext::UnsignedCastImpl(Scalar value, ValueType type)
-{
-    return CastImpl(value, type, /*doSignedCast=*/false);
 }
 
 Scalar MLIRContext::BitcastImpl(Scalar value, ValueType type)

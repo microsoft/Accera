@@ -1,9 +1,10 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.6)
+[//]: # (Version: v1.2.7)
 
-# Accera v1.2.6 Reference
+# Accera v1.2.7 Reference
 
 # Module functions
+* [`accera.cast`](functions/cast.md) `(value, type)`
 * [`accera.create_parameters`](functions/create_parameters.md) `(number)`
 * [`accera.create_parameter_grid`](functions/create_parameter_grid.md) `(parameter_choices, filter_func, sample)`
 * [`accera.fuse`](functions/fuse.md) `(schedules[, partial])`

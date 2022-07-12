@@ -6,6 +6,7 @@
 
 #include "Value.h"
 #include "EmitterContext.h"
+#include "ValueType.h"
 
 #include <utilities/include/Hash.h>
 #include <utilities/include/TypeAliases.h>
@@ -177,7 +178,6 @@ namespace value
                     {
                         _type = other._type;
                     }
-
                     GetContext().MoveData(other, *this);
                 }
             }
@@ -213,7 +213,7 @@ namespace value
 
     void Value::SetData(Value value, bool force)
     {
-        if (!force && value.IsConstrained() && value.GetLayout() != GetLayout())
+        if (!force && IsConstrained() && value.IsConstrained() && value.GetLayout() != GetLayout())
         {
             throw InputException(InputExceptionErrors::invalidArgument);
         }
@@ -226,10 +226,7 @@ namespace value
                                       }
 
                                       _data = emittable;
-                                      if (!force)
-                                      {
-                                          _type = type;
-                                      }
+                                      _type = type;
                                   },
                                    [this, force](auto&& arg) {
                                        if (!force && GetValueType<std::decay_t<decltype(arg)>>() != _type.first)
@@ -242,9 +239,15 @@ namespace value
                    value._data);
     }
 
-    bool Value::IsDefined() const { return _type.first != ValueType::Undefined; }
+    bool Value::IsDefined() const
+    {
+        return _type.first != ValueType::Undefined;
+    }
 
-    bool Value::IsUndefined() const { return !IsDefined(); }
+    bool Value::IsUndefined() const
+    {
+        return !IsDefined();
+    }
 
     bool Value::IsEmpty() const
     {
@@ -255,7 +258,10 @@ namespace value
             _data);
     }
 
-    bool Value::IsConstant() const { return !std::holds_alternative<Emittable>(_data); }
+    bool Value::IsConstant() const
+    {
+        return GetContext().IsConstantData(*this);
+    }
 
     bool Value::IsIntegral() const
     {
@@ -286,54 +292,128 @@ namespace value
         }
     }
 
-    bool Value::IsBoolean() const { return _type.first == ValueType::Boolean; }
+    bool Value::IsBoolean() const
+    {
+        return _type.first == ValueType::Boolean;
+    }
 
-    bool Value::IsByte() const { return _type.first == ValueType::Byte; }
+    bool Value::IsByte() const
+    {
+        return _type.first == ValueType::Byte;
+    }
 
-    bool Value::IsInt8() const { return _type.first == ValueType::Int8; }
+    bool Value::IsInt8() const
+    {
+        return _type.first == ValueType::Int8;
+    }
 
-    bool Value::IsInt16() const { return _type.first == ValueType::Int16; }
+    bool Value::IsInt16() const
+    {
+        return _type.first == ValueType::Int16;
+    }
 
-    bool Value::IsInt32() const { return _type.first == ValueType::Int32; }
+    bool Value::IsInt32() const
+    {
+        return _type.first == ValueType::Int32;
+    }
 
-    bool Value::IsInt64() const { return _type.first == ValueType::Int64; }
+    bool Value::IsInt64() const
+    {
+        return _type.first == ValueType::Int64;
+    }
 
-    bool Value::IsUint16() const { return _type.first == ValueType::Uint16; }
+    bool Value::IsUint16() const
+    {
+        return _type.first == ValueType::Uint16;
+    }
 
-    bool Value::IsUint32() const { return _type.first == ValueType::Uint32; }
+    bool Value::IsUint32() const
+    {
+        return _type.first == ValueType::Uint32;
+    }
 
-    bool Value::IsUint64() const { return _type.first == ValueType::Uint64; }
+    bool Value::IsUint64() const
+    {
+        return _type.first == ValueType::Uint64;
+    }
 
-    bool Value::IsIndex() const { return _type.first == ValueType::Index; }
+    bool Value::IsIndex() const
+    {
+        return _type.first == ValueType::Index;
+    }
 
     bool Value::IsFloatingPoint() const
     {
         return (_type.first == ValueType::Float16 || _type.first == ValueType::Float || _type.first == ValueType::Double || _type.first == ValueType::BFloat16);
     }
 
-    bool Value::IsFloat16() const { return _type.first == ValueType::Float16; }
+    bool Value::IsFloat16() const
+    {
+        return _type.first == ValueType::Float16;
+    }
 
-    bool Value::IsFloat32() const { return _type.first == ValueType::Float; }
+    bool Value::IsFloat32() const
+    {
+        return _type.first == ValueType::Float;
+    }
 
-    bool Value::IsDouble() const { return _type.first == ValueType::Double; }
+    bool Value::IsDouble() const
+    {
+        return _type.first == ValueType::Double;
+    }
 
-    bool Value::IsConstrained() const { return _layout.has_value(); }
+    bool Value::IsConstrained() const
+    {
+        return _layout.has_value();
+    }
 
-    const MemoryLayout& Value::GetLayout() const { return _layout.value(); }
+    const MemoryLayout& Value::GetLayout() const
+    {
+        return _layout.value();
+    }
 
-    ValueType Value::GetBaseType() const { return _type.first; }
+    ValueType Value::GetBaseType() const
+    {
+        return _type.first;
+    }
 
-    void Value::SetLayout(MemoryLayout layout) { GetContext().SetLayout(*this, layout); }
+    void Value::SetLayout(MemoryLayout layout)
+    {
+        GetContext().SetLayout(*this, layout);
+    }
 
-    void Value::ClearLayout() { _layout.reset(); }
+    void Value::ClearLayout()
+    {
+        _layout.reset();
+    }
 
-    void Value::ClearData() { _data = Emittable{ nullptr }; }
+    void Value::ClearData()
+    {
+        _data = Emittable{ nullptr };
+    }
 
-    int Value::PointerLevel() const { return _type.second; }
+    void Value::Clear()
+    {
+        ClearData();
+        ClearLayout();
+        _type = {};
+        _hasName = false;
+    }
 
-    Value::UnderlyingDataType& Value::GetUnderlyingData() { return _data; }
+    int Value::PointerLevel() const
+    {
+        return _type.second;
+    }
 
-    const Value::UnderlyingDataType& Value::GetUnderlyingData() const { return _data; }
+    Value::UnderlyingDataType& Value::GetUnderlyingData()
+    {
+        return _data;
+    }
+
+    const Value::UnderlyingDataType& Value::GetUnderlyingData() const
+    {
+        return _data;
+    }
 
     void Value::SetName(const std::string& name)
     {
@@ -346,7 +426,10 @@ namespace value
         return GetContext().GetName(*this);
     }
 
-    bool Value::HasCustomName() const { return _hasName; }
+    bool Value::HasCustomName() const
+    {
+        return _hasName;
+    }
 
     namespace detail
     {
@@ -416,6 +499,46 @@ namespace value
         ADD_FROM_STRING_ENTRY(ValueType, Double);
 
         return ValueType::Undefined;
+    }
+
+    namespace
+    {
+        template <typename T, typename C>
+        constexpr bool ItemIsOneOf(T&& t, C&& c)
+        {
+            return llvm::any_of(c, [=](auto arg) { return t == arg; });
+        }
+
+    } // namespace
+
+    bool IsImplicitlyCastable(ViewAdapter v1, ViewAdapter v2)
+    {
+        auto source = v1.GetValue().GetBaseType();
+        auto target = v2.GetValue().GetBaseType();
+
+#define MAP_TARGET_TO_POSSIBLE_SOURCES(TARGET, ...) \
+    case TARGET:                                    \
+        return ItemIsOneOf(source, std::initializer_list<ValueType>{ __VA_ARGS__ })
+
+        switch (target)
+        {
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int8, ValueType::Boolean, ValueType::Byte);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Byte, ValueType::Boolean, ValueType::Int8);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int16, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Uint16);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Uint16, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int32, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Uint32);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Uint32, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Int64, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Uint64);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Uint64, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Int64);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Float16, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::BFloat16, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Float, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Int64, ValueType::Uint64, ValueType::Float16, ValueType::BFloat16);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Double, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Int64, ValueType::Uint64, ValueType::Float16, ValueType::BFloat16, ValueType::Float);
+            MAP_TARGET_TO_POSSIBLE_SOURCES(ValueType::Index, ValueType::Boolean, ValueType::Int8, ValueType::Byte, ValueType::Int16, ValueType::Uint16, ValueType::Int32, ValueType::Uint32, ValueType::Int64, ValueType::Uint64);
+
+        default:
+            return false;
+        }
     }
 } // namespace value
 } // namespace accera

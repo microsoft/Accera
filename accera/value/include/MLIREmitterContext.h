@@ -135,6 +135,7 @@ namespace value
         bool IsFunctionDefinedImpl(FunctionDeclaration decl) const override;
 
         Value StoreConstantDataImpl(ConstantData data, MemoryLayout layout, const std::string& name) override;
+        bool IsConstantDataImpl(Value) const override;
         Value ResolveConstantDataReferenceImpl(Value constantDataSource) override;
 
         void ForImpl(MemoryLayout layout, std::function<void(std::vector<Scalar>)> fn, const std::string& name) override;
@@ -171,10 +172,7 @@ namespace value
         void MMAStoreSyncImpl(const MatrixFragment& source, Matrix& target, const int64_t rowOffset, const int64_t colOffset) override;
         Value MMAComputeSyncImpl(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, uint32_t cbsz, uint32_t abid, uint32_t blgp) override;
 
-        Scalar CastImpl(Scalar value, ValueType type, bool doSignedCast);
         Scalar CastImpl(Scalar value, ValueType type) override;
-
-        Scalar UnsignedCastImpl(Scalar value, ValueType type) override;
 
         Scalar BitcastImpl(Scalar value, ValueType type) override;
 

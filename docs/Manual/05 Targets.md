@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.6)
+[//]: # (Version: v1.2.7)
 
 # Section 5: Targets
 Accera is a cross compiler, which means that it can generate executable code for different target platforms. A target is described using the `Target` class. Accera already supports many different targets, for example:

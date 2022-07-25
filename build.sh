@@ -15,14 +15,18 @@ git submodule update
 # Install dependencies
 # Linux: apt get install pkg-config
 pip install -r requirements.txt
-cd external/vcpkg
-./bootstrap-vcpkg.sh
-./vcpkg install catch2 tomlplusplus --overlay-ports=../llvm
 
 if [ -z "${LLVM_SETUP_VARIANT}" ] && [ -f "$ACCERA_ROOT/CMake/LLVMSetupConan.cmake" ]; then
     echo Using LLVM from Conan
     export LLVM_SETUP_VARIANT=Conan
-else 
+elif [ -z "${VCPKG_TOOLCHAIN}" ]; then
+    echo Using pre-built vcpkg toolchain
+    export LLVM_SETUP_VARIANT=Default
+else
+    cd external/vcpkg
+    ./bootstrap-vcpkg.sh
+    ./vcpkg install catch2 tomlplusplus --overlay-ports=../llvm
+
     echo Using LLVM from vcpkg
     export LLVM_SETUP_VARIANT=Default
 

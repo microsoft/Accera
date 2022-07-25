@@ -3,7 +3,20 @@
 
 ## Installing on Ubuntu
 
-### Install Dependencies
+### Quickstart
+
+If you have access to [Codespaces](https://docs.github.com/en/codespaces), you can launch a Linux VM in the browser or in Visual Studio Code with all the pre-requisites installed:
+
+1. Go to https://github.com/microsoft/Accera, use the "<> Code" drop-down menu, and in the Codespaces tab, click Create codespace on main.
+2. `sh build.sh`
+
+Step 2 will take some time to build Accera's LLVM fork. Grab a coffee and come back in about an hour or so.
+
+### Build Script
+
+If you do not have access to Codespaces or prefer to build locally, you can use the `build.sh` script to build Accera.
+
+#### Install Dependencies
 
 Accera requires the following tools and libraries:
 
@@ -21,21 +34,21 @@ sudo apt-get install gcc-8 g++-8 cmake python3 python3-pip ninja-build ccache li
 
 Some Ubuntu distributions install an older version of CMake. Check the version of cmake using `cmake --version`, and [download](https://cmake.org/download/) a newer version if older than 3.14.
 
-### Clone Accera
+#### Clone Accera
 
-#### Install [git](https://git-scm.com/download) if you don't already have it:
+Install [git](https://git-scm.com/download) if you don't already have it:
 
 ```
 sudo apt-get install git
 ```
 
-#### Clone the git repository
+Clone the git repository
 
 ```shell
 git clone --recurse-submodules https://github.com/microsoft/Accera
 ```
 
-### Build and install Accera
+#### Build and install Accera
 
 Run the `build.sh` script to install dependencies and build the Accera Python package (replace `<path_to_accera>` with the path to the cloned Accera repository).
 
@@ -50,7 +63,7 @@ The name depends on your Python version, your OS and your CPU architecture.
 pip install -U ./dist/accera-0.0.1-cp37-cp37m-linux_x86_64.whl --find-links=dist
 ```
 
-### Build and install using CMake
+### CMake Builds
 
 Accera can also be built using CMake (intended for expert users).
 

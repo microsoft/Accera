@@ -4,7 +4,7 @@
     "name": "Python 3",
     "hostRequirements": {
         "cpus": 8,
-        "memory": "64gb",
+        "memory": "32gb",
         "storage": "64gb"
     },
     "build": {

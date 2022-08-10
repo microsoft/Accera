@@ -11,8 +11,9 @@
 #include <ir/include/nest/LoopNestOps.h>
 #include <ir/include/value/ValueDialect.h>
 
-#include <mlir/Analysis/LoopAnalysis.h>
+#include <mlir/Dialect/Affine/Analysis/LoopAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Affine/LoopUtils.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/Verifier.h>
@@ -20,7 +21,6 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
-#include <mlir/Transforms/LoopUtils.h>
 #include <mlir/Transforms/Passes.h>
 
 #include <llvm/Support/raw_os_ostream.h>
@@ -39,12 +39,12 @@ namespace
 
 struct ScheduledOperationsLoweringPass : public ConvertScheduledOperationsBase<ScheduledOperationsLoweringPass>
 {
-    void runOnFunction() final;
+    void runOnOperation() final;
 };
 
 struct ScheduleToValueLoweringPass : public ConvertScheduleToValueBase<ScheduleToValueLoweringPass>
 {
-    void runOnFunction() final;
+    void runOnOperation() final;
 };
 
 struct LoopNestOptPass : public ConvertLoopNestOptBase<LoopNestOptPass>
@@ -54,27 +54,29 @@ struct LoopNestOptPass : public ConvertLoopNestOptBase<LoopNestOptPass>
 
 } // end anonymous namespace.
 
-void ScheduledOperationsLoweringPass::runOnFunction()
+void ScheduledOperationsLoweringPass::runOnOperation()
 {
     {
-        OwningRewritePatternList patterns(&getContext());
+        RewritePatternSet patterns(&getContext());
         populateRangeResolutionPatterns(patterns);
         (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
     }
 
     {
-        OwningRewritePatternList patterns(&getContext());
+        RewritePatternSet patterns(&getContext());
         populateScheduleScaffoldingPatterns(false, patterns);
         (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
     }
 
     ConversionTarget target(getContext());
 
-    target.addLegalDialect<v::ValueDialect,
-                           memref::MemRefDialect,
+    target.addLegalDialect<LoopNestDialect,
                            mlir::AffineDialect,
+                           mlir::arith::ArithmeticDialect,
+                           mlir::math::MathDialect,
+                           mlir::memref::MemRefDialect,
                            mlir::StandardOpsDialect,
-                           LoopNestDialect,
+                           v::ValueDialect,
                            xp::ExecutionPlanDialect>();
 
     target.addDynamicallyLegalOp<ScheduleOp>([](Operation* op) {
@@ -108,13 +110,13 @@ void ScheduledOperationsLoweringPass::runOnFunction()
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the operations.
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     populateScheduledOperationsPatterns(patterns);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
     // operations were not converted successfully.
-    if (failed(applyPartialConversion(getFunction(), target, std::move(patterns))))
+    if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
     {
         llvm::errs() << "ScheduledOperationsLoweringPass failed\n";
         llvm::errs().flush();
@@ -123,21 +125,23 @@ void ScheduledOperationsLoweringPass::runOnFunction()
     }
 }
 
-void ScheduleToValueLoweringPass::runOnFunction()
+void ScheduleToValueLoweringPass::runOnOperation()
 {
-    auto function = getFunction();
+    auto function = getOperation();
 
     {
-        OwningRewritePatternList foldPatterns(&getContext());
+        RewritePatternSet foldPatterns(&getContext());
         populateScheduleToValueRewritePatterns(foldPatterns);
         (void)applyPatternsAndFoldGreedily(function, std::move(foldPatterns));
     }
 
     ConversionTarget target(getContext());
-    target.addLegalDialect<v::ValueDialect,
-                           memref::MemRefDialect,
-                           mlir::AffineDialect,
+    target.addLegalDialect<mlir::AffineDialect,
+                           mlir::arith::ArithmeticDialect,
+                           mlir::math::MathDialect,
+                           mlir::memref::MemRefDialect,
                            mlir::StandardOpsDialect,
+                           v::ValueDialect,
                            xp::ExecutionPlanDialect>();
 
     // Now we only allow terminators and symbolic indices
@@ -160,7 +164,7 @@ void ScheduleToValueLoweringPass::runOnFunction()
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the operations.
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     populateScheduleToValuePatterns(patterns);
 
     // With the target and rewrite patterns defined, we can now attempt the

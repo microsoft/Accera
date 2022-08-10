@@ -1,5 +1,5 @@
 # Builds LLVM for features needed by Accera
-set(LLVM_VERSION llvmorg-13.0.1)
+set(LLVM_VERSION llvmorg-14.0.6)
 
 set(VCPKG_BUILD_TYPE release)
 if((DEFINED ENV{LLVM_BUILD_TYPE}) AND ("$ENV{LLVM_BUILD_TYPE}" STREQUAL "debug"))
@@ -20,13 +20,14 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO llvm/llvm-project
     REF ${LLVM_VERSION}
-    SHA512 9a8cb5d11964ba88b7624f19ec861fb28701f23956ea3c92f6ac644332d5f41fde97bd8933dd3ee70ed378058c252fa3a3887c8d1af90d219970c2b27691166f
+    SHA512 d64f97754c24f32deb5f284ebbd486b3a467978b7463d622f50d5237fff91108616137b4394f1d1ce836efa59bf7bec675b6dee257a79b241c15be52d4697460
     HEAD_REF main
     PATCHES
-        0001-Merged-PR-2213-mlir-Plumb-OpenMP-dialect-attributes-.patch
-        0002-Merged-PR-2237-Improved-codegen-of-vpmaddwd-instruct.patch
-        0003-Fix-bad-merge.patch
-        0004-fix-install-paths.patch # cf. https://github.com/microsoft/vcpkg/blob/master/ports/llvm
+    0001-Merged-PR-2213-mlir-Plumb-OpenMP-dialect-attributes-.patch
+    0002-Merged-PR-2237-Improved-codegen-of-vpmaddwd-instruct.patch
+    0003-Fix-bad-merge.patch
+    0004-Lower-memref.copy-to-memcpy-when-layouts-canonicaliz.patch
+    0005-fix-vcpkg-install-paths.patch # cf. https://github.com/microsoft/vcpkg/blob/master/ports/llvm
 )
 
 vcpkg_find_acquire_program(PYTHON3)

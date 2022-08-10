@@ -42,6 +42,7 @@ void DefineOperations(py::module& module)
             "type"_a,
             "layout"_a,
             "flags"_a = value::AllocateFlags::None)
+        .def("If", py::overload_cast<value::Scalar, std::function<void()>>(&value::If))
         .def("ForRange", py::overload_cast<value::Scalar, value::Scalar, value::Scalar, std::function<void(value::Scalar)>>(&value::ForRange))
         .def("ForRanges", py::overload_cast<std::vector<value::Scalar>, std::function<void(std::vector<value::Scalar>)>>(&value::ForRanges))
         .def("Print", py::overload_cast<value::ViewAdapter, bool>(&value::Print), "value"_a, "to_stderr"_a = false)

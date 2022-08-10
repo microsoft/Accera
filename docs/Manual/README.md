@@ -1,10 +1,10 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
 # Accera v1.2.1 Manual
 
 * [Introduction](<00%20Introduction.md>)
-* [Arrays](<01%20Arrays.md>)
+* [Arrays and Scalars](<01%20Arrays%20and%20Scalars.md>)
 * [Simple Affine Loop Nests](<02%20Simple%20Affine%20Loop%20Nests.md>)
 * [Schedules](<03%20Schedules.md>)
 * [Fusing](<04%20Fusing.md>)

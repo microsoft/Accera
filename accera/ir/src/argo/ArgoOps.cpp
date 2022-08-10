@@ -64,7 +64,7 @@ static LogicalResult foldMemRefCast(Operation* op)
 
 [[maybe_unused]] static void printArgoStructuredOp(OpAsmPrinter& p, Operation* op)
 {
-    assert(op->getAbstractOperation() && "unregistered operation");
+    assert(op->isRegistered() && "unregistered operation");
     p << op->getName().getStringRef() << "(" << op->getOperands() << ")";
     p.printOptionalAttrDict(op->getAttrs());
     p << " : " << op->getOperandTypes();
@@ -250,7 +250,7 @@ static void print(OpAsmPrinter& p, OpaqueOp op)
     argoTraitAttrsSet.insert(attrNames.begin(), attrNames.end());
     SmallVector<NamedAttribute, 8> attrs;
     for (auto attr : op->getAttrs())
-        if (argoTraitAttrsSet.count(attr.first.strref()) > 0)
+        if (argoTraitAttrsSet.count(attr.getName().strref()) > 0)
             attrs.push_back(attr);
 
     auto dictAttr = DictionaryAttr::get(op.getContext(), attrs);
@@ -317,7 +317,7 @@ void EntryPointOp::build(OpBuilder& builder, OperationState& result, StringRef e
                         builder.getStringAttr(entryName));
     result.addAttribute(getTypeAttrName(), TypeAttr::get(type));
     result.addAttribute(getKernelNameAttrName(),
-                        builder.getSymbolRefAttr(kernelName));
+                        SymbolRefAttr::get(builder.getContext(), kernelName));
     result.addAttribute(getKernelExecutionSpaceAttrName(),
                         builder.getStringAttr(kernelExecSpace));
 }
@@ -330,8 +330,8 @@ void EntryPointOp::build(OpBuilder& builder, OperationState& result, StringRef e
                         builder.getStringAttr(entryName));
     result.addAttribute(getTypeAttrName(), TypeAttr::get(type));
 
-    auto kernelSymbol = builder.getSymbolRefAttr(
-        moduleName, { builder.getSymbolRefAttr(kernelName) });
+    auto kernelSymbol = SymbolRefAttr::get(builder.getContext(), 
+        moduleName, { SymbolRefAttr::get(builder.getContext(), kernelName) });
     result.addAttribute(getKernelNameAttrName(), kernelSymbol);
     result.addAttribute(getKernelExecutionSpaceAttrName(),
                         builder.getStringAttr(kernelExecSpace));
@@ -348,6 +348,7 @@ static ParseResult parseEntryPointOp(OpAsmParser& parser,
     SmallVector<NamedAttrList, 1> argAttrs;
     SmallVector<NamedAttrList, 1> resultAttrs;
     SmallVector<Type, 1> resultTypes;
+    SmallVector<Location> argLocations;
     bool isVariadic;
 
     StringAttr nameAttr;
@@ -357,8 +358,8 @@ static ParseResult parseEntryPointOp(OpAsmParser& parser,
     }
 
     auto signatureLocation = parser.getCurrentLocation();
-    if (failed(function_like_impl::parseFunctionSignature(
-            parser, /*allowVariadic=*/false, entryArgs, argTypes, argAttrs, isVariadic, resultTypes, resultAttrs)))
+    if (failed(function_interface_impl::parseFunctionSignature(
+            parser, /*allowVariadic=*/false, entryArgs, argTypes, argAttrs, argLocations, isVariadic, resultTypes, resultAttrs)))
     {
         return failure();
     }
@@ -370,7 +371,7 @@ static ParseResult parseEntryPointOp(OpAsmParser& parser,
     // Parse attributes.
     if (failed(parser.parseOptionalAttrDictWithKeyword(result.attributes)))
         return failure();
-    function_like_impl::addArgAndResultAttrs(builder, result, argAttrs, resultAttrs);
+    function_interface_impl::addArgAndResultAttrs(builder, result, argAttrs, resultAttrs);
 
     [[maybe_unused]] auto endLocation = parser.getCurrentLocation();
     // FunctionLike op requires one region
@@ -392,11 +393,11 @@ static void printEntryPointOp(OpAsmPrinter& p, EntryPointOp op)
     p.printSymbolName(op.getName());
 
     FunctionType type = op.getType();
-    function_like_impl::printFunctionSignature(p, op.getOperation(), type.getInputs(),
+    function_interface_impl::printFunctionSignature(p, op.getOperation(), type.getInputs(),
                                                /*isVariadic=*/false,
                                                type.getResults());
 
-    function_like_impl::printFunctionAttributes(p, op.getOperation(), type.getNumInputs(), type.getNumResults());
+    function_interface_impl::printFunctionAttributes(p, op.getOperation(), type.getNumInputs(), type.getNumResults());
 }
 
 static LogicalResult verify(EntryPointOp op)
@@ -589,11 +590,13 @@ namespace argo
 #else
 #include "argo/ArgoStructuredOpsInterfaces.cpp.inc"
 #endif // !__ACCERA__
+
 } // namespace argo
+} // namespace mlir
 
 #define GET_OP_CLASSES
 #ifndef __ACCERA__
-#include "mlir/Dialect/Argo/IR/ArgoStructuredOps.cpp.inc"
+#include "mlir/Dialect/Argo/IR/ArgoOps.cpp.inc"
 #else
 #include "argo/ArgoOps.cpp.inc"
 #endif // !__ACCERA__
@@ -605,7 +608,6 @@ namespace argo
 #include "argo/ArgoStructuredOps.cpp.inc"
 #endif // !__ACCERA__
 
-} // namespace mlir
 
 AffineMap mlir::argo::extractOrIdentityMap(Optional<AffineMap> maybeMap,
                                            unsigned rank,
@@ -651,7 +653,7 @@ struct EraseDeadArgoOp : public RewritePattern
 } // namespace
 
 #define CANONICALIZERS_AND_FOLDERS(ARGOOP)                                      \
-    void ARGOOP::getCanonicalizationPatterns(OwningRewritePatternList& results, \
+    void ARGOOP::getCanonicalizationPatterns(RewritePatternSet& results, \
                                              mlir::MLIRContext* context)        \
     {                                                                           \
         results.insert<EraseDeadArgoOp>(context);                               \

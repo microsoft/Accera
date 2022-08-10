@@ -11,6 +11,7 @@
 #include <utilities/include/TypeTraits.h>
 
 #include <llvm/ADT/Hashing.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/Visitors.h>
 
@@ -39,7 +40,7 @@ namespace loopnest
             auto index = dimSizeOp.dimensionIndex();
             _end = index.getValue();
         }
-        else if (auto constantEnd = mlir::dyn_cast_or_null<mlir::ConstantOp>(op))
+        else if (auto constantEnd = mlir::dyn_cast_or_null<mlir::arith::ConstantOp>(op))
         {
             auto constantAttr = constantEnd.getValue();
             assert(constantAttr.isa<mlir::IntegerAttr>() && "Range Ends must be an integer constant");

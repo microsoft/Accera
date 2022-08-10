@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
 # Section 4: Fusing
 With `fuse` operation, multiple schedules can be combined into a single schedule representing the union of the work in the original schedules. These fused schedules can be transformed by any of the transformations presented in [Section 3](<03%20Schedules.md>).
@@ -96,7 +96,7 @@ schedule.reorder(i, j, f)
 
 ![Before reorder](../assets/viz/fuse1a.png)  |  ![After reorder](../assets/viz/fuse1b.png)
 :-------------------------:|:-------------------------:
-*Before `reorder(i, j, f)`* |  *After `reorder(i, j, f)`*
+*Before `reorder(i, j, f)`, order is (f, i, j)* |  *After `reorder(i, j, f)`, order is (i, j, f)*
 
 The fusing dimension moves from the first position to the last position. Now, `schedule` is equivalent to the following Python code:
 ```python

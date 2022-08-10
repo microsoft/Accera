@@ -1,12 +1,13 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
-# Accera v1.2.7 Reference
+# Accera v1.2.8 Reference
 
 # Module functions
 * [`accera.cast`](functions/cast.md) `(value, type)`
-* [`accera.create_parameters`](functions/create_parameters.md) `(number)`
-* [`accera.create_parameter_grid`](functions/create_parameter_grid.md) `(parameter_choices, filter_func, sample)`
+* [`accera.create_dimensions`](functions/create_dimensions.md) `([role])`
+* [`accera.create_parameters`](functions/create_parameters.md) `()`
+* [`accera.create_parameter_grid`](functions/create_parameter_grid.md) `(parameter_choices[, filter_func, sample, seed])`
 * [`accera.fuse`](functions/fuse.md) `(schedules[, partial])`
 
 # Top level enumerations
@@ -15,19 +16,6 @@
 * [`accera.MMAShape`](<enumerations/MMAShape.md>)
 
 # Classes
-
-## `class accera.Plan`
-A scheduled (ordered) loop nest with target-specific implementation details.
-
-### Methods
-* [`cache`](<classes/Plan/cache.md>) `(source[, index, layout, level, max_elements, thrifty, type])`
-* [`bind`](<classes/Plan/bind.md>) `(indices, grid)`
-* [`kernelize`](<classes/Plan/kernelize.md>) `(unroll_indices, vectorize_indices)`
-* [`parallelize`](<classes/Plan/parallelize.md>) `(indices[, pin, policy])`
-* [`unroll`](<classes/Plan/unroll.md>) `(index)`
-* [`vectorize`](<classes/Plan/vectorize.md>) `(index)`
-
----
 
 ## `class accera.Array`
 A multidimensional array of scalar elements.
@@ -41,12 +29,24 @@ A multidimensional array of scalar elements.
 
 ### Methods
 * [`deferred_layout`](<classes/Array/deferred_layout.md>) `(layout)`
+* [`sub_array`](<classes/Array/sub_array.md>) `(offsets, shape[, strides])`
 
 ---
 
 ## `class accera.Cache`
 
 A local copy of an `Array` block.
+
+---
+
+## `class accera.Dimension`
+A runtime dimension.
+
+### Constructors
+* [`Dimension`](<classes/Dimension/Dimension.md>) `([role, value])`
+
+### Enumerations
+* [`accera.Dimension.Role`](<classes/Dimension/Role.md>)
 
 ---
 
@@ -95,6 +95,33 @@ Represents a collection of functions that can be built and emitted for use in cl
 A placeholder that can be used instead of concrete values when constructing or calling the methods of a `Nest`, `Schedule`, or `Plan`.
 
 ---
+
+
+## `class accera.Plan`
+A scheduled (ordered) loop nest with target-specific implementation details.
+
+### Methods
+* [`cache`](<classes/Plan/cache.md>) `(source[, index, trigger_index, layout, level, trigger_level, max_elements,  thrifty, location, double_buffer, double_buffer_location, vectorize])`
+* [`bind`](<classes/Plan/bind.md>) `(indices, grid)`
+* [`kernelize`](<classes/Plan/kernelize.md>) `(unroll_indices[, vectorize_indices])`
+* [`parallelize`](<classes/Plan/parallelize.md>) `(indices[, pin, policy, max_threads])`
+* [`tensorize`](<classes/Plan/tensorize.md>) `(indices, mma_shape[, use_static_offsets, num_total_passes, num_fused_passes, scheduling_policy])`
+* [`unroll`](<classes/Plan/unroll.md>) `(index)`
+* [`vectorize`](<classes/Plan/vectorize.md>) `(index)`
+
+---
+
+
+## `class accera.Scalar`
+
+A scalar element.
+
+### Constructors
+* [`Scalar`](<classes/Scalar/Scalar.md>) `([element_type, value])`
+
+
+---
+
 
 ## `class accera.Schedule`
 

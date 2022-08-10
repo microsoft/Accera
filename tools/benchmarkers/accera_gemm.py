@@ -8,8 +8,6 @@ import os
 import psutil
 from copy import deepcopy
 import progressbar
-from multiprocessing import Process, Manager, Queue
-from re import M
 from termcolor import colored
 from dataclasses import dataclass, InitVar
 from datetime import datetime
@@ -123,6 +121,13 @@ class BenchmarkResult:
         d['partitionKey'] = self.get_partition_key()
         return d
 
+def print_log(verbose: bool, msg: str, color: str = None):
+    if verbose:
+        if not color:
+            print(msg)
+        else:
+            print(colored(msg, color))
+
 def get_k(target: Target, mfma_tile: _MMAShape):
     mma_shape = target.tensor_core_info.mma_shape_to_tuple(mfma_tile)
     return mma_shape[2]
@@ -137,11 +142,39 @@ def get_layout(transpose: bool):
 def get_type(typeStr: str):
     return ScalarType.float32 if typeStr == 's' else ScalarType.float16
 
-def _benchmark_kernel(
-    target: Target, schedule: Schedule, args: Tuple[Array, Array, Array], outer_tile_x: int, outer_tile_y: int,
+def create_gemm_nest_args(M: int, N: int, K: int, transA: bool, transB: bool, dtype):
+    datatype = get_type(dtype)
+
+    A = Array(
+        role=Array.Role.INPUT,
+        element_type=datatype,
+        shape=(M, K),
+        layout=get_layout(transA)
+    )
+    B = Array(
+        role=Array.Role.INPUT,
+        element_type=datatype,
+        shape=(K, N),
+        layout=get_layout(transB)
+    )
+    C = Array(role=Array.Role.INPUT_OUTPUT, element_type=datatype, shape=(M, N))
+
+    nest = Nest([M, N, K])
+    i, j, k = nest.get_indices()
+
+    @nest.iteration_logic
+    def _():
+        C[i, j] += A[i, k] * B[k, j]
+
+    return nest, (A, B, C)
+
+def benchmark_kernel(
+    target: Target, M: int, N: int, K: int, transA: bool, transB: bool, dtype, outer_tile_x: int, outer_tile_y: int,
     outer_tile_k: int, cacheALayout, cacheBLayout, mfma_tile, use_static_offsets, double_buffering, vectorize,
-    num_total_passes, num_fused_passes, scheduling_policy) -> Plan:
-    A, B, C = args
+    num_total_passes, num_fused_passes, scheduling_policy):
+    nest, (A, B, C) = create_gemm_nest_args(M, N, K, transA, transB, dtype)
+    schedule = nest.create_schedule()
+
     i, j, k = schedule.get_indices()
 
     ii, jj, kk = schedule.tile({
@@ -164,36 +197,36 @@ def _benchmark_kernel(
     plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=block_indices, warp_indices=warp_indices, tensor_indices=tensor_indices, outer_nest_order=outer_nest_order, mma_shape=mfma_tile)
     plan.tensorize(indices=tensorization_indices, mma_shape=mfma_tile, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
 
-    if target.runtime == Target.Runtime.ROCM:
-        plan.cache(
-            A,
-            index=ii,
-            double_buffer=double_buffering,
-            double_buffer_location=Constants.AUTO,
-            vectorize=vectorize,
-            location=target.MemorySpace.SHARED,
-            layout=cacheALayout
-        )
-        plan.cache(
-            B,
-            index=ii,
-            double_buffer=double_buffering,
-            double_buffer_location=Constants.AUTO,
-            vectorize=vectorize,
-            location=target.MemorySpace.SHARED,
-            layout=cacheBLayout
-        )
-        if mfma_tile == _MMAShape.M16xN16xK4_B1 or mfma_tile == _MMAShape.M16xN16xK16_B1:
-            # Output caching is only supported for 16x16 output tiles currently
-            plan.cache(
-                C,
-                index=k,
-                vectorize=vectorize,
-                location=target.MemorySpace.PRIVATE
-                # Don't specify layout so it defaults to the C array's layout
-            )
+    plan.cache(
+        A,
+        index=ii,
+        double_buffer=double_buffering,
+        double_buffer_location=Constants.AUTO,
+        vectorize=vectorize,
+        location=target.MemorySpace.SHARED,
+        layout=cacheALayout
+    )
+    plan.cache(
+        B,
+        index=ii,
+        double_buffer=double_buffering,
+        double_buffer_location=Constants.AUTO,
+        vectorize=vectorize,
+        location=target.MemorySpace.SHARED,
+        layout=cacheBLayout
+    )
 
-    return plan
+    if target.runtime == Target.Runtime.ROCM and (mfma_tile == _MMAShape.M16xN16xK4_B1 or mfma_tile == _MMAShape.M16xN16xK16_B1):
+        # Output caching is only supported for 16x16 output tiles currently
+        plan.cache(
+            C,
+            index=k,
+            vectorize=vectorize,
+            location=target.MemorySpace.PRIVATE
+            # Don't specify layout so it defaults to the C array's layout
+        )
+
+    return plan, A, B, C
 
 def get_dir(output_prefix):
     return os.path.split(output_prefix)[0] or '.'
@@ -202,43 +235,16 @@ def get_hat_path(output_prefix, package_name):
     return os.path.join(get_dir(output_prefix), package_name + ".hat")
 
 
-def create_gemm_nest_args(opts: GemmOpts, dtype):
-    M = int(opts.m)
-    N = int(opts.n)
-    K = int(opts.k)
-    datatype = get_type(dtype)
-
-    A = Array(
-        role=Array.Role.INPUT,
-        element_type=datatype,
-        shape=(M, K),
-        layout=get_layout(bool(opts.transA))
-    )
-    B = Array(
-        role=Array.Role.INPUT,
-        element_type=datatype,
-        shape=(K, N),
-        layout=get_layout(bool(opts.transB))
-    )
-    C = Array(role=Array.Role.INPUT_OUTPUT, element_type=datatype, shape=(M, N))
-
-    nest = Nest([M, N, K])
-    i, j, k = nest.get_indices()
-
-    @nest.iteration_logic
-    def _():
-        C[i, j] += A[i, k] * B[k, j]
-
-    return nest, (A, B, C)
-
-
 def get_variants(opts: GemmOpts, dtype, target):
     ELEM_SIZE_BYTES = 4 if dtype == 's' else 2
     datatype = get_type(dtype)
     outer_tiles = [16, 32, 64, 128, 256]
-    mfma_tiles_all = [_MMAShape.M64xN64xK1_B4, _MMAShape.M64xN64xK1_B2, _MMAShape.M32xN32xK2_B1, _MMAShape.M16xN16xK4_B1,
-                        _MMAShape.M64xN64xK4_B4, _MMAShape.M64xN64xK4_B2, _MMAShape.M32xN32xK8_B1, _MMAShape.M16xN16xK16_B1,
-                        _MMAShape.M32xN8xK16_B1, _MMAShape.M8xN32xK16_B1]
+
+    if target.runtime == Target.Runtime.ROCM:
+        mfma_tiles = [_MMAShape.M64xN64xK1_B4, _MMAShape.M64xN64xK1_B2, _MMAShape.M32xN32xK2_B1, _MMAShape.M16xN16xK4_B1,
+                      _MMAShape.M64xN64xK4_B4, _MMAShape.M64xN64xK4_B2, _MMAShape.M32xN32xK8_B1, _MMAShape.M16xN16xK16_B1]
+    elif target.runtime == Target.Runtime.CUDA:
+        mfma_tiles = [_MMAShape.M16xN16xK16_B1, _MMAShape.M32xN8xK16_B1, _MMAShape.M8xN32xK16_B1, _MMAShape.M16xN16xK8_B1]
 
     k_split = [256, 128, 64, 32, 16, 8, 4, 2, 1]
     k_split_reduced = []
@@ -254,7 +260,7 @@ def get_variants(opts: GemmOpts, dtype, target):
         found = False
         for kk in k_split_reduced:
             if kk % tp == 0:
-                for mma_tile in mfma_tiles_all:
+                for mma_tile in mfma_tiles:
                     if kk % (tp * get_k(target, mma_tile)) == 0:
                         num_total_passes_reduced.append(tp)
                         found = True
@@ -281,18 +287,12 @@ def get_variants(opts: GemmOpts, dtype, target):
                 ((cache_size_a + cache_size_b) * ELEM_SIZE_BYTES <= target.max_shared_memory_per_block) and \
                 target.tensor_core_info.supports(datatype, datatype, mfma_t, total_passes, total_passes // fuse_factor)
 
-    if target.runtime == Target.Runtime.ROCM:
-        mfma_tiles = [_MMAShape.M64xN64xK1_B4, _MMAShape.M64xN64xK1_B2, _MMAShape.M32xN32xK2_B1, _MMAShape.M16xN16xK4_B1,
-                      _MMAShape.M64xN64xK4_B4, _MMAShape.M64xN64xK4_B2, _MMAShape.M32xN32xK8_B1, _MMAShape.M16xN16xK16_B1]
-    elif target.runtime == Target.Runtime.CUDA:
-        mfma_tiles = [_MMAShape.M16xN16xK16_B1, _MMAShape.M32xN8xK16_B1, _MMAShape.M8xN32xK16_B1]
-
     return list(filter(lambda v: valid_variant(v[0], v[1], v[2], v[8], v[9]), product(combinations_with_replacement(outer_tiles, 2), k_split_reduced, mfma_tiles,
                                                                                     use_static_offsets, double_buffering, vectorize, cacheALayout,
                                                                                     cacheBLayout, num_total_passes_reduced, fuse_factor, scheduling_policy)))
 
 
-def benchmark_gemm(opts: GemmOpts, dtype, output_prefix: str, available_gpus, container_name, verbose_logs, compiler_ver, commit_id, commit_datetime: str, commit_branch, target_name, check_result, dev_props):
+def benchmark_gemm(opts: GemmOpts, dtype, batch_size: int, output_prefix: str, available_gpus, container_name, verbose_logs, compiler_ver, commit_id, commit_datetime: str, commit_branch, target_name, check_result, dev_props):
     """
     Architecture Overview:
     --------------------------------------------------------------------------------------------
@@ -376,15 +376,14 @@ def benchmark_gemm(opts: GemmOpts, dtype, output_prefix: str, available_gpus, co
     for i in range(len(available_gpus)):
         if available_gpus[i]:
             gpu_devices.append(i)
-            device_q.append(Queue())
+            device_q.append(multiprocessing.Queue())
 
     total_gpus = len(gpu_devices)
     target = Target(target_name)
     variants = get_variants(opts, dtype, target)
 
     if len(variants) == 0: # this means we failed to find any valid kernel configuration for this input
-        if verbose_logs:
-            print(colored('No valid kernel configurations found.', "magenta"))
+        print_log(verbose_logs, 'No valid kernel configurations found.', "magenta")
         if container_name:
             result = BenchmarkResult(opts=opts, dtype=dtype, gpu_id=-1, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties='')
             result.target_rt = 'ROCM' if target.runtime == Target.Runtime.ROCM else 'CUDA'
@@ -423,13 +422,13 @@ def benchmark_gemm(opts: GemmOpts, dtype, output_prefix: str, available_gpus, co
             for i in range(wave, min(wave + waveSize, len(variants))):
                 gpu_idx = i % total_gpus
                 gpu_id = gpu_devices[gpu_idx]
-                p = Process(name=f"builder{i}", target=run_variant, args=(variants[i], gpu_id, device_q[gpu_idx], opts, dtype, target, output_prefix, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props[gpu_id], verbose_logs, check_result))
+                p = multiprocessing.Process(name=f"builder{i}", target=run_variant, args=(variants[i], gpu_id, device_q[gpu_idx], opts, dtype, target, output_prefix, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props[gpu_id], verbose_logs, check_result))
                 p.start()
 
             time.sleep(5)
 
             for i in range(total_gpus):
-                p = Process(name=f"runner{i}", target=gemm_runner, args=(gpu_devices[i], output_prefix, device_q[i], result_rows, golden_data, verbose_logs))
+                p = multiprocessing.Process(name=f"runner{i}", target=gemm_runner, args=(gpu_devices[i], batch_size, output_prefix, device_q[i], result_rows, golden_data, verbose_logs))
                 p.start()
                 processes.append(p)
 
@@ -440,13 +439,11 @@ def benchmark_gemm(opts: GemmOpts, dtype, output_prefix: str, available_gpus, co
             i = 0
             for p in processes:
                 while p.is_alive():
-                    if verbose_logs:
-                        print(f"Joining process: {p.name}, {p.pid}")
+                    print_log(verbose_logs, f"Joining process: {p.name}, {p.pid}")
 
                     proc = psutil.Process(p.pid)
                     if proc.status() == psutil.STATUS_ZOMBIE:
-                        if verbose_logs:
-                            print(f"Zombie process found: {p.name}, {p.pid}, skipping...")
+                        print_log(verbose_logs, f"Zombie process found: {p.name}, {p.pid}, skipping...")
 
                         break # just move on
 
@@ -464,8 +461,6 @@ def benchmark_gemm(opts: GemmOpts, dtype, output_prefix: str, available_gpus, co
 
 
 def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props, verbose_logs, check_result):
-    nest, (A, B, C) = create_gemm_nest_args(opts, dtype)
-
     try:
         assert float(opts.alpha) == 1., "alpha must be 1"
 
@@ -490,37 +485,42 @@ def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, c
         elif target.runtime == Target.Runtime.CUDA:
             result.target_rt = 'CUDA'
 
-        plan = _benchmark_kernel(target, nest.create_schedule(), (A, B, C), outer_tile_x, outer_tile_y, k_split,
+        plan, A, B, C = benchmark_kernel(target, opts.m, opts.n, opts.k, opts.transA, opts.transB, dtype, outer_tile_x, outer_tile_y, k_split,
                                     cacheALayout, cacheBLayout, mfma_tile, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy)
         fn_name = f"{result.target_rt}_GEMM_{result.get_partition_key().replace('.', '_')}_{result.get_id().replace('.', '_')}"
-        package_name = f"gemm_benchmarks_{fn_name}"
-        package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=fn_name)
-        package.build(
-            package_name,
-            output_dir=get_dir(output_prefix),
-            fail_on_error=True,
-            _quiet=True
-        )
+        block_dims, grid_dims = plan._calc_block_grid_dim()
+        is_valid_plan = plan._is_valid_block_dim(block_dims) and plan._is_valid_block_size(block_dims)
+        if is_valid_plan:
+            package_name = f"gemm_benchmarks_{fn_name}"
+            package = Package()
+            function = package.add(plan, args=(A, B, C), base_name=fn_name)
+            package.build(
+                name=package_name,
+                output_dir=get_dir(output_prefix),
+                fail_on_error=True,
+                _quiet=True
+            )
 
-        result.compilable = True
+            result.compilable = True
+        else:
+            print_log(verbose_logs, f"Invalid kernel launch configuration for {fn_name}", 'grey')
 
     except Exception as e:
         error = f"[Fail] Error while building {fn_name} on gpu {gpu_id}: {e}"
-        print(colored(error, 'red'))
         result.prog_out += error
+        print_log(verbose_logs, error, 'red')
 
-    device_q.put((package_name, opts, fn_name, result))
-    if verbose_logs:
-        print(colored(f"Submitted package: {package_name} on gpu {gpu_id}.", 'yellow'))
+    finally:
+        if is_valid_plan:
+            device_q.put((package_name, opts, fn_name, result))
+            print_log(verbose_logs, f"Submitted package: {package_name} on gpu {gpu_id}.", 'yellow')
 
-def gemm_runner(gpu_id, output_prefix, device_q, result_rows, golden_data, verbose_logs):
+def gemm_runner(gpu_id: int, batch_size: int, output_prefix, device_q, result_rows, golden_data, verbose_logs):
     while True:
         # Attempt few retries before giving up
         retry = 5
         while device_q.empty():
-            if verbose_logs:
-                print(f'Device queue for gpu {gpu_id} polling for 5 seconds...')
+            print_log(verbose_logs, f'Device queue for gpu {gpu_id} polling for 5 seconds...')
 
             time.sleep(5)
             retry = retry - 1
@@ -528,42 +528,40 @@ def gemm_runner(gpu_id, output_prefix, device_q, result_rows, golden_data, verbo
                 break
 
         if retry <= 0:
-            if verbose_logs:
-                print(f'Device queue for gpu {gpu_id} exiting.')
+            print_log(verbose_logs, f'Device queue for gpu {gpu_id} exiting.')
             break
 
         (package_name, opts, fn_name, result) = device_q.get()
         if result.compilable:
-            if verbose_logs:
-                print(colored(f"Running package: {package_name} on gpu {gpu_id}. Pending packages: {device_q.qsize()}", 'cyan'))
+            print_log(verbose_logs, f"Running package: {package_name} on gpu {gpu_id}. Pending packages: {device_q.qsize()}", 'cyan')
 
-            with open(os.path.join(get_dir(output_prefix), package_name + ".cu"), 'r') as kernel_file:
+            kernel_path = os.path.join(get_dir(output_prefix), package_name + ".cu")
+            with open(kernel_path, 'r') as kernel_file:
                 result.kernelCode = kernel_file.read()
             try:
+                hat_path = get_hat_path(output_prefix, package_name)
                 if result.check:
                     (A_test, B_test, C_test, C_ref) = golden_data
 
-                    hat_package, func_map = hatlib.load(get_hat_path(output_prefix, package_name))
+                    hat_package, func_map = hatlib.load(hat_path)
                     C_copy = deepcopy(C_test)
                     func_map[fn_name](A_test, B_test, C_copy, gpu_id=gpu_id)
-                    np.testing.assert_allclose(C_ref, C_copy, rtol=1e-4 if result.in_type == 's' else 1e-2)
+                    np.testing.assert_allclose(C_ref, C_copy, rtol=1e-2)
 
-                    if verbose_logs:
-                        print(colored(f'Passed correctness for package: {package_name} on gpu {gpu_id}', 'green'))
+                    print_log(verbose_logs, f'Passed correctness for package: {package_name} on gpu {gpu_id}', 'green')
 
                 result.correct = True
 
                 results = hatlib.run_benchmark(
-                    get_hat_path(output_prefix, package_name),
-                    batch_size=2,
+                    hat_path,
+                    batch_size=batch_size,
                     min_time_in_sec=1,
                     gpu_id=gpu_id
                 )
             except hatlib.pyhip.hip.hipErrorInvalidConfiguration as e:
                 error = f"[Fail] Invalid kernel configuration for function {fn_name} on gpu {gpu_id}: {e}"
                 result.prog_out += error
-                if verbose_logs:
-                    print(colored(error, 'red'))
+                print_log(verbose_logs, error, 'red')
             except Exception as e:
                 error = f"[Fail] Error while running function {fn_name} on gpu {gpu_id}: {e}"
                 result.prog_out += error
@@ -572,8 +570,7 @@ def gemm_runner(gpu_id, output_prefix, device_q, result_rows, golden_data, verbo
                 result.executable = len(results) > 0
                 result.prog_out += str(results)
                 if len(results) > 0:
-                    if verbose_logs:
-                        print(colored(f"[Pass] {fn_name}", 'green'))
+                    print_log(verbose_logs, f"[Pass] {fn_name}", 'green')
 
                     time_s = results[0].get('min_of_means', '-')
                     if time_s != '-':
@@ -582,7 +579,6 @@ def gemm_runner(gpu_id, output_prefix, device_q, result_rows, golden_data, verbo
 
                         result.time_ms = float(time_s) * 1e3
                         result.TFlops = tflops
-                        if verbose_logs:
-                            print(colored(f"Throughput of {fn_name}: {tflops} TFlops on gpu {gpu_id}", 'blue'))
+                        print_log(verbose_logs, f"Throughput of {fn_name}: {tflops} TFlops on gpu {gpu_id}", 'blue')
 
         result_rows.append(result.get_result_row())

@@ -104,30 +104,19 @@ struct NestedPassAdaptor
         _parent(parent),
         _pmGeneratorFn(std::forward<PassManagerGeneratorFn>(pmGeneratorFn)),
         _dumpPasses(dumpPasses)
-    {
-        if (!_dumpPasses)
-        {
-            _singlePM = &(_pmGeneratorFn());
-        }
-    }
+    {}
 
     void addPass(std::unique_ptr<mlir::Pass> pass)
     {
+        auto passName = pass->getName();
+        _pmGeneratorFn().addPass(std::move(pass));
+
         if (_dumpPasses)
         {
-            auto passName = pass->getName();
-            auto& pm = _pmGeneratorFn();
-            pm.addPass(std::move(pass));
-
             _parent.addLocationSnapshot(passName);
-        }
-        else
-        {
-            (*_singlePM)->addPass(std::move(pass));
         }
     }
 
-    std::optional<OpPassManager*> _singlePM;
     PassManagerAdaptor& _parent;
     PassManagerGeneratorFn _pmGeneratorFn;
     bool _dumpPasses;
@@ -169,10 +158,9 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     funcOpPM.addPass(createCanonicalizerPass());
     funcOpPM.addPass(createLoopInvariantCodeMotionPass());
     funcOpPM.addPass(createCSEPass());
-    funcOpPM.addPass(createConvertSCFToOpenMPPass());
 
+    pmAdaptor.addPass(createConvertSCFToOpenMPPass());
     pmAdaptor.addPass(value::createValueToStdPass(options.enableProfile));
-    funcOpPM.addPass(value::createBarrierOptPass(options.writeBarrierGraph.getValue(), options.barrierGraphFilename.getValue()));
     pmAdaptor.addPass(value::createRangeValueOptimizePass());
     pmAdaptor.addPass(createCanonicalizerPass());
     pmAdaptor.addPass(createCSEPass());
@@ -187,6 +175,8 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     auto gpuPass = createAcceraToGPUPass(execRuntime);
     if (gpuPass)
     {
+        pmAdaptor.addPass(createGPUSimplificationPass());
+        pmAdaptor.addPass(value::createBarrierOptPass(options.writeBarrierGraph.getValue(), options.barrierGraphFilename.getValue()));
         pmAdaptor.addPass(std::move(gpuPass));
     }
 

@@ -27,7 +27,7 @@ namespace jit
         O3 = llvm::CodeGenOpt::Level::Aggressive
     };
 
-    mlir::OwningModuleRef parseMLIRInput(const std::string& inputFilename, mlir::MLIRContext* context);
+    mlir::OwningOpRef<mlir::ModuleOp> parseMLIRInput(const std::string& inputFilename, mlir::MLIRContext* context);
 
     class ACCJITRunner
     {

@@ -13,12 +13,14 @@ from .LogicFunction import logic_function, LogicFunction
 from .NativeLoopNestContext import NativeLoopNestContext
 from ..Parameter import DelayedParameter
 from .. import Target
+from .Dimension import Dimension
+from ..Constants import k_dynamic_size
 
 
 class Nest:
     "Represents an iteration space"
 
-    def __init__(self, shape: List[Union[int, DelayedParameter]]):
+    def __init__(self, shape: List[Union[int, DelayedParameter, Dimension]]):
         """Creates a Nest
 
         Args:
@@ -125,7 +127,20 @@ class Nest:
     ):
         from .._lang_python._lang import _Logic
 
+        captures_to_replace = self._get_captures_to_replace(logic_fn, context)
+
+        def logic_fn_wrapper():
+            logic_fn(**captures_to_replace)
+
+        logic = _Logic(logic_fn.__name__, logic_fn_wrapper)
+
+        context.schedule.add_kernel(logic, pred, placement)
+
+    def _get_captures_to_replace(self, logic_fn, context: NativeLoopNestContext):
+        import types
+
         captures_to_replace = {}
+        
         for k, v in logic_fn.get_captures().items():
             value_id = id(v)
             if value_id in context.mapping:
@@ -153,31 +168,39 @@ class Nest:
                 elif isinstance(v, DelayedParameter):
                     captures_to_replace[k] = v.get_value()
                     continue
+                elif isinstance(v, types.FunctionType):
+                    captures_to_replace.update(self._get_captures_to_replace(logic_function(v), context))
+                    continue
 
                 try:
                     it = iter(v)
                 except TypeError:
                     continue
                 else:
+                    from .._lang_python._lang import Scalar
+                    
                     replaced_values = []
+                    is_scalar = False
                     for elem in it:
+                        if isinstance(elem, Scalar):
+                            is_scalar = True
+                            break
                         replacement = context.mapping.get(id(elem))
                         if replacement:
                             replaced_values.append(replacement)
-                    captures_to_replace[k] = tuple(replaced_values)
+                    if not is_scalar:
+                        captures_to_replace[k] = tuple(replaced_values)
 
-        def logic_fn_wrapper():
-            logic_fn(**captures_to_replace)
-
-        logic = _Logic(logic_fn.__name__, logic_fn_wrapper)
-
-        context.schedule.add_kernel(logic, pred, placement)
+        return captures_to_replace
 
     def _build_native_context(self, context: NativeLoopNestContext):
         from .._lang_python._lang import _Nest
         from .._lang_python._lang import Array as NativeArray
 
-        context.nest = _Nest(shape=[x for x, _ in self._shape])
+        context.nest = _Nest(
+            shape=[k_dynamic_size if isinstance(x, Dimension) else x for x, _ in self._shape], 
+            runtime_sizes=[x._native_dim for x, _ in self._shape if isinstance(x, Dimension)]
+        )
 
         try:
             args_iter = iter(*context.runtime_args)

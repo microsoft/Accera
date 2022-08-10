@@ -16,7 +16,7 @@ def Accera_Dialect : Dialect {
   let cppNamespace = "accera::ir::rc";
 }
 
-class RC_Op<string mnemonic, list<OpTrait> traits = []> :
+class RC_Op<string mnemonic, list<Trait> traits = []> :
     Op<Accera_Dialect, mnemonic, traits>;
 
 def RC_GemmOp : RC_Op<"GEMM", [NoSideEffect]> {

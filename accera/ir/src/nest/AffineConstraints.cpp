@@ -23,22 +23,24 @@ namespace loopnest
         auto numConstraintDimensions = indices.size();
         auto numConstraintColumns = numConstraintDimensions + 1; // +1 column for the constant dimension
 
-        _constraints = mlir::FlatAffineConstraints(numInequalities, numEqualities, numConstraintColumns, numConstraintDimensions);
+        _constraints = mlir::FlatAffineConstraints(numInequalities, numEqualities,
+                                                   numConstraintColumns, numConstraintDimensions,
+                                                   /*numSymbols=*/0, /*numLocals=*/0);
     }
 
     void AffineConstraints::AddConstraint(Index index, Range range)
     {
         auto pos = GetIndexPosition(index);
-        _constraints.addConstantLowerBound(pos, range.Begin());
+        _constraints.addBound(mlir::FlatAffineConstraints::LB, pos, range.Begin());
 
         if (range.End() > 0)
         {
-            _constraints.addConstantUpperBound(pos, range.End()-1); // half open bound -> closed bound
+            _constraints.addBound(mlir::FlatAffineConstraints::UB, pos, range.End()-1); // half open bound -> closed bound
         }
         else
         {
             assert(range.End() == range.Begin() && "Bad range (end < begin)");
-            _constraints.addConstantUpperBound(pos, range.Begin()); // single-value closed bound
+            _constraints.addBound(mlir::FlatAffineConstraints::UB, pos, range.Begin()); // single-value closed bound
         }
     }
 
@@ -88,8 +90,8 @@ namespace loopnest
     std::pair<int64_t, int64_t> AffineConstraints::GetEffectiveRangeBounds(Index index) const
     {
         auto pos = GetIndexPosition(index);
-        auto lowerBound = _constraints.getConstantLowerBound(pos);
-        auto upperBound = _constraints.getConstantUpperBound(pos);
+        auto lowerBound = _constraints.getConstantBound(mlir::FlatAffineConstraints::LB, pos);
+        auto upperBound = _constraints.getConstantBound(mlir::FlatAffineConstraints::UB, pos);
 
         assert(lowerBound && upperBound && "Index has no upper or lower bound"); // coding error
 

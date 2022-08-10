@@ -32,10 +32,11 @@
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
-#include <mlir/Dialect/Linalg/IR/LinalgOps.h>
+#include <mlir/Dialect/Linalg/IR/Linalg.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
@@ -294,7 +295,7 @@ mlir::FunctionType ToMLIRType(mlir::OpBuilder& builder, const FunctionDeclaratio
     if (type.isa<mlir::IntegerType>())
     {
         auto loc = builder.getUnknownLoc();
-        return builder.create<mlir::IndexCastOp>(loc, v, mlir::IndexType::get(v.getContext()));
+        return builder.create<mlir::arith::IndexCastOp>(loc, v, mlir::IndexType::get(v.getContext()));
     }
 
     // Index types fall through
@@ -323,7 +324,7 @@ mlir::FunctionType ToMLIRType(mlir::OpBuilder& builder, const FunctionDeclaratio
                 auto insertionBlock = builder.getInsertionBlock();
                 auto it = insertionBlock->begin();
                 auto end = insertionBlock->end();
-                while (it != end && llvm::isa<mlir::ConstantOp,
+                while (it != end && llvm::isa<mlir::arith::ConstantOp,
                                               ir::value::ReferenceGlobalOp>(it))
                 {
                     ++it;
@@ -368,7 +369,7 @@ std::vector<mlir::Value> ToMLIRValue(mlir::OpBuilder& builder, std::vector<Value
     else
     {
         auto loc = builder.getUnknownLoc();
-        return builder.create<mlir::IndexCastOp>(loc, mlirValue, indexType);
+        return builder.create<mlir::arith::IndexCastOp>(loc, mlirValue, indexType);
     }
 }
 
@@ -647,7 +648,7 @@ struct MLIRContextBase::Impl : private InitAccera
     }
 
 protected:
-    mlir::OwningModuleRef _ownedModule;
+    mlir::OwningOpRef<mlir::ModuleOp> _ownedModule;
     mlir::ModuleOp _mlirModule;
 
 public:
@@ -713,7 +714,7 @@ void MLIRContext::save(std::string filename) const
     std::error_code ec;
     llvm::raw_fd_ostream s(filename, ec);
 
-    mlir::OwningModuleRef cloned = _impl->_mlirModule.clone();
+    mlir::OwningOpRef<mlir::ModuleOp> cloned = _impl->_mlirModule.clone();
     SaveModule(filename, cloned.get());
 }
 
@@ -728,7 +729,7 @@ void MLIRContext::verify() const
     (void)_impl->_mlirModule.verify();
 }
 
-mlir::OwningModuleRef MLIRContext::cloneModule() const
+mlir::OwningOpRef<mlir::ModuleOp> MLIRContext::cloneModule() const
 {
     return _impl->_mlirModule.clone();
 }
@@ -761,9 +762,9 @@ void MLIRContext::writeHeader(std::optional<std::string> filename) const
 void MLIRContext::setMetadata(const std::string& key, const accera::ir::MetadataValueType& value)
 {
     auto context = _impl->_valueModuleOp.getContext();
-    auto newKeyId = mlir::Identifier::get(key, context);
+    auto newKeyId = mlir::StringAttr::get(context, key);
     auto valueAttr = ir::GetMetadataAttr(value, context);
-    auto metadataKeyId = mlir::Identifier::get(accera::ir::value::ValueDialect::getAcceraMetadataAttrName(), context);
+    auto metadataKeyId = mlir::StringAttr::get(context, accera::ir::value::ValueDialect::getAcceraMetadataAttrName());
     auto metadataDict = _impl->_valueModuleOp->getAttrOfType<mlir::DictionaryAttr>(accera::ir::value::ValueDialect::getAcceraMetadataAttrName());
     if (metadataDict == nullptr)
     {
@@ -797,7 +798,7 @@ void MLIRContext::setDebugMode(bool enable)
     // moduleOp-wide debug attribute for generating debug sprintfs in the module header file
     auto& builder = _impl->builder;
     auto context = _impl->_valueModuleOp.getContext();
-    auto debugModeId = mlir::Identifier::get(accera::ir::GetDebugModeAttrName(), context);
+    auto debugModeId = mlir::StringAttr::get(context, accera::ir::GetDebugModeAttrName());
     if (enable)
     {
         _impl->_valueModuleOp->setAttr(debugModeId, builder.getUnitAttr());
@@ -812,12 +813,12 @@ Scalar CreateGPUIndexOp(mlir::OpBuilder& builder, accera::ir::value::Processor i
 {
     auto loc = builder.getUnknownLoc();
     return Wrap(
-        builder.create<mlir::IndexCastOp>(loc,
-                                          accera::ir::util::GetGPUIndex(idxType, builder, loc),
-                                          builder.getI64Type()));
+        builder.create<mlir::arith::IndexCastOp>(loc,
+                                                 accera::ir::util::GetGPUIndex(idxType, builder, loc),
+                                                 builder.getI64Type()));
 }
 
-template<GPUIndexType type>
+template <GPUIndexType type>
 GPUIndex MLIRContext::GetGPUIndex()
 {
     switch (type)
@@ -895,7 +896,7 @@ Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t
     auto insertionBlock = b.getInsertionBlock();
     auto it = insertionBlock->begin();
     auto end = insertionBlock->end();
-    while (it != end && llvm::isa<mlir::ConstantOp,
+    while (it != end && llvm::isa<mlir::arith::ConstantOp,
                                   mlir::memref::AllocOp,
                                   mlir::memref::AllocaOp,
                                   ir::value::ReferenceGlobalOp,
@@ -1090,7 +1091,7 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
             {
                 for (const auto& tag : tags)
                 {
-                    tagAttrs.emplace_back(b.getIdentifier(tag), b.getUnitAttr());
+                    tagAttrs.emplace_back(mlir::NamedAttribute(b.getStringAttr(tag), b.getUnitAttr()));
                 }
                 fnOp->setAttr(ir::FunctionTagsAttrName, b.getDictionaryAttr(tagAttrs));
             }
@@ -1337,7 +1338,7 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
 
             auto it = insertionBlock->begin();
             auto end = insertionBlock->end();
-            while (it != end && llvm::isa<mlir::ConstantOp>(it))
+            while (it != end && llvm::isa<mlir::arith::ConstantOp>(it))
             {
                 ++it;
             }
@@ -1350,21 +1351,21 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
             {
                 if constexpr (std::is_same_v<ElementType, index_t>)
                 {
-                    op = b.create<mlir::ConstantIndexOp>(loc, static_cast<int64_t>(data[0]));
+                    op = b.create<mlir::arith::ConstantIndexOp>(loc, static_cast<int64_t>(data[0]));
                 }
                 else if constexpr (std::is_same_v<ElementType, float16_t>)
                 {
                     bool losesInfo = false;
                     auto f = llvm::APFloat(data[0].data);
                     f.convert(llvm::APFloat::IEEEhalf(), llvm::APFloat::rmNearestTiesToEven, &losesInfo);
-                    op = b.create<mlir::ConstantFloatOp>(loc, f, mlirElemTy.cast<mlir::Float16Type>());
+                    op = b.create<mlir::arith::ConstantFloatOp>(loc, f, mlirElemTy.cast<mlir::Float16Type>());
                 }
                 else if constexpr (std::is_same_v<ElementType, bfloat16_t>)
                 {
                     bool losesInfo = false;
                     auto f = llvm::APFloat(data[0].data);
                     f.convert(llvm::APFloat::BFloat(), llvm::APFloat::rmNearestTiesToEven, &losesInfo);
-                    op = b.create<mlir::ConstantFloatOp>(loc, f, mlirElemTy.cast<mlir::BFloat16Type>());
+                    op = b.create<mlir::arith::ConstantFloatOp>(loc, f, mlirElemTy.cast<mlir::BFloat16Type>());
                 }
                 else if constexpr (std::is_integral_v<ElementType> || std::is_same_v<ElementType, Boolean>)
                 {
@@ -1374,11 +1375,11 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
                         // ConstantIntOp only can only have signless integer type
                         mlirElemTy = accera::ir::util::ToSignlessMLIRType(b, mlirElemTy);
                     }
-                    op = b.create<mlir::ConstantIntOp>(loc, elem, mlirElemTy);
+                    op = b.create<mlir::arith::ConstantIntOp>(loc, elem, mlirElemTy);
                 }
                 else if constexpr (std::is_floating_point_v<ElementType>)
                 {
-                    op = b.create<mlir::ConstantFloatOp>(loc, llvm::APFloat(data[0]), mlirElemTy.cast<mlir::FloatType>());
+                    op = b.create<mlir::arith::ConstantFloatOp>(loc, llvm::APFloat(data[0]), mlirElemTy.cast<mlir::FloatType>());
                 }
                 else
                 {
@@ -1437,7 +1438,7 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
 
                 std::string uniquedName = name + "_" + std::to_string(ir::util::GetUniqueId());
 
-                mlir::MemRefType globalMemrefTy = mlir::MemRefType::Builder{ memrefShapeTy }.setAffineMaps({}); // remove affine maps
+                mlir::MemRefType globalMemrefTy = mlir::MemRefType::Builder{ memrefShapeTy }.setLayout({}); // remove affine maps
                 [[maybe_unused]] auto globalOp = b.create<ir::value::GlobalOp>(loc, globalMemrefTy, /* isConstant= */ true, uniquedName, dataAttribute, /*addrSpace*/ 0, /*isExternal*/ true);
                 op = b.create<ir::value::ReferenceGlobalOp>(loc, memrefShapeTy, uniquedName);
             }
@@ -1456,7 +1457,7 @@ bool MLIRContext::IsConstantDataImpl(Value v) const
     auto data = Unwrap(v);
 
     // TODO: Extend this check to handle constant data arrays. Right now, this only works for scalar values
-    if (llvm::isa_and_nonnull<mlir::ConstantIntOp, mlir::ConstantIndexOp, mlir::ConstantFloatOp>(data.getDefiningOp()))
+    if (llvm::isa_and_nonnull<mlir::arith::ConstantIntOp, mlir::arith::ConstantIndexOp, mlir::arith::ConstantFloatOp>(data.getDefiningOp()))
     {
         return true;
     }
@@ -1528,12 +1529,12 @@ void MLIRContext::ForImpl(MemoryLayout layout, std::function<void(std::vector<Sc
 
     auto dim = static_cast<unsigned>(layout.NumDimensions());
     std::vector<mlir::Value>
-        LBs(dim, builder.create<mlir::ConstantIndexOp>(loc, 0)),
+        LBs(dim, builder.create<mlir::arith::ConstantIndexOp>(loc, 0)),
         UBs;
     std::vector<int64_t> steps(dim, 1);
     for (unsigned i = 0; i < dim; ++i)
     {
-        UBs.emplace_back(builder.create<mlir::ConstantIndexOp>(loc, layout.GetActiveSize(i)));
+        UBs.emplace_back(builder.create<mlir::arith::ConstantIndexOp>(loc, layout.GetActiveSize(i)));
     }
 
     auto loopSymName = std::string{ "value_loop" };
@@ -1636,7 +1637,7 @@ ViewAdapter MLIRContext::Reduce(Array a, std::vector<ViewAdapter> initArgs, std:
         });
 
     ir::executionPlan::VectorizationInfo vecInfo{ 8, 16 };
-    auto vectorizationInfoIdentifier = builder.getIdentifier(ir::executionPlan::VectorizationInfoAttr::getKeyName());
+    auto vectorizationInfoIdentifier = builder.getStringAttr(ir::executionPlan::VectorizationInfoAttr::getKeyName());
     reduceOp->setAttr(vectorizationInfoIdentifier, ir::executionPlan::VectorizationInfoAttr::get(vecInfo, builder.getContext()));
     return Wrap(reduceOp.getResult());
 }
@@ -1667,7 +1668,7 @@ ViewAdapter MLIRContext::MapReduce(Array a, std::vector<ViewAdapter> initArgs, s
         });
 
     ir::executionPlan::VectorizationInfo vecInfo{ 8, 16 };
-    auto vectorizationInfoIdentifier = builder.getIdentifier(ir::executionPlan::VectorizationInfoAttr::getKeyName());
+    auto vectorizationInfoIdentifier = builder.getStringAttr(ir::executionPlan::VectorizationInfoAttr::getKeyName());
     mapReduceOp->setAttr(vectorizationInfoIdentifier, ir::executionPlan::VectorizationInfoAttr::get(vecInfo, builder.getContext()));
     return Wrap(mapReduceOp.getResult());
 }
@@ -1735,7 +1736,7 @@ Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offset
             auto lowerBound = ResolveMLIRIndex(builder, offset);
             auto upperBound = ResolveMLIRIndex(builder, size);
             auto step = ResolveMLIRIndex(builder, stride);
-            return builder.create<mlir::linalg::RangeOp>(loc, lowerBound, upperBound, step);
+            return builder.create<ir::value::RangeOp>(loc, lowerBound, upperBound, step);
         });
 
     auto& builder = _impl->builder;
@@ -1975,19 +1976,15 @@ Value MLIRContext::MMALoadSyncImpl(const Matrix& source, const int64_t rowOffset
     const auto mmaShape = static_cast<ir::value::MMAShape>(target.GetFragmentShape());
     const ir::value::MMAOp mmaType(mmaShape);
 
-    auto rowOff = builder.create<mlir::ConstantIndexOp>(loc, rowOffset);
-    auto colOff = builder.create<mlir::ConstantIndexOp>(loc, colOffset);
+    auto rowOff = builder.create<mlir::arith::ConstantIndexOp>(loc, rowOffset);
+    auto colOff = builder.create<mlir::arith::ConstantIndexOp>(loc, colOffset);
     const ir::value::MMAOperandType operandType{ static_cast<ir::value::MMAOperandType>(target.GetFragmentType()) };
     const auto isAcc = operandType == ir::value::MMAOperandType::Acc;
     auto elementType = (source.GetValue().IsFloat32() || isAcc) ? builder.getF32Type() : builder.getF16Type();
     auto [warpSizeX, warpSizeY] = ir::util::ResolveWarpSize(ir::value::ExecutionRuntime::ROCM).value();
+    auto vecTy = mlir::MemRefType::get(mmaType.getOperandShape(operandType), elementType);
 
-    // Its correct to use getOutElementsPerThread() for input matrices here since we are going to schedule all the passes.
-    // Therefore, getOutElementsPerThread() == getInElementsPerThread() * numPasses()
-    const auto vecSize = mmaType.getOutElementsPerThread(warpSizeX * warpSizeY) / (isAcc ? mmaType.getNumBlocks() : 1);
-    auto vecTy = mlir::MemRefType::get({ vecSize }, elementType);
-
-    mlir::Value result = builder.create<ir::value::MMALoadSyncOp>(loc, vecTy, matValue, mmaShape, operandType, mlir::ValueRange{ rowOff, colOff });
+    mlir::Value result = builder.create<ir::value::MMALoadSyncOp>(loc, vecTy, matValue, mmaShape, operandType, /*TODO*/true, mlir::ValueRange{ rowOff, colOff });
     EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { source.GetValue().GetBaseType(), 1 } });
     Emittable emittable{ &emittableInfo };
 
@@ -2003,11 +2000,10 @@ void MLIRContext::MMAStoreSyncImpl(const MatrixFragment& source, Matrix& target,
 
     auto sourceValue = ToMLIRValue(builder, source);
     auto targetValue = ToMLIRValue(builder, target);
-    auto rowOff = builder.create<mlir::ConstantIndexOp>(loc, rowOffset);
-    auto colOff = builder.create<mlir::ConstantIndexOp>(loc, colOffset);
+    auto rowOff = builder.create<mlir::arith::ConstantIndexOp>(loc, rowOffset);
+    auto colOff = builder.create<mlir::arith::ConstantIndexOp>(loc, colOffset);
 
     const auto mmaShape = static_cast<ir::value::MMAShape>(source.GetFragmentShape());
-    const ir::value::MMAOp mmaType(mmaShape);
     builder.create<ir::value::MMAStoreSyncOp>(loc, sourceValue, targetValue, mmaShape, mlir::ValueRange{ rowOff, colOff });
 }
 
@@ -2060,17 +2056,17 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type)
                     else if (fromIntType.getWidth() > toIntType.getWidth())
                     {
 
-                        signlessMlirValue = builder.create<mlir::TruncateIOp>(loc, signlessMlirValue, toIntTypeSignless);
+                        signlessMlirValue = builder.create<mlir::arith::TruncIOp>(loc, signlessMlirValue, toIntTypeSignless);
                     }
                     else
                     {
                         if (doSignedCast)
                         {
-                            signlessMlirValue = builder.create<mlir::SignExtendIOp>(loc, signlessMlirValue, toIntTypeSignless);
+                            signlessMlirValue = builder.create<mlir::arith::ExtSIOp>(loc, signlessMlirValue, toIntTypeSignless);
                         }
                         else
                         {
-                            signlessMlirValue = builder.create<mlir::ZeroExtendIOp>(loc, signlessMlirValue, toIntTypeSignless);
+                            signlessMlirValue = builder.create<mlir::arith::ExtUIOp>(loc, signlessMlirValue, toIntTypeSignless);
                         }
                     }
 
@@ -2078,10 +2074,10 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type)
                     return Wrap(casted);
                 })
                 .Case([&](mlir::IndexType) {
-                    return Wrap(builder.create<mlir::IndexCastOp>(loc, signlessMlirValue, toType));
+                    return Wrap(builder.create<mlir::arith::IndexCastOp>(loc, signlessMlirValue, toType));
                 })
                 .Case([&](mlir::FloatType) {
-                    return fromIntType.isUnsigned() ? Wrap(builder.create<mlir::UIToFPOp>(loc, signlessMlirValue, toType)) : Wrap(builder.create<mlir::SIToFPOp>(loc, signlessMlirValue, toType));
+                    return fromIntType.isUnsigned() ? Wrap(builder.create<mlir::arith::UIToFPOp>(loc, signlessMlirValue, toType)) : Wrap(builder.create<mlir::arith::SIToFPOp>(loc, signlessMlirValue, toType));
                 })
                 .Default([&](mlir::Type) -> Scalar {
                     throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
@@ -2091,11 +2087,11 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type)
             return mlir::TypeSwitch<mlir::Type, Scalar>(toType)
                 .Case([&](mlir::IntegerType toIntType) {
                     auto toIntTypeSignless = accera::ir::util::ToSignlessMLIRType(builder, toIntType);
-                    return Wrap(builder.create<mlir::IndexCastOp>(loc, mlirValue, toIntTypeSignless));
+                    return Wrap(builder.create<mlir::arith::IndexCastOp>(loc, mlirValue, toIntTypeSignless));
                 })
                 .Case([&](mlir::FloatType) {
-                    auto int64Value = builder.create<mlir::IndexCastOp>(loc, mlirValue, builder.getI64Type()); // index->int64
-                    return Wrap(builder.create<mlir::SIToFPOp>(loc, int64Value, toType)); // int64->fp
+                    auto int64Value = builder.create<mlir::arith::IndexCastOp>(loc, mlirValue, builder.getI64Type()); // index->int64
+                    return Wrap(builder.create<mlir::arith::SIToFPOp>(loc, int64Value, toType)); // int64->fp
                 })
                 .Default([&](mlir::Type) -> Scalar {
                     throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
@@ -2105,10 +2101,10 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type)
             return mlir::TypeSwitch<mlir::Type, Scalar>(toType)
                 .Case([&](mlir::IntegerType toIntType) {
                     auto toIntTypeSignless = accera::ir::util::ToSignlessMLIRType(builder, toIntType);
-                    return toIntType.isUnsigned() ? Wrap(builder.create<mlir::FPToUIOp>(loc, mlirValue, toIntTypeSignless)) : Wrap(builder.create<mlir::FPToSIOp>(loc, mlirValue, toIntTypeSignless));
+                    return toIntType.isUnsigned() ? Wrap(builder.create<mlir::arith::FPToUIOp>(loc, mlirValue, toIntTypeSignless)) : Wrap(builder.create<mlir::arith::FPToSIOp>(loc, mlirValue, toIntTypeSignless));
                 })
                 .Case([&](mlir::FloatType toFloatType) {
-                    return fromFloatType.getWidth() > toFloatType.getWidth() ? Wrap(builder.create<mlir::FPTruncOp>(loc, mlirValue, toType)) : Wrap(builder.create<mlir::FPExtOp>(loc, mlirValue, toType));
+                    return fromFloatType.getWidth() > toFloatType.getWidth() ? Wrap(builder.create<mlir::arith::TruncFOp>(loc, mlirValue, toType)) : Wrap(builder.create<mlir::arith::ExtFOp>(loc, mlirValue, toType));
                 })
                 .Default([&](mlir::Type) -> Scalar {
                     throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
@@ -2162,14 +2158,14 @@ namespace
                     ? mlir::function_ref<void(mlir::OpBuilder&, mlir::Location)>{ elseCase }
                     : mlir::function_ref<void(mlir::OpBuilder&, mlir::Location)>{});
 
-            mlir::scf::IfOp::ensureTerminator(ifOp.thenRegion(), builder, loc);
+            mlir::scf::IfOp::ensureTerminator(ifOp.getThenRegion(), builder, loc);
 
-            if (auto& elseRegion = ifOp.elseRegion(); !elseRegion.empty())
+            if (auto& elseRegion = ifOp.getElseRegion(); !elseRegion.empty())
             {
                 mlir::scf::IfOp::ensureTerminator(elseRegion, builder, loc);
             }
 
-            return ifOp.results();
+            return ifOp.getResults();
         }
         else
         {
@@ -2183,13 +2179,13 @@ namespace
                     (void)CascadingConditionBuilder(builder, loc, firstAlt, else_, alts.drop_front());
                 });
 
-            mlir::scf::IfOp::ensureTerminator(ifOp.thenRegion(), builder, loc);
+            mlir::scf::IfOp::ensureTerminator(ifOp.getThenRegion(), builder, loc);
 
-            if (auto& elseRegion = ifOp.elseRegion(); !elseRegion.empty())
+            if (auto& elseRegion = ifOp.getElseRegion(); !elseRegion.empty())
             {
                 mlir::scf::IfOp::ensureTerminator(elseRegion, builder, loc);
             }
-            return ifOp.results();
+            return ifOp.getResults();
         }
     }
 } // namespace
@@ -2380,10 +2376,11 @@ void MLIRContext::PrintRawMemoryImpl(ViewAdapter value)
     auto size = (*maxStride) * (shape[maxStride - strides.begin()]);
 
     auto elemTy = memType.getElementType();
+    auto identityLayout = mlir::MemRefLayoutAttrInterface{};
 
     // cast to a value with type `memref<total_size x elem_type>` (via `memref<* x elem_type>`)
     mlir::Value ptr = builder.create<mlir::memref::CastOp>(loc, mem, mlir::UnrankedMemRefType::get(elemTy, memType.getMemorySpace()));
-    mlir::Value mlirValue = builder.create<mlir::memref::CastOp>(loc, ptr, mlir::MemRefType::get({ size }, elemTy, {}, memType.getMemorySpace()));
+    mlir::Value mlirValue = builder.create<mlir::memref::CastOp>(loc, ptr, mlir::MemRefType::get({ size }, elemTy, identityLayout, memType.getMemorySpace()));
 
     [[maybe_unused]] auto op = builder.create<ir::value::PrintOp>(loc, mlirValue, /*toStderr=*/false);
 }
@@ -2731,7 +2728,8 @@ void FillResource(ViewAdapter resourceView, Scalar fillValue)
         }
 
         auto memorySpace = shapedType.getMemorySpace();
-        auto castType = mlir::MemRefType::get(llvm::makeArrayRef(llvm::SmallVector<int64_t, 3>((size_t)rank, -1)), elemTy, {}, memorySpace);
+        auto identityLayout = mlir::MemRefLayoutAttrInterface{};
+        auto castType = mlir::MemRefType::get(llvm::makeArrayRef(llvm::SmallVector<int64_t, 3>((size_t)rank, -1)), elemTy, identityLayout, memorySpace);
 
         auto& b = GetMLIRContext().GetOpBuilder();
         auto loc = b.getUnknownLoc();
@@ -2851,7 +2849,7 @@ void PrintMemref(ViewAdapter memView)
     }
 }
 
-mlir::OwningModuleRef GatherModules(const std::string& name, const std::vector<value::MLIRContext*>& contexts, mlir::MLIRContext* context)
+mlir::OwningOpRef<mlir::ModuleOp> GatherModules(const std::string& name, const std::vector<value::MLIRContext*>& contexts, mlir::MLIRContext* context)
 {
     auto topLevelModule = mlir::ModuleOp::create(mlir::UnknownLoc::get(context), llvm::StringRef(name));
     mlir::OpBuilder builder(context);
@@ -2885,7 +2883,7 @@ void WriteHeaderForModules(const std::string& filename,
 {
     std::error_code ec;
     llvm::raw_fd_ostream fstream(filename, ec);
-    std::vector<mlir::OwningModuleRef> owningModuleRefs;
+    std::vector<mlir::OwningOpRef<mlir::ModuleOp>> owningModuleRefs;
     std::vector<mlir::ModuleOp> moduleOps;
     owningModuleRefs.reserve(contexts.size());
     moduleOps.reserve(contexts.size());

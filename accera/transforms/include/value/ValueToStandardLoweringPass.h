@@ -17,7 +17,6 @@ template <typename OpT>
 class OperationPass;
 
 class RewritePatternSet;
-using OwningRewritePatternList = RewritePatternSet;
 } // namespace mlir
 
 namespace accera::transforms::value

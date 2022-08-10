@@ -70,7 +70,7 @@ def accxp_TensorizationInfoAttr : DialectAttr<
 //   * The parent dialect of the operation.
 //   * The mnemonic for the operation, or the name without the dialect prefix.
 //   * A list of traits for the operation.
-class accxp_Op<string mnemonic, list<OpTrait> traits = []> :
+class accxp_Op<string mnemonic, list<Trait> traits = []> :
     Op<ExecutionPlan_Dialect, mnemonic, traits>;
 
 //

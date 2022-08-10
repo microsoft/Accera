@@ -33,7 +33,8 @@
 #include <llvm/Support/raw_os_ostream.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
-#include <mlir/Dialect/Linalg/IR/LinalgOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
+#include <mlir/Dialect/Linalg/IR/Linalg.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/Attributes.h>
@@ -124,8 +125,8 @@ NestOp CreateMatMulNestOp(mlir::Value A, mlir::Value B, mlir::Value C)
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i, j });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ i, k });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ k, j });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ i, j });
     });
 
@@ -197,8 +198,8 @@ TEST_CASE("UnrankedMemRefTest")
         [[maybe_unused]] auto val2 = Alloca(builder, memrefType2);
         mlir::Value val3 = Alloca(builder, memrefType3);
         mlir::Value val4 = Alloca(builder, memrefType4);
-        mlir::Value val5 = Alloca(builder, memrefType5, Value{ builder.create<ConstantIndexOp>(builder.getUnknownLoc(), 10) });
-        mlir::Value val6 = Alloca(builder, memrefType6, Value{ builder.create<ConstantIndexOp>(builder.getUnknownLoc(), 10) });
+        mlir::Value val5 = Alloca(builder, memrefType5, Value{ builder.create<arith::ConstantIndexOp>(builder.getUnknownLoc(), 10) });
+        mlir::Value val6 = Alloca(builder, memrefType6, Value{ builder.create<arith::ConstantIndexOp>(builder.getUnknownLoc(), 10) });
 
         // auto cast_3_4 = builder.create<mlir::memref::CastOp>(loc, val3, val4.getType()); // cast <10xi32> -> <2x5xi32> -- illegal
         [[maybe_unused]] auto cast_4_5 = builder.create<mlir::memref::CastOp>(loc, val3, val5.getType()); // cast <10xi32> -> <?xi32>
@@ -811,8 +812,8 @@ void CreateNestAndKernelTest()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i, j });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ i, k });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ k, j });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ i, j });
     });
 
@@ -831,7 +832,7 @@ void CreateNestAndScheduleTest()
     std::vector<int64_t> sizes{ iSize, jSize, kSize };
 
     auto nest = MakeNest(sizes, [&](OpBuilder& builder, Location loc, NestOp& nest) {
-        auto pi = builder.create<ConstantFloatOp>(loc, llvm::APFloat(3.14), floatType);
+        auto pi = builder.create<arith::ConstantFloatOp>(loc, llvm::APFloat(3.14), floatType);
         auto innerValue = Alloca(builder, mlir::MemRefType::get({ 1 }, floatType));
         auto [i, j, k] = nest.getIndices<3>(builder);
         (void)builder.create<memref::StoreOp>(loc, pi, innerValue, ValueRange{ i });
@@ -858,7 +859,7 @@ void IndexMultiplicityTest()
     std::vector<int64_t> indices{ iSize, jSize, kSize };
 
     auto nest = MakeNest(indices, [&](OpBuilder& builder, Location loc, NestOp& nest) {
-        auto pi = builder.create<ConstantFloatOp>(loc, llvm::APFloat(3.14), floatType);
+        auto pi = builder.create<arith::ConstantFloatOp>(loc, llvm::APFloat(3.14), floatType);
         auto innerValue = Alloca(builder, mlir::MemRefType::get({ 1 }, floatType));
         auto [i, j, k] = nest.getIndices<3>(builder);
         (void)builder.create<memref::StoreOp>(loc, pi, innerValue, ValueRange{ i });
@@ -937,8 +938,8 @@ void LowerScheduleTest()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i, j });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ i, k });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ k, j });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ i, j });
     });
 
@@ -1189,9 +1190,9 @@ void LowerScheduledKernelsTest()
     auto clearKernel = MakeKernel(builder, "clear", [&](OpBuilder& builder, Location loc) {
         (void)builder.create<loopnest::PrintOp>(builder.getUnknownLoc(), A);
 
-        // A(i, k) = builder.create<ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(0.0), floatType);
+        // A(i, k) = builder.create<arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(0.0), floatType);
         (void)builder.create<memref::StoreOp>(loc,
-                                              builder.create<ConstantFloatOp>(
+                                              builder.create<arith::ConstantFloatOp>(
                                                   loc,
                                                   llvm::APFloat(0.0),
                                                   floatType),
@@ -1214,8 +1215,8 @@ void LowerScheduledKernelsTest()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i, j });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ i, k });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ k, j });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ i, j });
     });
 
@@ -1278,8 +1279,8 @@ void LowerSplitScheduleWithKernelTest()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i, j });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ i, k });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ k, j });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ i, j });
     });
 
@@ -1325,8 +1326,8 @@ void LowerSplitUnrolledScheduleWithKernelTest()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i, j });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ i, k });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ k, j });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ i, j });
     });
 
@@ -1371,8 +1372,8 @@ void LowerSplitOrderScheduleWithKernelTest()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i, j });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ i, k });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ k, j });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ i, j });
     });
 
@@ -1445,8 +1446,8 @@ void LowerSplitScheduleWithBoundaryKernelTest()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i, j });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ i, k });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ k, j });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ i, j });
     });
 
@@ -1490,8 +1491,8 @@ void LowerSplitScheduleWithScheduledBoundaryKernelTest()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i, j });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ i, k });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ k, j });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ i, j });
     });
 
@@ -1532,7 +1533,7 @@ void LowerSplitScheduleWithScheduledBoundaryKernelTest2()
     auto fillAKernel = MakeKernel(builder, [&, ai = mlir::Value(ai), aj = mlir::Value(aj)](OpBuilder& builder, Location loc) {
         (void)builder.create<memref::StoreOp>(
             loc,
-            builder.create<ConstantFloatOp>(
+            builder.create<arith::ConstantFloatOp>(
                 loc,
                 llvm::APFloat(3.14),
                 floatType),
@@ -1551,11 +1552,11 @@ void LowerSplitScheduleWithScheduledBoundaryKernelTest2()
     [[maybe_unused]] auto k = indices[2];
 
     // now add a kernel
-    [[maybe_unused]] auto pi = builder.create<ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(3.14), floatType);
+    [[maybe_unused]] auto pi = builder.create<arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(3.14), floatType);
     [[maybe_unused]] auto kernel = MakeKernel(builder, [&](OpBuilder& builder, Location loc) {
         (void)builder.create<memref::StoreOp>(
             loc,
-            builder.create<ConstantFloatOp>(
+            builder.create<arith::ConstantFloatOp>(
                 loc,
                 llvm::APFloat(3.14),
                 floatType),
@@ -1597,7 +1598,7 @@ void PrintArrayTest()
     auto fillAKernel = MakeKernel(builder, [&](OpBuilder& builder, Location loc) {
         (void)builder.create<memref::StoreOp>(
             loc,
-            builder.create<ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(3.14), floatType),
+            builder.create<arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(3.14), floatType),
             A,
             ValueRange{ ai, aj });
     });
@@ -1623,15 +1624,15 @@ void LoopNest_test1()
     auto ii = i;
     auto jj = j;
 
-    // using plus = ValueBuilder<AddIOp>;
+    // using plus = ValueBuilder<arith::AddIOp>;
     auto kernel = MakeKernel(builder, [&](OpBuilder& builder, Location loc) {
-        auto y = builder.create<AddIOp>(
+        auto y = builder.create<arith::AddIOp>(
             loc,
             builder.create<memref::LoadOp>(
                 loc,
                 mm,
                 ValueRange{ ii, jj }),
-            builder.create<ConstantIntOp>(
+            builder.create<arith::ConstantIntOp>(
                 loc,
                 2,
                 32));
@@ -1678,8 +1679,8 @@ void MlasValueTest()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ ii, jj });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ ii, kk });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ kk, jj });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ ii, jj });
     });
 
@@ -1814,8 +1815,8 @@ void FusionTest1()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i1, j1 });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ i1, k1 });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ k1, j1 });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ i1, j1 });
     });
 
@@ -1824,8 +1825,8 @@ void FusionTest1()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, E, ValueRange{ i2, l2 });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ i2, j2 });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, D, ValueRange{ j2, l2 });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, E, ValueRange{ i2, l2 });
     });
 
@@ -1872,7 +1873,7 @@ void FusionTest2()
         // p.C(ii, jj) = std_constant_float(llvm::APFloat(0.0), floatType);
         (void)builder.create<memref::StoreOp>(
             loc,
-            builder.create<ConstantFloatOp>(
+            builder.create<arith::ConstantFloatOp>(
                 builder.getUnknownLoc(), llvm::APFloat(0.0), floatType),
             p.C,
             ValueRange{ ii, jj });
@@ -1883,16 +1884,16 @@ void FusionTest2()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, p.C, ValueRange{ ii, jj });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, p.A, ValueRange{ ii, kk });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, p.B, ValueRange{ kk, jj });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, p.C, ValueRange{ ii, jj });
     });
 
     auto initEKernel = MakeKernel(builder, "initE", [&](OpBuilder& builder, Location loc) {
-        // p.E(ii, ll) = builder.create<ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(0.0), floatType);
+        // p.E(ii, ll) = builder.create<arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(0.0), floatType);
         (void)builder.create<memref::StoreOp>(
             loc,
-            builder.create<ConstantFloatOp>(
+            builder.create<arith::ConstantFloatOp>(
                 builder.getUnknownLoc(), llvm::APFloat(0.0), floatType),
             p.E,
             ValueRange{ ii, ll });
@@ -1903,8 +1904,8 @@ void FusionTest2()
         auto Cij = builder.create<mlir::memref::LoadOp>(loc, p.E, ValueRange{ ii, ll });
         auto Aik = builder.create<mlir::memref::LoadOp>(loc, p.C, ValueRange{ ii, jj });
         auto Bkj = builder.create<mlir::memref::LoadOp>(loc, p.D, ValueRange{ jj, ll });
-        auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-        auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+        auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+        auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
         (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, p.E, ValueRange{ ii, ll });
     });
 
@@ -1966,16 +1967,16 @@ void FusionTest3()
     auto l2 = indices2[1];
 
     auto kernel1 = MakeKernel(builder, "kernel_Z", [&](OpBuilder& builder, Location loc) {
-        // A(i1, j1) += builder.create<ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(3.0), floatType);
+        // A(i1, j1) += builder.create<arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(3.0), floatType);
         builder.create<memref::StoreOp>(
             loc,
-            builder.create<AddFOp>(
+            builder.create<arith::AddFOp>(
                 loc,
                 builder.create<memref::LoadOp>(
                     loc,
                     A,
                     ValueRange{ i1, j1 }),
-                builder.create<ConstantFloatOp>(
+                builder.create<arith::ConstantFloatOp>(
                     builder.getUnknownLoc(),
                     llvm::APFloat(3.0),
                     floatType)),
@@ -1984,16 +1985,16 @@ void FusionTest3()
     });
 
     auto kernel2 = MakeKernel(builder, "kernel_A", [&](OpBuilder& builder, Location loc) {
-        // A(k2, l2) *= builder.create<ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(5.0), floatType);
+        // A(k2, l2) *= builder.create<arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(5.0), floatType);
         builder.create<memref::StoreOp>(
             loc,
-            builder.create<MulFOp>(
+            builder.create<arith::MulFOp>(
                 loc,
                 builder.create<memref::LoadOp>(
                     loc,
                     A,
                     ValueRange{ k2, l2 }),
-                builder.create<ConstantFloatOp>(
+                builder.create<arith::ConstantFloatOp>(
                     builder.getUnknownLoc(),
                     llvm::APFloat(5.0),
                     floatType)),
@@ -2064,8 +2065,8 @@ void NestedNestTest()
             auto Cij = builder.create<mlir::memref::LoadOp>(loc, C, ValueRange{ inneri, innerj });
             auto Aik = builder.create<mlir::memref::LoadOp>(loc, A, ValueRange{ inneri, innerk });
             auto Bkj = builder.create<mlir::memref::LoadOp>(loc, B, ValueRange{ innerk, innerj });
-            auto AikTimesBkj = builder.create<mlir::MulFOp>(loc, Aik, Bkj);
-            auto AikTimesBkjPlusCij = builder.create<mlir::AddFOp>(loc, AikTimesBkj, Cij);
+            auto AikTimesBkj = builder.create<arith::MulFOp>(loc, Aik, Bkj);
+            auto AikTimesBkjPlusCij = builder.create<arith::AddFOp>(loc, AikTimesBkj, Cij);
             (void)builder.create<mlir::memref::StoreOp>(loc, AikTimesBkjPlusCij, C, ValueRange{ inneri, innerj });
         });
 
@@ -2101,7 +2102,7 @@ void NestedNestTest()
 //     auto ai = fillIndices[0];
 //     auto aj = fillIndices[1];
 //     auto fillAKernel = MakeKernel(builder, [&]() {
-//         A(ai, aj) = builder.create<ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(3.14), floatType);
+//         A(ai, aj) = builder.create<arith::ConstantFloatOp>(builder.getUnknownLoc(), llvm::APFloat(3.14), floatType);
 //     });
 //     fillANest.getOrCreateSchedule().addKernel(fillAKernel);
 //     fillANest.getOrCreateSchedule();
@@ -2109,7 +2110,7 @@ void NestedNestTest()
 
 //     // Get a slice of A
 //     llvm::SmallVector<mlir::Value, 4> coordHandles;
-//     coordHandles.push_back(builder.create<ConstantIndexOp>{builder.getUnknownLoc(),  2 });
+//     coordHandles.push_back(builder.create<arith::ConstantIndexOp>{builder.getUnknownLoc(),  2 });
 //     std::vector<int64_t> slicedDimensions = { 0 };
 //     auto rowMemRefType = mlir::MemRefType::get({ N }, floatType);
 //     mlir::Value row = value::Slice{ mlir::Value{ buffer }, slicedDimensions, coordHandles, rowMemRefType };

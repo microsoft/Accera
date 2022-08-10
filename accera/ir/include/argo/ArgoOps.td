@@ -10,12 +10,13 @@
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/ViewLikeInterface.td"
+include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 
 include "ir/include/argo/ArgoBase.td"
 
 // Base class for Argo dialect ops
-class Argo_Op<string mnemonic, list<OpTrait> traits = []> :
+class Argo_Op<string mnemonic, list<Trait> traits = []> :
     Op<Argo_Dialect, mnemonic, traits> {
   // For every argo op, there needs to be a:
   //   * void print(OpAsmPrinter &p, ${C++ class of Op} op)
@@ -44,7 +45,7 @@ def Argo_YieldOp : Argo_Op<"yield", [NoSideEffect, ReturnLike, Terminator]>,
   }];
 }
 
-def Argo_EntryPointOp : Argo_Op<"entry_point", [IsolatedFromAbove, FunctionLike,
+def Argo_EntryPointOp : Argo_Op<"entry_point", [IsolatedFromAbove, FunctionOpInterface,
                                                 HasParent<"ModuleOp">, Symbol]> {
   let summary = "Declare a host entry function for a kernel function.";
 
@@ -114,16 +115,19 @@ def Argo_EntryPointOp : Argo_Op<"entry_point", [IsolatedFromAbove, FunctionLike,
     /// The execution space of the kernel
     StringRef getKernelExecutionSpace();
 
-    // FunctionLike trait needs access to the functions below
-    friend class OpTrait::FunctionLike<EntryPointOp>;
+    /// Returns the type of this function.
+    /// FIXME: We should drive this via the ODS `type` param.
+    FunctionType getType() { 
+      return getTypeAttr().getValue().cast<FunctionType>();
+    }
 
-    /// Hooks for the input type enumeration in FunctionLike
-    unsigned getNumFuncArguments() { return getType().getNumInputs(); }
+    /// Returns the argument types of this function.
+    ArrayRef<Type> getArgumentTypes() { return getType().getInputs(); }
 
-    /// Hooks for the output type enumeration in FunctionLike
-    unsigned getNumFuncResults() { return getType().getNumResults(); }
+    /// Returns the result types of this function.
+    ArrayRef<Type> getResultTypes() { return getType().getResults(); }
 
-    /// Hook for FunctionLike verifier
+    /// Hook for FunctionOpInterface verifier
     LogicalResult verifyType();
 
     /// The name of the symbol attribute specifying the `kernel_name` attribute

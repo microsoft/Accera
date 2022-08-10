@@ -160,6 +160,8 @@ namespace value
             throw utilities::LogicException(utilities::LogicExceptionErrors::illegalState);
         }
     }
+
+    bool IsLogicalComparable(ValueType type1, ValueType type2);
 } // namespace value
 } // namespace accera
 

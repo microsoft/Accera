@@ -10,7 +10,7 @@
 #include "CppPrinter.h"
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
-#include <mlir/Dialect/Vector/VectorOps.h>
+#include <mlir/Dialect/Vector/IR/VectorOps.h>
 
 
 namespace mlir

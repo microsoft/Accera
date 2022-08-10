@@ -47,16 +47,13 @@ void AffineMapVisitor::visit(Type type)
     }
     else if (auto memRefType = type.dyn_cast<MemRefType>())
     {
-        for (auto m : memRefType.getAffineMaps())
-        {
-            visit(AffineMapAttr::get(m));
-        }
+        visit(AffineMapAttr::get(memRefType.getLayout().getAffineMap()));
     }
     else if (auto shapedType = type.dyn_cast<ShapedType>())
     {
         visit(shapedType.getElementType());
 
-        if (auto memRefType = type.dyn_cast<MemRefType>())
+        if ((memRefType = type.dyn_cast<MemRefType>()))
         {
             visit(memRefType);
         }
@@ -655,7 +652,7 @@ namespace cpp_printer
 
             for (auto attr : subOp->getAttrs())
             {
-                visitor.visit(attr.second);
+                visitor.visit(attr.getValue());
             }
         });
     }

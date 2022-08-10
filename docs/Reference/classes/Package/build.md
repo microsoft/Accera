@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
-# Accera v1.2.7 Reference
+# Accera v1.2.8 Reference
 
 ## `accera.Package.build(name[, format, mode, platform, tolerance, output_dir])`
 Builds a HAT package.

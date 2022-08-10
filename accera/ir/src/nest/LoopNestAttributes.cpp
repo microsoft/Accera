@@ -19,6 +19,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <variant>
+#include <string>
 
 #include "nest/LoopNestAttrs.cpp.inc"
 #include "nest/LoopNestEnums.cpp.inc"
@@ -57,7 +58,8 @@ namespace loopnest
         else if (range.HasVariableEnd())
         {
             auto arg = range.VariableEnd().dyn_cast<mlir::BlockArgument>();
-            printer << arg;
+            // BUGBUG: from LLVM 14, there is no direct printing of block arguments
+            printer << "<block argument> of type '" << arg.getType() << "' at index: " << arg.getArgNumber();
         }
         else
         {
@@ -90,28 +92,6 @@ namespace loopnest
     OperandIndex OperandIndexAttr::getValue() const
     {
         return getImpl()->getValue();
-    }
-
-    OperandIndexAttr parseOperandIndex(mlir::DialectAsmParser& parser)
-    {
-        // Parse an OperandIndex attribute in the following form:
-        //   operand-index-attr ::= `{` `op_idx` :` idx `}`
-
-        if (failed(parser.parseLBrace()))
-            return {};
-
-        llvm::StringRef opIdxStr;
-        if (failed(parser.parseKeyword(&opIdxStr)))
-            return {};
-
-        int idx;
-        if (failed(parser.parseInteger(idx)))
-            return {};
-
-        if (failed(parser.parseRBrace()))
-            return {};
-
-        return OperandIndexAttr::get(OperandIndex{ idx }, parser.getBuilder().getContext());
     }
 
     void print(OperandIndexAttr attr, mlir::DialectAsmPrinter& printer)
@@ -166,11 +146,57 @@ namespace loopnest
         printer << index;
     }
 
-    std::variant<OperandIndexAttr, IndexAttr> parseIndexOrOperandIndex(mlir::DialectAsmParser& parser)
+    mlir::Value parseValueEnd(mlir::DialectAsmParser& parser)
     {
-        // Parse either an OperandIndex attribute or an Index attribute
-        //   operand-index-attr ::= `{` `op_idx` `,` id `}`
-        //   index-attr ::= `{` name `,` id `}`
+        // Parse either an Value end attribute
+        // operand-index-attr ::= `{` `<block argument> of type [type] at index` `,` id `}`
+
+        if (failed(parser.parseLess()))
+            return {};
+
+        llvm::StringRef name;
+        if (failed(parser.parseKeyword(&name)))
+            return {};
+
+        //Todo:  There will be a follow-up change to tag the function with an attribute that indicates the function arg using a symbol name,
+        //then reference the symbol name in range attributes.
+        
+        /* 
+        auto cl = parser.getCurrentLocation();
+        llvm::StringRef symbolStr = cl.getPointer();
+        int pos = symbolStr.find_first_of("block argument");
+        int pos_of_first_colon = -1, pos_of_second_colon = -1, index = -1;
+        if (pos == 0)
+        {
+            pos_of_first_colon = symbolStr.find_first_of(':');
+            pos_of_second_colon = symbolStr.find_first_of(':', pos_of_first_colon+1);
+            llvm::StringRef sub_symbolStr = symbolStr.substr(pos_of_first_colon+1, pos_of_second_colon - pos_of_first_colon - 1);
+            
+            index = std::stoi(sub_symbolStr.str());
+
+            if (pos_of_first_colon >= 0 && pos_of_second_colon >= 0 && index>= 0){
+                mlir::OpBuilder builder(parser.getBuilder().getContext());
+                auto argumentList = builder.getBlock()->getArguments();
+                if (argumentList.size() > 0)
+                    return argumentList[index];
+            }
+        }
+        */
+
+        if (failed(parser.parseColon()))
+            return {};
+
+        int id;
+        if (failed(parser.parseInteger(id)))
+            return {};
+
+        return {};
+    }
+
+    OperandIndexAttr parseOperandIndex(mlir::DialectAsmParser& parser)
+    {
+        // Parse either an OperandIndex attribute
+        // operand-index-attr ::= `{` `op_idx` `,` id `}`
 
         if (failed(parser.parseLBrace()))
             return {};
@@ -193,10 +219,8 @@ namespace loopnest
         {
             return OperandIndexAttr::get(OperandIndex{ id }, parser.getBuilder().getContext());
         }
-        else
-        {
-            return IndexAttr::get(Index{ std::string(name), id }, parser.getBuilder().getContext());
-        }
+        
+        return {};
     }
 
     //
@@ -395,52 +419,36 @@ namespace loopnest
         // The end value is an attribute containing either be an integer constant or an index
         Index endIndex;
         OperandIndex endOperandIndex;
+        mlir::Value endValue;
         int endInt;
         bool isEndInt = false;
         bool isEndIndex = false;
         bool isEndOperandIndex = false;
+        bool isEndValue = false;
         if (parser.parseOptionalInteger(endInt).hasValue())
         {
             isEndInt = true;
         }
         else
         {
-            auto endIndexOrOperandIndex = parseIndexOrOperandIndex(parser);
-            if (std::holds_alternative<IndexAttr>(endIndexOrOperandIndex))
+            if (auto indexAttr = parseIndex(parser))
             {
                 isEndIndex = true;
-                endIndex = std::visit(
-                    utilities::VariantVisitor{
-                        [](IndexAttr endIdx) -> Index {
-                            return endIdx.getValue();
-                        },
-                        [](OperandIndexAttr endIdx) -> Index {
-                            assert(false && "Unsupported end index type");
-                            return {};
-                        },
-                        [](auto&& endIdx) -> Index {
-                            assert(false && "Unsupported end index type");
-                            return {};
-                        } },
-                    endIndexOrOperandIndex);
+                endIndex = indexAttr.getValue();
             }
-            else if (std::holds_alternative<OperandIndexAttr>(endIndexOrOperandIndex))
+            else
             {
-                isEndOperandIndex = true;
-                endOperandIndex = std::visit(
-                    utilities::VariantVisitor{
-                        [](IndexAttr endOpIdx) -> OperandIndex {
-                            assert(false && "Unsupported end index type");
-                            return {};
-                        },
-                        [](OperandIndexAttr endOpIdx) -> OperandIndex {
-                            return endOpIdx.getValue();
-                        },
-                        [](auto&& endOpIdx) -> OperandIndex {
-                            assert(false && "Unsupported end index type");
-                            return {};
-                        } },
-                    endIndexOrOperandIndex);
+                if (auto operandIndexAttr = parseOperandIndex(parser))
+                {
+                    isEndOperandIndex = true;
+                    endOperandIndex = operandIndexAttr.getValue();
+                }
+                else
+                {
+                    endValue = parseValueEnd(parser);
+                    if (endValue)
+                        isEndValue = true;
+                }
             }
         }
 
@@ -465,6 +473,10 @@ namespace loopnest
         else if (isEndInt)
         {
             return RangeAttr::get(Range{ begin, endInt, increment }, parser.getBuilder().getContext());
+        }
+        else if (isEndValue)
+        {
+            return RangeAttr::get(Range{ begin, endValue, increment }, parser.getBuilder().getContext()); 
         }
 
         llvm_unreachable("unexpected");

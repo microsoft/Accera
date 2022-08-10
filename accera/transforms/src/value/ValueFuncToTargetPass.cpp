@@ -11,10 +11,10 @@
 #include <mlir/IR/Location.h>
 #include <value/include/MLIREmitterContext.h>
 
-#include <mlir/Analysis/LoopAnalysis.h>
+#include <mlir/Dialect/Affine/Analysis/LoopAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
-#include <mlir/Dialect/Linalg/IR/LinalgOps.h>
+#include <mlir/Dialect/Linalg/IR/Linalg.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVDialect.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
 #include <mlir/Dialect/SPIRV/IR/TargetAndABI.h>
@@ -22,7 +22,7 @@
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
-#include <mlir/Transforms/LoopUtils.h>
+#include <mlir/Dialect/Affine/LoopUtils.h>
 #include <mlir/Transforms/RegionUtils.h>
 
 #include <llvm/ADT/STLExtras.h>
@@ -83,19 +83,19 @@ struct ValueFuncToTargetPass : public tr::ValueFuncToTargetBase<ValueFuncToTarge
         for (auto vModule : make_early_inc_range(module.getOps<vir::ValueModuleOp>()))
         {
             {
-                OwningRewritePatternList patterns(context);
+                RewritePatternSet patterns(context);
                 vtr::populateValueLambdaToFuncPatterns(context, patterns);
                 (void)applyPatternsAndFoldGreedily(vModule, std::move(patterns));
             }
 
             {
-                OwningRewritePatternList patterns(context);
+                RewritePatternSet patterns(context);
                 vtr::populateValueLaunchFuncInlinerPatterns(context, patterns);
                 (void)applyPatternsAndFoldGreedily(vModule, std::move(patterns));
             }
 
             {
-                OwningRewritePatternList patterns(context);
+                RewritePatternSet patterns(context);
                 vtr::populateValueFuncToTargetPatterns(context, patterns);
                 (void)applyPatternsAndFoldGreedily(vModule, std::move(patterns));
             }
@@ -285,7 +285,7 @@ struct ValueLaunchFuncOpInlinerPattern : OpRewritePattern<vir::LaunchFuncOp>
         auto target = op.exec_targetAttr();
         auto callee = op.callee().getLeafReference();
 
-        auto parentFnOp = op->getParentWithTrait<mlir::OpTrait::FunctionLike>();
+        auto parentFnOp = op->getParentOfType<mlir::FunctionOpInterface>();
         if (parentFnOp->getAttr(ir::RawPointerAPIAttrName))
         {
             // Don't inline calls from RawPointerAPI functions
@@ -335,20 +335,20 @@ struct ValueLaunchFuncOpInlinerPattern : OpRewritePattern<vir::LaunchFuncOp>
 
 namespace accera::transforms::value
 {
-void populateValueFuncToTargetPatterns(mlir::MLIRContext* context, mlir::OwningRewritePatternList& patterns)
+void populateValueFuncToTargetPatterns(mlir::MLIRContext* context, mlir::RewritePatternSet& patterns)
 {
     uint16_t benefit = 1;
     patterns.insert<ValueReturnOpConversion>(context, benefit++);
     patterns.insert<ValueFuncToTargetPattern>(context, benefit++);
 }
 
-void populateValueLambdaToFuncPatterns(mlir::MLIRContext* context, mlir::OwningRewritePatternList& patterns)
+void populateValueLambdaToFuncPatterns(mlir::MLIRContext* context, mlir::RewritePatternSet& patterns)
 {
     uint16_t benefit = 1;
     patterns.insert<ValueLambdaRewritePattern>(context, benefit++);
 }
 
-void populateValueLaunchFuncInlinerPatterns(mlir::MLIRContext* context, mlir::OwningRewritePatternList& patterns)
+void populateValueLaunchFuncInlinerPatterns(mlir::MLIRContext* context, mlir::RewritePatternSet& patterns)
 {
     uint16_t benefit = 1;
     patterns.insert<ValueLaunchFuncOpInlinerPattern>(context, benefit++);

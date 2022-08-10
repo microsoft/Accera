@@ -38,6 +38,32 @@ void ValueDialect::initialize()
 #define GET_OP_LIST
 #include "value/ValueOps.cpp.inc"
         >();
+    addTypes<RangeType>();
+}
+
+mlir::Type ValueDialect::parseType(mlir::DialectAsmParser& parser) const
+{
+    StringRef keyword;
+    if (parser.parseKeyword(&keyword))
+        return Type();
+
+    MLIRContext* context = getContext();
+
+    return llvm::StringSwitch<mlir::Type>(keyword)
+        .Case("range", RangeType::get(context));
+
+    parser.emitError(parser.getNameLoc(), "unknown value type: " + keyword);
+    return Type();
+}
+
+void ValueDialect::printType(Type type, mlir::DialectAsmPrinter& os) const
+{
+    mlir::TypeSwitch<Type>(type)
+        .Case<RangeType>([&](RangeType rangeTy) {
+            // cf. mlir/lib/Dialect/Linalg/IR/LinalgTypes.cpp (llvm 13.0.1)
+            os << "range";
+        })
+        .Default([](Type) { llvm_unreachable("unexpected 'value' type kind"); });
 }
 } // namespace accera::ir::value
 
@@ -95,7 +121,7 @@ void ValueFuncOp::build(OpBuilder& builder, OperationState& result, StringRef na
     Region* body = result.addRegion();
 
     Block* entryBlock = new Block;
-    entryBlock->addArguments(type.getInputs());
+    entryBlock->addArguments(type.getInputs(), SmallVector<Location>(type.getInputs().size(), result.location));
 
     body->getBlocks().push_back(entryBlock);
 }
@@ -135,17 +161,17 @@ ArrayRef<Type> ValueFuncOp::getCallableResults()
 
 ParseResult ValueFuncOp::parse(OpAsmParser& parser, OperationState& result)
 {
-    auto buildFuncType = [](Builder& builder, ArrayRef<Type> argTypes, ArrayRef<Type> results, function_like_impl::VariadicFlag, std::string&) {
+    auto buildFuncType = [](Builder& builder, ArrayRef<Type> argTypes, ArrayRef<Type> results, function_interface_impl::VariadicFlag, std::string&) {
         return builder.getFunctionType(argTypes, results);
     };
 
-    return function_like_impl::parseFunctionLikeOp(parser, result, /*allowVariadic=*/false, buildFuncType);
+    return function_interface_impl::parseFunctionOp(parser, result, /*allowVariadic=*/false, buildFuncType);
 }
 
 void ValueFuncOp::print(OpAsmPrinter& p)
 {
     FunctionType fnType = getType();
-    function_like_impl::printFunctionLikeOp(p, *this, fnType.getInputs(), /*isVariadic=*/false, fnType.getResults());
+    function_interface_impl::printFunctionOp(p, *this, fnType.getInputs(), /*isVariadic=*/false, fnType.getResults());
 }
 
 LogicalResult ValueFuncOp::verify()
@@ -222,7 +248,7 @@ void ValueLambdaOp::build(OpBuilder& builder, OperationState& result, StringRef 
 
     Region* body = result.addRegion();
     Block* entryBlock = new Block;
-    entryBlock->addArguments(type.getInputs());
+    entryBlock->addArguments(type.getInputs(), SmallVector<Location>(type.getInputs().size(), result.location));
 
     body->getBlocks().push_back(entryBlock);
 }
@@ -345,7 +371,7 @@ void ReorderOp::build(OpBuilder& builder,
     map = map.compose(permutationMap);
 
     // Compute result type.
-    MemRefType resultType = MemRefType::Builder(sourceType).setShape(permutedSizes).setAffineMaps(map);
+    MemRefType resultType = MemRefType::Builder(sourceType).setShape(permutedSizes).setLayout(AffineMapAttr::get(map));
 
     build(builder, result, resultType, source, orderAttr);
 }
@@ -359,8 +385,8 @@ void ReduceOp::build(OpBuilder& builder, OperationState& result, Value input, Va
     Region* bodyRegion = result.addRegion();
     bodyRegion->push_back(new Block);
     Block& bodyBlock = bodyRegion->front();
-    bodyBlock.addArgument(initArg.getType());
-    bodyBlock.addArgument(initArg.getType());
+    bodyBlock.addArgument(initArg.getType(), result.location);
+    bodyBlock.addArgument(initArg.getType(), result.location);
 
     OpBuilder::InsertionGuard guard(builder);
     builder.setInsertionPointToStart(&bodyBlock);
@@ -379,7 +405,7 @@ void MapReduceOp::build(OpBuilder& builder, OperationState& result, Value input,
     Region* mapBodyRegion = result.addRegion();
     mapBodyRegion->push_back(new Block);
     Block& mapBodyBlock = mapBodyRegion->front();
-    mapBodyBlock.addArgument(initArg.getType());
+    mapBodyBlock.addArgument(initArg.getType(), result.location);
     {
         OpBuilder::InsertionGuard guard(builder);
         builder.setInsertionPointToStart(&mapBodyBlock);
@@ -391,8 +417,8 @@ void MapReduceOp::build(OpBuilder& builder, OperationState& result, Value input,
     Region* reduceBodyRegion = result.addRegion();
     reduceBodyRegion->push_back(new Block);
     Block& reduceBodyBlock = reduceBodyRegion->front();
-    reduceBodyBlock.addArgument(initArg.getType());
-    reduceBodyBlock.addArgument(initArg.getType());
+    reduceBodyBlock.addArgument(initArg.getType(), result.location);
+    reduceBodyBlock.addArgument(initArg.getType(), result.location);
     {
         OpBuilder::InsertionGuard guard(builder);
         builder.setInsertionPointToStart(&reduceBodyBlock);
@@ -516,6 +542,21 @@ int64_t MMAOp::getNumBlocks() const
     return blocks;
 }
 
+std::vector<int64_t> MMAOp::getOperandShape(const MMAOperandType operandType) const
+{
+    switch (operandType)
+    {
+    case MMAOperandType::A:
+        return { getM(), getK() };
+    case MMAOperandType::B:
+        return { getK(), getN() };
+    case MMAOperandType::Acc:
+        return { getM(), getN() };
+    default:
+        return {};
+    }
+}
+
 std::pair<int, int> MMAOp::getTileShape(const int warpSizeX, const int warpSizeY) const
 {
     return { m / warpSizeX, n / warpSizeY };
@@ -559,9 +600,8 @@ static LogicalResult verify(MMAComputeSyncOp op)
 {
     auto opAType = op.opA().getType().cast<MemRefType>().getElementType();
     auto opBType = op.opB().getType().cast<MemRefType>().getElementType();
-    auto opCType = op.opC().getType().cast<MemRefType>().getElementType();
-    if (!(opAType.isF32() && opBType.isF32() && opCType.isF32()) || (opAType.isF16() && opBType.isF16() && opCType.isF32()))
-        return op.emitError("Invalid data types for arguments.");
+    if (opAType != opBType)
+        return op.emitError("Invalid data types for A and B.");
 
     return success();
 }

@@ -55,17 +55,17 @@ namespace value
 
     Scalar BitwiseAnd(Scalar s1, Scalar s2)
     {
-        return ScalarOpBuilder<mlir::AndOp>(s1, s2);
+        return ScalarOpBuilder<mlir::arith::AndIOp>(s1, s2);
     }
 
     Scalar BitwiseOr(Scalar s1, Scalar s2)
     {
-        return ScalarOpBuilder<mlir::OrOp>(s1, s2);
+        return ScalarOpBuilder<mlir::arith::OrIOp>(s1, s2);
     }
 
     Scalar BitwiseXOr(Scalar s1, Scalar s2)
     {
-        return ScalarOpBuilder<mlir::XOrOp>(s1, s2);
+        return ScalarOpBuilder<mlir::arith::XOrIOp>(s1, s2);
     }
 
     Scalar BitwiseNot(Scalar value)
@@ -81,17 +81,17 @@ namespace value
 
     Scalar ShiftLeft(Scalar value, Scalar shift)
     {
-        return ScalarOpBuilder<mlir::ShiftLeftOp>(value, shift);
+        return ScalarOpBuilder<mlir::arith::ShLIOp>(value, shift);
     }
 
     Scalar SignedShiftRight(Scalar value, Scalar shift)
     {
-        return ScalarOpBuilder<mlir::SignedShiftRightOp>(value, shift);
+        return ScalarOpBuilder<mlir::arith::ShRSIOp>(value, shift);
     }
 
     Scalar UnsignedShiftRight(Scalar value, Scalar shift)
     {
-        return ScalarOpBuilder<mlir::UnsignedShiftRightOp>(value, shift);
+        return ScalarOpBuilder<mlir::arith::ShRUIOp>(value, shift);
     }
 
     Scalar Add(Scalar s1, Scalar s2)
@@ -148,7 +148,7 @@ namespace value
         case ValueType::Float:
             [[fallthrough]];
         case ValueType::Double:
-            return ScalarOpBuilder<mlir::AbsFOp>(s);
+            return ScalarOpBuilder<mlir::math::AbsOp>(s);
         case ValueType::Undefined:
             [[fallthrough]];
         case ValueType::Void:
@@ -160,17 +160,17 @@ namespace value
 
     Scalar Ceil(Scalar s)
     {
-        return ScalarOpBuilder<mlir::CeilFOp>(s);
+        return ScalarOpBuilder<mlir::math::CeilOp>(s);
     }
 
     Scalar Floor(Scalar s)
     {
-        return ScalarOpBuilder<mlir::FloorFOp>(s);
+        return ScalarOpBuilder<mlir::math::FloorOp>(s);
     }
 
     Scalar CopySign(Scalar s1, Scalar s2)
     {
-        return ScalarOpBuilder<mlir::CopySignOp>(s1, s2);
+        return ScalarOpBuilder<mlir::math::CopySignOp>(s1, s2);
     }
 
     Scalar Cos(Scalar s)
@@ -262,14 +262,14 @@ namespace value
     Scalar Sinh(Scalar s)
     {
         // consider making an op if this will be composed with other ops
-        auto negS = ScalarOpBuilder<mlir::NegFOp>(s);
+        auto negS = ScalarOpBuilder<mlir::arith::NegFOp>(s);
         return Divide(Exp(s) - Exp(negS), Cast(2, s.GetType()));
     }
 
     Scalar Cosh(Scalar s)
     {
         // consider making an op if this will be composed with other ops
-        auto negS = ScalarOpBuilder<mlir::NegFOp>(s);
+        auto negS = ScalarOpBuilder<mlir::arith::NegFOp>(s);
         return Divide(Exp(s) + Exp(negS), Cast(2, s.GetType()));
     }
 

@@ -201,12 +201,12 @@ std::vector<mlir::Value> GetTargetFunctionArgs(PatternRewriter& rewriter, Locati
                 // Required by ConvertToLLVMPattern::isConvertibleAndHasIdentityMaps() in GlobalMemrefOpLowering
                 // First, try simplifying the layout as it is
                 memrefType = mlir::canonicalizeStridedLayout(memrefType);
-                if (!memrefType.getAffineMaps().empty())
+                if (!memrefType.getLayout().isIdentity())
                 {
                     // The layout could not be simplified (e.g. SubArrays) - force an identity map
                     // The logical access indices will still work but there is a potential performance tradeoff with
                     // a change in the physical layout (acceptable for Debug mode)
-                    memrefType = mlir::MemRefType::Builder(memrefType).setAffineMaps({});
+                    memrefType = mlir::MemRefType::Builder(memrefType).setLayout({});
                 }
                 auto argCopy = ir::util::CreateGlobalBuffer(rewriter, dbgFnOp, memrefType, name);
 

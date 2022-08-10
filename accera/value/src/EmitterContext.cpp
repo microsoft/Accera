@@ -223,7 +223,7 @@ namespace value
             throw InputException(InputExceptionErrors::invalidArgument);
         }
 
-        if (source1.GetBaseType() != source2.GetBaseType())
+        if (source1.GetBaseType() != source2.GetBaseType() && !IsLogicalComparable(source1.GetBaseType(), source2.GetBaseType()))
         {
             throw InputException(InputExceptionErrors::invalidArgument);
         }

@@ -23,7 +23,6 @@
 #include <utilities/include/Exception.h>
 
 #include <mlir/IR/Attributes.h>
-#include <mlir/IR/Identifier.h>
 
 #include <cassert>
 #include <functional>
@@ -175,7 +174,7 @@ namespace value
             auto index = symbolicIndexOp.getValue();
 
             VectorizationInfo vectorizationInfo{ dslVectorizationInfo.vectorBytes, dslVectorizationInfo.vectorUnitCount, dslVectorizationInfo.unrollOnly };
-            auto vectorizationInfoIdentifier = builder.getIdentifier(VectorizationInfoAttr::getKeyName());
+            auto vectorizationInfoIdentifier = builder.getStringAttr(VectorizationInfoAttr::getKeyName());
             auto vectorizationInfoAttr = VectorizationInfoAttr::get(vectorizationInfo, builder.getContext());
             _scheduleOp.addLoopAttribute(index, vectorizationInfoIdentifier, vectorizationInfoAttr);
 
@@ -189,7 +188,7 @@ namespace value
             auto& builder = GetBuilder();
 
             ParallelizationInfo parallelizationInfo{ numThreads, policy == ParallelizationPolicy::Dynamic };
-            auto parallelizationInfoIdentifier = builder.getIdentifier(ParallelizationInfoAttr::getKeyName());
+            auto parallelizationInfoIdentifier = builder.getStringAttr(ParallelizationInfoAttr::getKeyName());
             auto parallelizationInfoAttr = ParallelizationInfoAttr::get(parallelizationInfo, builder.getContext());
 
             // mark each index as parallelized
@@ -207,7 +206,7 @@ namespace value
             auto& builder = GetBuilder();
 
             TensorizationInfo tensorizationInfo{ static_cast<accera::ir::value::MMAShape>(dims), numTotalPasses, useStaticOffsets, numFusedPasses, static_cast<accera::ir::value::MMASchedulingPolicy>(schedulingPolicy), _useRocWMMA };
-            auto tensorizationInfoIdentifier = builder.getIdentifier(TensorizationInfoAttr::getKeyName());
+            auto tensorizationInfoIdentifier = builder.getStringAttr(TensorizationInfoAttr::getKeyName());
             auto tensorizationInfoAttr = TensorizationInfoAttr::get(tensorizationInfo, builder.getContext());
 
             // mark each index as tensorized

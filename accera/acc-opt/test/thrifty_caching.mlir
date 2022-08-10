@@ -16,7 +16,7 @@ module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "
       %3 = accln.sym_index {name = "j_i"} #accln<"index{j_i,6}">
       %4 = accln.sym_index {name = "k_i"} #accln<"index{k_i,8}">
       %5 = accln.sym_index {name = "j_o"} #accln<"index{j_o,5}">
-      "accv.lambda"() ( {
+      "accv.lambda"() ({
         %6 = "accxp.make_cache"() {activeBlockToCacheMap = affine_map<(d0, d1) -> (d0, d1)>, memorySpace = 0 : i64, multiCacheAccessIndices = [], offsetAccessIndices = [], offsetArrayToCacheAccessMap = affine_map<(d0) -> (d0)>} : () -> memref<?xf32, 3>
         %7 = "accxp.begin_create_cache"(%arg0, %6, %arg0, %1, %2, %0, %4, %1, %2) {activeBlockCache, cacheAccessMaps = {manualCacheDimOrder = [0, 1]}, cacheHierarchyLevel = 0 : i64, cacheIndex = #accln<"index{i_i,4}">, cacheRegionBaseIndices = [[#accln<"index{i,0}">], [#accln<"index{k,2}">]], cacheRegionRelevantIndexRanges = [#accln<"indexrange{i_i,4}={0:4:1}">, #accln<"indexrange{k_i,8}={0:32:1}">], dimReorderCache, id = 0 : i64, operand_segment_sizes = dense<[1, 1, 1, 4, 2]> : vector<5xi32>, thrifty, triggerIndex = #accln<"index{i_i,4}">} : (memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, memref<?xf32, 3>, memref<32x32xf32, affine_map<(d0, d1) -> (d0 * 32 + d1)>>, index, index, index, index, index, index) -> index
         "accxp.end_cache_region"(%7) : (index) -> ()
@@ -59,7 +59,7 @@ module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "
 // CHECK:   accv.module "test_thrifty_caching_simple_input_cache"  {
 // CHECK:     "accv.global"() {sym_name = "cache_[[CacheID:[0-9]+]]", type = memref<32x16xf32, 3>} : () -> ()
 // CHECK:     accv.func nested @test_thrifty_caching_simple_input_cache_1127a105_impl_6891397719071098712(%arg0: memref<32x32xf32, #map>, %arg1: memref<32x32xf32, #map>, %arg2: memref<32x32xf32, #map>) attributes {exec_target = 0 : i64} {
-// CHECK:       "accv.lambda"() ( {
+// CHECK:       "accv.lambda"() ({
 // CHECK:         %0 = "accv.ref_global"() {global_name = @cache_[[CacheID]]} : () -> memref<32x16xf32, 3>
 // CHECK:         affine.for %arg3 = 0 to 32 step 4 {
 // CHECK:           affine.for %arg4 = 0 to 32 step 16 {

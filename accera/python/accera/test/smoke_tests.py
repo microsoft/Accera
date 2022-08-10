@@ -32,6 +32,9 @@ if sys.platform == 'linux':
 else:
     ROCM_AVAILABLE = False
 
+print(f"ROCM_AVAILABLE: {ROCM_AVAILABLE}")
+print(f"CUDA_AVAILABLE: {CUDA_AVAILABLE}")
+
 DEV_MODE = False
 if "@CMAKE_INSTALL_PREFIX@"[1:-1] != "CMAKE_INSTALL_PREFIX":
     sys.path.insert(1, "@CMAKE_INSTALL_PREFIX@")
@@ -65,7 +68,6 @@ def expectedFailure(reason: FailedReason, msg: str, condition: bool = True) -> C
     "Extends the unittest.expectedFailure decorator to print failure details and takes an optional condition"
 
     def _decorator(func):
-
         @unittest.expectedFailure
         def _wrapper(x):
             print(f"\n{reason.value}: {msg}")
@@ -665,7 +667,6 @@ class SmokeTest(unittest.TestCase):
 
         @nest.iteration_logic
         def _():
-
             def if_block():
                 C[i, j] += A[i, k] * B[k, j]
 
@@ -1506,19 +1507,26 @@ class SmokeTest(unittest.TestCase):
             package_format |= Package.Format.MLIR    # filecheck requires MLIR output
 
         with verifiers.VerifyPackage(self, package_name, output_dir, file_list=file_list) as v:
-            package.build(name=package_name,
-                          format=package_format,
-                          mode=package_mode,
-                          output_dir=output_dir,
-                          fail_on_error=fail_on_error,
-                          _quiet=quiet)
+            package.build(
+                name=package_name,
+                format=package_format,
+                mode=package_mode,
+                output_dir=output_dir,
+                fail_on_error=fail_on_error,
+                _quiet=quiet
+            )
 
             if check_correctness:
                 # Create the arrays with the appropriate layout
-                A_test, B_test, C_test = (np.ndarray(p.shape, dtype=np.dtype(p.element_type.name), order=p.requested_layout.to_numpy_order()) for p in function.requested_args)
+                A_test, B_test, C_test = (
+                    np.ndarray(p.shape, dtype=np.dtype(p.element_type.name), order=p.requested_layout.to_numpy_order())
+                    for p in function.requested_args
+                )
 
                 # Create all the random input data
-                A_test_data, B_test_data, C_test_data = (np.random.random(p.shape).astype(np.dtype(p.element_type.name)) for p in function.requested_args)
+                A_test_data, B_test_data, C_test_data = (
+                    np.random.random(p.shape).astype(np.dtype(p.element_type.name)) for p in function.requested_args
+                )
 
                 # Assign the default-ordered input data to the appropriately-ordered arrays
                 A_test[:] = A_test_data
@@ -1527,7 +1535,9 @@ class SmokeTest(unittest.TestCase):
 
                 C_ref = C_test + A_test @ B_test
 
-                v.check_correctness(function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref), tolerance=tolerance)
+                v.check_correctness(
+                    function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref), tolerance=tolerance
+                )
 
             # apply optional file checks
             if file_check_fn:
@@ -1541,8 +1551,10 @@ class SmokeTest(unittest.TestCase):
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.LAST_MAJOR)
-        
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.LAST_MAJOR
+        )
+
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
 
@@ -2228,7 +2240,7 @@ class SmokeTest(unittest.TestCase):
                 after = [before[0], before[1]] + [before[0] + before[1]]
 
                 v.check_correctness(function.name, before=before, after=after)
-                
+
     def _test_gpu_vec_add_boundary(self, N, splits, test_name):
         from accera import Array, Nest, Package, ScalarType, Target
 
@@ -2250,6 +2262,9 @@ class SmokeTest(unittest.TestCase):
         schedule.reorder(*indices)
 
         target = Target(Target.Model.AMD_MI100)
+        if CUDA_AVAILABLE:
+            target = Target(Target.Model.NVIDIA_RTX_A6000)
+
         plan = schedule.create_plan(target)
         plan.bind(mapping={
             indices[0]: target.GridUnit.BLOCK_X,
@@ -2275,7 +2290,7 @@ class SmokeTest(unittest.TestCase):
             checker.check_label('accv.func nested @' + test_name)
 
             pairs = zip([N] + list(splits), splits)
-            has_bad_split = any(c%n for c, n in pairs)
+            has_bad_split = any(c % n for c, n in pairs)
             if (has_bad_split):
                 checker.check('affine.if')
             else:
@@ -2546,13 +2561,22 @@ class SmokeTest(unittest.TestCase):
 
                     v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_ref, Output_ref))
 
-    def _gpu_cache(self, M, N, K, m_tile_size, n_tile_size, k_tile_size, test_name, double_buffer=False, double_buffer_location = Constants.AUTO) -> None:
+    def _gpu_cache(
+        self,
+        M,
+        N,
+        K,
+        m_tile_size,
+        n_tile_size,
+        k_tile_size,
+        test_name,
+        double_buffer=False,
+        double_buffer_location=Constants.AUTO
+    ) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
-                  shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
-                  shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
             role=Array.Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
@@ -2587,10 +2611,22 @@ class SmokeTest(unittest.TestCase):
             }
         )
 
-        plan.cache(A, index=ii, double_buffer=double_buffer,
-                   location=_MemorySpace.SHARED, double_buffer_location=double_buffer_location, layout=Array.Layout.FIRST_MAJOR)
-        plan.cache(B, index=ii, double_buffer=double_buffer,
-                   location=_MemorySpace.SHARED, double_buffer_location=double_buffer_location, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(
+            A,
+            index=ii,
+            double_buffer=double_buffer,
+            location=_MemorySpace.SHARED,
+            double_buffer_location=double_buffer_location,
+            layout=Array.Layout.FIRST_MAJOR
+        )
+        plan.cache(
+            B,
+            index=ii,
+            double_buffer=double_buffer,
+            location=_MemorySpace.SHARED,
+            double_buffer_location=double_buffer_location,
+            layout=Array.Layout.FIRST_MAJOR
+        )
 
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
@@ -2608,8 +2644,7 @@ class SmokeTest(unittest.TestCase):
         self._gpu_cache(1024, 1024, 1024, 16, 16, 32, "test_gpu_cache_simple")
 
     def test_gpu_cache_double_buffering(self) -> None:
-        self._gpu_cache(2560, 1536, 2048, 16, 16, 32,
-                        "test_gpu_cache_double_buffering", True)
+        self._gpu_cache(2560, 1536, 2048, 16, 16, 32, "test_gpu_cache_double_buffering", True)
 
     def test_gpu_cache_double_buffering_trigger_index(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -2626,10 +2661,8 @@ class SmokeTest(unittest.TestCase):
         m_tile_size = block_x
         n_tile_size = block_y
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
-                  shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32,
-                  shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
             role=Array.Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
@@ -2695,8 +2728,9 @@ class SmokeTest(unittest.TestCase):
         )
 
     def test_gpu_cache_double_buffering_mem_space(self) -> None:
-        self._gpu_cache(2560, 1536, 2048, 16, 16, 32,
-                        "test_gpu_cache_double_buffering_mem_space", True, _MemorySpace.PRIVATE)
+        self._gpu_cache(
+            2560, 1536, 2048, 16, 16, 32, "test_gpu_cache_double_buffering_mem_space", True, _MemorySpace.PRIVATE
+        )
 
     def test_cpu_cache_double_buffering_trigger_index(self) -> None:
         from accera import Array, Nest, Package, ScalarType
@@ -2935,7 +2969,7 @@ class SmokeTest(unittest.TestCase):
         def run_file_check(verifier):
             checker = verifier.file_checker(f"*_LoopNestToValueFunc.mlir")
 
-            checker.check_label('"accv.lambda"() ( {')
+            checker.check_label('"accv.lambda"() ({')
             # cache declarations can happen in any order, so we wrap with two CHECK-NOTs
             checker.check_not(
                 '%{{[0-9]}} = "accv.ref_global"() {global_name = @cache_{{[0-9]}}} : () -> memref<4x32xf32, 3>'
@@ -2990,7 +3024,7 @@ class SmokeTest(unittest.TestCase):
         def run_file_check(verifier):
             checker = verifier.file_checker(f"*_LoopNestToValueFunc.mlir")
 
-            checker.check_label('"accv.lambda"() ( {')
+            checker.check_label('"accv.lambda"() ({')
             checker.check_not(
                 '%{{[0-9]}} = "accv.ref_global"() {global_name = @cache_{{[0-9]}}} : () -> memref<4x32xf32, 3>'
             )
@@ -3885,14 +3919,19 @@ class SmokeTest(unittest.TestCase):
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
 
         @nest.iteration_logic
         def _():
-            C[i,j] += A[i,k] * B[k,j]
+            C[i, j] += A[i, k] * B[k, j]
 
         schedule = nest.create_schedule()
 
@@ -3930,13 +3969,19 @@ class SmokeTest(unittest.TestCase):
 
             # Function decl
             checker.check_label('accv.func nested @test_gpu_cache_different_input_layouts_')
-            checker.check_same('%[[Array_A:[a-z0-9_]+]]: memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>')
-            checker.check_same('%[[Array_B:[a-z0-9_]+]]: memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>')
-            checker.check_same('%[[Array_C:[a-z0-9_]+]]: memref<2560x1536xf32, affine_map<(d0, d1) -> (d0 * 1536 + d1)>>')
+            checker.check_same(
+                '%[[Array_A:[a-z0-9_]+]]: memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>'
+            )
+            checker.check_same(
+                '%[[Array_B:[a-z0-9_]+]]: memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>'
+            )
+            checker.check_same(
+                '%[[Array_C:[a-z0-9_]+]]: memref<2560x1536xf32, affine_map<(d0, d1) -> (d0 * 1536 + d1)>>'
+            )
 
             # Block X/Y
-            checker.check('%[[Block_Y:[0-9_]+]] = "gpu.block_id"() {dimension = "y"} : () -> index')
-            checker.check('%[[Block_X:[0-9_]+]] = "gpu.block_id"() {dimension = "x"} : () -> index')
+            checker.check('%[[Block_Y:[0-9_]+]] = gpu.block_id y')
+            checker.check('%[[Block_X:[0-9_]+]] = gpu.block_id x')
 
             # Cache allocations
             checker.check('%[[Cache_A:[0-9_]+]] = "accv.alloc"() : () -> memref<16x32xf32, 3>')
@@ -3949,24 +3994,32 @@ class SmokeTest(unittest.TestCase):
             checker.check('affine.for %[[kk_iv:[a-z0-9_]+]] = 0 to 512 step 32 {')
 
             # check the A matrix load / store
-            checker.check('"accv.lambda"() ( {')
-            checker.check('%[[Thread_X:[0-9_]+]] = "gpu.thread_id"() {dimension = "x"}')
-            checker.check('%[[Thread_Y:[0-9_]+]] = "gpu.thread_id"() {dimension = "y"}')
+            checker.check('"accv.lambda"() ({')
+            checker.check('%[[Thread_X:[0-9_]+]] = gpu.thread_id x')
+            checker.check('%[[Thread_Y:[0-9_]+]] = gpu.thread_id y')
             checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
             checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
-            checker.check('%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][symbol(%[[Block_X]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Block_X]]) floordiv 160) * 2560, %[[lpt_iv]] * 16 + %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]])] : memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>')
-            checker.check('affine.store %[[Loaded_A_Val]], %[[Cache_A]][symbol(%[[Thread_X]]), %[[lpt_iv]] * 16 + symbol(%[[Thread_Y]])] : memref<16x32xf32, 3>')
+            checker.check(
+                '%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][symbol(%[[Block_X]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Block_X]]) floordiv 160) * 2560, %[[lpt_iv]] * 16 + %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]])] : memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>'
+            )
+            checker.check(
+                'affine.store %[[Loaded_A_Val]], %[[Cache_A]][symbol(%[[Thread_X]]), %[[lpt_iv]] * 16 + symbol(%[[Thread_Y]])] : memref<16x32xf32, 3>'
+            )
 
             # check the B matrix load / store
-            checker.check('"accv.lambda"() ( {')
-            checker.check('%[[Thread_X:[0-9_]+]] = "gpu.thread_id"() {dimension = "x"}')
-            checker.check('%[[Thread_Y:[0-9_]+]] = "gpu.thread_id"() {dimension = "y"}')
+            checker.check('"accv.lambda"() ({')
+            checker.check('%[[Thread_X:[0-9_]+]] = gpu.thread_id x')
+            checker.check('%[[Thread_Y:[0-9_]+]] = gpu.thread_id y')
             checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
             checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
-            checker.check('%[[Loaded_B_Val:[0-9_]+]] = affine.load %[[Array_B]][%[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, %[[lpt_iv]] * 8 + symbol(%[[Block_Y]]) * 16 - (symbol(%[[Block_Y]]) floordiv 96) * 1536 + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16] : memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>')
-            checker.check('affine.store %[[Loaded_B_Val]], %[[Cache_B]][symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, (%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) mod 16] : memref<32x16xf32, 3>')
+            checker.check(
+                '%[[Loaded_B_Val:[0-9_]+]] = affine.load %[[Array_B]][%[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, %[[lpt_iv]] * 8 + symbol(%[[Block_Y]]) * 16 - (symbol(%[[Block_Y]]) floordiv 96) * 1536 + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16] : memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>'
+            )
+            checker.check(
+                'affine.store %[[Loaded_B_Val]], %[[Cache_B]][symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, (%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) mod 16] : memref<32x16xf32, 3>'
+            )
 
             checker.run()
 
@@ -4000,14 +4053,19 @@ class SmokeTest(unittest.TestCase):
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
 
         @nest.iteration_logic
         def _():
-            C[i,j] += A[i,k] * B[k,j]
+            C[i, j] += A[i, k] * B[k, j]
 
         schedule = nest.create_schedule()
 
@@ -4030,7 +4088,7 @@ class SmokeTest(unittest.TestCase):
                 jj: target.GridUnit.THREAD_Y
             }
         )
-        
+
         # Cache at index k
         # The active block of C at index k in this schedule should be { m_tile_size x n_tile_size },
         # but the cache of C is in private memory and indices in the cache active region (k, kk, ii, jj, kkk) are bound
@@ -4048,7 +4106,7 @@ class SmokeTest(unittest.TestCase):
 
             # Check for an accv.alloc of a 1x1 buffer in the private memory space inside a lambda inside our value func
             checker.check_label('accv.func nested @test_gpu_cache_block_level_private_mem_')
-            checker.check('"accv.lambda"() ( {')
+            checker.check('"accv.lambda"() ({')
             checker.check('%[[Cache_C:[0-9_]+]] = "accv.alloc"() : () -> memref<1x1xf32, 5>')
 
             checker.run()
@@ -4058,7 +4116,7 @@ class SmokeTest(unittest.TestCase):
             package,
             package_name,
             file_check_fn=file_check_fn,
-            check_correctness=CUDA_AVAILABLE,
+            check_correctness=ROCM_AVAILABLE,
             file_list=[f"{package_name}.cu", f"{package_name}.hat"],
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
@@ -4083,14 +4141,19 @@ class SmokeTest(unittest.TestCase):
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
 
         @nest.iteration_logic
         def _():
-            C[i,j] += A[i,k] * B[k,j]
+            C[i, j] += A[i, k] * B[k, j]
 
         schedule = nest.create_schedule()
 
@@ -4113,7 +4176,7 @@ class SmokeTest(unittest.TestCase):
                 jj: target.GridUnit.THREAD_Y
             }
         )
-        
+
         # Cache at index j
         # The active block of C at index j in this schedule would be { m_tile_size x N },
         # but the cache of C is in shared memory and indices in the cache active region (j, k, kk, ii, jj, kkk) are bound
@@ -4131,7 +4194,7 @@ class SmokeTest(unittest.TestCase):
 
             # Check for an accv.alloc of a { m_tile_size x n_tile_size } buffer in the shared memory space inside a lambda inside our value func
             checker.check_label('accv.func nested @test_gpu_cache_block_level_shared_mem_')
-            checker.check('"accv.lambda"() ( {')
+            checker.check('"accv.lambda"() ({')
             checker.check(f'%[[Cache_C:[0-9_]+]] = "accv.alloc"() : () -> memref<{m_tile_size}x{n_tile_size}xf32, 3>')
 
             checker.run()
@@ -4141,11 +4204,12 @@ class SmokeTest(unittest.TestCase):
             package,
             package_name,
             file_check_fn=file_check_fn,
-            check_correctness=CUDA_AVAILABLE,
+            check_correctness=False, # We expect this test to produce incorrect gemm results since we are caching output in shared memory and every thread is repeating each others's work.
             file_list=[f"{package_name}.cu", f"{package_name}.hat"],
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
 
+    @expectedFailure(FailedReason.NOT_IN_CORE, "Global memory caches are not yet supported on GPU targets.")
     def test_gpu_cache_block_level_global_mem(self):
         # This test verifies that a global memory cache will compute a region specific to each logical block
         # even when added outside the block level of the loopnest
@@ -4166,14 +4230,19 @@ class SmokeTest(unittest.TestCase):
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
 
         @nest.iteration_logic
         def _():
-            C[i,j] += A[i,k] * B[k,j]
+            C[i, j] += A[i, k] * B[k, j]
 
         schedule = nest.create_schedule()
 
@@ -4197,7 +4266,7 @@ class SmokeTest(unittest.TestCase):
                 jj: target.GridUnit.THREAD_Y
             }
         )
-        
+
         # Cache at index j
         # The active block of C at index j in this schedule is be { m_tile_size x N },
         # and since the cache of C is in global memory, none of the bound indices in the cache
@@ -4214,8 +4283,10 @@ class SmokeTest(unittest.TestCase):
 
             # Check for an accv.alloc of a { m_tile_size x N } buffer in the global memory space inside a lambda inside our value func
             checker.check_label('accv.func nested @test_gpu_cache_block_level_global_mem_')
-            checker.check('"accv.lambda"() ( {')
-            checker.check(f'%[[Cache_C:[0-9_]+]] = "accv.ref_global"() {"{"}global_name = @cache_[[cache_id:[0-9]+]]{"}"} : () -> memref<{m_tile_size}x{N}xf32>')
+            checker.check('"accv.lambda"() ({')
+            checker.check(
+                f'%[[Cache_C:[0-9_]+]] = "accv.ref_global"() {"{"}global_name = @cache_[[cache_id:[0-9]+]]{"}"} : () -> memref<{m_tile_size}x{N}xf32>'
+            )
 
             checker.run()
 
@@ -4325,7 +4396,14 @@ class SmokeTest(unittest.TestCase):
             kk: tensor_splits[2]
         })
         outer_nest_order = (i, j, k, ii, jj, kk)
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(
+            target,
+            block_indices=(i, j),
+            warp_indices=(ii, jj),
+            tensor_indices=(iii, jjj, kkk),
+            outer_nest_order=outer_nest_order,
+            mma_shape=mma_shape
+        )
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         plan.cache(
@@ -4344,12 +4422,7 @@ class SmokeTest(unittest.TestCase):
             double_buffer_location=target.MemorySpace.PRIVATE,
             layout=Array.Layout.FIRST_MAJOR
         )
-        plan.cache(
-            C,
-            index=iii,
-            location=target.MemorySpace.PRIVATE,
-            layout=Array.Layout.FIRST_MAJOR
-        )
+        plan.cache(C, index=iii, location=target.MemorySpace.PRIVATE, layout=Array.Layout.FIRST_MAJOR)
 
         test_name = "test_rocm_cache_double_buffering__with_c_cache_tensorize"
         package = Package()
@@ -4678,7 +4751,14 @@ class SmokeTest(unittest.TestCase):
             kk: tensor_splits[2]
         })
         outer_nest_order = (i, j, k, ii, jj, kk)
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(
+            target,
+            block_indices=(i, j),
+            warp_indices=(ii, jj),
+            tensor_indices=(iii, jjj, kkk),
+            outer_nest_order=outer_nest_order,
+            mma_shape=mma_shape
+        )
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape)
 
         test_name = "test_rocm_tensorize_fp16"
@@ -4690,7 +4770,7 @@ class SmokeTest(unittest.TestCase):
             package,
             test_name,
             check_correctness=ROCM_AVAILABLE,
-            tolerance=0.2, # Higher tolerance for fp16
+            tolerance=0.2,    # Higher tolerance for fp16
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
             package_format=Package.Format.DEFAULT
         )
@@ -4739,7 +4819,14 @@ class SmokeTest(unittest.TestCase):
             kk: tensor_splits[2]
         })
         outer_nest_order = (i, j, k, ii, jj, kk)
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(
+            target,
+            block_indices=(i, j),
+            warp_indices=(ii, jj),
+            tensor_indices=(iii, jjj, kkk),
+            outer_nest_order=outer_nest_order,
+            mma_shape=mma_shape
+        )
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape)
 
         plan.cache(
@@ -4768,7 +4855,7 @@ class SmokeTest(unittest.TestCase):
             package,
             test_name,
             check_correctness=ROCM_AVAILABLE,
-            tolerance=0.2, # Higher tolerance for fp16
+            tolerance=0.2,    # Higher tolerance for fp16
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
@@ -4788,7 +4875,12 @@ class SmokeTest(unittest.TestCase):
 
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Array.Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(M, N),
+            layout=Array.Layout.FIRST_MAJOR
+        )
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -4816,10 +4908,18 @@ class SmokeTest(unittest.TestCase):
             kk: tensor_splits[2]
         })
         outer_nest_order = (i, j, k, ii, jj, kk)
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(
+            target,
+            block_indices=(i, j),
+            warp_indices=(ii, jj),
+            tensor_indices=(iii, jjj, kkk),
+            outer_nest_order=outer_nest_order,
+            mma_shape=mma_shape
+        )
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
-        plan.cache(A,
+        plan.cache(
+            A,
             index=ii,
             double_buffer=True,
             vectorize=True,
@@ -4848,6 +4948,7 @@ class SmokeTest(unittest.TestCase):
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=10)

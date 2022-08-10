@@ -50,14 +50,16 @@ namespace argo
 
     /// Returns `maybeMap.get()` if `maybeMap` is set, otherwise returns the
     /// symbol-less identity map of `rank`.
-    AffineMap extractOrIdentityMap(Optional<AffineMap> maybeMap, unsigned rank, mlir::MLIRContext* context);
+    AffineMap extractOrIdentityMap(Optional<AffineMap> maybeMap, unsigned rank, MLIRContext* context);
 
 #ifndef __ACCERA__
     #include "mlir/Dialect/Argo/IR/ArgoStructuredOpsInterfaces.h.inc"
 #else
     #include "argo/ArgoStructuredOpsInterfaces.h.inc"
 #endif
+
 } // namespace argo
+} // namespace mlir
 
 #define GET_OP_CLASSES
 #ifndef __ACCERA__
@@ -72,6 +74,5 @@ namespace argo
 #else
 #include "argo/ArgoStructuredOps.h.inc"
 #endif
-} // namespace mlir
 
 #endif // MLIR_DIALECT_ARGO_OPS_H_

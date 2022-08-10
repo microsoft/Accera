@@ -16,7 +16,10 @@
 namespace mlir
 {
 class MLIRContext;
-class OwningModuleRef;
+
+template <typename OpTy>
+class OwningOpRef;
+class ModuleOp;
 } // namespace mlir
 
 namespace accera

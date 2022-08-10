@@ -30,21 +30,22 @@ set(include
     include/TranslateToHeader.h
     )
 
-set(rcvalue_src
+set(accvalue_src
     src/value/ValueDialect.cpp
     src/value/ValueCanonicalization.cpp
     src/value/ValueFuncOpUtilities.cpp
     )
 
-set(rcvalue_include
+set(accvalue_include
     include/value/ValueDialect.h
     include/value/ValueAttributes.h
     include/value/ValueEnums.h
     include/value/ValueFuncOp.h
     include/value/ValueMMAOp.h
+    include/value/ValueRangeOp.h
     )
 
-set(rcnest_src
+set(accnest_src
     src/nest/AffineConstraints.cpp
     src/nest/AffineExpression.cpp
     src/nest/Index.cpp
@@ -60,7 +61,7 @@ set(rcnest_src
     src/nest/TransformedDomain.cpp
     )
 
-set(rcnest_include
+set(accnest_include
     include/nest/AffineConstraints.h
     include/nest/AffineExpression.h
     include/nest/Index.h
@@ -78,13 +79,13 @@ set(rcnest_include
     include/nest/TransformedDomain.h
     )
 
-set(rcexec_src
+set(accexec_src
     src/exec/CacheAccessMaps.cpp
     src/exec/ExecutionPlanAttributes.cpp
     src/exec/ExecutionPlanOps.cpp
     )
 
-set(rcexec_include
+set(accexec_include
     include/exec/CacheAccessMaps.h
     include/exec/ExecutionOptions.h
     include/exec/ExecutionPlanAttributes.h
@@ -92,8 +93,8 @@ set(rcexec_include
     include/exec/VectorizationInfo.h
     )
 
-set(rcaccera_src src/accera/AcceraOps.cpp)
-set(rcaccera_include include/accera/AcceraOps.h)
+set(accera_src src/accera/AcceraOps.cpp)
+set(accera_include include/accera/AcceraOps.h)
 
 set(argo_src
     src/argo/ArgoOps.cpp
@@ -150,19 +151,19 @@ configure_file(include/LLVMEmitterTargets.h.in build/LLVMEmitterTargets.h @ONLY)
 set(library_name ir)
 set(src
     ${src}
-    ${rcvalue_src}
-    ${rcnest_src}
-    ${rcexec_src}
-    ${rcaccera_src}
+    ${accvalue_src}
+    ${accnest_src}
+    ${accexec_src}
+    ${accera_src}
     ${argo_src}
     )
 
 set(include
     ${include}
-    ${rcvalue_include}
-    ${rcnest_include}
-    ${rcexec_include}
-    ${rcaccera_include}
+    ${accvalue_include}
+    ${accnest_include}
+    ${accexec_include}
+    ${accera_include}
     ${argo_include}
     build/LLVMEmitterTargets.h
     )

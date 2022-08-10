@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
 # Section 2: Simple affine loop nests
 This section introduces *loop nests* and their different types that are provided in Accera programming model.
@@ -68,8 +68,6 @@ def _():
 ```
 We start by defining the arrays that participate in the computation: `A` and `B` are input arrays and `C` is an input/output array. Next, we initialize `nest` to be an empty skeleton of a loop nest, with nested loops of sizes `M`, `N`, `S`. These loops are logical -- think of them as pseudo-code loops -- they do not define the execution order of the iterations. The index variables that correspond to the three loops are named `i, j, k` respectively.
 
-[comment]: # (* MISSING: the iteration spaces defined above have a compile-time shape. How do we handle run-time shapes? Can all the iteration space dimensions be runtime variables? )
-
 The last part of the example sets the iteration logic to `C[i, j] += A[i, k] * B[k, j]`. Note that this iteration logic follows an affine memory access pattern. The syntax in the example makes use of Python decorators and is shorthand for the more explicit syntax:
 ```python
 def logic_fn():
@@ -77,6 +75,25 @@ def logic_fn():
 
 nest.iteration_logic(logic_fn)
 ```
+
+The iteration spaces above have compile-time shapes. We can define runtime shapes by replacing any or all of the constant matrix sizes `M`, `N`, and `S` with an `acc.Dimension` placeholder:
+
+```python
+
+M = acc.create_dimensions() # replace M with a runtime dimension
+N = 10 # a compile-time dimension
+S = 11
+
+A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, S))
+B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(S, N))
+C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
+
+# Define a simple affine loop nest and name its loops i, j, k
+nest = acc.Nest(shape=(M, N, S))
+
+```
+
+The iteration space dimensions will now be runtime variables that need to be provided to the function (more on this later).
 
 ## Supported operations
 The iteration logic can include the following operations (assuming `accera` was imported as `acc`):
@@ -220,6 +237,33 @@ package.build(format=acc.Package.Format.HAT_DYNAMIC, name="linear_algebra")
 It may not be immediately clear why so many stages are needed just to compile a simple nest. Therefore, let’s discuss each stage in detail to understand their importance. 
 
 In the example above, the call to `package.add` takes three arguments: the first is the plan that defines the function's implementation; the second is the order of the input and input/output arrays in the function signature; and the third is a base name for the function. The full name of the function is the base name followed by an automatically-generated unique identifier. For example, the function in the example could appear in the package as `simple_matmul_8f24bef5`. The automatically-generated suffix ensures that each function in the package has a unique name. More details on function packages can be found in [Section 10](<10%20Packages.md>).
+
+The Array shapes above are known at compile-time. If one or all of the shapes are known at runtime, we provide dimensions as arguments to the function:
+
+```python
+M, N, S = acc.create_dimensions() # runtime dimensions
+
+A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, S))
+B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(S, N))
+C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
+
+...
+
+# create a default schedule from the nest
+schedule = nest.create_schedule()
+
+# create a default plan from the schedule
+plan = schedule.create_plan()
+
+# create a HAT package. Create a function in the package based on the plan, with
+# the dimensions as additional arguments (in any order)
+package = acc.Package()
+package.add(plan, args=(M, N, S, A, B, C), base_name="simple_matmul_runtime_shapes")
+
+# build the HAT package
+package.build(format=acc.Package.Format.HAT_DYNAMIC, name="linear_algebra")
+```
+
 
 ## Convenience syntax
 For convenience, Accera also provides shortcuts to avoid unnecessary verbosity. Specifically, we can create a function in a package directly from a nest, as follows:

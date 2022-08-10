@@ -20,6 +20,7 @@
 #include <llvm/Support/raw_os_ostream.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/IR/BlockAndValueMapping.h>
 #include <mlir/IR/Builders.h>
@@ -365,15 +366,15 @@ namespace executionPlan
             }
             return builder.getAffineDimExpr(accessIndexPos);
         }
-        else if (auto constantOp = mlir::dyn_cast<mlir::ConstantIntOp>(currentOp))
+        else if (auto constantOp = mlir::dyn_cast<arith::ConstantIntOp>(currentOp))
         {
-            return builder.getAffineConstantExpr(constantOp.getValue());
+            return builder.getAffineConstantExpr(constantOp.value());
         }
-        else if (auto indexCast = mlir::dyn_cast_or_null<mlir::IndexCastOp>(currentOp))
+        else if (auto indexCast = mlir::dyn_cast_or_null<arith::IndexCastOp>(currentOp))
         {
             // we expect IndexCastOps when the DSL code indexes into an array with a constant integer
             // e.g. A[0,0] will produce an index cast from int64 to index for each 0
-            return RecursiveBinOpToAffineExprHelper(indexCast.in(), orderedAccessIndices);
+            return RecursiveBinOpToAffineExprHelper(indexCast.getIn(), orderedAccessIndices);
         }
         llvm_unreachable("Unsupported op type used for indexing into a value that is being cached");
     }
@@ -381,7 +382,7 @@ namespace executionPlan
     std::vector<loopnest::Index> GetBaseIndicesCombinedToMakeValue(mlir::Value combinedIndex, const loopnest::TransformedDomain& domain)
     {
         // Only supports value::BinOps and mlir::AffineApplyOps for combinations currently
-        // And only supports loopnest::SymbolicIndexOps and mlir::ConstantOps as the base values
+        // And only supports loopnest::SymbolicIndexOps and mlir::arith::ConstantOps as the base values
 
         std::vector<loopnest::Index> results;
         std::stack<mlir::Value> valuesToFollow;
@@ -415,7 +416,7 @@ namespace executionPlan
                     }
                 }
             }
-            else if (auto constantOp = mlir::dyn_cast_or_null<mlir::ConstantOp>(currentOp))
+            else if (auto constantOp = mlir::dyn_cast_or_null<arith::ConstantOp>(currentOp))
             {
                 // Nothing to do currently
                 // TODO : when we support multiple lanes based on different combinations of indices or constants

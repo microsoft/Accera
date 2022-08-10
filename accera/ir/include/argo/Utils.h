@@ -7,6 +7,7 @@
 #define MLIR_DIALECT_ARGO_UTILS_H_
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
@@ -149,7 +150,7 @@ namespace argo
                 }
                 else
                 {
-                    res.push_back(builder.create<ConstantIndexOp>(loc, shape[i]));
+                    res.push_back(builder.create<arith::ConstantIndexOp>(loc, shape[i]));
                 }
             }
         }

@@ -62,7 +62,7 @@ void RunTest(std::string setupName, SetupFunc&& setupFunc, std::string verifyNam
         mlir::OpBuilder builder(&context);
 
         auto moduleOp = mlir::ModuleOp::create(mlir::FileLineColLoc::get("", /*line=*/0, /*column=*/0, &context), llvm::StringRef(testName));
-        mlir::OwningModuleRef module(moduleOp);
+        mlir::OwningOpRef<mlir::ModuleOp> module(moduleOp);
 
         mlir::edsc::ScopedContext scope(builder, { moduleOp.getBody(), moduleOp.getBody()->begin() }, moduleOp.getLoc());
         auto fnOp = CreateFunction("test", {}, {}, [&]() {

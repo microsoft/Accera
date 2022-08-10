@@ -6,7 +6,7 @@
 
 #include "VectorDialectCppPrinter.h"
 #include "AffineDialectCppPrinter.h"
-#include <mlir/Dialect/Vector/VectorOps.h>
+#include <mlir/Dialect/Vector/IR/VectorOps.h>
 
 using namespace mlir;
 

@@ -78,13 +78,15 @@ void DefineNestClass(py::module& module)
                  return value::Nest(std::move(nest));
              }),
              py::return_value_policy::move)
-        .def(py::init([](const std::vector<int64_t>& sizes) {
-                 return std::make_unique<value::Nest>(util::MemoryShape{ sizes });
+        .def(py::init([](const std::vector<int64_t>& sizes, const std::vector<value::ScalarDimension>& runtimeSizes) {
+                 return std::make_unique<value::Nest>(util::MemoryShape{ sizes }, runtimeSizes);
              }),
              "shape"_a,
+             "runtime_sizes"_a,
              "Constructor that creates a nest from a list representing the iteration space")
-        .def(py::init<const std::vector<value::Range>&>(),
+        .def(py::init<const std::vector<value::Range>&, const std::vector<value::ScalarDimension>&>(),
              "shape"_a,
+             "runtime_sizes"_a,
              "Constructor that creates a nest from a list of ranges representing the iteration space")
         .def(
             "get_indices", [](value::Nest& nest) { return nest.GetIndices(); }, "Returns the indices for this nest, starting from the outermost index")

@@ -8,22 +8,22 @@ module @gpu_module3 attributes {gpu.container_module, spv.target_env = #spv.targ
       kernel attributes {spv.entry_point_abi = {local_size = dense<[4, 4, 1]> : vector<3xi32>}} {
       %accum_ref = alloc() : memref<1xf32,5> // SPIRV does not like alloca so we allocate private / local / register memory (unsure why alloc : memref<1xf32, 5> does not work )
       
-      %blkidx = "gpu.block_id"() {dimension = "x"} : () -> index
-      %blkidy = "gpu.block_id"() {dimension = "y"} : () -> index
-      %tidx = "gpu.thread_id"() {dimension = "x"} : () -> index
-      %tidy = "gpu.thread_id"() {dimension = "y"} : () -> index
-      %bdimx = constant 4 : index
-      %bdimy = constant 4 : index
+      %blkidx = gpu.block_id x
+      %blkidy = gpu.block_id y
+      %tidx = gpu.thread_id x
+      %tidy = gpu.thread_id y
+      %bdimx = arith.constant 4 : index
+      %bdimy = arith.constant 4 : index
 
-      %0 = muli %blkidx, %bdimx: index
+      %0 = arith.muli %blkidx, %bdimx: index
       %i = addi %0, %tidx: index // gidx = threadIdx.x + 4*blockIdx.x
-      %1 = muli %blkidy, %bdimy: index
+      %1 = arith.muli %blkidy, %bdimy: index
       %j = addi %1, %tidy: index // gidy = threadIdx.y + 4*blockIdx.y
 
-      %zerof = constant 0.0 : f32
-      %zero = constant 0 : index
-      %n = constant 32 : index
-      %one = constant 1 : index
+      %zerof = arith.constant 0.0 : f32
+      %zero = arith.constant 0 : index
+      %n = arith.constant 32 : index
+      %one = arith.constant 1 : index
 
       store %zerof, %accum_ref[%zero] : memref<1xf32,5>
 
@@ -46,14 +46,14 @@ module @gpu_module3 attributes {gpu.container_module, spv.target_env = #spv.targ
     }
   }
   func @main() {
-    %onef = constant 1.0 : f32
+    %onef = arith.constant 1.0 : f32
 
 
-    %gdimx = constant 8 : index // 32/4
-    %gdimy = constant 8 : index // 32/4
-    %bdimx = constant 4 : index
-    %bdimy = constant 4 : index
-    %one = constant 1 : index
+    %gdimx = arith.constant 8 : index // 32/4
+    %gdimy = arith.constant 8 : index // 32/4
+    %bdimx = arith.constant 4 : index
+    %bdimy = arith.constant 4 : index
+    %one = arith.constant 1 : index
 
     // Allocate the matricies and fill then with all ones
     %a = alloc() : memref<32x32xf32>

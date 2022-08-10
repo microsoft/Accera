@@ -7,6 +7,7 @@
 #ifndef CPP_PRINTER_H_
 #define CPP_PRINTER_H_
 
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/Attributes.h>
@@ -523,13 +524,13 @@ namespace cpp_printer
 
     [[maybe_unused]] static bool isConstantScalarOp(Operation* op)
     {
-        if (isa<mlir::IndexCastOp>(op))
+        if (isa<mlir::arith::IndexCastOp>(op))
         {
             return true;
         }
-        else if (auto constantOp = dyn_cast<mlir::ConstantOp>(op))
+        else if (auto constantOp = dyn_cast<mlir::arith::ConstantOp>(op))
         {
-            auto resTy = constantOp.value().getType();
+            auto resTy = constantOp.getValue().getType();
             return resTy.isIntOrFloat() || resTy.isIndex();
         }
         return false;

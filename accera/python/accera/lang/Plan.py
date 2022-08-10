@@ -18,6 +18,7 @@ from .NativeLoopNestContext import NativeLoopNestContext
 from ..Targets import GridUnits, Target
 from ..Platforms import LibraryDependency
 from ..Constants import AUTO
+from .Dimension import Dimension
 
 from .._lang_python._lang import (
     CacheIndexing,
@@ -130,6 +131,7 @@ class Plan:
         indices: Union[LoopIndex, Tuple[LoopIndex], DelayedParameter],
         pin: Union[Tuple[Any], DelayedParameter] = None,
         policy: Union[str, DelayedParameter] = "static",
+        max_threads: Union[int, DelayedParameter] = None
     ):
         """Executes one or more loops in parallel on multiple cores or processors.
         Only available for targets with multiple cores or processors.
@@ -144,15 +146,17 @@ class Plan:
                 This is limited by the number of threads supported by the target.
             pin: Pin the computation to a subset of cores or processors.
             policy: The scheduling policy to apply ("dynamic" or "static").
+            max_threads: The maximum number of threads to use when distributing the workload.
         """
         if self._target.category == Target.Category.CPU:
             self._dynamic_dependencies.add(LibraryDependency.OPENMP)
 
-        if any([isinstance(arg, DelayedParameter) for arg in [indices, pin, policy]]):
+        if any([isinstance(arg, DelayedParameter) for arg in [indices, pin, policy, max_threads]]):
             self._delayed_calls[partial(self.parallelize)] = {
                 "indices": indices,
                 "pin": pin,
                 "policy": policy,
+                "max_threads": max_threads
             }
             return None
 
@@ -172,15 +176,18 @@ class Plan:
         for index in indices:
             self._add_index_attr(index, "parallelized")
 
-        self._commands.append(partial(self._parallelize, indices, policy))
+        self._commands.append(partial(self._parallelize, indices, policy, max_threads))
 
-    def _parallelize(self, indices, policy, context: NativeLoopNestContext):
+    def _parallelize(self, indices, policy, max_threads, context: NativeLoopNestContext):
         from .._lang_python._lang import _ParallelizationPolicy
 
-        # num_threads = number of split blocks, clamped by the number of threads supported by this target
-        num_threads = min(
-            self._target.num_threads, self._sched._get_num_split_blocks(indices)
-        )
+        if max_threads is None:
+            max_threads = self._target.num_threads
+        elif max_threads <= 0:
+            raise ValueError("max_threads must be a positive (greater than 0) integer.")
+
+        # num_threads = number of iterations, clamped by the number of threads supported by this target and the user provided limit (if any)
+        num_threads = min(max_threads, self._target.num_threads, self._sched._get_num_split_iterations(indices))
         logging.debug(f"Parallelizing with {num_threads} thread(s)")
 
         idxs = [context.mapping[id(index)] for index in indices]
@@ -300,6 +307,13 @@ class Plan:
             and not self._target.tensor_core_info.supports(
                 input_type=ScalarType.bfloat16,
                 output_type=ScalarType.float32,
+                shape=mma_shape,
+                num_total_passes=num_total_passes,
+                num_fused_passes=num_fused_passes
+            )
+            and not self._target.tensor_core_info.supports(
+                input_type=ScalarType.uint8,
+                output_type=ScalarType.int32,
                 shape=mma_shape,
                 num_total_passes=num_total_passes,
                 num_fused_passes=num_fused_passes
@@ -450,6 +464,9 @@ class Plan:
             raise ValueError(
                 "double_buffer_location is only valid to specify when double_buffer is set to True"
             )
+
+        if self._target.category == Target.Category.GPU and location == _MemorySpace.GLOBAL:
+            raise ValueError("Global memory caches are not yet supported on GPU targets.")
 
         if double_buffer_location is AUTO:
             if double_buffer:
@@ -824,84 +841,108 @@ class Plan:
         for vidx in vindices:
             self.vectorize(vidx)
 
-    def _build_native_context(self, context: NativeLoopNestContext):
-
+    def _calc_block_grid_dim(self):
         target = self._target
         sched = self._sched
         nest = sched._nest
+
+        # lookup the split factors for each loop index
+        index_to_splitfactor_map = {
+            i: self._sched.get_index_transform(i)[1]
+            for i in self._sched.get_indices()
+            if self._sched.get_index_transform(i)
+            and self._sched.get_index_transform(i)[0] is IndexTransform.SPLIT
+        }
+
+        def units_to_dim(units, dims):
+            def compute_index_itercount(idx):
+                begin, end, step = self._sched.get_index_range(idx)
+                if step == 1 and idx in index_to_splitfactor_map:
+                    return index_to_splitfactor_map[idx]
+                else:
+                    return _ceildiv(end - begin, step)
+
+            for i, u in enumerate(units):
+                index_or_tuple = self._bindings.get(u)
+                if index_or_tuple is not None:
+                    if not isinstance(index_or_tuple, Iterable):
+                        index_or_tuple = (index_or_tuple,)
+                    dims[i] = reduce(lambda x, y: x*y, [compute_index_itercount(index) for index in index_or_tuple])
+
+        block_dims = [1, 1, 1]
+        grid_dims = [1, 1, 1]
+
+        if any(proc in self._bindings for proc in target.GridUnit):
+
+            # TODO: move this into the C++ layer
+            block_units = [
+                target.GridUnit.BLOCK_X,
+                target.GridUnit.BLOCK_Y,
+                target.GridUnit.BLOCK_Z,
+            ]
+            thread_units = [
+                target.GridUnit.THREAD_X,
+                target.GridUnit.THREAD_Y,
+                target.GridUnit.THREAD_Z,
+            ]
+
+            # Block units map to the grid specification
+            units_to_dim(block_units, grid_dims)
+
+            # Thread units map to the block specification
+            units_to_dim(thread_units, block_dims)
+        else:
+            BASE_BLOCK_DIM = 16
+            block_dims = [BASE_BLOCK_DIM, BASE_BLOCK_DIM, 1]
+
+            n = min(len(block_dims), len(nest._shape))
+
+            # infer the block dimension from the split factor (if specified)
+            for i, x in enumerate(nest._shape[:n]):
+                shape, index = x
+                if index in index_to_splitfactor_map:
+                    block_dims[i] = index_to_splitfactor_map[index]
+
+                # compute the grid size based on the block size
+                grid_dims[i] = _ceildiv(shape, block_dims[i])
+
+        return block_dims, grid_dims
+
+    def _is_valid_block_dim(self, block_dims) -> bool:
+        max_block_dim = self._target.max_block_size
+        if len(max_block_dim) != 3:
+            return True # Not a known GPU target (max_block_size not set by user) - bypass validation.
+
+        for i in range(3):
+            if block_dims[i] > max_block_dim[i]:
+                return False
+
+        return True
+
+    def _is_valid_block_size(self, block_dims) -> bool:
+        max_threads = self._target.max_threads_per_block
+        if not max_threads:
+            return True # Not a known GPU target (max_threads_per_block not set by user) - bypass validation.
+
+        block_size = block_dims[0] * block_dims[1] * block_dims[2]
+        return block_size <= max_threads
+
+    def _build_native_context(self, context: NativeLoopNestContext):
+        target = self._target
 
         if target and target.category == Target.Category.GPU:
             from .._lang_python._lang import _GPU, _Dim3
 
             assert isinstance(self._sched, Schedule)
 
-            # lookup the split factors for each loop index
-            index_to_splitfactor_map = {
-                i: self._sched.get_index_transform(i)[1]
-                for i in self._sched.get_indices()
-                if self._sched.get_index_transform(i)
-                and self._sched.get_index_transform(i)[0] is IndexTransform.SPLIT
-            }
-
-            def units_to_dim(units, dims):
-                def compute_index_itercount(idx):
-                    begin, end, step = self._sched.get_index_range(idx)
-                    if step == 1 and idx in index_to_splitfactor_map:
-                        return index_to_splitfactor_map[idx]
-                    else:
-                        return _ceildiv(end - begin, step)
-
-                for i, u in enumerate(units):
-                    index_or_tuple = self._bindings.get(u)
-                    if index_or_tuple is not None:
-                        if not isinstance(index_or_tuple, Iterable):
-                            index_or_tuple = (index_or_tuple,)
-                        dims[i] = reduce(lambda x, y: x*y, [compute_index_itercount(index) for index in index_or_tuple])
-
-            block_dims = [1, 1, 1]
-            grid_dims = [1, 1, 1]
-
-            if any(proc in self._bindings for proc in target.GridUnit):
-
-                # TODO: move this into the C++ layer
-                block_units = [
-                    target.GridUnit.BLOCK_X,
-                    target.GridUnit.BLOCK_Y,
-                    target.GridUnit.BLOCK_Z,
-                ]
-                thread_units = [
-                    target.GridUnit.THREAD_X,
-                    target.GridUnit.THREAD_Y,
-                    target.GridUnit.THREAD_Z,
-                ]
-
-                # Block units map to the grid specification
-                units_to_dim(block_units, grid_dims)
-
-                # Thread units map to the block specification
-                units_to_dim(thread_units, block_dims)
-            else:
-                BASE_BLOCK_DIM = 16
-                block_dims = [BASE_BLOCK_DIM, BASE_BLOCK_DIM, 1]
-
-                n = min(len(block_dims), len(nest._shape))
-
-                # infer the block dimension from the split factor (if specified)
-                for i, x in enumerate(nest._shape[:n]):
-                    shape, index = x
-                    if index in index_to_splitfactor_map:
-                        block_dims[i] = index_to_splitfactor_map[index]
-
-                    # compute the grid size based on the block size
-                    grid_dims[i] = _ceildiv(shape, block_dims[i])
+            block_dims, grid_dims = self._calc_block_grid_dim()
 
             # Validate block dim sizes
-            if len(target.max_block_size) == 3 and (block_dims[0] > target.max_block_size[0] or block_dims[1] > target.max_block_size[1] or block_dims[2] > target.max_block_size[2]):
-                raise ValueError (f"Invalid block dimensions: [{block_dims[0]}, {block_dims[1]}, {block_dims[2]}]. Largest supported block dimensions: {target.max_block_size}.")
+            if not self._is_valid_block_dim(block_dims):
+                raise ValueError (f"Invalid block dimensions: {block_dims}. Largest supported block dimensions: {target.max_block_size}.")
 
-            block_size = block_dims[0] * block_dims[1] * block_dims[2]
-            if target.max_threads_per_block and block_size > target.max_threads_per_block:
-                raise ValueError(f"Invalid block size {block_size}. Max threads per block: {target.max_threads_per_block}.")
+            if not self._is_valid_block_size(block_dims):
+                raise ValueError(f"Invalid block size {block_dims}. Max threads per block: {target.max_threads_per_block}.")
 
             context.options = _GPU(grid=_Dim3(*grid_dims), block=_Dim3(*block_dims))
             context.plan = context.schedule.create_gpu_plan(
@@ -961,11 +1002,13 @@ def _build_native_nest(plan: "Plan", nest_args: List[Array]):
     nest = sched._nest
 
     for array_arg in nest_args:
-        array_arg._replay_delayed_calls()
+        if isinstance(array_arg, Array):
+            array_arg._replay_delayed_calls()
 
     def build_array_native_context(ctx):
         for array_arg in nest_args:
-            array_arg._build_native_context(ctx)
+            if isinstance(array_arg, Array):
+                array_arg._build_native_context(ctx)
 
     def build_loopnest_native_context(ctx):
         nest._build_native_context(ctx)
@@ -993,7 +1036,7 @@ def _build_native_nest(plan: "Plan", nest_args: List[Array]):
 
 
 def _create_function(
-    plan: "Plan", args: List[Array], public: bool = True, no_inline: bool = False
+    plan: "Plan", args: List[Union[Array, Dimension]], public: bool = True, no_inline: bool = False
 ) -> Function:
     from secrets import token_hex
 

@@ -14,11 +14,11 @@ namespace mlir
 class Pass;
 
 class RewritePatternSet;
-using OwningRewritePatternList = RewritePatternSet;
+using RewritePatternSet = RewritePatternSet;
 } // namespace mlir
 
 namespace accera::transforms::value
 {
-void populateValueSimplifyPatterns(mlir::OwningRewritePatternList& patterns);
+void populateValueSimplifyPatterns(mlir::RewritePatternSet& patterns);
 std::unique_ptr<mlir::Pass> createValueSimplifyPass();
 } // namespace accera::transforms::value

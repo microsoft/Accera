@@ -33,22 +33,22 @@ public:
     void runOnModule() override;
 
 private:
-    StringRef GetFuncSymbolName(LLVM::LLVMFuncOp& op)
+    StringAttr GetFuncSymbolName(LLVM::LLVMFuncOp& op)
     {
         auto symbolNameAttr = op->getAttrOfType<StringAttr>(mlir::SymbolTable::getSymbolAttrName());
-        return symbolNameAttr.getValue();
+        return symbolNameAttr;
     }
 
     bool HasAcceraTemporaryPrefix(LLVM::LLVMFuncOp& op)
     {
-        StringRef funcSymbolName = GetFuncSymbolName(op);
-        std::string strSymbolName = funcSymbolName.str();
+        StringAttr funcSymbolName = GetFuncSymbolName(op);
+        std::string strSymbolName = funcSymbolName.getValue().str();
         return strSymbolName.find(accera::value::FunctionDeclaration::GetTemporaryFunctionPointerPrefix(), 0) == 0;
     }
 
     std::string GetSymbolNameWithoutAcceraTemporaryPrefix(LLVM::LLVMFuncOp& op)
     {
-        std::string strSymbolName = GetFuncSymbolName(op).str();
+        std::string strSymbolName = GetFuncSymbolName(op).getValue().str();
         assert(strSymbolName.find(accera::value::FunctionDeclaration::GetTemporaryFunctionPointerPrefix(), 0) == 0);
         return strSymbolName.substr(accera::value::FunctionDeclaration::GetTemporaryFunctionPointerPrefix().length());
     }

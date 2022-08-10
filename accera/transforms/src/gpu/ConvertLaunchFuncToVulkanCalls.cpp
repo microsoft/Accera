@@ -129,7 +129,7 @@ private:
     /// Checks whether the given LLVM::CallOp is a vulkan launch call op.
     bool isVulkanLaunchCallOp(LLVM::CallOp callOp)
     {
-        return (callOp.callee() && callOp.callee().getValue() == kVulkanLaunch &&
+        return (callOp.getCallee() && callOp.getCallee().getValue() == kVulkanLaunch &&
                 callOp.getNumOperands() >= kVulkanLaunchNumConfigOperands);
     }
 
@@ -137,8 +137,8 @@ private:
     /// op.
     bool isCInterfaceVulkanLaunchCallOp(LLVM::CallOp callOp)
     {
-        return (callOp.callee() &&
-                callOp.callee().getValue() == kCInterfaceVulkanLaunch &&
+        return (callOp.getCallee() &&
+                callOp.getCallee().getValue() == kCInterfaceVulkanLaunch &&
                 callOp.getNumOperands() >= kVulkanLaunchNumConfigOperands);
     }
 
@@ -370,7 +370,7 @@ void VulkanLaunchFuncToVulkanCallsWithTimingPass::createBindMemRefCalls(
         }
         // Create call to `bindMemRef`.
         builder.create<LLVM::CallOp>(
-            loc, ArrayRef<Type>{ getVoidType() }, builder.getSymbolRefAttr(StringRef(symbolName.data(), symbolName.size())), ArrayRef<Value>{ vulkanRuntime, descriptorSet, descriptorBinding, ptrToMemRefDescriptor });
+            loc, ArrayRef<Type>{}, SymbolRefAttr::get(builder.getContext(), StringRef(symbolName.data(), symbolName.size())), ArrayRef<Value>{ vulkanRuntime, descriptorSet, descriptorBinding, ptrToMemRefDescriptor });
     }
 }
 
@@ -530,7 +530,7 @@ void VulkanLaunchFuncToVulkanCallsWithTimingPass::translateVulkanLaunchCall(
     // Create call to `setBinaryShader` runtime function with the given pointer to
     // SPIR-V binary and binary size.
     builder.create<LLVM::CallOp>(
-        loc, ArrayRef<Type>{ getVoidType() }, builder.getSymbolRefAttr(kSetBinaryShader), ArrayRef<Value>{ vulkanRuntime, ptrToSPIRVBinary, binarySize });
+        loc, ArrayRef<Type>{}, kSetBinaryShader, ArrayRef<Value>{ vulkanRuntime, ptrToSPIRVBinary, binarySize });
 
     // Create LLVM global with entry point name.
     Value entryPointName = createEntryPointNameConstant(
@@ -538,7 +538,7 @@ void VulkanLaunchFuncToVulkanCallsWithTimingPass::translateVulkanLaunchCall(
 
     // Create call to `setEntryPoint` runtime function with the given pointer to
     // entry point name.
-    builder.create<LLVM::CallOp>(loc, ArrayRef<Type>{ getVoidType() }, builder.getSymbolRefAttr(kSetEntryPoint), ArrayRef<Value>{ vulkanRuntime, entryPointName });
+    builder.create<LLVM::CallOp>(loc, ArrayRef<Type>{}, kSetEntryPoint, ArrayRef<Value>{ vulkanRuntime, entryPointName });
 
     // Create call to setRepeatedRunCharacteristics to set warmup run count and timing run count
     Value printTimingsConstant = builder.create<LLVM::ConstantOp>(loc, getInt32Type(), builder.getI32IntegerAttr(printTimings ? 1 : 0));
@@ -546,8 +546,8 @@ void VulkanLaunchFuncToVulkanCallsWithTimingPass::translateVulkanLaunchCall(
     Value runCountConstant = builder.create<LLVM::ConstantOp>(loc, getInt32Type(), builder.getI32IntegerAttr(runCount));
     builder.create<LLVM::CallOp>(
         loc,
-        ArrayRef<Type>{ getVoidType() },
-        builder.getSymbolRefAttr(kSetRepeatedRunCharacteristics),
+        ArrayRef<Type>{},
+        kSetRepeatedRunCharacteristics,
         ArrayRef<Value>{ vulkanRuntime,
                          printTimingsConstant,
                          warmupCountConstant,
@@ -556,11 +556,11 @@ void VulkanLaunchFuncToVulkanCallsWithTimingPass::translateVulkanLaunchCall(
     // This SetNumWorkGroups call needs to be in whatever function is called with the emit-time-constant dimensions
     // TODO : move the hard-coded workgroup dimensions out of the caller of vulkanLaunch
     builder.create<LLVM::CallOp>(
-        loc, ArrayRef<Type>{ getVoidType() }, builder.getSymbolRefAttr(kSetNumWorkGroups), ArrayRef<Value>{ vulkanRuntime, cInterfaceVulkanLaunchCallOp.getOperand(0), cInterfaceVulkanLaunchCallOp.getOperand(1), cInterfaceVulkanLaunchCallOp.getOperand(2) });
+        loc, ArrayRef<Type>{}, kSetNumWorkGroups, ArrayRef<Value>{ vulkanRuntime, cInterfaceVulkanLaunchCallOp.getOperand(0), cInterfaceVulkanLaunchCallOp.getOperand(1), cInterfaceVulkanLaunchCallOp.getOperand(2) });
 
     // Create call to `runOnVulkan` runtime function.
     // TODO : surface APIs for moving memory onto and off of the device
-    builder.create<LLVM::CallOp>(loc, ArrayRef<Type>{ getVoidType() }, builder.getSymbolRefAttr(kRunOnVulkan), ArrayRef<Value>{ vulkanRuntime });
+    builder.create<LLVM::CallOp>(loc, ArrayRef<Type>{}, kRunOnVulkan, ArrayRef<Value>{ vulkanRuntime });
 
     cInterfaceVulkanLaunchCallOp.erase();
 }
@@ -621,7 +621,7 @@ mlir::Value VulkanLaunchFuncToVulkanCallsWithTimingPass::getVulkanRuntimeHandle(
     }
 
     auto getVulkanRuntimeHandleCall = builder.create<LLVM::CallOp>(
-        loc, ArrayRef<Type>{ getPointerType() }, builder.getSymbolRefAttr(kVulkanRuntimeHandleAccessor), ArrayRef<Value>{});
+        loc, ArrayRef<Type>{ getPointerType() }, kVulkanRuntimeHandleAccessor, ArrayRef<Value>{});
 
     auto vulkanRuntime = getVulkanRuntimeHandleCall.getResult(0);
 
@@ -639,7 +639,7 @@ void VulkanLaunchFuncToVulkanCallsWithTimingPass::completeVulkanInitializeFuncti
 
     // Create call to `initVulkan`.
     auto initVulkanCall = builder.create<LLVM::CallOp>(
-        loc, ArrayRef<Type>{ getPointerType() }, builder.getSymbolRefAttr(kInitVulkan), ArrayRef<Value>{});
+        loc, ArrayRef<Type>{ getPointerType() }, kInitVulkan, ArrayRef<Value>{});
 
     // The result of `initVulkan` function is a pointer to Vulkan runtime, we
     // need to pass that pointer to each Vulkan runtime call.
@@ -662,7 +662,7 @@ void VulkanLaunchFuncToVulkanCallsWithTimingPass::completeVulkanDeInitializeFunc
     auto vulkanRuntime = getVulkanRuntimeHandle(loc, builder);
 
     // Create call to 'deinitVulkan' runtime function.
-    builder.create<LLVM::CallOp>(loc, ArrayRef<Type>{ getVoidType() }, builder.getSymbolRefAttr(kDeinitVulkan), ArrayRef<Value>{ vulkanRuntime });
+    builder.create<LLVM::CallOp>(loc, ArrayRef<Type>{}, kDeinitVulkan, ArrayRef<Value>{ vulkanRuntime });
 }
 
 void VulkanLaunchFuncToVulkanCallsWithTimingPass::markVulkanLaunchInternal()

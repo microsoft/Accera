@@ -36,7 +36,7 @@ namespace ir
 
     private:
         std::unique_ptr<mlir::ExecutionEngine> _engine;
-        mlir::OwningModuleRef _module;
+        mlir::OwningOpRef<mlir::ModuleOp> _module;
     };
 
 } // namespace mlirHelpers

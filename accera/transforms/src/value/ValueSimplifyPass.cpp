@@ -15,8 +15,8 @@
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/Linalg/IR/LinalgOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
@@ -71,15 +71,15 @@ struct ValueSliceSimplifyPattern : public OpRewritePattern<ValueSliceOp>
 
         auto sourceType = source.getType().cast<mlir::MemRefType>();
         auto shape = sourceType.getShape();
-        auto zero = rewriter.create<ConstantIndexOp>(loc, 0);
-        auto one = rewriter.create<ConstantIndexOp>(loc, 1);
+        auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+        auto one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
 
         // Initialize to a full view (no sliced dimensions)
         llvm::SmallVector<mlir::Value, 4> resolvedOffsets(shape.size(), zero);
         llvm::SmallVector<mlir::Value, 4> sizes;
         for (auto extent : shape)
         {
-            sizes.push_back(rewriter.create<ConstantIndexOp>(loc, extent));
+            sizes.push_back(rewriter.create<arith::ConstantIndexOp>(loc, extent));
         }
 
         llvm::SmallVector<mlir::Value, 4> strides(shape.size(), one);
@@ -101,9 +101,7 @@ struct ValueSliceSimplifyPattern : public OpRewritePattern<ValueSliceOp>
                 auto indexShape = index.getType().cast<mlir::ShapedType>().getShape();
                 if (indexShape.size() == 0 || indexShape.size() == 1)
                 {
-                    resolvedOffsets[dim] = rewriter.create<IndexCastOp>(loc,
-                                                                        rewriter.create<GetElementOp>(loc, index),
-                                                                        indexType);
+                    resolvedOffsets[dim] = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.create<GetElementOp>(loc, index), indexType);
                 }
                 else
                 {
@@ -128,7 +126,7 @@ LogicalResult CopyOpLowering::matchAndRewrite(
     PatternRewriter& rewriter) const
 {
     auto loc = op.getLoc();
-    auto zero = rewriter.create<ConstantIndexOp>(loc, 0);
+    auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
 
     auto input = op.input();
     auto output = op.output();
@@ -145,7 +143,7 @@ LogicalResult CopyOpLowering::matchAndRewrite(
         }
         else
         {
-            (void)rewriter.create<linalg::CopyOp>(loc, input, output);
+            (void)rewriter.create<memref::CopyOp>(loc, input, output);
         }
     }
     else if (inputType.isIndex())
@@ -153,7 +151,7 @@ LogicalResult CopyOpLowering::matchAndRewrite(
         if (outputMemRef.getElementType().isInteger(64)) // this should really be target dependent...
         {
             (void)rewriter.create<memref::StoreOp>(loc,
-                                                   rewriter.create<IndexCastOp>(loc, input, rewriter.getIntegerType(64)),
+                                                   rewriter.create<mlir::arith::IndexCastOp>(loc, input, rewriter.getIntegerType(64)),
                                                    output,
                                                    std::vector<mlir::Value>(outputMemRef.getRank(), zero));
         }
@@ -192,11 +190,11 @@ struct IndexCombinationBinOpLowering : public OpRewritePattern<ValueBinOp>
     bool ReplaceConstantIntWithIndex(OpBuilder& builder, mlir::Value& val) const
     {
         auto op = val.getDefiningOp();
-        if (auto constantOp = mlir::dyn_cast_or_null<mlir::ConstantIntOp>(op))
+        if (auto constantOp = mlir::dyn_cast_or_null<arith::ConstantIntOp>(op))
         {
             OpBuilder::InsertionGuard insertGuard(builder);
             builder.setInsertionPointAfter(constantOp);
-            auto constantIndex = builder.create<mlir::ConstantIndexOp>(constantOp.getLoc(), constantOp.getValue());
+            auto constantIndex = builder.create<arith::ConstantIndexOp>(constantOp.getLoc(), constantOp.value());
             val.replaceAllUsesWith(constantIndex.getResult());
             val = constantIndex.getResult();
             return true;
@@ -211,13 +209,13 @@ struct IndexCombinationBinOpLowering : public OpRewritePattern<ValueBinOp>
     {
         if (auto op = val.getDefiningOp())
         {
-            if (auto constantIntOp = mlir::dyn_cast<mlir::ConstantIntOp>(op))
+            if (auto constantIntOp = mlir::dyn_cast<arith::ConstantIntOp>(op))
             {
-                return constantIntOp.getValue();
+                return constantIntOp.value();
             }
-            else if (auto constantIndexOp = mlir::dyn_cast<mlir::ConstantIndexOp>(op))
+            else if (auto constantIndexOp = mlir::dyn_cast<arith::ConstantIndexOp>(op))
             {
-                return constantIndexOp.getValue();
+                return constantIndexOp.value();
             }
         }
         return {};
@@ -312,7 +310,7 @@ struct IndexCombinationBinOpLowering : public OpRewritePattern<ValueBinOp>
 
 void ValueSimplifyPass::runOnOperation()
 {
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     accera::transforms::value::populateValueSimplifyPatterns(patterns);
 
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
@@ -321,7 +319,7 @@ void ValueSimplifyPass::runOnOperation()
 namespace accera::transforms::value
 {
 
-void populateValueSimplifyPatterns(mlir::OwningRewritePatternList& patterns)
+void populateValueSimplifyPatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     populateWithGenerated(patterns);

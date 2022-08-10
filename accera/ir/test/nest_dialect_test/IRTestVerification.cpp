@@ -29,7 +29,7 @@
 #include <utilities/include/TypeTraits.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
-#include <mlir/Dialect/Linalg/IR/LinalgOps.h>
+#include <mlir/Dialect/Linalg/IR/Linalg.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/Attributes.h>
@@ -50,9 +50,9 @@
 #include <llvm/IR/IRPrintingPasses.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/Host.h>
 #include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Target/TargetMachine.h>
@@ -265,7 +265,7 @@ void OptimizeLLVM(llvm::Module& module)
 // Test verification functions exposed in the header
 //
 
-bool VerifyGenerate(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, std::string outputFile)
+bool VerifyGenerate(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, std::string outputFile)
 {
     llvm::raw_os_ostream out(Log());
     if (ShouldLog())
@@ -291,7 +291,7 @@ bool VerifyGenerate(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, std::stri
     return true;
 }
 
-bool VerifyParse(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, std::string outputFile)
+bool VerifyParse(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, std::string outputFile)
 {
     auto context = module->getContext();
     llvm::raw_os_ostream out(Log());
@@ -338,7 +338,7 @@ bool VerifyParse(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, std::string 
     return true;
 }
 
-bool VerifyLowerToValue(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, std::string outputFile)
+bool VerifyLowerToValue(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, std::string outputFile)
 {
     llvm::raw_os_ostream out(Log());
 
@@ -369,7 +369,7 @@ bool VerifyLowerToValue(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, std::
     return ok;
 }
 
-bool VerifyLowerToStd(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, std::string outputFile)
+bool VerifyLowerToStd(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, std::string outputFile)
 {
     llvm::raw_os_ostream out(Log());
 
@@ -399,7 +399,7 @@ bool VerifyLowerToStd(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, std::st
     return ok;
 }
 
-bool VerifyLowerToLLVM(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, std::string outputFile)
+bool VerifyLowerToLLVM(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, std::string outputFile)
 {
     llvm::raw_os_ostream out(Log());
 
@@ -443,7 +443,7 @@ bool VerifyLowerToLLVM(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, std::s
     return true;
 }
 
-bool VerifyTranslateToLLVMIR(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, bool optimize, std::string outputFile)
+bool VerifyTranslateToLLVMIR(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, bool optimize, std::string outputFile)
 {
     llvm::raw_os_ostream out(Log());
 
@@ -461,7 +461,7 @@ bool VerifyTranslateToLLVMIR(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, 
         out.flush();
     }
 
-    mlir::OwningModuleRef newModule = ConvertToLLVM(
+    mlir::OwningOpRef<mlir::ModuleOp> newModule = ConvertToLLVM(
         *module,
         [](mlir::PassManager& pm) {
             // Add a run of the canonicalizer to optimize the mlir module.
@@ -531,7 +531,7 @@ bool VerifyTranslateToLLVMIR(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, 
 }
 
 #if 0
-bool VerifyJIT(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp, bool optimize)
+bool VerifyJIT(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, bool optimize)
 {
     llvm::raw_os_ostream out(Log());
 

@@ -3,6 +3,7 @@
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/AffineMap.h"
@@ -33,8 +34,8 @@ using namespace mlir::scf;
 // global utilities
 bool mlir::isConstantZero(Value v)
 {
-    return isa_and_nonnull<ConstantIndexOp>(v.getDefiningOp()) &&
-           cast<ConstantIndexOp>(v.getDefiningOp()).getValue() == 0;
+    return isa_and_nonnull<arith::ConstantIndexOp>(v.getDefiningOp()) &&
+           cast<arith::ConstantIndexOp>(v.getDefiningOp()).value() == 0;
 }
 
 Value mlir::createCeilDivIndex(OpBuilder& b, Location loc, Value lhs, Value rhs, bool useAffine, OperationFolder* folder)
@@ -65,11 +66,10 @@ Value mlir::createCeilDivIndex(OpBuilder& b, Location loc, Value lhs, Value rhs,
 
 int64_t mlir::getConstantIndex(Value v, int64_t dynVal)
 {
-
-    if (ConstantIndexOp cOp =
-            dyn_cast_or_null<ConstantIndexOp>(v.getDefiningOp()))
+    if (arith::ConstantIndexOp cOp =
+            dyn_cast_or_null<arith::ConstantIndexOp>(v.getDefiningOp()))
     {
-        return cOp.getValue();
+        return cOp.value();
     }
 
     // handles possible constant-related ops
@@ -109,7 +109,7 @@ Optional<Value> mlir::getSimplifiedAffineMap(OpBuilder& b,
         {
             if (auto val = expr.dyn_cast<AffineConstantExpr>())
             {
-                Value value = b.create<ConstantIndexOp>(loc, val.getValue());
+                Value value = b.create<arith::ConstantIndexOp>(loc, val.getValue());
                 return value;
             }
         }
@@ -204,7 +204,7 @@ bool mlir::hasAttrs(ArrayRef<NamedAttribute> attrs,
     // Filter any attributes in filterAttrs
     SmallVector<NamedAttribute, 8> filteredAttrs(
         llvm::make_filter_range(attrs, [&](NamedAttribute attr) {
-            return llvm::is_contained(filterAttrs, attr.first.strref());
+            return llvm::is_contained(filterAttrs, attr.getName().strref());
         }));
 
     return !filteredAttrs.empty();
@@ -222,7 +222,7 @@ bool mlir::hasAllAttrs(ArrayRef<NamedAttribute> attrs,
     // Filter any attributes in filterAttrs
     SmallVector<NamedAttribute, 8> filteredAttrs(
         llvm::make_filter_range(attrs, [&](NamedAttribute attr) {
-            return llvm::is_contained(filterAttrs, attr.first.strref());
+            return llvm::is_contained(filterAttrs, attr.getName().strref());
         }));
 
     return filteredAttrs.size() == filterAttrs.size();
@@ -404,7 +404,7 @@ Value mlir::getLoopLikeOpLowerBound(OpBuilder& b, Location loc, LoopLikeOpInterf
     Operation* op = looplike.getOperation();
     if (scf::ForOp forOp = dyn_cast<scf::ForOp>(op))
     {
-        return forOp.lowerBound();
+        return forOp.getLowerBound();
     }
 
     if (AffineForOp forOp = dyn_cast<AffineForOp>(op))
@@ -429,7 +429,7 @@ Value mlir::getLoopLikeOpUpperBound(OpBuilder& b, Location loc, LoopLikeOpInterf
     Operation* op = looplike.getOperation();
     if (scf::ForOp forOp = dyn_cast<scf::ForOp>(op))
     {
-        return forOp.upperBound();
+        return forOp.getUpperBound();
     }
 
     if (AffineForOp forOp = dyn_cast<AffineForOp>(op))
@@ -560,9 +560,8 @@ Value mlir::argo::AllocFromView(OpBuilder& b, Location loc, Value value, Operati
     }
     else if (auto memrefType = value.getType().dyn_cast_or_null<MemRefType>())
     {
-
         const auto& shape = memrefType.getShape();
-        auto type = MemRefType::get(shape, memrefType.getElementType(), memrefType.getAffineMaps(), space);
+        auto type = MemRefType::get(shape, memrefType.getElementType(), memrefType.getLayout().getAffineMap(), space);
 
         SmallVector<Value, 4> shapeValue;
         shapeValue.reserve(shape.size());

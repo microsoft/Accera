@@ -91,7 +91,7 @@ namespace value
         void verify() const;
         void save(std::string filename) const;
 
-        mlir::OwningModuleRef cloneModule() const;
+        mlir::OwningOpRef<mlir::ModuleOp> cloneModule() const;
 
         void writeHeader(std::optional<std::string> filename = std::nullopt) const;
 
@@ -264,7 +264,7 @@ namespace value
     void FillResource(ViewAdapter, Scalar);
     void PrintMemref(ViewAdapter);
 
-    mlir::OwningModuleRef GatherModules(const std::string& name, const std::vector<MLIRContext*>& contexts, mlir::MLIRContext* context);
+    mlir::OwningOpRef<mlir::ModuleOp> GatherModules(const std::string& name, const std::vector<MLIRContext*>& contexts, mlir::MLIRContext* context);
     void SaveModule(const std::string& filename, mlir::ModuleOp moduleOp);
 
     void WriteHeaderForModule(const std::string& filename, mlir::ModuleOp moduleOp);

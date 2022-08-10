@@ -44,12 +44,12 @@ def StructuredOpTraits : NativeOpTrait<"argo::StructuredOpTraits">;
 // Argo ops that correspond to library calls operate on argo::View as their
 // first operands. These may be optionally followed by non-view operands
 // depending on the specific Argo op.
-class ArgoStructuredBase_Op<string mnemonic, list<OpTrait> props>
+class ArgoStructuredBase_Op<string mnemonic, list<Trait> props>
   : Op<Argo_Dialect, mnemonic,
        !listconcat(props, [StructuredOpTraits, ArgoStructuredInterface])> {
 }
 
-class ArgoStructured_Op<string mnemonic, list<OpTrait> props>
+class ArgoStructured_Op<string mnemonic, list<Trait> props>
   : ArgoStructuredBase_Op<mnemonic, props> {
   code libraryCallName = [{
     std::string getLibraryCallName() {
@@ -95,7 +95,7 @@ def CopyOp : ArgoStructured_Op<"copy", [
 
     // I(input_perm(ivs)) -> O(output_perm(ivs))
     llvm::Optional<SmallVector<AffineMap, 8>> referenceIndexingMaps() {
-      mlir::MLIRContext *context = getContext();
+      MLIRContext *context = getContext();
       auto maybeInputMap = inputPermutation();
       auto maybeOutputMap = outputPermutation();
       unsigned inputRank = getInputShapedType(0).getRank();
@@ -137,7 +137,7 @@ def FillOp : ArgoStructured_Op<"fill", [NInputs<0>, NOutputs<1>]> {
     }
 
     llvm::Optional<SmallVector<AffineMap, 8>> referenceIndexingMaps() {
-      mlir::MLIRContext *context = getContext();
+      MLIRContext *context = getContext();
       unsigned nPar = output().getType().cast<ShapedType>().getRank();
       SmallVector<AffineExpr, 4> result;
       for(unsigned i = 0; i < nPar; ++i) {
@@ -177,7 +177,7 @@ def MatmulOp : ArgoStructured_Op<"matmul", [NInputs<2>, NOutputs<1>]> {
     }
 
     llvm::Optional<SmallVector<AffineMap, 8>> referenceIndexingMaps() {
-      mlir::MLIRContext *context = getContext();
+      MLIRContext *context = getContext();
       auto i = getAffineDimExpr(0, context);
       auto j = getAffineDimExpr(1, context);
       auto k = getAffineDimExpr(2, context);
@@ -204,7 +204,7 @@ def AccOp : ArgoStructured_Op<"acc", [NInputs<1>, NOutputs<1>]> {
     }
 
     llvm::Optional<SmallVector<AffineMap, 8>> referenceIndexingMaps() {
-      mlir::MLIRContext *context = getContext();
+      MLIRContext *context = getContext();
       auto i = getAffineDimExpr(0, context);
       auto j = getAffineDimExpr(1, context);
       // A(i, j) -> B(i, j)

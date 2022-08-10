@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
 # Section 3: Schedules
 We begin with `nest` from [Section 2](<02%20Simple%20Affine%20Loop%20Nests.md>) which captures the logic of matrix-matrix multiplication. We use `nest` to create a `Schedule` that controls the execution order of the nest's iterations. Schedules are target-independent in the sense that the same schedule can be used to emit code for multiple target platforms.
@@ -16,7 +16,7 @@ for i in range(3):
         for k in range(15):
             C[i, j] += A[i, k] * B[k, j]
 ```
-In other words, each of the logical pseudo-code loops in `nest` becomes an actual for-loop in the default schedule.
+In other words, each of the logical pseudo-code loops in `nest` becomes an actual for-loop in the default schedule. The for-loop sizes can be known at compile-time or at runtime.
 
 We can now transform this schedule in various ways. However, these transformations do not change the underlying logic defined in `nest` and merely change the order of the loop iterations. We can even generate as many independent schedules as we want by calling `nest.create_schedule()`.
 
@@ -51,7 +51,7 @@ Comment: Accera's geometric interpretation of schedules resembles the *iteration
 
 Iteration space slices in four dimensions, denoted by indices (`i`, `j`, `jj`, `k`):
 
-![(1, *, *, *)](../assets/viz/space_3_4_3_15_split_A.png) | ![(*, *, *, 3)](../assets/viz/space_3_4_3_15_split_B.png) | ![(2, *, 0, *)](../assets/viz/space_3_4_3_15_split_C.png)
+![(1, *, *, *)](../assets/viz/space_3_4_3_15_slice1.png) | ![(*, *, *, 3)](../assets/viz/space_3_4_3_15_slice2.png) | ![(2, *, 0, *)](../assets/viz/space_3_4_3_15_slice3.png)
 :-------------------------:|:-------------------------:|:-------------------------:
 *(1, \*, \*, \*)* |  *(\*, \*, \*, 3)* | *(2, \*, 0, \*)*
 
@@ -83,9 +83,9 @@ for j in range(12):
             C[i, j] += A[i, k] * B[k, j]
 ```
 
-![(3, 12, 15) iteration space](../assets/viz/space_3_12_15_indices.png)  |  ![(12, 15, 3) iteration space](../assets/viz/space_12_15_3.png)
+![(3, 12, 15) iteration space](../assets/viz/space_3_12_15_presplit.png)  |  ![(12, 15, 3) iteration space](../assets/viz/space_12_15_3.png)
 :-------------------------:|:-------------------------:
-*Default schedule* |  *After `reorder(j, k, i)`*
+*Default schedule, order is (i, j, k)*` |  *After `reorder(j, k, i)`, order is (j, k, i)*
 
 #### Invalid orders
 
@@ -125,7 +125,7 @@ for i in range(3):
 ```
 Note that loop `j` is no longer normalized (it has a stride of 3 rather than 1), which means that the nest is no longer a simple nest. As mentioned in the previous section, `Nest` objects always represent simple nests, but `Schedule` objects can represent more complex affine loop nests.
 
-![(3, 12, 15) iteration space](../assets/viz/space_3_12_15_indices.png)  |  ![(3, 4, 3, 15) iteration space](../assets/viz/space_3_4_3_15_split.png)
+![(3, 12, 15) iteration space](../assets/viz/space_3_12_15_presplit.png)  |  ![(3, 4, 3, 15) iteration space](../assets/viz/space_3_12_15_postsplit.png)
 :-------------------------:|:-------------------------:
 *Default schedule* |  *After `split(j, 3)`*
 
@@ -152,7 +152,7 @@ jj = schedule.split(j, 5)  # original size of dimension j was 12
 ```
 From the iteration space point-of-view, this code splits dimension `j` into three parts of size 5, where the last part is padded with empty (no-op) elements. Before the transformation, the iteration space shape is (3, 12, 15), and after the transformation, the shape is (3, 3, 5, 15) (so, 135 empty elements were added).
 
-![(3, 15, 15) iteration space](../assets/viz/space_3_15_15_A.png)  |  ![(3, 3, 5, 15) iteration space](../assets/viz/space_3_3_5_15_A.png)
+![(3, 15, 15) iteration space](../assets/viz/space_3_15_15_presplit.png)  |  ![(3, 3, 5, 15) iteration space](../assets/viz/space_3_15_15_postsplit.png)
 :-------------------------:|:-------------------------:
 *Default schedule (no-op elements in blue)* |  *After `split(j, 5)`*
 

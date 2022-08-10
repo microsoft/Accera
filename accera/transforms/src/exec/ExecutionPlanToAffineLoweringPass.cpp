@@ -29,21 +29,22 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_os_ostream.h>
 
-#include <mlir/Analysis/LoopAnalysis.h>
-#include <mlir/Analysis/Utils.h>
+#include <mlir/Dialect/Affine/Analysis/LoopAnalysis.h>
+#include <mlir/Dialect/Affine/Analysis/Utils.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Affine/LoopUtils.h>
 #include <mlir/Dialect/Affine/Utils.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/OpenMP/OpenMPDialect.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
-#include <mlir/Dialect/Vector/VectorOps.h>
+#include <mlir/Dialect/Vector/IR/VectorOps.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BlockAndValueMapping.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Dominance.h>
-#include <mlir/IR/Identifier.h>
 #include <mlir/IR/IntegerSet.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Pass/Pass.h>
@@ -51,8 +52,6 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/InliningUtils.h>
-#include <mlir/Transforms/LoopUtils.h>
-#include <mlir/Transforms/Utils.h>
 
 #include <algorithm>
 #include <map>
@@ -404,7 +403,7 @@ struct LoopUnswitchingOpRewrite : public OpRewritePattern<mlir::AffineForOp>
 
 struct ExecutionPlanMakeCacheLoweringPass : public ConvertExecutionPlanMakeCacheBase<ExecutionPlanMakeCacheLoweringPass>
 {
-    void runOnFunction() final;
+    void runOnOperation() final;
 };
 
 struct ExecutionPlanCopyReduceLoweringPass : public ConvertExecutionPlanCopyReduceBase<ExecutionPlanCopyReduceLoweringPass>
@@ -434,12 +433,12 @@ struct ExecutionPlanParallelizationPass : public ConvertExecutionPlanParalleliza
 
 struct ExecutionPlanScaleHoistingPass : public ConvertExecutionPlanScaleHoistingBase<ExecutionPlanScaleHoistingPass>
 {
-    void runOnFunction() final;
+    void runOnOperation() final;
 };
 
 struct OutOfBoundsAccessHandlingPass : public HandleOutOfBoundsAccessBase<OutOfBoundsAccessHandlingPass>
 {
-    void runOnFunction() final;
+    void runOnOperation() final;
 };
 
 // Vectorization-related functions and types
@@ -494,7 +493,7 @@ VectorizationInfo GetCacheOpVectorizationInfoOrDefault(CacheOpType cacheOp)
 void SetVectorizationInfo(ScheduleOp op, Index index, const VectorizationInfo& vecInfo)
 {
     OpBuilder builder(op);
-    auto vectorizationInfoIdentifier = builder.getIdentifier(VectorizationInfoAttr::getKeyName());
+    auto vectorizationInfoIdentifier = builder.getStringAttr(VectorizationInfoAttr::getKeyName());
     op.addLoopAttribute(index, vectorizationInfoIdentifier, VectorizationInfoAttr::get(vecInfo, builder.getContext()));
 }
 
@@ -506,7 +505,7 @@ void SetVectorizationInfo(ScheduleOp op, Index index, const VectorizationInfo& v
 void RemoveVectorizationInfo(Operation* op)
 {
     OpBuilder builder(op);
-    auto vectorizationInfoIdentifier = builder.getIdentifier(VectorizationInfoAttr::getKeyName());
+    auto vectorizationInfoIdentifier = builder.getStringAttr(VectorizationInfoAttr::getKeyName());
     op->removeAttr(vectorizationInfoIdentifier);
 }
 
@@ -535,7 +534,7 @@ InPlaceUnrollInfo GetInPlaceUnrollInfo(Operation* op)
 [[maybe_unused]] void SetInPlaceUnrollInfo(ScheduleOp op, Index index, const InPlaceUnrollInfo& inPlaceUnrollInfo)
 {
     OpBuilder builder(op);
-    auto inPlaceUnrollInfoIdentifier = builder.getIdentifier(InPlaceUnrollInfoAttr::getKeyName());
+    auto inPlaceUnrollInfoIdentifier = builder.getStringAttr(InPlaceUnrollInfoAttr::getKeyName());
     op.addLoopAttribute(index, inPlaceUnrollInfoIdentifier, InPlaceUnrollInfoAttr::get(inPlaceUnrollInfo, builder.getContext()));
 }
 
@@ -547,7 +546,7 @@ InPlaceUnrollInfo GetInPlaceUnrollInfo(Operation* op)
 void RemoveInPlaceUnrollInfo(Operation* op)
 {
     OpBuilder builder(op);
-    auto inPlaceUnrollInfoIdentifier = builder.getIdentifier(InPlaceUnrollInfoAttr::getKeyName());
+    auto inPlaceUnrollInfoIdentifier = builder.getStringAttr(InPlaceUnrollInfoAttr::getKeyName());
     op->removeAttr(inPlaceUnrollInfoIdentifier);
 }
 
@@ -556,7 +555,7 @@ void RemoveInPlaceUnrollInfo(Operation* op)
 bool HasTensorizationInfo(Operation* op)
 {
     OpBuilder builder(op);
-    auto tensorizationInfoIdentifier = builder.getIdentifier(TensorizationInfoAttr::getKeyName());
+    auto tensorizationInfoIdentifier = builder.getStringAttr(TensorizationInfoAttr::getKeyName());
     auto tensorizationInfoAttr = op->getAttrOfType<TensorizationInfoAttr>(tensorizationInfoIdentifier);
 
     return tensorizationInfoAttr != nullptr;
@@ -565,7 +564,7 @@ bool HasTensorizationInfo(Operation* op)
 TensorizationInfo GetTensorizationInfo(Operation* op)
 {
     OpBuilder builder(op);
-    auto tensorizationInfoIdentifier = builder.getIdentifier(TensorizationInfoAttr::getKeyName());
+    auto tensorizationInfoIdentifier = builder.getStringAttr(TensorizationInfoAttr::getKeyName());
     auto tensorizeInfoAttr = op->getAttrOfType<TensorizationInfoAttr>(tensorizationInfoIdentifier);
     assert(tensorizeInfoAttr);
 
@@ -575,7 +574,7 @@ TensorizationInfo GetTensorizationInfo(Operation* op)
 void RemoveTensorizationInfo(Operation* op)
 {
     OpBuilder builder(op);
-    auto tensorizationInfoIdentifier = builder.getIdentifier(TensorizationInfoAttr::getKeyName());
+    auto tensorizationInfoIdentifier = builder.getStringAttr(TensorizationInfoAttr::getKeyName());
     op->removeAttr(tensorizationInfoIdentifier);
 }
 
@@ -584,7 +583,7 @@ void RemoveTensorizationInfo(Operation* op)
 bool HasParallelizationInfo(Operation* op)
 {
     OpBuilder builder(op);
-    auto parallelizationInfoIdentifier = builder.getIdentifier(ParallelizationInfoAttr::getKeyName());
+    auto parallelizationInfoIdentifier = builder.getStringAttr(ParallelizationInfoAttr::getKeyName());
     auto parallelizationInfoAttr = op->getAttrOfType<ParallelizationInfoAttr>(parallelizationInfoIdentifier);
 
     return parallelizationInfoAttr != nullptr;
@@ -593,7 +592,7 @@ bool HasParallelizationInfo(Operation* op)
 ParallelizationInfo GetParallelizationInfo(Operation* op)
 {
     OpBuilder builder(op);
-    auto parallelizationInfoIdentifier = builder.getIdentifier(ParallelizationInfoAttr::getKeyName());
+    auto parallelizationInfoIdentifier = builder.getStringAttr(ParallelizationInfoAttr::getKeyName());
     auto parallelizationInfoAttr = op->getAttrOfType<ParallelizationInfoAttr>(parallelizationInfoIdentifier);
     assert(parallelizationInfoAttr != nullptr);
 
@@ -608,7 +607,7 @@ bool IsTerminalOp(mlir::Operation* op)
 
 mlir::Value CreateProductOfValues(OpBuilder& builder, Location loc, Type elementType, ValueRange values)
 {
-    mlir::Value currentProduct = builder.create<mlir::ConstantOp>(loc, util::GetOneAttr(builder, elementType));
+    mlir::Value currentProduct = builder.create<arith::ConstantOp>(loc, util::GetOneAttr(builder, elementType));
     for (auto currentValue : values)
     {
         currentProduct = builder.create<v::BinOp>(loc, BinaryOpPredicate::MUL, currentProduct, currentValue);
@@ -668,13 +667,13 @@ bool HasOutOfBoundsAccess(LoadOrStoreOp op, mlir::Location loc)
         // feasible. If it is, there is at least one point out of bounds.
 
         // Check for overflow: d_i >= memref dim size.
-        FlatAffineConstraints upperConstraints(*accessRegion.getConstraints());
+        FlatAffineValueConstraints upperConstraints(*accessRegion.getConstraints());
         int64_t dimSize = memRefType.getDimSize(dim);
-        upperConstraints.addConstantLowerBound(dim, dimSize);
+        upperConstraints.addBound(FlatAffineConstraints::LB, dim, dimSize);
 
         // Check for a negative index: d_i <= -1.
-        FlatAffineConstraints lowerConstraints(*accessRegion.getConstraints());
-        lowerConstraints.addConstantUpperBound(dim, -1);
+        FlatAffineValueConstraints lowerConstraints(*accessRegion.getConstraints());
+        lowerConstraints.addBound(FlatAffineConstraints::UB, dim, -1);
 
         if (!upperConstraints.isEmpty() || !lowerConstraints.isEmpty())
         {
@@ -1108,9 +1107,9 @@ mlir::LogicalResult ComputeMemrefRegion(mlir::MemRefRegion& memRefRegion, Operat
             // Check if the symbol is a constant.
             if (auto* op = symbol.getDefiningOp())
             {
-                if (auto constOp = mlir::dyn_cast<mlir::ConstantIndexOp>(op))
+                if (auto constOp = mlir::dyn_cast<mlir::arith::ConstantIndexOp>(op))
                 {
-                    memRefRegion.cst.setIdToConstant(symbol, constOp.getValue());
+                    memRefRegion.cst.addBound(FlatAffineConstraints::EQ, symbol, constOp.value());
                 }
             }
         }
@@ -1152,7 +1151,7 @@ mlir::LogicalResult ComputeMemrefRegion(mlir::MemRefRegion& memRefRegion, Operat
     assert(loopDepth <= enclosingIVs.size() && "invalid loop depth");
     enclosingIVs.resize(loopDepth);
     llvm::SmallVector<mlir::Value, 4> ids;
-    memRefRegion.cst.getIdValues(memRefRegion.cst.getNumDimIds(), memRefRegion.cst.getNumDimAndSymbolIds(), &ids);
+    memRefRegion.cst.getValues(memRefRegion.cst.getNumDimIds(), memRefRegion.cst.getNumDimAndSymbolIds(), &ids);
     for (auto id : ids)
     {
         mlir::AffineForOp iv;
@@ -1182,10 +1181,10 @@ mlir::LogicalResult ComputeMemrefRegion(mlir::MemRefRegion& memRefRegion, Operat
         auto memRefType = memRefRegion.memref.getType().cast<MemRefType>();
         for (unsigned r = 0; r < rank; r++)
         {
-            memRefRegion.cst.addConstantLowerBound(/*pos=*/r, /*lb=*/0);
+            memRefRegion.cst.addBound(FlatAffineConstraints::LB, /*pos=*/r, /*lb=*/0);
             if (memRefType.isDynamicDim(r))
                 continue;
-            memRefRegion.cst.addConstantUpperBound(/*pos=*/r, memRefType.getDimSize(r) - 1);
+            memRefRegion.cst.addBound(FlatAffineConstraints::UB, /*pos=*/r, memRefType.getDimSize(r) - 1);
         }
     }
     memRefRegion.cst.removeTrivialRedundancy();
@@ -1440,7 +1439,7 @@ ArrayAccessInfo ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir
 
                     for (auto loadedValueUser : loadedValue.getUsers())
                     {
-                        if (isa<v::BinOp, mlir::AddFOp, mlir::AddIOp>(loadedValueUser))
+                        if (isa<v::BinOp, arith::AddFOp, arith::AddIOp>(loadedValueUser))
                         {
                             if (auto binOp = dyn_cast<v::BinOp>(loadedValueUser))
                             {
@@ -1555,14 +1554,14 @@ ActiveBlockInfo ConvertMemRefRegionToActiveBlockInfo(OpBuilder& builder, const m
         activeBlockRegion.getLowerAndUpperBound(dim, activeBlockInfo.lbMaps[dim], activeBlockInfo.ubMaps[dim]);
     }
 
-    const FlatAffineConstraints* cst = activeBlockRegion.getConstraints();
+    const FlatAffineValueConstraints* cst = activeBlockRegion.getConstraints();
     mlir::SmallVector<mlir::Value, 8> regionSymbols;
-    cst->getIdValues(rank, cst->getNumIds(), &regionSymbols);
+    cst->getValues(rank, cst->getNumIds(), &regionSymbols);
     std::vector<mlir::Value> regionSymbolsVec;
     regionSymbolsVec.insert(regionSymbolsVec.end(), regionSymbols.begin(), regionSymbols.end());
     activeBlockInfo.externalSymbols = regionSymbolsVec;
 
-    // Adapted from generateCopy() in llvm-project\mlir\lib\Transforms\Utils\LoopUtils.cpp
+    // Adapted from generateCopy() in llvm-project/mlir/lib/Dialect/Affine/Utils/LoopUtils.cpp
     // Index start offsets for active block relative to the original array
     std::vector<mlir::AffineExpr> activeBlockOffsetExprs;
     activeBlockOffsetExprs.reserve(rank);
@@ -1635,7 +1634,8 @@ MakeCacheOp UpdateActiveBlockCacheShape(PatternRewriter& rewriter,
     // insert the multiCache dimensions as the outer dimensions
     cacheShape.insert(cacheShape.begin(), multiCacheShape.begin(), multiCacheShape.end());
 
-    auto newCacheType = mlir::MemRefType::get(cacheShape, currentCacheMemRefType.getElementType(), {}, currentCacheMemRefType.getMemorySpace());
+    auto identityLayout = MemRefLayoutAttrInterface{};
+    auto newCacheType = mlir::MemRefType::get(cacheShape, currentCacheMemRefType.getElementType(), identityLayout, currentCacheMemRefType.getMemorySpace());
 
     mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
     rewriter.setInsertionPoint(baseMakeCacheOp);
@@ -1821,7 +1821,7 @@ mlir::Value GetOriginalIV(mlir::Value possiblyOffsetIV)
             }
             return nullptr;
         }
-        else if (auto constantOp = mlir::dyn_cast<mlir::ConstantOp>(definingOp))
+        else if (auto constantOp = mlir::dyn_cast<arith::ConstantOp>(definingOp))
         {
             return nullptr;
         }
@@ -1948,17 +1948,29 @@ v::MMALoadSyncOp CreateMMALoad(mlir::OpBuilder& builder,
                                mlir::Value src,
                                MMAShape mmaShapeType,
                                MMAOperandType operandType,
+                               bool rowMajor,
                                const std::vector<mlir::Value>& baseArrayPosition)
 {
     if (auto srcCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(src.getDefiningOp()))
     {
         mlir::AffineValueMap loadAccessInfo = srcCacheOp.insertCachePosition(builder.getInsertionBlock(), baseArrayPosition);
-        mlir::AffineMap tileAccessMap = srcCacheOp.activeBlockToCacheMap();
-        return builder.create<v::MMALoadSyncOp>(loc, resultType, src, mmaShapeType, operandType, loadAccessInfo.getAffineMap(), loadAccessInfo.getOperands(), tileAccessMap);
+        auto layoutMap = srcCacheOp.activeBlockToCacheMap();
+
+        // The layoutMap is going to be either:
+        // 1. (d0, d1, d2, ..., dn) -> (d0, d1, d2, ..., dn); i.e. identity map for row-major layout, or
+        // 2. (d0, d1, d2, ..., dn) -> (dn, ..., d2, d1, d0); i.e. reverse identity map for col-major layout.
+        rowMajor = layoutMap.isIdentity();
+        const auto numDims = layoutMap.getNumDims();
+        std::vector<unsigned> permutation(numDims);
+        std::generate(permutation.begin(), permutation.end(), [n = numDims - 1] () mutable { return n--; });
+        assert(rowMajor || /*col_major*/ layoutMap == AffineMap::getPermutationMap(permutation, builder.getContext()));
+
+        auto indices = util::MultiDimAffineApply(builder, loc, loadAccessInfo.getAffineMap(), loadAccessInfo.getOperands());
+        return builder.create<v::MMALoadSyncOp>(loc, resultType, src, mmaShapeType, operandType, rowMajor, indices);
     }
     else
     {
-        return builder.create<v::MMALoadSyncOp>(loc, resultType, src, mmaShapeType, operandType, baseArrayPosition);
+        return builder.create<v::MMALoadSyncOp>(loc, resultType, src, mmaShapeType, operandType, rowMajor, baseArrayPosition);
     }
 }
 
@@ -1972,8 +1984,8 @@ v::MMAStoreSyncOp CreateMMAStore(mlir::OpBuilder& builder,
     if (auto dstCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(dst.getDefiningOp()))
     {
         mlir::AffineValueMap storeAccessInfo = dstCacheOp.insertCachePosition(builder.getInsertionBlock(), baseArrayPosition);
-        mlir::AffineMap tileAccessMap = dstCacheOp.activeBlockToCacheMap();
-        return builder.create<v::MMAStoreSyncOp>(loc, value, dst, mmaShapeType, storeAccessInfo.getAffineMap(), storeAccessInfo.getOperands(), tileAccessMap);
+        auto indices = util::MultiDimAffineApply(builder, loc, storeAccessInfo.getAffineMap(), storeAccessInfo.getOperands());
+        return builder.create<v::MMAStoreSyncOp>(loc, value, dst, mmaShapeType, indices);
     }
     else
     {
@@ -2032,12 +2044,10 @@ std::vector<mlir::Value> GetBaseArrayPosition(mlir::OpBuilder& builder, mlir::Lo
             // Note : this doesn't always work after canonicalization has run and omitted some operands
             return cache.getBaseArrayPosition(loadStoreOp);
         }
-        else
-        {
-            auto accessMap = loadStoreOp.getAffineMapAttr().getValue();
-            std::vector<mlir::Value> affineIndices(adaptor.indices().begin(), adaptor.indices().end());
-            return util::MultiDimAffineApply(builder, loc, accessMap, affineIndices);
-        }
+
+        auto accessMap = loadStoreOp.getAffineMapAttr().getValue();
+        std::vector<mlir::Value> affineIndices(adaptor.indices().begin(), adaptor.indices().end());
+        return util::MultiDimAffineApply(builder, loc, accessMap, affineIndices);
     }
 }
 
@@ -2449,7 +2459,7 @@ LogicalResult ActiveElementCacheCopyOpRewrite::matchAndRewrite(ActiveElementCach
     auto copyOrder = copyScheduleOp.getOrder();
     for (const auto& loopIndex : copyOrder)
     {
-        copyScheduleOp.addLoopAttribute(loopIndex, rewriter.getIdentifier(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
+        copyScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
     }
 
     if (execTarget == v::ExecutionTarget::GPU && dstMemRefSpace != static_cast<unsigned int>(v::MemorySpace::Private))
@@ -2612,7 +2622,7 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
 
     bool arrayToCache = cacheCopyOp.toCache();
 
-    // Similar to generatePointWiseCopy() from llvm-project\mlir\lib\Transforms\Utils\LoopUtils.cpp however
+    // Similar to generatePointWiseCopy() from llvm-project/mlir/lib/Dialect/Affine/Utils/LoopUtils.cpp however
     // we have a custom mapping from the active block to the cache position
 
     auto lbMapsArrayAttr = adaptor.lbMaps();
@@ -2857,7 +2867,7 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
             auto copyOrder = copyScheduleOp.getOrder();
             for (const auto& loopIndex : copyOrder)
             {
-                copyScheduleOp.addLoopAttribute(loopIndex, rewriter.getIdentifier(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
+                copyScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
             }
         }
     }
@@ -2933,7 +2943,7 @@ LogicalResult ActiveBlockCacheReduceOpRewrite::matchAndRewrite(ActiveBlockCacheR
 
     assert(baseArrayElementType == baseCacheElementType && "Copy source and dest data types don't match");
 
-    // Similar to generatePointWiseCopy() from llvm-project\mlir\lib\Transforms\Utils\LoopUtils.cpp however
+    // Similar to generatePointWiseCopy() from llvm-project/mlir/lib/Dialect/Affine/Utils/LoopUtils.cpp however
     // we have a custom mapping from the active block to the cache position
 
     auto lbMapsArrayAttr = adaptor.lbMaps();
@@ -3026,7 +3036,7 @@ LogicalResult ActiveBlockCacheReduceOpRewrite::matchAndRewrite(ActiveBlockCacheR
         auto copyOrder = reduceScheduleOp.getOrder();
         for (const auto& loopIndex : copyOrder)
         {
-            reduceScheduleOp.addLoopAttribute(loopIndex, rewriter.getIdentifier(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
+            reduceScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
         }
     }
     else
@@ -3119,7 +3129,7 @@ LogicalResult ActiveElementCacheReduceOpRewrite::matchAndRewrite(ActiveElementCa
     auto reduceOrder = reduceScheduleOp.getOrder();
     for (const auto& loopIndex : reduceOrder)
     {
-        reduceScheduleOp.addLoopAttribute(loopIndex, rewriter.getIdentifier(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
+        reduceScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
     }
 
     rewriter.eraseOp(cacheReduceOp);
@@ -3248,7 +3258,7 @@ bool ThriftyCacheAllSingleElementStridesHelper(mlir::PatternRewriter& rewriter,
         for (unsigned arrayDim = 0; arrayDim < activeBlockCurrentIVs.size(); ++arrayDim)
         {
             mlir::Value lbMapApplied = currentBuilder.create<mlir::AffineApplyOp>(loc, lbMaps[arrayDim], lbOperands);
-            mlir::Value constantIV = currentBuilder.create<mlir::ConstantIndexOp>(loc, activeBlockCurrentIVs[arrayDim]);
+            mlir::Value constantIV = currentBuilder.create<arith::ConstantIndexOp>(loc, activeBlockCurrentIVs[arrayDim]);
             mlir::Value lbOffsetIV = currentBuilder.create<mlir::AffineApplyOp>(loc, sumMap, mlir::ValueRange{ lbMapApplied, constantIV });
             lowerBoundOffsetIVs.push_back(lbOffsetIV);
 
@@ -3266,7 +3276,7 @@ bool ThriftyCacheAllSingleElementStridesHelper(mlir::PatternRewriter& rewriter,
         assert(multiCacheIVs.size() == multiCacheCurrentIVs.size());
         for (const auto& [multiCacheCurrentIV, multiCacheIV] : llvm::zip(multiCacheCurrentIVs, multiCacheIVs))
         {
-            mlir::Value constantIV = currentBuilder.create<mlir::ConstantIndexOp>(loc, multiCacheCurrentIV);
+            mlir::Value constantIV = currentBuilder.create<arith::ConstantIndexOp>(loc, multiCacheCurrentIV);
             op->replaceUsesOfWith(multiCacheIV, constantIV);
 
             temporaryOps->push(constantIV.getDefiningOp());
@@ -3729,9 +3739,9 @@ mlir::Value FindParentAffineForOpIV(mlir::Operation* op, const Index& loopnestIn
     assert(false && "Given loopnest index does not correspond to a parent AffineForOp");
 }
 
-llvm::SmallVector<mlir::Value, 4> ResolveParentRelevantScheduleIndices(mlir::Operation* op, const mlir::ValueRange& baseRelevantScheduleIndices)
+std::vector<mlir::Value> ResolveParentRelevantScheduleIndices(mlir::Operation* op, const mlir::ValueRange& baseRelevantScheduleIndices)
 {
-    llvm::SmallVector<mlir::Value, 4> resolvedRelevantScheduleIndices;
+    std::vector<mlir::Value> resolvedRelevantScheduleIndices;
 
     for (auto scheduleIndexValue : baseRelevantScheduleIndices)
     {
@@ -4095,7 +4105,7 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 }
                 else
                 {
-                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    auto accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
                     rewriter.replaceOpWithNewOp<AffineLoadOp>(loadOp, toValueAccessContext.value, cacheMap, accessIndices);
                 }
             })
@@ -4111,7 +4121,7 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 }
                 else
                 {
-                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    auto accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
                     rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
                 }
             })
@@ -4127,7 +4137,7 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 }
                 else
                 {
-                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    auto accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
                     rewriter.replaceOpWithNewOp<AffineLoadOp>(loadOp, toValueAccessContext.value, cacheMap, accessIndices);
                 }
             })
@@ -4142,7 +4152,7 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 }
                 else
                 {
-                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    auto accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
                     rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
                 }
             })
@@ -4158,7 +4168,7 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 }
                 else
                 {
-                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    auto accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
                     rewriter.replaceOpWithNewOp<AffineLoadOp>(loadOp, toValueAccessContext.value, cacheMap, accessIndices);
                 }
             })
@@ -4173,7 +4183,7 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 }
                 else
                 {
-                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    auto accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
                     rewriter.replaceOpWithNewOp<AffineStoreOp>(storeOp, storeAdaptor.value(), toValueAccessContext.value, cacheMap, accessIndices);
                 }
             })
@@ -4185,15 +4195,16 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 if (isActiveBlockCache)
                 {
                     auto baseArrayPosition = GetBaseArrayPosition(rewriter, loc, loadOp);
-                    auto newLoadOp = CreateMMALoad(rewriter, loc, loadOp.result().getType(), toValue, mmaShapeType, operandType, baseArrayPosition);
+                    auto newLoadOp = CreateMMALoad(rewriter, loc, loadOp.result().getType(), toValue, mmaShapeType, operandType, loadOp.rowMajor(), baseArrayPosition);
                     loadOp.replaceAllUsesWith(newLoadOp.getResult());
                     TransferOrSetAccessAttrs(loadOp, newLoadOp);
                     rewriter.eraseOp(loadOp);
                 }
                 else
                 {
-                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
-                    rewriter.replaceOpWithNewOp<v::MMALoadSyncOp>(loadOp, loadOp.result().getType(), toValueAccessContext.value, mmaShapeType, operandType, cacheMap, accessIndices);
+                    const auto accessIndices = ResolveParentRelevantScheduleIndices(loadOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    auto indices = util::MultiDimAffineApply(rewriter, loc, cacheMap, accessIndices);
+                    rewriter.replaceOpWithNewOp<v::MMALoadSyncOp>(loadOp, loadOp.result().getType(), toValueAccessContext.value, mmaShapeType, operandType, loadOp.rowMajor(), indices);
                 }
             })
             .Case([&](v::MMAStoreSyncOp storeOp) {
@@ -4209,8 +4220,9 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 }
                 else
                 {
-                    llvm::SmallVector<mlir::Value, 4> accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
-                    rewriter.replaceOpWithNewOp<v::MMAStoreSyncOp>(storeOp, storeAdaptor.src(), toValueAccessContext.value, mmaShapeType, cacheMap, accessIndices);
+                    const auto accessIndices = ResolveParentRelevantScheduleIndices(storeOp, toValueAccessContext.fullRelevantScheduleIndices);
+                    auto indices = util::MultiDimAffineApply(rewriter, loc, cacheMap, accessIndices);
+                    rewriter.replaceOpWithNewOp<v::MMAStoreSyncOp>(storeOp, storeAdaptor.src(), toValueAccessContext.value, mmaShapeType, indices);
                 }
             })
             .Case([&](ActiveElementCacheCopyOp cacheCopyOp) {
@@ -4655,7 +4667,7 @@ MakeCacheOp CreateDoubleBufferTempArray(mlir::OpBuilder& builder,
     size_t arrayRank = cacheAccessMap.getNumDims() - cacheOffsetIndices.size() - multiCacheAccessIndices.size();
 
     std::vector<int64_t> tempArrayActiveBlockShape = activeBlockCacheShape;
-    std::vector<mlir::AffineMap> tempMemrefMaps = cacheMemRefType.getAffineMaps();
+    auto tempMemrefMap = cacheMemRefType.getLayout().getAffineMap();
 
     std::optional<v::ExecutionTarget> execTargetOpt = util::ResolveExecutionTarget(cacheRegionOp);
     auto execTarget = *execTargetOpt;
@@ -4702,12 +4714,13 @@ MakeCacheOp CreateDoubleBufferTempArray(mlir::OpBuilder& builder,
 
             // Map { multiCacheIndices..., ActionPerThread idx, ThreadVectorization idx, arrayRank global indices... } to { multiCacheIndices..., ActionPerThread idx, ThreadVectorization idx }
             tempArrayAccessMap = util::GetMajorIdentityMap(totalDimCount, multiCacheDimAndPrivateThreadDimCount, builder.getContext());
+            tempMemrefMap = mlir::AffineMap::getMultiDimIdentityMap(multiCacheShape.size() + 2, builder.getContext()); // + 2 for the 2 dimensions in the hardcoded inner portion of the memref
         }
     }
 
     auto fullTempArrayShape = tempArrayActiveBlockShape;
     fullTempArrayShape.insert(fullTempArrayShape.begin(), multiCacheShape.begin(), multiCacheShape.end());
-    mlir::MemRefType tempArrayType = mlir::MemRefType::get(fullTempArrayShape, cacheMemRefType.getElementType(), tempMemrefMaps, tempArrayMemSpaceAttr);
+    mlir::MemRefType tempArrayType = mlir::MemRefType::get(fullTempArrayShape, cacheMemRefType.getElementType(), tempMemrefMap, tempArrayMemSpaceAttr);
 
     mlir::OpBuilder::InsertionGuard insertGuard(builder);
     builder.setInsertionPointToStart(&parentLambda.body().front());
@@ -5599,7 +5612,7 @@ LogicalResult VectorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     //  - the loop must have a constant lower bound
     //  - the loop must have a constant upper bound
     // TODO : eventually we'll want to relax these requirements
-    Optional<uint64_t> mayBeConstantTripCount = mlir::getConstantTripCount(affineForOp);
+    auto mayBeConstantTripCount = mlir::getConstantTripCount(affineForOp);
     assert(mayBeConstantTripCount.hasValue() && "Vectorized loops must have a constant trip count");
     uint64_t constantTripCount = mayBeConstantTripCount.getValue();
     if (constantTripCount == 0)
@@ -5624,7 +5637,7 @@ LogicalResult VectorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
 
     // Unroll this AffineForOp and replace the appropriate CacheLoads and CacheStores with VectorizedCacheLoad and VectorizedCacheStore
 
-    // this is a partial port of the meaty bits of mlir::loopUnrollByFactor() from mlir/lib/Transforms/Utils/LoopUtils.cpp
+    // this is a partial port of the meaty bits of mlir::loopUnrollByFactor() from mlir/lib/Dialect/Affine/Utils/LoopUtils.cpp
     // but with access to the unroll indices in order to make VectorizedCacheLoad and VectorizedCacheStore
     // and with some more simplifying assumptions and op replacements
 
@@ -5656,7 +5669,7 @@ LogicalResult VectorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         auto inductionVarMap = AffineMap::get(1, 1, rewriter.getAffineDimExpr(0) + step * rewriter.getAffineSymbolExpr(0));
         for (int64_t i = 0; i < unrollMax; ++i)
         {
-            auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, i);
+            auto offset = rewriter.create<arith::ConstantIndexOp>(loc, i);
             auto offsetInductionVar = rewriter.create<AffineApplyOp>(loc, inductionVarMap, ValueRange{ affineForOpIV, offset });
 
             BlockAndValueMapping& operandMap = laneMappings[i];
@@ -5794,7 +5807,7 @@ LogicalResult InPlaceUnrollAffineForOpConversion::matchAndRewrite(AffineForOp af
     //  - the loop must have a constant lower bound
     //  - the loop must have a constant upper bound
     // TODO : eventually we'll want to relax these requirements
-    Optional<uint64_t> mayBeConstantTripCount = mlir::getConstantTripCount(affineForOp);
+    auto mayBeConstantTripCount = mlir::getConstantTripCount(affineForOp);
     assert(mayBeConstantTripCount.hasValue() && "Vectorized loops must have a constant trip count");
     uint64_t constantTripCount = mayBeConstantTripCount.getValue();
     if (constantTripCount == 0)
@@ -5845,7 +5858,7 @@ LogicalResult InPlaceUnrollAffineForOpConversion::matchAndRewrite(AffineForOp af
         affineForOp.setConstantUpperBound(cleanupLowerBound);
 
         // If the non-cleanup loop now has 0 iterations, erase it, otherwise enqueue it to be unrolled
-        Optional<uint64_t> adjustedMayBeConstantTripCount = mlir::getConstantTripCount(affineForOp);
+        auto adjustedMayBeConstantTripCount = mlir::getConstantTripCount(affineForOp);
         assert(adjustedMayBeConstantTripCount.hasValue() && "In-place unrolled loops must have a constant trip count");
         uint64_t adjustedConstantTripCount = adjustedMayBeConstantTripCount.getValue();
         if (adjustedConstantTripCount == 0)
@@ -5897,7 +5910,7 @@ LogicalResult InPlaceUnrollAffineForOpConversion::matchAndRewrite(AffineForOp af
             auto inductionVarMap = AffineMap::get(1, 1, rewriter.getAffineDimExpr(0) + step * rewriter.getAffineSymbolExpr(0));
             for (int64_t i = 0; i < unrollMax; ++i)
             {
-                auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, i);
+                auto offset = rewriter.create<arith::ConstantIndexOp>(loc, i);
                 auto offsetInductionVar = rewriter.create<AffineApplyOp>(loc, inductionVarMap, ValueRange{ forOpToUnrollIV, offset });
 
                 BlockAndValueMapping& operandMap = laneMappings[i];
@@ -6066,76 +6079,14 @@ auto GetCombinedAccessMap(PatternRewriter& rewriter, const int externalIndices, 
     return util::ConcatenateAndShiftAffineDimsAndMaps(rewriter, mfmaExternalDimsMap, offsetMap);
 }
 
-auto LoadMatrixOpROCM(PatternRewriter& rewriter, Location& loc, AffineLoadOp loadOp, const int64_t warpSize, const v::MMAOp& mmaOp, MMAOperandType kind, const int numPassesInGroup, int64_t offset)
-{
-    auto ctx = rewriter.getContext();
-    mlir::AffineMap offsetMap;
-    llvm::SmallVector<mlir::Value, 4> loadOpOperands(loadOp.getMapOperands());
-    auto elementType = loadOp.getMemRefType().getElementType();
-    mlir::MemRefType vecTy;
-    auto d0 = rewriter.getAffineDimExpr(0);
-    auto d1 = rewriter.getAffineDimExpr(1);
-
-    const auto numInElementsPerGroup = numPassesInGroup * mmaOp.getInElementsPerThread(warpSize);
-
-    // Subtract the offset within the warp for A and B loads as they operate from the upper left corner of the warp's region
-    const auto mmaTileRows = mmaOp.getM();
-    const auto mmaTileCols = mmaOp.getN();
-    auto rowOffsetWithinWarp = d0 % mmaTileRows;
-    auto colOffsetWithinWarp = d1 % mmaTileCols;
-
-    switch (kind)
-    {
-    case MMAOperandType::A:
-        vecTy = mlir::MemRefType::get({ numInElementsPerGroup }, elementType);
-        offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp, d1 + offset }, ctx);
-        break;
-
-    case MMAOperandType::B:
-        vecTy = mlir::MemRefType::get({ numInElementsPerGroup }, elementType);
-        offsetMap = AffineMap::get(2, 0, { d0 + offset, d1 - colOffsetWithinWarp }, ctx);
-        break;
-
-    case MMAOperandType::Acc:
-        // For FP16 or BF16 output, we need to load C in FP32 mode before passing to MFMA
-        if (elementType.isF16() || elementType.isBF16())
-            elementType = rewriter.getF32Type();
-        // For I8 output, we need to load C in I32 mode before passing to MFMA
-        else if (elementType.isInteger(8) || elementType.isInteger(16))
-            elementType = rewriter.getI32Type();
-
-        vecTy = mlir::MemRefType::get({ mmaOp.getOutElementsPerThread(warpSize) / mmaOp.getNumBlocks() }, elementType);
-        offsetMap = AffineMap::get(2, 0, { d0 + offset, d1 }, ctx);
-        break;
-
-    default:
-        llvm::report_fatal_error("Unknown kind of matrix");
-    }
-
-    auto fullMatrixAccessMap = GetCombinedAccessMap(rewriter, loadOp.getMemRefType().getRank() - 2, offsetMap);
-
-    // llvm::dbgs() << "COp with offset " << offsetMap << " with load "
-    //              << loadOp.getAffineMap() << " and composed = " << offsetMap.compose(loadOp.getAffineMap()) << "\n";
-
-    std::vector<mlir::Value> ops{ rewriter.create<MMALoadSyncOp>(loc,
-                                                                 vecTy,
-                                                                 loadOp.memref(),
-                                                                 mmaOp.getShapeType(),
-                                                                 kind,
-                                                                 fullMatrixAccessMap.compose(loadOp.getAffineMap()),
-                                                                 loadOpOperands) };
-    return ops;
-}
-
-auto LoadMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineLoadOp loadOp, const v::MMAOp& mmaOp, MMAOperandType kind, const int numPassesInGroup, int64_t offset, const int loadAGPUIndexPos, const int loadBGPUIndexPos)
+auto LoadMatrixOp(ExecutionRuntime runtime, bool useRocWMMA, PatternRewriter& rewriter, Location& loc, AffineLoadOp loadOp, const int64_t warpSize, const v::MMAOp& mmaOp, MMAOperandType kind, const int numPassesInGroup, int64_t offset)
 {
     std::vector<mlir::Value> ops;
     auto ctx = rewriter.getContext();
-    AffineMap offsetMap;
-    const auto passIncrements = mmaOp.getK();
-    auto loadOperands = loadOp.getMapOperands();
+    mlir::AffineMap offsetMap;
     auto elementType = loadOp.getMemRefType().getElementType();
-    gpu::MMAMatrixType destMemRefType;
+    const std::vector<mlir::Value> loadOpOperands(loadOp.getMapOperands().begin(), loadOp.getMapOperands().end());
+    mlir::MemRefType vecTy = mlir::MemRefType::get(mmaOp.getOperandShape(kind), elementType);
     auto d0 = rewriter.getAffineDimExpr(0);
     auto d1 = rewriter.getAffineDimExpr(1);
 
@@ -6144,32 +6095,30 @@ auto LoadMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineLoadOp loa
     const auto mmaTileCols = mmaOp.getN();
     auto rowOffsetWithinWarp = d0 % mmaTileRows;
     auto colOffsetWithinWarp = d1 % mmaTileCols;
-    int64_t cumulativePassIncrement = 0;
-    for (int iPass = 0; iPass < numPassesInGroup; ++iPass, cumulativePassIncrement = cumulativePassIncrement + passIncrements)
+
+    int64_t off;
+    SmallVector<int64_t, 2> strides;
+    (void)mlir::getStridesAndOffset(loadOp.getMemRefType(), strides, off);
+    const bool rowMajor = strides[1] == 1;
+
+    for (int iPass = 0, cumulativePassIncrement = 0; iPass < numPassesInGroup; ++iPass, cumulativePassIncrement += mmaOp.getK())
     {
-        std::vector<mlir::Value> loadOpOperands(loadOperands.begin(), loadOperands.end());
         auto passIncrement = offset + cumulativePassIncrement;
         switch (kind)
         {
         case MMAOperandType::A:
-            destMemRefType = gpu::MMAMatrixType::get({ mmaOp.getM(), mmaOp.getK() }, elementType, "AOp");
-            if (loadAGPUIndexPos == 0)
-                offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp, d1 + passIncrement }, ctx);
-            else
-                offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp + passIncrement, d1 }, ctx);
+            offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp, d1 + passIncrement }, ctx);
             break;
 
         case MMAOperandType::B:
-            destMemRefType = gpu::MMAMatrixType::get({ mmaOp.getK(), mmaOp.getN() }, elementType, "BOp");
-            if (loadBGPUIndexPos == 1)
-                offsetMap = AffineMap::get(2, 0, { d0 + passIncrement, d1 - colOffsetWithinWarp }, ctx);
-            else
-                offsetMap = AffineMap::get(2, 0, { d0, d1 - colOffsetWithinWarp + passIncrement }, ctx);
+            offsetMap = AffineMap::get(2, 0, { d0 + passIncrement, d1 - colOffsetWithinWarp }, ctx);
             break;
 
         case MMAOperandType::Acc:
-            destMemRefType = gpu::MMAMatrixType::get({ mmaOp.getM(), mmaOp.getN() }, elementType, "COp");
-            offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp + offset, d1 - colOffsetWithinWarp }, ctx);
+            if (runtime == ExecutionRuntime::ROCM && !useRocWMMA)
+                offsetMap = AffineMap::get(2, 0, { d0 + offset, d1 }, ctx);
+            else
+                offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp + offset, d1 - colOffsetWithinWarp }, ctx);
             break;
 
         default:
@@ -6178,121 +6127,49 @@ auto LoadMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineLoadOp loa
 
         auto fullMatrixAccessMap = GetCombinedAccessMap(rewriter, loadOp.getMemRefType().getRank() - 2, offsetMap);
 
-        // llvm::dbgs() << "COp with offset " << fullMatrixAccessMap << " with load "
-        //              << loadOp.getAffineMap() << " and composed = " << fullMatrixAccessMap.compose(loadOp.getAffineMap()) << "\n";
-
-        int64_t offset;
-        SmallVector<int64_t, 2> strides;
-        (void)mlir::getStridesAndOffset(loadOp.getMemRefType(), strides, offset);
-        mlir::Value castMemref;
-        if (strides[1] == 1) // row-major
-        {
-            castMemref = rewriter.create<memref::CastOp>(loc, canonicalizeStridedLayout(loadOp.getMemRefType()), loadOp.memref());
-        }
-        else // col-major
-        {
-            assert(strides[0] == 1);
-
-            // SubgroupMmaLoadMatrixOp only takes as input memref which has identity maps, that is why we need to transpose (metadata only) before passing it
-            auto transposeMemref = rewriter.create<memref::TransposeOp>(loc, loadOp.memref(), mlir::AffineMapAttr::get(AffineMap::get(2, 0, { d1, d0 }, ctx)));
-            castMemref = rewriter.create<memref::CastOp>(loc, canonicalizeStridedLayout(transposeMemref.getType().cast<MemRefType>()), transposeMemref);
-        }
-
-        auto mappedOperands = util::MultiDimAffineApply(rewriter, loc, fullMatrixAccessMap.compose(loadOp.getAffineMap()), loadOpOperands);
-        ops.push_back(rewriter.create<gpu::SubgroupMmaLoadMatrixOp>(loc,
-                                                                    destMemRefType,
-                                                                    castMemref,
-                                                                    mappedOperands,
-                                                                    rewriter.getIndexAttr(strides[0])));
+        // llvm::dbgs() << "COp with offset " << offsetMap << " with load "
+        //              << loadOp.getAffineMap() << " and composed = " << offsetMap.compose(loadOp.getAffineMap()) << "\n";
+        auto fullLoadMap = fullMatrixAccessMap.compose(loadOp.getAffineMap());
+        auto mappedOperands = util::MultiDimAffineApply(rewriter, loc, fullLoadMap, loadOpOperands);
+        ops.push_back(rewriter.create<MMALoadSyncOp>(loc,
+                                                     vecTy,
+                                                     loadOp.memref(),
+                                                     mmaOp.getShapeType(),
+                                                     kind,
+                                                     rowMajor,
+                                                     mappedOperands));
     }
     return ops;
 }
 
-void StoreMatrixOpROCM(PatternRewriter& rewriter, Location& loc, AffineStoreOp storeOp, const v::MMAOp& mmaOp, Value value, const int blockRowOffset)
-{
-    auto ctx = rewriter.getContext();
-    auto d0 = rewriter.getAffineDimExpr(0);
-    auto d1 = rewriter.getAffineDimExpr(1);
-    auto offsetMap = AffineMap::get(2, 0, { d0 + blockRowOffset, d1 }, ctx);
-    auto fullMatrixAccessMap = GetCombinedAccessMap(rewriter, storeOp.getMemRefType().getRank() - 2, offsetMap);
-    SmallVector<mlir::Value, 4> storeOpOperands(storeOp.getMapOperands());
-    rewriter.create<MMAStoreSyncOp>(loc,
-                                    value,
-                                    storeOp.memref(),
-                                    mmaOp.getShapeType(),
-                                    fullMatrixAccessMap.compose(storeOp.getAffineMap()),
-                                    storeOpOperands);
-}
-
-void StoreMatrixOpCUDA(PatternRewriter& rewriter, Location& loc, AffineStoreOp storeOp, const v::MMAOp& mmaOp, Value value)
+void StoreMatrixOp(ExecutionRuntime runtime, bool useRocWMMA, PatternRewriter& rewriter, Location& loc, AffineStoreOp storeOp, const v::MMAOp& mmaOp, Value value, const int blockRowOffset)
 {
     auto ctx = rewriter.getContext();
     auto d0 = rewriter.getAffineDimExpr(0);
     auto d1 = rewriter.getAffineDimExpr(1);
     const auto mmaTileRows = mmaOp.getM();
     const auto mmaTileCols = mmaOp.getN();
-    auto offsetMap = AffineMap::get(2, 0, { d0 - (d0 % mmaTileRows), d1 - (d1 % mmaTileCols) }, ctx);
+    auto rowOffsetWithinWarp = d0 % mmaTileRows;
+    auto colOffsetWithinWarp = d1 % mmaTileCols;
+    mlir::AffineMap offsetMap;
+    if (runtime == ExecutionRuntime::ROCM && !useRocWMMA)
+        offsetMap = AffineMap::get(2, 0, { d0 + blockRowOffset, d1 }, ctx);
+    else
+        offsetMap = AffineMap::get(2, 0, { d0 - rowOffsetWithinWarp + blockRowOffset, d1 - colOffsetWithinWarp }, ctx);
     auto fullMatrixAccessMap = GetCombinedAccessMap(rewriter, storeOp.getMemRefType().getRank() - 2, offsetMap);
-
-    auto storeOperands = storeOp.getMapOperands();
-    std::vector<mlir::Value> storeOpOperands(storeOperands.begin(), storeOperands.end());
-
-    int64_t offset;
-    SmallVector<int64_t, 2> strides;
-    (void)mlir::getStridesAndOffset(storeOp.getMemRefType(), strides, offset);
-    mlir::Value castMemref;
-    if (strides[1] == 1) // row-major
-    {
-        castMemref = rewriter.create<memref::CastOp>(loc, canonicalizeStridedLayout(storeOp.getMemRefType()), storeOp.memref());
-    }
-    else // col-major
-    {
-        assert(strides[0] == 1);
-
-        // SubgroupMmaStoreMatrixOp only takes as input memref which has identity maps, that is why we need to transpose (metadata only) before passing it
-        auto transposeMemref = rewriter.create<memref::TransposeOp>(loc, storeOp.memref(), mlir::AffineMapAttr::get(AffineMap::getPermutationMap({ 1, 0 }, ctx)));
-        castMemref = rewriter.create<memref::CastOp>(loc, canonicalizeStridedLayout(transposeMemref.getType().cast<MemRefType>()), transposeMemref);
-    }
-
-    auto mappedOperands = util::MultiDimAffineApply(rewriter, loc, fullMatrixAccessMap.compose(storeOp.getAffineMap()), storeOpOperands);
-    // llvm::dbgs() << "COpOut with offset " << fullMatrixAccessMap << " with load "
-    //              << storeOp.getAffineMap() << " and composed = " << fullMatrixAccessMap.compose(storeOp.getAffineMap()) << "\n";
-    rewriter.create<gpu::SubgroupMmaStoreMatrixOp>(loc,
-                                                   value,
-                                                   castMemref,
-                                                   mappedOperands,
-                                                   rewriter.getIndexAttr(strides[0]));
+    const std::vector<mlir::Value> storeOpOperands(storeOp.getMapOperands().begin(), storeOp.getMapOperands().end());
+    auto fullLoadMap = fullMatrixAccessMap.compose(storeOp.getAffineMap());
+    auto mappedOperands = util::MultiDimAffineApply(rewriter, loc, fullLoadMap, storeOpOperands);
+    rewriter.create<MMAStoreSyncOp>(loc,
+                                    value,
+                                    storeOp.memref(),
+                                    mmaOp.getShapeType(),
+                                    mappedOperands);
 }
 
-std::vector<mlir::Value> LoadMatrixOp(ExecutionRuntime runtime, bool useRocWMMA, PatternRewriter& rewriter, Location& loc, AffineLoadOp loadOp, const int64_t warpSize, const v::MMAOp& mmaOp, MMAOperandType kind, const int numPassesInGroup, int64_t offset, const int loadAGPUIndexPos, const int loadBGPUIndexPos)
+mlir::Value ComputeMatrixOp(PatternRewriter& rewriter, Location& loc, mlir::Value aMmaMatrix, mlir::Value bMmaMatrix, mlir::Value cMmaMatrix, const v::MMAOp& mmaOp, const int cbsz, const int abid)
 {
-    if (runtime == ExecutionRuntime::ROCM && !useRocWMMA)
-    {
-        return LoadMatrixOpROCM(rewriter, loc, loadOp, warpSize, mmaOp, kind, numPassesInGroup, offset);
-    }
-
-    return LoadMatrixOpCUDA(rewriter, loc, loadOp, mmaOp, kind, numPassesInGroup, offset, loadAGPUIndexPos, loadBGPUIndexPos);
-}
-
-void StoreMatrixOp(ExecutionRuntime runtime, bool useRocWMMA, PatternRewriter& rewriter, Location& loc, AffineStoreOp storeOp, const v::MMAOp& mmaOp, Value value, int blockRowOffset)
-{
-    if (runtime == ExecutionRuntime::ROCM && !useRocWMMA)
-    {
-        return StoreMatrixOpROCM(rewriter, loc, storeOp, mmaOp, value, blockRowOffset);
-    }
-
-    assert(blockRowOffset == 0);
-    return StoreMatrixOpCUDA(rewriter, loc, storeOp, mmaOp, value);
-}
-
-mlir::Value ComputeMatrixOp(ExecutionRuntime runtime, bool useRocWMMA, PatternRewriter& rewriter, Location& loc, mlir::Value aMmaMatrix, mlir::Value bMmaMatrix, mlir::Value cMmaMatrix, const v::MMAOp& mmaOp, const int cbsz, const int abid)
-{
-    if (runtime == ExecutionRuntime::ROCM && !useRocWMMA)
-    {
-        return rewriter.create<MMAComputeSyncOp>(loc, cMmaMatrix.getType(), aMmaMatrix, bMmaMatrix, cMmaMatrix, uint32_t(mmaOp.getShapeType()), cbsz, abid, 0);
-    }
-
-    return rewriter.create<gpu::SubgroupMmaComputeOp>(loc, cMmaMatrix.getType(), aMmaMatrix, bMmaMatrix, cMmaMatrix);
+    return rewriter.create<MMAComputeSyncOp>(loc, cMmaMatrix.getType(), aMmaMatrix, bMmaMatrix, cMmaMatrix, uint32_t(mmaOp.getShapeType()), cbsz, abid, 0);
 }
 
 LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affineForOp, PatternRewriter& rewriter) const
@@ -6447,21 +6324,21 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     (void)innerLoopBodyIter++;
     mlir::Operation* castOp = nullptr;
     // TODO: Figure out if there's a better way to list the possible OPs that can be used to change type but still be valid IR (maybe an Accera specific cast OP that takes an attr instead?)
-    if (innerLoopBodyIter != innerLoopBodyEnd && isa<
+    while (innerLoopBodyIter != innerLoopBodyEnd && isa<
                                                      // Ops that have CastOpInterface
-                                                     mlir::FPExtOp,
-                                                     mlir::FPToSIOp,
-                                                     mlir::FPToUIOp,
-                                                     mlir::FPTruncOp,
-                                                     mlir::IndexCastOp,
-                                                     mlir::SIToFPOp,
-                                                     mlir::UIToFPOp,
+                                                     mlir::arith::ExtFOp,
+                                                     mlir::arith::FPToSIOp,
+                                                     mlir::arith::FPToUIOp,
+                                                     mlir::arith::TruncFOp,
+                                                     mlir::arith::IndexCastOp,
+                                                     mlir::arith::SIToFPOp,
+                                                     mlir::arith::UIToFPOp,
                                                      mlir::UnrealizedConversionCastOp,
 
                                                      // Ops that don't have CastOpInterface
-                                                     mlir::SignExtendIOp,
-                                                     mlir::TruncateIOp,
-                                                     mlir::ZeroExtendIOp>(
+                                                     mlir::arith::ExtSIOp,
+                                                     mlir::arith::TruncIOp,
+                                                     mlir::arith::ExtUIOp>(
                                                      innerLoopBodyIter))
     {
         castOp = &(*innerLoopBodyIter++);
@@ -6757,14 +6634,14 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         // Process blocks one by one sequentially
         if (numPassGroups == 1)
         {
-            auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, 0, loadAGPUIndexPos, loadBGPUIndexPos);
-            auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, 0, loadAGPUIndexPos, loadBGPUIndexPos);
+            auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, 0);
+            auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, 0);
             for (int iBlock = 0, blockRowOffset = 0; iBlock < numBlocks; ++iBlock, blockRowOffset += blockRowOffsetIncrements)
             {
-                mlir::Value cMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, 1, blockRowOffset, loadAGPUIndexPos, loadBGPUIndexPos)[0];
+                mlir::Value cMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, /*numPassesInGroup*/ 1, blockRowOffset)[0];
                 for (auto&& [matA, matB] : llvm::zip(aMmaMatrix, bMmaMatrix))
                 {
-                    cMmaMatrix = ComputeMatrixOp(execRuntime, useRocWMMA, rewriter, loc, matA, matB, cMmaMatrix, mmaOp, cbsz, iBlock);
+                    cMmaMatrix = ComputeMatrixOp(rewriter, loc, matA, matB, cMmaMatrix, mmaOp, cbsz, iBlock);
                 }
                 StoreMatrixOp(execRuntime, useRocWMMA, rewriter, loc, storeCOp, mmaOp, cMmaMatrix, blockRowOffset);
             }
@@ -6773,14 +6650,14 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         {
             for (int iBlock = 0, blockRowOffset = 0; iBlock < numBlocks; ++iBlock, blockRowOffset += blockRowOffsetIncrements)
             {
-                mlir::Value cMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, 1, blockRowOffset, loadAGPUIndexPos, loadBGPUIndexPos)[0];
+                mlir::Value cMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, /*numPassesInGroup*/ 1, blockRowOffset)[0];
                 for (int passGroup = 0, passGroupOffset = 0; passGroup < numPassGroups; ++passGroup, passGroupOffset += passGroupIncrement)
                 {
-                    auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, passGroupOffset, loadAGPUIndexPos, loadBGPUIndexPos);
-                    auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, passGroupOffset, loadAGPUIndexPos, loadBGPUIndexPos);
+                    auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, passGroupOffset);
+                    auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, passGroupOffset);
                     for (auto&& [matA, matB] : llvm::zip(aMmaMatrix, bMmaMatrix))
                     {
-                        cMmaMatrix = ComputeMatrixOp(execRuntime, useRocWMMA, rewriter, loc, matA, matB, cMmaMatrix, mmaOp, cbsz, iBlock);
+                        cMmaMatrix = ComputeMatrixOp(rewriter, loc, matA, matB, cMmaMatrix, mmaOp, cbsz, iBlock);
                     }
                 }
                 StoreMatrixOp(execRuntime, useRocWMMA, rewriter, loc, storeCOp, mmaOp, cMmaMatrix, blockRowOffset);
@@ -6793,19 +6670,19 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         std::vector<mlir::Value> cMmaMatrix;
         for (int iBlock = 0, blockRowOffset = 0; iBlock < numBlocks; ++iBlock, blockRowOffset += blockRowOffsetIncrements)
         {
-            cMmaMatrix.push_back(LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, 1, blockRowOffset, loadAGPUIndexPos, loadBGPUIndexPos)[0]);
+            cMmaMatrix.push_back(LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadCOp, warpSize, mmaOp, MMAOperandType::Acc, /*numPassesInGroup*/ 1, blockRowOffset)[0]);
         }
 
         // Load A, B and perform matmul
         for (int passGroup = 0, passGroupOffset = 0; passGroup < numPassGroups; ++passGroup, passGroupOffset += passGroupIncrement)
         {
-            auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, passGroupOffset, loadAGPUIndexPos, loadBGPUIndexPos);
-            auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, passGroupOffset, loadAGPUIndexPos, loadBGPUIndexPos);
+            auto aMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadAOp, warpSize, mmaOp, MMAOperandType::A, numPassesInGroup, passGroupOffset);
+            auto bMmaMatrix = LoadMatrixOp(execRuntime, useRocWMMA, rewriter, loc, loadBOp, warpSize, mmaOp, MMAOperandType::B, numPassesInGroup, passGroupOffset);
             for (int iBlock = 0; iBlock < numBlocks; ++iBlock)
             {
                 for (auto&& [matA, matB] : llvm::zip(aMmaMatrix, bMmaMatrix))
                 {
-                    cMmaMatrix[iBlock] = ComputeMatrixOp(execRuntime, useRocWMMA, rewriter, loc, matA, matB, cMmaMatrix[iBlock], mmaOp, cbsz, iBlock);
+                    cMmaMatrix[iBlock] = ComputeMatrixOp(rewriter, loc, matA, matB, cMmaMatrix[iBlock], mmaOp, cbsz, iBlock);
                 }
             }
         }
@@ -6901,7 +6778,7 @@ LogicalResult CollapseAffineParallelOpsRewrite::matchAndRewrite(AffineParallelOp
         return WalkResult::interrupt(); // TODO: instead of walk, is there a more efficient way?
     });
 
-    // cf. isPerfectlyNested in mlir/lib/Transforms/Utils/LoopUtils.cpp
+    // cf. isPerfectlyNested in mlir/lib/Dialect/Affine/Utils/LoopUtils.cpp
     // this op's body should be just the child op and the terminator.
     auto hasTwoElements = [](Block* block) {
         auto secondOpIt = std::next(block->begin());
@@ -6976,8 +6853,8 @@ LogicalResult CollapseAffineParallelOpsRewrite::matchAndRewrite(AffineParallelOp
 
     // Create a new merged AffineParallelOp (in-place update is not supported), using childOp's location because
     // we will be taking over the childOp's body (the currentOp's body includes the childOp and therefore is not deep enough)
-    auto mergedParallelOp = rewriter.create<mlir::AffineParallelOp>(
-        childOp.getLoc(), /*resultTypes=*/llvm::None, /*reductionKinds=*/llvm::None, llvm::makeArrayRef(mergedLbMaps), ValueRange(mergedLbOperands), llvm::makeArrayRef(mergedUbMaps), ValueRange(mergedUbOperands), llvm::makeArrayRef(mergedSteps));
+    auto loc = childOp.getLoc();
+    auto mergedParallelOp = rewriter.create<mlir::AffineParallelOp>(loc, /*resultTypes=*/llvm::None, /*reductionKinds=*/llvm::None, llvm::makeArrayRef(mergedLbMaps), ValueRange(mergedLbOperands), llvm::makeArrayRef(mergedUbMaps), ValueRange(mergedUbOperands), llvm::makeArrayRef(mergedSteps));
 
     // Insert new parent arguments (before the child block arguments) and replace their uses
     auto bodyBlock = &affineParallelOp.region().front();
@@ -6985,7 +6862,7 @@ LogicalResult CollapseAffineParallelOpsRewrite::matchAndRewrite(AffineParallelOp
     for (auto it = bodyBlock->args_rbegin(); it != bodyBlock->args_rend(); ++it)
     {
         // insert from back to front in the child
-        auto newParentInductionVar = childBodyBlock->insertArgument(childBodyBlock->args_begin(), rewriter.getIndexType());
+        auto newParentInductionVar = childBodyBlock->insertArgument(childBodyBlock->args_begin(), rewriter.getIndexType(), loc);
         (*it).replaceAllUsesWith(newParentInductionVar);
     }
 
@@ -7182,7 +7059,7 @@ LogicalResult HoistScalingToCacheReduceRewrite::matchAndRewrite(mlir::AffineStor
     {
         mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(&valueFuncOp.body().front());
-        constantOne = rewriter.create<mlir::ConstantOp>(loc, util::GetOneAttr(rewriter, elementType));
+        constantOne = rewriter.create<arith::ConstantOp>(loc, util::GetOneAttr(rewriter, elementType));
     }
 
     std::vector<mlir::Value> scaleValues;
@@ -7320,7 +7197,7 @@ LogicalResult OutOfBoundsLoadRewriteCommon(mlir::AffineLoadOp affineLoadOp, Patt
             tmpBuffer = rewriter.create<mlir::memref::AllocaOp>(loc, tmpElementType, mlir::ValueRange{}, rewriter.getI64IntegerAttr(AVX2Alignment));
         }
 
-        auto zeroIndex = rewriter.create<mlir::ConstantIndexOp>(loc, 0);
+        auto zeroIndex = rewriter.create<arith::ConstantIndexOp>(loc, 0);
 
         auto srcBoundsCheckSet = mlir::IntegerSet::get(resolvedAccessIndices.size(), 0, constraintExprs, constraintEqFlags);
         auto ifOp = rewriter.create<mlir::AffineIfOp>(loc, srcBoundsCheckSet, ValueRange{ resolvedAccessIndices }, true); // true indicating we want an "else" region
@@ -7334,7 +7211,7 @@ LogicalResult OutOfBoundsLoadRewriteCommon(mlir::AffineLoadOp affineLoadOp, Patt
 
         auto elseBuilder = ifOp.getElseBodyBuilder();
         // TODO : support user-specified padding value rather than always using 0
-        auto constantZero = elseBuilder.create<mlir::ConstantOp>(loc, elseBuilder.getZeroAttr(loadResultType));
+        auto constantZero = elseBuilder.create<arith::ConstantOp>(loc, elseBuilder.getZeroAttr(loadResultType));
         auto elseStoreOp = elseBuilder.create<mlir::memref::StoreOp>(loc, constantZero.getResult(), tmpBuffer, ValueRange{ zeroIndex });
         SetBoundsChecked(elseBuilder, elseStoreOp);
 
@@ -7586,17 +7463,19 @@ void ExecutionPlanCacheRegionLoweringPass::runOnOperation()
     auto operation = getOperation();
     ConversionTarget target(getContext());
 
-    target.addLegalDialect<ValueDialect,
-                           memref::MemRefDialect,
+    target.addLegalDialect<ExecutionPlanDialect,
                            mlir::AffineDialect,
+                           mlir::arith::ArithmeticDialect,
+                           mlir::math::MathDialect,
+                           mlir::memref::MemRefDialect,
                            mlir::StandardOpsDialect,
-                           ExecutionPlanDialect>();
+                           ValueDialect>();
     target.addIllegalOp<BeginCacheMappingOp>();
     target.addIllegalOp<EndCacheMappingOp>();
     target.addIllegalOp<BeginCreateCacheOp>();
     target.addIllegalOp<EndCacheRegionOp>();
 
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     accera::transforms::executionPlan::populateExecutionPlanCacheRegionPatterns(patterns);
 
     (void)applyPatternsAndFoldGreedily(operation, std::move(patterns));
@@ -7608,17 +7487,19 @@ void ExecutionPlanVectorizationPass::runOnOperation()
     mlir::OpBuilder builder(operation);
     ConversionTarget target(getContext());
 
-    target.addLegalDialect<ValueDialect,
-                           memref::MemRefDialect,
+    target.addLegalDialect<ExecutionPlanDialect,
                            mlir::AffineDialect,
+                           mlir::arith::ArithmeticDialect,
+                           mlir::math::MathDialect,
+                           mlir::memref::MemRefDialect,
                            mlir::StandardOpsDialect,
-                           ExecutionPlanDialect>();
+                           ValueDialect>();
     target.addDynamicallyLegalOp<AffineForOp>([&](AffineForOp op) {
         // An AffineForOp is legal if it does not have the ExecutionPlan vectorize attributes
         return !HasVectorizationInfo(op);
     });
 
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     accera::transforms::executionPlan::populateExecutionPlanVectorizePatterns(printVecOpDetails, patterns);
 
     (void)applyPatternsAndFoldGreedily(operation, std::move(patterns));
@@ -7630,17 +7511,19 @@ void ExecutionPlanParallelizationPass::runOnOperation()
     mlir::OpBuilder builder(operation);
     ConversionTarget target(getContext());
 
-    target.addLegalDialect<ValueDialect,
-                           memref::MemRefDialect,
+    target.addLegalDialect<ExecutionPlanDialect,
                            mlir::AffineDialect,
+                           mlir::arith::ArithmeticDialect,
+                           mlir::math::MathDialect,
+                           mlir::memref::MemRefDialect,
                            mlir::StandardOpsDialect,
-                           ExecutionPlanDialect>();
+                           ValueDialect>();
     target.addDynamicallyLegalOp<AffineForOp>([&](AffineForOp op) {
         // An AffineForOp is legal if it does not have the ExecutionPlan parallelize attributes
         return !HasParallelizationInfo(op);
     });
 
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     accera::transforms::executionPlan::populateExecutionPlanParallelizePatterns(patterns);
 
     (void)applyPatternsAndFoldGreedily(operation, std::move(patterns));
@@ -7651,28 +7534,30 @@ void ExecutionPlanTensorizationPass::runOnOperation()
     auto* ctx = &getContext();
     auto operation = getOperation();
 
-    OwningRewritePatternList patterns(ctx);
+    RewritePatternSet patterns(ctx);
     accera::transforms::executionPlan::populateExecutionPlanTensorizePatterns(patterns);
 
     if (failed(applyPatternsAndFoldGreedily(operation, std::move(patterns))))
         return signalPassFailure();
 }
 
-void ExecutionPlanMakeCacheLoweringPass::runOnFunction()
+void ExecutionPlanMakeCacheLoweringPass::runOnOperation()
 {
     ConversionTarget target(getContext());
 
-    target.addLegalDialect<ValueDialect,
-                           memref::MemRefDialect,
+    target.addLegalDialect<ExecutionPlanDialect,
                            mlir::AffineDialect,
+                           mlir::arith::ArithmeticDialect,
+                           mlir::math::MathDialect,
+                           mlir::memref::MemRefDialect,
                            mlir::StandardOpsDialect,
-                           ExecutionPlanDialect>();
+                           ValueDialect>();
     target.addIllegalOp<MakeCacheOp>();
 
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     accera::transforms::executionPlan::populateExecutionPlanCacheFinalizePatterns(patterns);
 
-    if (failed(applyPartialConversion(getFunction(), target, std::move(patterns))))
+    if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
         signalPassFailure();
 }
 
@@ -7681,43 +7566,44 @@ void ExecutionPlanCopyReduceLoweringPass::runOnOperation()
     auto operation = getOperation();
     ConversionTarget target(getContext());
 
-    target.addLegalDialect<ValueDialect,
-                           LoopNestDialect,
-                           memref::MemRefDialect,
+    target.addLegalDialect<ExecutionPlanDialect,
                            mlir::AffineDialect,
+                           mlir::arith::ArithmeticDialect,
+                           mlir::math::MathDialect,
+                           mlir::memref::MemRefDialect,
                            mlir::StandardOpsDialect,
-                           ExecutionPlanDialect>();
+                           ValueDialect>();
     target.addIllegalOp<ActiveElementCacheCopyOp>();
     target.addIllegalOp<ActiveBlockCacheCopyOp>();
     target.addIllegalOp<ActiveElementCacheReduceOp>();
     target.addIllegalOp<ActiveBlockCacheReduceOp>();
     target.addIllegalOp<CacheZeroOp>();
 
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     accera::transforms::executionPlan::populateExecutionPlanCopyReducePatterns(patterns);
 
     (void)applyPatternsAndFoldGreedily(operation, std::move(patterns));
 }
 
-void ExecutionPlanScaleHoistingPass::runOnFunction()
+void ExecutionPlanScaleHoistingPass::runOnOperation()
 {
     ConversionTarget target(getContext());
 
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     accera::transforms::executionPlan::populateExecutionPlanScaleHoistingPatterns(patterns);
 
-    if (failed(applyPartialConversion(getFunction(), target, std::move(patterns))))
+    if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
         signalPassFailure();
 }
 
-void OutOfBoundsAccessHandlingPass::runOnFunction()
+void OutOfBoundsAccessHandlingPass::runOnOperation()
 {
     ConversionTarget target(getContext());
 
-    OwningRewritePatternList patterns(&getContext());
+    RewritePatternSet patterns(&getContext());
     accera::transforms::executionPlan::populateOutOfBoundsAccessHandlingPatterns(patterns);
 
-    if (failed(applyPartialConversion(getFunction(), target, std::move(patterns))))
+    if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
         signalPassFailure();
 }
 
@@ -7764,25 +7650,25 @@ std::unique_ptr<mlir::Pass> createOutOfBoundsAccessHandlingPass()
     return std::make_unique<OutOfBoundsAccessHandlingPass>();
 }
 
-void populateExecutionPlanCacheFinalizePatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanCacheFinalizePatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<MakeCacheOpLowering,
                     BeginActiveCacheRegionOpRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanThriftyCachePatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanThriftyCachePatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<ThriftyCacheMultiCopyOpRewrite>(patterns.getContext());
     patterns.insert<ThriftyCacheCopyOpRewrite>(patterns.getContext());
     patterns.insert<ThriftyCacheReduceOpRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanMultiCachePatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanMultiCachePatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<MultiCacheCopyOpRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanCopyReducePatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanCopyReducePatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<ActiveElementCacheCopyOpRewrite,
                     ActiveBlockCacheCopyOpRewrite,
@@ -7791,74 +7677,74 @@ void populateExecutionPlanCopyReducePatterns(mlir::OwningRewritePatternList& pat
                     CacheZeroOpRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanDelayedMappingPatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanDelayedMappingPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<DelayedMappingRegionOpRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanLoopUnswitchingPatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanLoopUnswitchingPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<LoopUnswitchingOpRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanMaxElementCacheRegionPatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanMaxElementCacheRegionPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<MaxElementCacheRegionOpRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanCacheRegionHoistingPatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanCacheRegionHoistingPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<HoistCacheRegionOpsRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanCacheRegionMergingPatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanCacheRegionMergingPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<MergeCacheRegionOpsRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanCacheRegionPatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanCacheRegionPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<BeginCreateCacheOpRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanCacheMappingPatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanCacheMappingPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<BeginCacheMappingOpRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanAdjustHierarchicalCacheRegionPositionPatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanAdjustHierarchicalCacheRegionPositionPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<AdjustHierarchicalCacheRegionPositionRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanAdjustCacheMappingPositionPatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanAdjustCacheMappingPositionPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<AdjustCacheMappingPositionRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanVectorizePatterns(bool printVectorizationDetails, mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanVectorizePatterns(bool printVectorizationDetails, mlir::RewritePatternSet& patterns)
 {
     patterns.insert<VectorizeAffineForOpConversion,
                     InPlaceUnrollAffineForOpConversion>(patterns.getContext(), printVectorizationDetails);
 }
 
-void populateExecutionPlanTensorizePatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanTensorizePatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<TensorizeAffineForOpConversion>(patterns.getContext());
 }
 
-void populateExecutionPlanParallelizePatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanParallelizePatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<ParallelizeAffineForOpConversion,
                     CollapseAffineParallelOpsRewrite>(patterns.getContext());
 }
 
-void populateExecutionPlanScaleHoistingPatterns(mlir::OwningRewritePatternList& patterns)
+void populateExecutionPlanScaleHoistingPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<HoistScalingToCacheReduceRewrite>(patterns.getContext());
 }
 
-void populateOutOfBoundsAccessHandlingPatterns(mlir::OwningRewritePatternList& patterns)
+void populateOutOfBoundsAccessHandlingPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<OutOfBoundsLoadRewrite,
                     OutOfBoundsStoreRewrite,
@@ -7866,7 +7752,7 @@ void populateOutOfBoundsAccessHandlingPatterns(mlir::OwningRewritePatternList& p
                     OutOfBoundsAffineStoreRewrite>(patterns.getContext());
 }
 
-void populateConvergeLoadStoresPatterns(mlir::OwningRewritePatternList& patterns)
+void populateConvergeLoadStoresPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<ConvertLoadsToAffineRewrite,
                     ConvertStoresToAffineRewrite,

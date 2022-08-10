@@ -32,17 +32,17 @@ namespace cpp_printer
         /// print Operation from StandardOps Dialect
         LogicalResult printDialectOperation(Operation* op, bool* skipped, bool* consumed) override;
 
-        /// print standard binary ops such as '+', '-', '*', etc
-        LogicalResult printStandardBinaryOp(Operation* binOp);
+        /// print binary ops such as '+', '-', '*', etc
+        LogicalResult printBinaryOp(Operation* binOp);
 
         /// print a CastOp where the dst type is an Integer whose signed-ness
         /// is determined by the argument isSigned
         LogicalResult printCastToIntegerOp(Operation* op, bool isSigned);
 
         /// adds an alias in the alias table
-        LogicalResult printIndexCastOp(IndexCastOp op);
+        LogicalResult printIndexCastOp(arith::IndexCastOp op);
 
-        /// print a ``simple'' CastOp such as IndexCastOp and TruncateIOp
+        /// print a ``simple'' CastOp such as arith::IndexCastOp and arith::TruncIOp
         /// that can be converted into a cast expression without worrying
         /// about the signed-ness of the operands
         LogicalResult printSimpleCastOp(Operation* op);
@@ -56,8 +56,8 @@ namespace cpp_printer
         /// print CallOp
         LogicalResult printCallOp(CallOp constOp);
 
-        /// print ConstantOp
-        LogicalResult printConstantOp(ConstantOp constOp);
+        /// print arith::ConstantOp
+        LogicalResult printConstantOp(arith::ConstantOp constOp);
 
         /// print DeallocOp
         LogicalResult printDeallocOp(memref::DeallocOp deallocOp, bool* skipped);

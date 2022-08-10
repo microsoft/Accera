@@ -1,12 +1,18 @@
-From 97c4232342b7e8b802c4557368bc016264679930 Mon Sep 17 00:00:00 2001
-From: Chuck Jacobs <cjacobs@microsoft.com>
-Date: Wed, 6 Oct 2021 16:40:38 +0000
-Subject: [PATCH 2/3] Merged PR 2237: Improved codegen of vpmaddwd instruction
+From 6172c5a07d0e4ca745aeff45298d2995aa685c42 Mon Sep 17 00:00:00 2001
+From: Lisa Ong <onglisa@microsoft.com>
+Date: Mon, 14 Feb 2022 16:18:47 +0800
+Subject: [PATCH] From 97c4232342b7e8b802c4557368bc016264679930 Mon Sep 17
+ 00:00:00 2001 From: Chuck Jacobs <cjacobs@microsoft.com> Date: Wed, 6 Oct
+ 2021 16:40:38 +0000 Subject: Merged PR 2237: Improved codegen of vpmaddwd
+ instruction
 
 This PR adds another codegen path that lowers certain "multiply-like" operations into a `vpmaddubsw` instruction followed by a `vpmaddwd` instruction.
 ---
+ llvm/lib/Target/X86/X86ISelLowering.cpp | 574 ++++++++++++++++++++++++
+ 1 file changed, 574 insertions(+)
+
 diff --git a/llvm/lib/Target/X86/X86ISelLowering.cpp b/llvm/lib/Target/X86/X86ISelLowering.cpp
-index 032db2a80a77..6445d8bc89c5 100644
+index 6f1fe8195595..f7bff9795548 100644
 --- a/llvm/lib/Target/X86/X86ISelLowering.cpp
 +++ b/llvm/lib/Target/X86/X86ISelLowering.cpp
 @@ -39,6 +39,7 @@
@@ -17,12 +23,11 @@ index 032db2a80a77..6445d8bc89c5 100644
  #include "llvm/CodeGen/TargetLowering.h"
  #include "llvm/CodeGen/WinEHFuncInfo.h"
  #include "llvm/IR/CallingConv.h"
-@@ -46990,6 +46991,351 @@ static SDValue combinePMULH(SDValue Src, EVT VT, const SDLoc &DL,
+@@ -49340,6 +49341,350 @@ static SDValue combinePMULH(SDValue Src, EVT VT, const SDLoc &DL,
    return DAG.getNode(Opc, DL, VT, LHS, RHS);
  }
  
-+
-+// Helper function for PMADDUBSW / PMADDWD 
++// Helper function for PMADDUBSW / PMADDWD
 +// TODO: need to do the convert-load-to-broadcast-splat fixup in the function that takes the a0/a1 pair
 +static SDValue getExtMulOperand(SDValue node, int index, EVT VT, const SDLoc &DL,
 +                                SelectionDAG &DAG) {
@@ -145,26 +150,26 @@ index 032db2a80a77..6445d8bc89c5 100644
 +    return SDValue();
 +
 +  SDValue shuf = op;
-+  if (!shuf.getOperand(1).isUndef()) 
++  if (!shuf.getOperand(1).isUndef())
 +    return SDValue();
 +
 +  auto resultVT = shuf.getValueType();
 +  auto numElts = resultVT.getVectorNumElements();
 +  op = shuf.getOperand(0);
-+  
++
 +  if (op.getOpcode() != ISD::INSERT_VECTOR_ELT)
 +    return SDValue();
 +
 +  SDValue insertElt = op;
 +  op = insertElt.getOperand(1);
 +
-+  if (op.getOpcode() != ISD::SIGN_EXTEND && op.getOpcode() != ISD::ZERO_EXTEND) 
++  if (op.getOpcode() != ISD::SIGN_EXTEND && op.getOpcode() != ISD::ZERO_EXTEND)
 +    return SDValue();
 +
 +  auto isSigned = op.getOpcode() == ISD::SIGN_EXTEND;
 +  SDValue val = op.getOperand(0);
 +  auto valMT = val.getSimpleValueType();
-+  
++
 +  // We can now reorder the ops to (extend (shuf (insert_elt ...)))
 +  EVT splatVT = EVT::getVectorVT(*DAG.getContext(), valMT, numElts);
 +  SDValue buildVec = DAG.getSplatBuildVector(splatVT, DL, val);
@@ -196,7 +201,7 @@ index 032db2a80a77..6445d8bc89c5 100644
 +  // Now we need to generate extract-element ops
 +  std::vector<SmallVector<SDValue, 32>> ops(dotProdSize);
 +  auto inMaskSize = masks[0].size();
-+  
++
 +  for (unsigned elemIdx = 0; elemIdx < NumElts; ++elemIdx) {
 +    for (unsigned phase = 0; phase < dotProdSize; ++phase) {
 +      auto offset = masks[phase][elemIdx%inMaskSize];
@@ -222,7 +227,7 @@ index 032db2a80a77..6445d8bc89c5 100644
 +//                   t7: i64 = add t4, t6
 +//                     t4: i64,ch = CopyFromReg t0, Register:i64 %11
 +//                     t6: i64,ch = CopyFromReg t0, Register:i64 %3
-+// 
++//
 +// ## LOAD 2     t18: i8,ch = load<(load 1 from %ir.sunkaddr22)> t0, t17, undef:i64
 +//                 t17: i64 = add t7, Constant:i64<6>
 +
@@ -300,7 +305,7 @@ index 032db2a80a77..6445d8bc89c5 100644
 +
 +    MVT elemMT = loadNodes[0]->getSimpleValueType(0);
 +    auto numElts = VT.getVectorNumElements();
-+    
++
 +    // turn load<T> into a load <2xT> or a load<VSizexT>
 +    auto fullMT = MVT::getVectorVT(elemMT, numPhases * numElts);
 +    auto combinedLoad = DAG.getLoad(fullMT, DL, baseLoad->getChain(), baseLoad->getBasePtr(),
@@ -355,7 +360,7 @@ index 032db2a80a77..6445d8bc89c5 100644
 +        replaceWithInterleavedShuffles(ops, masks, shuffledSubvec, DAG, DL);
 +      }
 +    }
-+    
++
 +  break;
 +
 +  case ISD::BUILD_VECTOR: // check if they're both splatted build vectors
@@ -369,7 +374,7 @@ index 032db2a80a77..6445d8bc89c5 100644
  // Attempt to match PMADDUBSW, which multiplies corresponding unsigned bytes
  // from one vector with signed bytes from another vector, adds together
  // adjacent pairs of 16-bit products, and saturates the result before
-@@ -49936,6 +50282,233 @@ static SDValue matchPMADDWD_2(SelectionDAG &DAG, SDValue N0, SDValue N1,
+@@ -52432,6 +52777,233 @@ static SDValue matchPMADDWD_2(SelectionDAG &DAG, SDValue N0, SDValue N1,
                            PMADDBuilder);
  }
  
@@ -401,7 +406,7 @@ index 032db2a80a77..6445d8bc89c5 100644
 +
 +  SDValue ssatArg0;
 +  SDValue ssatArg1;
-+  SDValue extraAddend;   
++  SDValue extraAddend;
 +
 +  // TODO: look for (ssat + ssat) or (ssat + (ssat + X)), and rearrange appropriately
 +  if (arg0 && arg1) {
@@ -422,7 +427,7 @@ index 032db2a80a77..6445d8bc89c5 100644
 +      SDValue N11 = N1->getOperand(1);
 +      SDValue arg10 = detectSSatPattern(N10, VT16);
 +      SDValue arg11 = detectSSatPattern(N11, VT16);
-+      
++
 +      if(!arg10 || arg10.getOpcode() != ISD::ADD) {
 +        arg10 = SDValue();
 +      }
@@ -465,7 +470,7 @@ index 032db2a80a77..6445d8bc89c5 100644
 +    if (zextArgs[i].getOpcode() != ISD::ZERO_EXTEND && zextArgs[i].getOpcode() != ISD::ZERO_EXTEND_VECTOR_INREG)
 +      std::swap(zextArgs[i], sextArgs[i]);
 +
-+    if ((zextArgs[i].getOpcode() != ISD::ZERO_EXTEND && zextArgs[i].getOpcode() != ISD::ZERO_EXTEND_VECTOR_INREG) || 
++    if ((zextArgs[i].getOpcode() != ISD::ZERO_EXTEND && zextArgs[i].getOpcode() != ISD::ZERO_EXTEND_VECTOR_INREG) ||
 +        (sextArgs[i].getOpcode() != ISD::SIGN_EXTEND && sextArgs[i].getOpcode() != ISD::SIGN_EXTEND_VECTOR_INREG))
 +      return SDValue();
 +
@@ -509,7 +514,7 @@ index 032db2a80a77..6445d8bc89c5 100644
 +    SDValue s3 = sextArgs[3].getOperand(i);
 +
 +    auto isExtractVectorElt = [](auto node) { return node.getOpcode() == ISD::EXTRACT_VECTOR_ELT; };
-+    
++
 +    // TODO: Be more tolerant to undefs.
 +    for (auto& elt: { z0, s0, z1, s1, z2, s2, z3, s3 }) {
 +      if (!isExtractVectorElt(elt)) {
@@ -527,7 +532,7 @@ index 032db2a80a77..6445d8bc89c5 100644
 +    auto *consts2Elt = dyn_cast<ConstantSDNode>(s2.getOperand(1));
 +    auto *consts3Elt = dyn_cast<ConstantSDNode>(s3.getOperand(1));
 +
-+    if (!constz0Elt || !constz1Elt || !constz2Elt || !constz3Elt || 
++    if (!constz0Elt || !constz1Elt || !constz2Elt || !constz3Elt ||
 +        !consts0Elt || !consts1Elt || !consts2Elt || !consts3Elt)
 +    {
 +      return SDValue();
@@ -545,7 +550,7 @@ index 032db2a80a77..6445d8bc89c5 100644
 +
 +    SDValue z0In = z0.getOperand(0);
 +    SDValue s0In = s0.getOperand(0);
-+    
++
 +    // First time we find an input capture it.
 +    if (!zextIn) {
 +      zextIn = z0In;
@@ -600,15 +605,18 @@ index 032db2a80a77..6445d8bc89c5 100644
 +    return pmaddwdResult;
 +}
 +
- /// CMOV of constants requires materializing constant operands in registers.
- /// Try to fold those constants into an 'add' instruction to reduce instruction
- /// count. We do this with CMOV rather the generic 'select' because there are
-@@ -49990,6 +50563,8 @@ static SDValue combineAdd(SDNode *N, SelectionDAG &DAG,
+ // ADD(VPMADDWD(X,Y),VPMADDWD(Z,W)) -> VPMADDWD(SHUFFLE(X,Z), SHUFFLE(Y,W))
+ // If upper element in each pair of both VPMADDWD are zero then we can merge
+ // the operand elements and use the implicit add of VPMADDWD.
+@@ -52554,6 +53126,8 @@ static SDValue combineAdd(SDNode *N, SelectionDAG &DAG,
      return MAdd;
-   if (SDValue MAdd = matchPMADDWD_2(DAG, Op0, Op1, SDLoc(N), VT, Subtarget))
+   if (SDValue MAdd = matchPMADDWD_2(DAG, Op0, Op1, DL, VT, Subtarget))
      return MAdd;
-+  if (SDValue MAdd = matchPMADDWD_3(DAG, Op0, Op1, SDLoc(N), VT, DCI, Subtarget))
++  if (SDValue MAdd = matchPMADDWD_3(DAG, Op0, Op1, DL, VT, DCI, Subtarget))
 +    return MAdd;
+   if (SDValue MAdd = combineAddOfPMADDWD(DAG, Op0, Op1, DL, VT))
+     return MAdd;
  
-   // Try to synthesize horizontal adds from adds of shuffles.
-   if (SDValue V = combineToHorizontalAddSub(N, DAG, Subtarget))
+-- 
+2.30.0.windows.1
+

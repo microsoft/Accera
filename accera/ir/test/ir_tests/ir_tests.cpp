@@ -24,12 +24,12 @@
 
 #include <transforms/include/AcceraPasses.h>
 
-#include <mlir/Analysis/LoopAnalysis.h>
+#include <mlir/Dialect/Affine/Analysis/LoopAnalysis.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
-#include <mlir/Transforms/LoopUtils.h>
+#include <mlir/Dialect/Affine/LoopUtils.h>
 
 #include <llvm/Support/FormatVariadic.h>
 #include <llvm/Support/SourceMgr.h>
@@ -90,7 +90,7 @@ protected:
     llvm::SourceMgr sourceMgr;
 
 private:
-    mlir::OwningModuleRef _ownedModule;
+    mlir::OwningOpRef<mlir::ModuleOp> _ownedModule;
 
 protected:
     mlir::ModuleOp module;
@@ -3261,13 +3261,13 @@ TEST_CASE_METHOD(Fixture, "runtime_sizes_all", "[cpu][runtime_sizes]")
         .Decorated(false)
         .Public(true)
         .Parameters(
+            Value({ ValueType::Index, ScalarLayout }),
+            Value({ ValueType::Index, ScalarLayout }),
+            Value({ ValueType::Index, ScalarLayout }),
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
             Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }),
-            Value({ ValueType::Index, ScalarLayout }),
-            Value({ ValueType::Index, ScalarLayout }),
-            Value({ ValueType::Index, ScalarLayout }))
-        .Define([=](Array A, Array B, Array C, ScalarDimension MValue, ScalarDimension NValue, ScalarDimension KValue) {
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+        .Define([=](ScalarDimension MValue, ScalarDimension NValue, ScalarDimension KValue, Array A, Array B, Array C) {
             Nest nest(MemoryShape{ M, N, K }, std::vector{ MValue, NValue, KValue });
 
             auto indices = nest.GetIndices();

@@ -1,0 +1,36 @@
+From bc61595ab6d6f5eb6fbf3564cf00f8839250d2d7 Mon Sep 17 00:00:00 2001
+From: Lisa Ong <onglisa@microsoft.com>
+Date: Mon, 23 May 2022 12:39:55 +0800
+Subject: [PATCH] Lower memref.copy to memcpy when layouts canonicalize to
+ identity layouts. A memref.cast won't work because it gets folded into
+ memref.copy during op canonicalization.
+
+---
+ mlir/lib/Conversion/MemRefToLLVM/MemRefToLLVM.cpp | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/mlir/lib/Conversion/MemRefToLLVM/MemRefToLLVM.cpp b/mlir/lib/Conversion/MemRefToLLVM/MemRefToLLVM.cpp
+index 288c252b81bb..bec7513f7986 100644
+--- a/mlir/lib/Conversion/MemRefToLLVM/MemRefToLLVM.cpp
++++ b/mlir/lib/Conversion/MemRefToLLVM/MemRefToLLVM.cpp
+@@ -933,10 +933,15 @@ struct MemRefCopyOpLowering : public ConvertOpToLLVMPattern<memref::CopyOp> {
+     auto srcType = op.source().getType().cast<BaseMemRefType>();
+     auto targetType = op.target().getType().cast<BaseMemRefType>();
+ 
++    // Memref casts get folded away during CopyOp::fold, so we have to replace
++    // the operand with its canonicalized identity form, if they are equivalent
++    auto cannedSrcType = canonicalizeStridedLayout(srcType.cast<MemRefType>());
++    auto cannedTargetType = canonicalizeStridedLayout(targetType.cast<MemRefType>());
++
+     if (srcType.hasRank() &&
+-        srcType.cast<MemRefType>().getLayout().isIdentity() &&
++        (srcType.cast<MemRefType>().getLayout().isIdentity() || cannedSrcType.getLayout().isIdentity()) &&
+         targetType.hasRank() &&
+-        targetType.cast<MemRefType>().getLayout().isIdentity())
++        (targetType.cast<MemRefType>().getLayout().isIdentity() || cannedTargetType.getLayout().isIdentity()))
+       return lowerToMemCopyIntrinsic(op, adaptor, rewriter);
+ 
+     return lowerToMemCopyFunctionCall(op, adaptor, rewriter);
+-- 
+2.32.1 (Apple Git-133)
+

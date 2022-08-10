@@ -11,7 +11,7 @@
 #include <string>
 
 using SetupFunc = std::function<void()>;
-using VerifyFunc = std::function<bool(mlir::OwningModuleRef&, mlir::FuncOp&)>;
+using VerifyFunc = std::function<bool(mlir::OwningOpRef<mlir::ModuleOp>&, mlir::FuncOp&)>;
 
 void RunTest(std::string testName, SetupFunc&& setupFunc, std::string verifyName, VerifyFunc&& verifyFunc);
 

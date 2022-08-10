@@ -7,9 +7,14 @@
 #include "nest/LoopNestBuilder.h"
 
 #include "IRUtil.h"
-
+#include "nest/LoopIndexInfo.h"
+#include "nest/LoopNestOps.h"
+#include "value/ValueDialect.h"
 #include <utilities/include/Exception.h>
 
+#include <mlir/IR/SymbolTable.h>
+
+#include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/TypeSwitch.h>
 
 #include <algorithm>
@@ -19,8 +24,6 @@
 #include <set>
 #include <stdexcept>
 #include <type_traits>
-
-#include <llvm/ADT/StringSwitch.h>
 
 using namespace mlir;
 
@@ -74,18 +77,18 @@ namespace loopnest
         {
             if constexpr (std::is_integral<T>::value)
             {
-                if (auto constIntOp = mlir::dyn_cast_or_null<mlir::ConstantIntOp>(const_cast<mlir::Value&>(value).getDefiningOp()))
-                    return static_cast<T>(constIntOp.getValue());
-                else if (auto constIdxOp = mlir::dyn_cast_or_null<mlir::ConstantIndexOp>(const_cast<mlir::Value&>(value).getDefiningOp()))
-                    return static_cast<T>(constIdxOp.getValue());
+                if (auto constIntOp = mlir::dyn_cast_or_null<mlir::arith::ConstantIntOp>(const_cast<mlir::Value&>(value).getDefiningOp()))
+                    return static_cast<T>(constIntOp.value());
+                else if (auto constIdxOp = mlir::dyn_cast_or_null<mlir::arith::ConstantIndexOp>(const_cast<mlir::Value&>(value).getDefiningOp()))
+                    return static_cast<T>(constIdxOp.value());
                 else
                     assert(false && "Error: got bad op type for constant int");
             }
             else if constexpr (std::is_floating_point<T>::value)
             {
-                using OpType = mlir::ConstantFloatOp;
+                using OpType = mlir::arith::ConstantFloatOp;
                 auto op = mlir::cast<OpType>(const_cast<mlir::Value&>(value).getDefiningOp());
-                return static_cast<T>(const_cast<OpType&>(op).getValue());
+                return static_cast<T>(const_cast<OpType&>(op).value());
             }
             else
             {
@@ -151,10 +154,12 @@ namespace loopnest
             return false;
         }
 
+        // TODO: use StringAttr for id to avoid the extra conversion
         Operation* FindKernelOp(StringRef id, ScheduleOp rootOp)
         {
             auto symTableOp = mlir::SymbolTable::getNearestSymbolTable(rootOp);
-            auto symbolOp = mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, id);
+            auto idAttr = StringAttr::get(rootOp->getContext(), id);
+            auto symbolOp = mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, idAttr);
             assert(symbolOp && "Kernel not found");
             return symbolOp;
         }
@@ -190,6 +195,22 @@ namespace loopnest
             return { loopBlock->op_begin<InvokeKernelOp>(), loopBlock->op_end<InvokeKernelOp>() };
         }
 
+        LoopIndexSymbolTable GetEnclosingLoopIndices(Operation* where)
+        {
+            // Contents of the loop index symbol table:
+            //   mlir::Value value; // this is the induction variable for the loop
+            //   Range loopRange;
+            //   LoopIndexState state;
+            LoopIndexSymbolTable result;
+            auto loop = where->getParentOfType<ScheduledLoopOp>();
+            while (loop)
+            {
+                auto index = loop.getIndex();
+                result.insert_or_assign(index, LoopIndexSymbolTableEntry{ {}, loop.getRange(), LoopIndexState::inProgress });
+                loop = loop->getParentOfType<ScheduledLoopOp>();
+            }
+            return result;
+        }
     } // namespace
 
     //
@@ -249,7 +270,7 @@ namespace loopnest
 
     bool LoopRange::IsVariable() const
     {
-        auto constOp = stop.getDefiningOp<mlir::ConstantIndexOp>();
+        auto constOp = stop.getDefiningOp<mlir::arith::ConstantIndexOp>();
         return (constOp == nullptr);
     }
 
@@ -270,16 +291,23 @@ namespace loopnest
         auto schedule = GetLoopSchedule();
         auto initialIndex = schedule.CurrentLoopIndex();
 
-        // We need to create a RecursionState object here, because it's passed in as a (mutable) reference
+        // We need to create a RecursionState object here, because it's passed in as a (const) reference
         RecursionState state(*this);
 
-        GenerateLoopStructure(state, schedule);
+        GenerateInitialLoopStructure(state, schedule);
+        auto baseLoops = _loops[initialIndex];
+        _loops.clear();
+
+        UnswitchLoops(baseLoops, state, schedule);
+
+        AddInvokeOps(_loops[initialIndex], state, schedule);
+        VerifyPredicates(_loops[initialIndex], schedule);
+
         MergeAdjacentKernelBodies(_loops[initialIndex], schedule);
 
         EmitLoopBodies(_loops[initialIndex], state, schedule);
 
         ApplyInjectableMappings();
-        EnsureTerminators();
 
         return _loops[initialIndex];
     }
@@ -299,104 +327,111 @@ namespace loopnest
         return { indexRanges };
     }
 
-    LoopNestBuilder::RecursionState LoopNestBuilder::GenerateLoopStructure(const RecursionState& state, const LoopVisitSchedule& schedule)
+    LoopNestBuilder::RecursionState LoopNestBuilder::GenerateInitialLoopStructure(const RecursionState& state, const LoopVisitSchedule& schedule)
     {
         if (schedule.IsDone())
         {
             return state;
         }
 
-        // 1) get list of prologue and epilogue kernels we'll hoist up to this level
-        // 2) get splits/partitions for this loop range
-        // 3) eval predicates and mark valid regions
-        // 4) make a list of kernels that can possibly run for each partition (e.g., [1,2 | 2 | 2, 3])
-        // 5) move adjacent fully-matching suffix on left into right partition (and expand)
-        // 6) move adjacent fully-matching prefix on right into left partition (and expand)
+        const auto& domain = GetDomain();
+        auto loopIndex = schedule.CurrentLoopIndex();
 
-        // ex, with S1: first(i), S2: all, S3: last(i):
+        // Find the active range for the current loop dimension and reduce the end amount if it exceeds the active range (boundary case)
+        auto fullRange = schedule.GetActiveLoopRange(domain, loopIndex, state.loopIndices);
+        Partition p = { loopIndex, fullRange };
 
-        // step 1: partitions: (0..1), (1..N-1), (N-1..N)
-        // step 2: partitions w/ kernels: (0..1: S1, S2, S3), (1..N-1: S1, S2, S3), (N-1..N: S1, S2, S3)
-        // step 3: eval predicates and remove kernels: (0..1: S1, S2), (1..N-1: S2), (N-1..N: S2, S3)
-        // step 4: ...
-        // step 5: Suffix of first partition matches entirety of second: move
-        //         --> (0..1: S1), (0..N-1: S2), (N1-..N: S2, S3)
-        // step 6: prefix of last partition matches entirety of second: move
-        //         --> (0..1: S1), (0..N: S2), (N1-..N: S3)
+        auto newState = state;
+        LoopRange partitionRange = MakeLoopRange(_builder, p.range);
+        UpdateSubdomainSizes(loopIndex, partitionRange, newState.subdomainSize);
+
+        auto loop = EmitLoopOp(partitionRange, newState, schedule); // This creates the (empty) loop op
+
+        bool shouldGuardLoopBounds = IsGpuLoop(loopIndex);
+        if (shouldGuardLoopBounds)
+        {
+            AddLoopLimitMetadata(loop);
+        }
+
+        _loops[loopIndex].push_back(loop);
+
+        SymbolicIndexOp loopIndexOp = loop.getSymbolicIndex();
+        newState.loopIndices.insert_or_assign(loopIndex, LoopIndexSymbolTableEntry{ loopIndexOp, partitionRange.GetRange(), LoopIndexState::inProgress });
+        GenerateInitialLoopBody(loop, partitionRange, newState, schedule); // This contains the recursive call to GenerateInitialLoopStructure
+        EndLoopRange(partitionRange, newState, schedule);
+
+        // set the loop index state to be "done"
+        DefinePostLoopIndex(_builder, loopIndex, newState.loopIndices, schedule);
+        return newState;
+    }
+
+    void LoopNestBuilder::AddLoopLimitMetadata(ScheduledLoopOp loop)
+    {
+        const auto& domain = GetDomain();
+        auto loopIndex = loop.getIndex();
 
         auto getParentIndex = [](const TransformedDomain& domain, Index i) {
             assert(domain.HasParentIndex(i));
             return domain.GetParentIndices(i)[0];
         };
 
-        const auto& domain = GetDomain();
-        auto loopIndex = schedule.CurrentLoopIndex();
-
-        // Find the active range for the current loop dimension and reduce the end amount if it exceeds the active range (boundary case)
-        auto fullRange = schedule.GetActiveLoopRange(domain, loopIndex, state.loopIndices);
-        bool shouldGuardLoopBounds = IsGpuLoop(loopIndex);
-        std::vector<Partition> partitions;
-        if (shouldGuardLoopBounds)
+        // TODO: rewrite this part to be less duplicative
+        if (domain.IsSplitIndex(loopIndex, /*inner=*/true))
         {
-            partitions.push_back({ loopIndex, fullRange });
-        }
-        else
-        {
-            partitions = GetPartitions(loopIndex, fullRange, state, schedule);
-        }
-
-        auto newState = state;
-        for (const auto& p : partitions)
-        {
-            LoopRange partitionRange = MakeLoopRange(_builder, p.range);
-            UpdateSubdomainSizes(loopIndex, partitionRange, newState.subdomainSize);
-
-            auto loop = EmitLoopOp(partitionRange, newState, schedule); // This creates the (empty) loop op
-
-            if (shouldGuardLoopBounds)
+            auto parentIndex = getParentIndex(domain, loopIndex);
+            auto parentRange = domain.GetIndexRange(parentIndex);
+            auto outerIndex = domain.GetOtherSplitIndex(loopIndex);
+            auto outerRange = domain.GetIndexRange(outerIndex);
+            assert(outerRange.Size() == parentRange.Size());
+            if (parentRange.Size() % outerRange.Increment() != 0)
             {
-                // TODO: rewrite this part to be less duplicative
-                if (domain.IsSplitIndex(loopIndex, /*inner=*/true))
+                loop->setAttr("accv_upper_limit", _builder.getI64IntegerAttr(parentRange.End()));
+                loop->setAttr("accv_upper_limit_index", IndexAttr::get(parentIndex, _builder.getContext()));
+            }
+        }
+        else if (domain.IsSplitIndex(loopIndex, /*inner=*/false))
+        {
+            auto parentIndex = getParentIndex(domain, loopIndex);
+            if (domain.HasParentIndex(parentIndex))
+            {
+                auto grandparentIndex = getParentIndex(domain, parentIndex);
+                auto grandparentRange = domain.GetIndexRange(grandparentIndex);
+                if (domain.IsSplitIndex(parentIndex, /*inner=*/true))
                 {
-                    auto parentIndex = getParentIndex(domain, loopIndex);
                     auto parentRange = domain.GetIndexRange(parentIndex);
-                    auto outerIndex = domain.GetOtherSplitIndex(loopIndex);
+                    auto outerIndex = domain.GetOtherSplitIndex(parentIndex);
                     auto outerRange = domain.GetIndexRange(outerIndex);
-                    assert(outerRange.Size() == parentRange.Size());
-                    if (parentRange.Size() % outerRange.Increment() != 0)
+                    assert(outerRange.Size() == grandparentRange.Size());
+                    if (grandparentRange.Size() % outerRange.Increment() != 0)
                     {
-                        loop->setAttr("accv_upper_limit", _builder.getI64IntegerAttr(parentRange.End()));
-                        loop->setAttr("accv_upper_limit_index", IndexAttr::get(parentIndex, _builder.getContext()));
-                    }
-                }
-                else if (domain.IsSplitIndex(loopIndex, /*inner=*/false))
-                {
-                    auto parentIndex = getParentIndex(domain, loopIndex);
-                    if (domain.HasParentIndex(parentIndex))
-                    {
-                        auto grandparentIndex = getParentIndex(domain, parentIndex);
-                        auto grandparentRange = domain.GetIndexRange(grandparentIndex);
-                        if (domain.IsSplitIndex(parentIndex, /*inner=*/true))
-                        {
-                            auto parentRange = domain.GetIndexRange(parentIndex);
-                            auto outerIndex = domain.GetOtherSplitIndex(parentIndex);
-                            auto outerRange = domain.GetIndexRange(outerIndex);
-                            assert(outerRange.Size() == grandparentRange.Size());
-                            if (grandparentRange.Size() % outerRange.Increment() != 0)
-                            {
-                                loop->setAttr("accv_upper_limit", _builder.getI64IntegerAttr(grandparentRange.End()));
-                                loop->setAttr("accv_upper_limit_index", IndexAttr::get(outerIndex, _builder.getContext()));
-                            }
-                        }
+                        loop->setAttr("accv_upper_limit", _builder.getI64IntegerAttr(grandparentRange.End()));
+                        loop->setAttr("accv_upper_limit_index", IndexAttr::get(outerIndex, _builder.getContext()));
                     }
                 }
             }
-            _loops[loopIndex].push_back(loop);
+        }
+    }
 
+    LoopNestBuilder::RecursionState LoopNestBuilder::AddInvokeOps(const std::vector<ScheduledLoopOp>& loops, const RecursionState& state, const LoopVisitSchedule& schedule)
+    {
+        if (schedule.IsDone())
+        {
+            return state;
+        }
+
+        auto loopIndex = schedule.CurrentLoopIndex();
+
+        // for each loop op
+        RecursionState newState = state;
+        for (auto loop : loops)
+        {
+            newState = state;
+            LoopRange partitionRange = MakeLoopRange(_builder, loop.getRange());
+            UpdateSubdomainSizes(loopIndex, partitionRange, newState.subdomainSize);
+            loop.setSubdomainSize(newState.subdomainSize);
             SymbolicIndexOp loopIndexOp = loop.getSymbolicIndex();
             newState.loopIndices.insert_or_assign(loopIndex, LoopIndexSymbolTableEntry{ loopIndexOp, partitionRange.GetRange(), LoopIndexState::inProgress });
-            GenerateLoopBody(loop, partitionRange, newState, schedule); // This contains the recursive call to GenerateLoopStructure
-            EndLoopRange(partitionRange, newState, schedule);
+            GenerateLoopBody(loop, partitionRange, newState, schedule); // This contains the recursive call to AddInvokeOps
         }
 
         // set the loop index state to be "done"
@@ -404,9 +439,113 @@ namespace loopnest
         return newState;
     }
 
+    void LoopNestBuilder::VerifyPredicates(const std::vector<ScheduledLoopOp>& loops, const LoopVisitSchedule& schedule)
+    {
+        if (schedule.IsDone())
+        {
+            return;
+        }
+
+        // For each invoke kernel op:
+        //   - get all enclosing loops
+        //   - set index values/ranges for all enclosing loops
+        //   - eval the predicate based on those index->value mappings
+        const auto& domain = GetDomain();
+        for (auto loop : loops)
+        {
+            loop.walk([&](InvokeKernelOp invokeOp) {
+                auto loopIndices = GetEnclosingLoopIndices(invokeOp);
+                auto kernel = FindKernelOp(invokeOp.getKernel(), GetScheduleOp());
+                if (auto scheduledKernelOp = dyn_cast<ScheduledKernelOp>(kernel))
+                {
+                    auto pred = scheduledKernelOp.getKernelPredicate();
+                    auto predVal = pred.evaluate(domain, loopIndices, schedule);
+                    
+                    // verify pred evaluates to 'true' or 'unknown'
+                    if (predVal.has_value())
+                    {
+                        if (!predVal.value())
+                        {
+                            throw std::runtime_error("Error: predicate evaluates to false!");
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    LoopNestBuilder::RecursionState LoopNestBuilder::UnswitchLoops(const std::vector<ScheduledLoopOp>& loops, const RecursionState& state, const LoopVisitSchedule& schedule)
+    {
+        if (schedule.IsDone())
+        {
+            return state;
+        }
+
+        auto newState = state;
+        OpBuilder::InsertionGuard guard(_builder);
+        for (auto loop : loops)
+        {
+            auto loopIndex = loop.getIndex();
+            assert(loopIndex == schedule.CurrentLoopIndex());
+            auto domain = GetDomain();
+            auto fullRange = schedule.GetActiveLoopRange(domain, loopIndex, state.loopIndices);
+            //  auto fullRange = loop.getRange();
+            std::vector<Partition> partitions;
+            bool shouldGuardLoopBounds = IsGpuLoop(loopIndex);
+            if (shouldGuardLoopBounds)
+            {
+                partitions.push_back({ loopIndex, fullRange });
+            }
+            else
+            {
+                partitions = GetPartitions(loopIndex, fullRange, state, schedule);
+            }
+   
+            _builder.setInsertionPointAfter(loop);
+            _loops[loopIndex].erase(std::remove(_loops[loopIndex].begin(), _loops[loopIndex].end(), loop), _loops[loopIndex].end());
+
+            for (const auto& p : partitions)
+            {
+                newState = state;
+                auto newLoop = mlir::cast<ScheduledLoopOp>(_builder.clone(*loop.getOperation()));
+                LoopRange partitionRange = MakeLoopRange(_builder, p.range);
+                auto subdomainSizes = newLoop.getSubdomainSize();
+                UpdateSubdomainSizes(loopIndex, partitionRange, subdomainSizes);
+                newLoop.setSubdomainSize(subdomainSizes);
+                newLoop.setBegin(p.range.Begin());
+                newLoop.setStep(p.range.Increment());
+                newLoop.setEnd(p.range.End());
+
+                if (shouldGuardLoopBounds)
+                {
+                    AddLoopLimitMetadata(newLoop);
+                }
+
+                SymbolicIndexOp loopIndexOp = newLoop.getSymbolicIndex();
+                newState.loopIndices.insert_or_assign(loopIndex, LoopIndexSymbolTableEntry{ loopIndexOp, partitionRange.GetRange(), LoopIndexState::inProgress });
+                EndLoopRange(partitionRange, newState, schedule);
+                _loops[loopIndex].push_back(newLoop);
+
+                auto innerLoops = GetInnerLoops(newLoop.getBody());
+                UnswitchLoops(innerLoops, newState, schedule.Next());
+
+                // set the loop index state to be "done"
+               DefinePostLoopIndex(_builder, loopIndex, newState.loopIndices, schedule);
+            }
+
+            _builder.eraseOp(loop);
+        }
+
+        return newState;
+    }
+
     // TODO: move the loop-printing until after merging
     void LoopNestBuilder::MergeAdjacentKernelBodies(std::vector<ScheduledLoopOp> loops, const LoopVisitSchedule& schedule)
     {
+        // Suffix of first partition matches entirety of second: move
+        // --> (0..1: S1), (0..N-1: S2), (N1-..N: S2, S3)
+        // prefix of last partition matches entirety of second: move
+        // --> (0..1: S1), (0..N: S2), (N1-..N: S3)
         if (schedule.IsDone())
         {
             return;
@@ -530,6 +669,7 @@ namespace loopnest
 
     void LoopNestBuilder::ApplyInjectableMappings()
     {
+        mlir::OpBuilder::InsertionGuard insertGuard(_builder);
         [[maybe_unused]] auto loc = GetLocation();
         auto registeredInjectableMappings = GetScheduleOp().getInjectableMappings();
         for (auto& mapping : registeredInjectableMappings)
@@ -538,8 +678,6 @@ namespace loopnest
 
             for (auto& scheduledLoopOp : scheduledLoopOps)
             {
-                mlir::OpBuilder::InsertionGuard insertGuard(_builder);
-
                 BlockAndValueMapping operandMap;
                 _builder.setInsertionPoint(scheduledLoopOp);
                 [[maybe_unused]] auto clonedBeginOp = _builder.clone(*(mapping.getOperation()), operandMap);
@@ -583,9 +721,7 @@ namespace loopnest
         auto domain = GetDomain();
         auto domainIndexOrder = domain.GetDimensions();
 
-        auto loop = range.HasVariableEnd() ?
-            builder.create<ScheduledLoopOp>(loc, begin, range.VariableEnd(), step, symbolicIndex, state.subdomainSize, domainIndexOrder) :
-            builder.create<ScheduledLoopOp>(loc, begin, range.End(), step, symbolicIndex, state.subdomainSize, domainIndexOrder);
+        auto loop = range.HasVariableEnd() ? builder.create<ScheduledLoopOp>(loc, begin, range.VariableEnd(), step, symbolicIndex, state.subdomainSize, domainIndexOrder) : builder.create<ScheduledLoopOp>(loc, begin, range.End(), step, symbolicIndex, state.subdomainSize, domainIndexOrder);
 
         // TODO : move these attributes to the loop attribute infra
         loop->setAttr("index", IndexAttr::get(loopIndex, builder.getContext()));
@@ -626,8 +762,8 @@ namespace loopnest
                 auto procStr = ir::value::stringifyEnum(proc);
 
                 std::vector<mlir::NamedAttribute> loopBoundAttrs;
-                loopBoundAttrs.emplace_back(builder.getIdentifier("proc"), builder.getStringAttr(procStr));
-                loopBoundAttrs.emplace_back(builder.getIdentifier("map"), mlir::AffineMapAttr::get(map));
+                loopBoundAttrs.emplace_back(builder.getStringAttr("proc"), builder.getStringAttr(procStr));
+                loopBoundAttrs.emplace_back(builder.getStringAttr("map"), mlir::AffineMapAttr::get(map));
                 loop->setAttr("accv_gpu_map", builder.getDictionaryAttr(loopBoundAttrs));
             }
             break;
@@ -639,9 +775,9 @@ namespace loopnest
         {
             // We have attributes for this loop, so transfer them over to the ScheduledLoopOp
             auto loopAttrs = loopAttrDict->getValue();
-            for (auto& [identifier, value] : loopAttrs)
+            for (auto& loopAttr : loopAttrs)
             {
-                loop->setAttr(identifier, value);
+                loop->setAttr(loopAttr.getName(), loopAttr.getValue());
             }
         }
 
@@ -657,6 +793,27 @@ namespace loopnest
         }
     }
 
+    void LoopNestBuilder::GenerateInitialLoopBody(ScheduledLoopOp loop, const LoopRange& r, const RecursionState& state, const LoopVisitSchedule& schedule)
+    {
+        auto newState = state;
+        auto loopIndex = schedule.CurrentLoopIndex();
+
+        if (schedule.IsInnermostLoop())
+        {
+            UpdateKernelState(loop, r, Position::body, newState, schedule);
+        }
+        else
+        {
+            auto innerState = UpdateKernelState(loop, r, Position::prologue, newState, schedule);
+
+            // Recursively call GenerateInitialLoopStructure to generate the more-deeply-nested loops
+            auto epilogueState = GenerateInitialLoopStructure(innerState, schedule.Next());
+
+            auto outerState = UpdateKernelState(loop, r, Position::epilogue, epilogueState, schedule);
+            DefinePostLoopIndex(_builder, loopIndex, newState.loopIndices, schedule);
+        }
+    }
+
     void LoopNestBuilder::GenerateLoopBody(ScheduledLoopOp loop, const LoopRange& r, const RecursionState& state, const LoopVisitSchedule& schedule)
     {
         auto newState = state;
@@ -664,15 +821,16 @@ namespace loopnest
 
         if (schedule.IsInnermostLoop())
         {
-            InvokeKernels(r, Position::body, newState, schedule);
+            InvokeKernels(loop, r, Position::body, newState, schedule);
         }
         else
         {
-            auto innerState = InvokeKernels(r, Position::prologue, newState, schedule);
+            auto innerState = InvokeKernels(loop, r, Position::prologue, newState, schedule);
 
-            // Recursively call GenerateLoopStructure to generate the more-deeply-nested loops
-            auto epilogueState = GenerateLoopStructure(innerState, schedule.Next());
-            auto outerState = InvokeKernels(r, Position::epilogue, epilogueState, schedule);
+            // Recursively call AddInvokeOps to generate the more-deeply-nested loops
+            auto innerLoops = GetInnerLoops(loop.getBody());
+            auto epilogueState = AddInvokeOps(innerLoops, innerState, schedule.Next());
+            auto outerState = InvokeKernels(loop, r, Position::epilogue, epilogueState, schedule);
 
             DefinePostLoopIndex(_builder, loopIndex, newState.loopIndices, schedule);
         }
@@ -700,7 +858,7 @@ namespace loopnest
         }
     }
 
-    LoopNestBuilder::RecursionState LoopNestBuilder::InvokeKernels(const LoopRange& r, Position position, const RecursionState& state, const LoopVisitSchedule& schedule)
+    LoopNestBuilder::RecursionState LoopNestBuilder::InvokeKernels(ScheduledLoopOp loop, const LoopRange& r, Position position, const RecursionState& state, const LoopVisitSchedule& schedule)
     {
         auto newState = state;
         if (position != Position::epilogue)
@@ -712,8 +870,30 @@ namespace loopnest
         // TODO: need to iterate this in order
         for (const auto& id : GetPossiblyValidKernelIds(newState))
         {
-            auto invoked = InvokeKernelGroup(id, position, newState.loopIndices, schedule);
+            auto invoked = MaybeInvokeKernelGroup(id, true, position, loop, newState.loopIndices, schedule);
             if (invoked)
+            {
+                newState.validKernelGroups[id] = false;
+            }
+        }
+
+        return newState;
+    }
+
+    LoopNestBuilder::RecursionState LoopNestBuilder::UpdateKernelState(ScheduledLoopOp loop, const LoopRange& r, Position position, const RecursionState& state, const LoopVisitSchedule& schedule)
+    {
+        auto newState = state;
+        if (position != Position::epilogue)
+        {
+            auto kernels = GetPossiblyValidKernels(state);
+            DefineComputedIndexVariables(newState.loopIndices, kernels, schedule);
+        }
+
+        // TODO: need to iterate this in order
+        for (const auto& id : GetPossiblyValidKernelIds(newState))
+        {
+            auto wouldInvoke = MaybeInvokeKernelGroup(id, false, position, loop, newState.loopIndices, schedule);
+            if (wouldInvoke)
             {
                 newState.validKernelGroups[id] = false;
             }
@@ -724,16 +904,12 @@ namespace loopnest
 
     void LoopNestBuilder::ReplaceInvokeOps(Block* loopBlock, const RecursionState& state)
     {
+        auto builder = OpBuilder(loopBlock, std::prev(loopBlock->end()));
         auto invokeOps = GetInvokeKernelOps(loopBlock);
         for (auto invokeOp : invokeOps)
         {
-            auto builder = OpBuilder(loopBlock, std::prev(loopBlock->end()));
             EmitKernelBody(builder, invokeOp, state.loopIndices);
-        }
-
-        for (auto op : invokeOps)
-        {
-            op.erase();
+            _builder.eraseOp(invokeOp);
         }
     }
 
@@ -745,8 +921,7 @@ namespace loopnest
         {
             auto kernelGroup = GetKernelGroup(id);
             auto validKernels = GetValidKernels(kernelGroup, afterBodyState.loopIndices, schedule, Position::epilogue);
-            auto invoked = !validKernels.empty();
-            if (invoked)
+            if (!validKernels.empty())
             {
                 epilogueKernels.insert(id);
             }
@@ -760,7 +935,8 @@ namespace loopnest
         auto ids = GetKernelIds();
         std::vector<std::string> validIds;
         std::copy_if(ids.begin(), ids.end(), std::back_inserter(validIds), [&](auto id) { return state.validKernelGroups.at(id); });
-        return ids;
+
+        return validIds;
     }
 
     std::vector<ScheduledKernelOp> LoopNestBuilder::GetPossiblyValidKernels(const RecursionState& state) const
@@ -775,11 +951,10 @@ namespace loopnest
         return kernels;
     }
 
-    bool LoopNestBuilder::InvokeKernelGroup(std::string id, Position position, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule)
+    bool LoopNestBuilder::MaybeInvokeKernelGroup(std::string id, bool invoke, Position position, ScheduledLoopOp loop, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule)
     {
         auto kernelGroup = GetKernelGroup(id);
         auto loopIndex = schedule.CurrentLoopIndex();
-        auto scheduledLoop = FindLatestScheduledLoop(loopIndex);
 
         // preprocess to get only valid kernels
         std::vector<ScheduledKernelOp> validKernels = GetValidKernels(kernelGroup, runtimeIndexVariables, schedule, position);
@@ -799,11 +974,11 @@ namespace loopnest
             switch (position)
             {
             case Position::prologue:
-                return scheduledLoop.getPrologueBuilder();
+                return loop.getPrologueBuilder();
             case Position::body:
-                return scheduledLoop.getBodyBuilder();
+                return loop.getBodyBuilder();
             case Position::epilogue:
-                return scheduledLoop.getEpilogueBuilder();
+                return loop.getEpilogueBuilder();
             default:
                 throw std::runtime_error("Illegal Position type");
             }
@@ -811,12 +986,14 @@ namespace loopnest
 
         for (auto kernel : validKernels)
         {
-            auto predicate = kernel.getPredicate();
-            if (predicate == nullptr || isa<NullPredicateOp>(predicate))
+            auto kernelPredicate = kernel.getKernelPredicate();
+            auto evaluatablePredicate = kernel.getEvaluatablePredicate();
+            if ((!kernelPredicate && !evaluatablePredicate) || isa<NullPredicateOp>(kernelPredicate))
             {
                 if (position == Position::body)
                 {
-                    InvokeKernel(builder, kernel, position, runtimeIndexVariables, schedule);
+                    if (invoke)
+                        InvokeKernel(builder, kernel, position, runtimeIndexVariables, schedule);
                     return true;
                 }
             }
@@ -824,24 +1001,25 @@ namespace loopnest
             {
                 bool predicateResult = false;
                 // TODO: Move to TypeSwitch
-                if (isa<NullPredicateOp>(predicate))
+                if (kernelPredicate && isa<NullPredicateOp>(kernelPredicate)) // BUG? This case looks like it gets handled (differently) above
                 {
                     predicateResult = schedule.IsInnermostLoop();
                 }
-                else if (auto kernelPredIface = dyn_cast<KernelPredicateOpInterface>(predicate))
+                else if (kernelPredicate)
                 {
-                    auto result = kernelPredIface.evaluate(GetDomain(), runtimeIndexVariables, schedule);
+                    auto result = kernelPredicate.evaluate(GetDomain(), runtimeIndexVariables, schedule);
                     if (result.has_value())
                         predicateResult = *result;
                 }
-                else if (auto evalPredIface = dyn_cast<EvaluatablePredicateOpInterface>(predicate))
+                else if (evaluatablePredicate)
                 {
-                    predicateResult = evalPredIface.evaluate(definedIndices, loopIndex, position);
+                    predicateResult = evaluatablePredicate.evaluate(definedIndices, loopIndex, position);
                 }
 
                 if (predicateResult)
                 {
-                    InvokeKernel(builder, kernel, position, runtimeIndexVariables, schedule);
+                    if (invoke)
+                        InvokeKernel(builder, kernel, position, runtimeIndexVariables, schedule);
                     return true;
                 }
             }
@@ -876,7 +1054,7 @@ namespace loopnest
         std::set<int64_t> splits;
         for (auto k : GetPossiblyValidKernels(state))
         {
-            AddSplits(loopIndex, loopRange, k.getPredicate(), state.loopIndices, schedule, splits);
+            AddSplits(loopIndex, loopRange, k.getKernelPredicate(), state.loopIndices, schedule, splits);
         }
 
         // Get index ranges
@@ -894,13 +1072,16 @@ namespace loopnest
         return result;
     }
 
-    void LoopNestBuilder::AddSplits(const Index& loopIndex, const Range& loopRange, Operation* predicateOp, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule, std::set<int64_t>& allSplits) const
+    void LoopNestBuilder::AddSplits(const Index& loopIndex, const Range& loopRange, KernelPredicateOpInterface predicateOp, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule, std::set<int64_t>& allSplits) const
     {
         // Adds split points for a fixed loopRange. This does not change the top level boundaries of the loop.
         // To adjust the top level boundaries, see LoopVisitSchedule::GetActiveLoopRange
 
-        // For some reason, simplifying a FragmentTypePredicate here erroneously returns a constant (empty) predicate
-        // auto predicate = predicateOp.Simplify(GetDomain(), runtimeIndexVariables, schedule);
+        if (predicateOp)
+        {
+            auto builder = const_cast<LoopNestBuilder*>(this)->GetCurrentLoopBuilder(schedule);
+            predicateOp = predicateOp.simplify(builder, GetDomain(), runtimeIndexVariables, schedule);
+        }
 
         const auto& domain = GetDomain();
 
@@ -1060,11 +1241,10 @@ namespace loopnest
                             break;
                         }
                         case FragmentType::select:
-                            // single select value
-                            // Note: not a special-case of FragmentType::range because it requires different
-                            // treatment of split points to candidate ranges during evaluation (see addValidSplits below).
+                            // single select value (split points are just before the selected value, and 1 increment after)
                             assert(indexValues.size() == 1 && "Invalid number of index values for select predicate");
-                            splitVals.push_back(indexValues[0]);
+                                splitVals.push_back(indexValues[0]);
+                                splitVals.push_back(indexValues[0] + 1);
                             break;
                         case FragmentType::endBoundary:
                             // already set by automatic boundary-handling code
@@ -1270,8 +1450,8 @@ namespace loopnest
     bool LoopNestBuilder::IsPlacementValid(ScheduledKernelOp kernel, const LoopIndexSymbolTable& runtimeLoopIndices, const LoopVisitSchedule& schedule, const Position& position) const
     {
         const auto& domain = GetDomain();
-        auto placementPredicate = dyn_cast_or_null<KernelPredicateOpInterface>(kernel.getPlacementPredicate());
-        auto isEmpty = !kernel.getPlacementPredicate() || static_cast<bool>(dyn_cast_or_null<NullPredicateOp>(kernel.getPlacementPredicate()));
+        auto placementPredicate = kernel.getPlacementPredicate();
+        auto isEmpty = !kernel.getPlacementPredicate() || static_cast<bool>(dyn_cast_or_null<NullPredicateOp>(kernel.getPlacementPredicate().getOperation()));
 
         if (isEmpty || IsBodyPlacementPredicate(placementPredicate))
         {
@@ -1281,7 +1461,7 @@ namespace loopnest
             //
             // TODO: merge the EvaluatablePredicate interface with the old "placement" predicate (or just replace the
             //       "placement" predicate concept with EvaluatablePredicate)
-            auto hasEvaluatablePredicate = kernel.getPredicate() != nullptr && isa<EvaluatablePredicateOpInterface>(kernel.getPredicate());
+            auto hasEvaluatablePredicate = kernel.getEvaluatablePredicate() != nullptr;
             if (!schedule.IsInnermostLoop())
             {
                 if (position == Position::body || !hasEvaluatablePredicate)
@@ -1423,11 +1603,12 @@ namespace loopnest
                 return false;
             }
 
-            auto predicate = k.getPredicate();
-            if (auto kernelPredIface = dyn_cast_or_null<KernelPredicateOpInterface>(predicate))
+            auto kernelPredicate = k.getKernelPredicate();
+            auto evaluatablePredicate = k.getEvaluatablePredicate();
+            if (kernelPredicate)
             {
-                auto simplifiedPredicateOp = kernelPredIface.simplify(GetDomain(), runtimeIndexVariables, schedule);
-                auto simplifiedPredicate = dyn_cast_or_null<KernelPredicateOpInterface>(simplifiedPredicateOp);
+                auto builder = const_cast<LoopNestBuilder*>(this)->GetCurrentLoopBuilder(schedule);
+                auto simplifiedPredicate = kernelPredicate.simplify(builder, GetDomain(), runtimeIndexVariables, schedule);
                 auto result = simplifiedPredicate.evaluate(GetDomain(), runtimeIndexVariables, schedule);
                 if (result.has_value() && *result == false)
                 {
@@ -1435,9 +1616,9 @@ namespace loopnest
                 }
                 return true;
             }
-            else if (auto evalPredIface = dyn_cast_or_null<EvaluatablePredicateOpInterface>(predicate))
+            else if (evaluatablePredicate)
             {
-                auto predicateResult = evalPredIface.evaluate(definedIndices, loopIndex, position);
+                auto predicateResult = evaluatablePredicate.evaluate(definedIndices, loopIndex, position);
                 if (!predicateResult)
                 {
                     return false;
@@ -1472,14 +1653,16 @@ namespace loopnest
         return indexVariables;
     }
 
-    mlir::ConstantIndexOp LoopNestBuilder::GetConstantIndex(OpBuilder& builder, int64_t indexVal)
+    arith::ConstantIndexOp LoopNestBuilder::GetConstantIndex(OpBuilder& builder, int64_t indexVal)
     {
+        OpBuilder::InsertionGuard guard(builder);
+
         if (_constantIndices.count(indexVal) == 0)
         {
             auto loc = GetLocation();
             auto block = _constantOpBuilder.getInsertionBlock();
             _constantOpBuilder.setInsertionPoint(block, block->begin());
-            _constantIndices[indexVal] = _constantOpBuilder.create<ConstantIndexOp>(loc, indexVal);
+            _constantIndices[indexVal] = _constantOpBuilder.create<arith::ConstantIndexOp>(loc, indexVal);
         }
         return _constantIndices[indexVal];
     }
@@ -1509,7 +1692,7 @@ namespace loopnest
     void LoopNestBuilder::DefinePostLoopIndex(OpBuilder& builder, const Index& loopIndex, LoopIndexSymbolTable& runtimeLoopIndices, const LoopVisitSchedule& schedule)
     {
         auto loopRange = schedule.GetActiveLoopRange(GetDomain(), loopIndex, runtimeLoopIndices);
-        ConstantIndexOp firstVal = GetConstantIndex(builder, loopRange.Begin());
+        arith::ConstantIndexOp firstVal = GetConstantIndex(builder, loopRange.Begin());
         auto entry = LoopIndexSymbolTableEntry{ firstVal, loopRange, LoopIndexState::done };
 
         if (runtimeLoopIndices.count(loopIndex) > 0)
@@ -1587,6 +1770,17 @@ namespace loopnest
         auto prevIndex = schedule.Prev().CurrentLoopIndex();
         auto prevScheduledLoop = FindLatestScheduledLoop(prevIndex);
         return prevScheduledLoop.getBodyBuilder();
+    }
+
+    mlir::OpBuilder LoopNestBuilder::GetCurrentLoopBuilder(const LoopVisitSchedule& schedule, ScheduledLoopOp innerLoop)
+    {
+        if (schedule.IsOutermostLoop())
+        {
+            return _builder;
+        }
+
+        auto loop = innerLoop->getParentOfType<ScheduledLoopOp>();
+        return loop.getBodyBuilder();
     }
 
     std::vector<ScheduledLoopOp> LoopNestBuilder::FindAllScheduledLoops(Index value)
@@ -1797,20 +1991,6 @@ namespace loopnest
             kernelIds.insert(kernelIds.begin(), kernelsAttr.begin(), kernelsAttr.end());
         }
         scheduledLoopOp->setAttr("kernels", builder.getArrayAttr(kernelIds));
-    }
-
-    void LoopNestBuilder::EnsureTerminators()
-    {
-        for (auto [_, loopOps] : _loops)
-        {
-            for (auto scheduledLoopOp : loopOps)
-            {
-                auto loc = GetLocation();
-                ScheduledLoopOp::ensureTerminator(scheduledLoopOp.prologue(), _builder, loc);
-                ScheduledLoopOp::ensureTerminator(scheduledLoopOp.body(), _builder, loc);
-                ScheduledLoopOp::ensureTerminator(scheduledLoopOp.epilogue(), _builder, loc);
-            }
-        }
     }
 
     mlir::Location LoopNestBuilder::GetLocation()

@@ -7,6 +7,7 @@
 #define MLIR_DIALECT_ARGO_EDSC_FOLDEDINTRINSICS_H_
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Transforms/FoldUtils.h>
 
@@ -54,11 +55,11 @@ struct FoldedValueBuilder<memref::DimOp> {
     int64_t dim = mlir::getMemrefOrTensorShape(memrefOrTensor, index);
 
     if (dim != ShapedType::kDynamicSize) {
-      value = folder ? folder->create<ConstantIndexOp>(
+      value = folder ? folder->create<arith::ConstantIndexOp>(
                            b,
                            loc, dim)
                      : b
-                           .create<ConstantIndexOp>(
+                           .create<arith::ConstantIndexOp>(
                                loc, dim);
       return;
     }
@@ -86,7 +87,7 @@ struct FoldedValueBuilder<AffineApplyOp> {
       AffineExpr expr = map.getResult(0);
       if (map.getNumInputs() == 0) {
         if (auto val = expr.dyn_cast<AffineConstantExpr>()) {
-          value = FoldedValueBuilder<ConstantIndexOp>(b, loc, folder, val.getValue());
+          value = FoldedValueBuilder<arith::ConstantIndexOp>(b, loc, folder, val.getValue());
           return;
         }
       } else {
@@ -113,12 +114,12 @@ struct FoldedValueBuilder<AffineApplyOp> {
   Value value;
 };
 
-using folded_std_constant_index = FoldedValueBuilder<ConstantIndexOp>;
+using folded_std_constant_index = FoldedValueBuilder<arith::ConstantIndexOp>;
 using folded_std_dim = FoldedValueBuilder<memref::DimOp>;
-using folded_std_addi = FoldedValueBuilder<AddIOp>;
-using folded_std_muli = FoldedValueBuilder<MulIOp>;
-using folded_std_subi = FoldedValueBuilder<SubIOp>;
-using folded_std_diviu = FoldedValueBuilder<UnsignedDivIOp>;
+using folded_std_addi = FoldedValueBuilder<arith::AddIOp>;
+using folded_std_muli = FoldedValueBuilder<arith::MulIOp>;
+using folded_std_subi = FoldedValueBuilder<arith::SubIOp>;
+using folded_std_diviu = FoldedValueBuilder<arith::DivUIOp>;
 using folded_affine_apply = FoldedValueBuilder<AffineApplyOp>;
 
 } // namespace intrinsics

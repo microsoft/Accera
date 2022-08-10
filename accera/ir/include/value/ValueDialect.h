@@ -71,7 +71,6 @@ using mlir::OpBuilder;
 using mlir::Operation;
 using mlir::OperationState;
 using mlir::OpFoldResult;
-using mlir::OwningRewritePatternList;
 using mlir::ParseResult;
 using mlir::Region;
 using mlir::ShapedType;
@@ -109,5 +108,6 @@ const mlir::StringRef BaseNameAttrName = "accv.base_name";
 #define GET_OP_CLASSES
 #include "ValueFuncOp.h"
 #include "ValueMMAOp.h"
+#include "ValueRangeOp.h"
 #include "value/ValueDialect.h.inc"
 #include "value/ValueOps.h.inc"

@@ -12,9 +12,8 @@
 namespace mlir
 {
 class MLIRContext;
+} // namespace mlir
 
 #include "argo/ArgoDialect.h.inc"
-
-} // namespace mlir
 
 #endif // MLIR_DIALECT_ARGO_TYPES_H_

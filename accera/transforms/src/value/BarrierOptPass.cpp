@@ -10,7 +10,7 @@
 
 #include <utilities/include/TypeTraits.h>
 
-#include <mlir/Analysis/LoopAnalysis.h>
+#include <mlir/Dialect/Affine/Analysis/LoopAnalysis.h>
 
 #include <mlir/IR/Visitors.h>
 
@@ -778,6 +778,20 @@ private:
             return llvm::None;
         };
 
+        auto getVectorAccessInfo = [](auto op, MemoryAccessType accessType) -> llvm::Optional<MemoryAccessInfo> {
+            auto memRefType = op.getMemRefType();
+            auto memSpace = memRefType.getMemorySpaceAsInt();
+            if (memSpace == gpu::GPUDialect::getWorkgroupAddressSpace())
+            {
+                MemoryAccessInfo info;
+                info.op = op.getOperation();
+                info.baseMemRef = GetBaseMemRef(op.base());
+                info.accessType = accessType;
+                return info;
+            }
+            return llvm::None;
+        };
+
         auto getAffineAccessInfo = [getAccessInfo](auto affineOp, MemoryAccessType accessType) -> llvm::Optional<MemoryAccessInfo> {
             if (auto result = getAccessInfo(affineOp, accessType))
             {
@@ -801,6 +815,12 @@ private:
             })
             .Case<mlir::memref::StoreOp>([&](mlir::memref::StoreOp storeOp) {
                 return getAccessInfo(storeOp, MemoryAccessType::Write);
+            })
+            .Case<mlir::vector::LoadOp>([&](mlir::vector::LoadOp loadOp) {
+                return getVectorAccessInfo(loadOp, MemoryAccessType::Read);
+            })
+            .Case<mlir::vector::StoreOp>([&](mlir::vector::StoreOp storeOp) {
+                return getVectorAccessInfo(storeOp, MemoryAccessType::Write);
             })
             .Default([](Operation*) { return llvm::None; });
 
@@ -832,11 +852,11 @@ private:
             }
             else if (auto forOp = llvm::dyn_cast<mlir::scf::ForOp>(op))
             {
-                if (auto lowerBound = forOp.lowerBound().getDefiningOp<mlir::ConstantOp>())
+                if (auto lowerBound = forOp.getLowerBound().getDefiningOp<mlir::arith::ConstantOp>())
                 {
-                    if (auto upperBound = forOp.upperBound().getDefiningOp<mlir::ConstantOp>())
+                    if (auto upperBound = forOp.getUpperBound().getDefiningOp<mlir::arith::ConstantOp>())
                     {
-                        if (auto step = forOp.step().getDefiningOp<mlir::ConstantOp>())
+                        if (auto step = forOp.getStep().getDefiningOp<mlir::arith::ConstantOp>())
                         {
                             return (upperBound.getValue().cast<mlir::IntegerAttr>().getInt() - lowerBound.getValue().cast<mlir::IntegerAttr>().getInt()) / step.getValue().cast<mlir::IntegerAttr>().getInt();
                         }

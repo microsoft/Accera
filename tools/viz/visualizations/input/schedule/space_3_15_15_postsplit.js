@@ -138,6 +138,7 @@ async function RunViz(Viz, SceneView) {
             label: "i", 
             label_pos: 0.3, 
             label_size: 1.25,
+            // label_font: '"Times New Roman", Times, serif'
         },
     });
 
@@ -151,7 +152,8 @@ async function RunViz(Viz, SceneView) {
     space5d.root_object.rotation.y = -0.3;
     space5d.root_object.rotation.z = 0.02;
 
-    for(let s = 0; s < split_size; ++s) {
+
+    for(let s = 0; s < 3; ++s) {
         for(let jj = 2; jj < 5; ++jj) {
             for(let k = 0; k < d2; ++k) {
                 space5d.get_iteration_space([0, s]).set_child_color(
@@ -162,6 +164,6 @@ async function RunViz(Viz, SceneView) {
         }
     }
 
-    await Viz.SaveImage("space_3_4_3_15");
+    await Viz.SaveImage("space_3_15_15_postsplit");
 }
 

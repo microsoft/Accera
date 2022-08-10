@@ -11,7 +11,7 @@
 
 #include <llvm/Support/PointerLikeTypeTraits.h>
 #include <mlir/IR/Block.h>
-#include <mlir/IR/FunctionSupport.h>
+#include <mlir/IR/FunctionInterfaces.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/Interfaces/CallInterfaces.h>
@@ -19,7 +19,7 @@
 namespace accera::ir::value
 {
 
-class ValueFuncOp : public mlir::Op<ValueFuncOp, mlir::OpTrait::SymbolTable, mlir::OpTrait::ZeroOperands, mlir::OpTrait::ZeroResult, mlir::OpTrait::OneRegion, mlir::OpTrait::IsIsolatedFromAbove, mlir::OpTrait::FunctionLike, mlir::OpTrait::AutomaticAllocationScope, mlir::OpTrait::AffineScope, mlir::CallableOpInterface::Trait, mlir::SymbolOpInterface::Trait>
+class ValueFuncOp : public mlir::Op<ValueFuncOp, mlir::OpTrait::SymbolTable, mlir::OpTrait::ZeroOperands, mlir::OpTrait::ZeroResult, mlir::OpTrait::OneRegion, mlir::OpTrait::IsIsolatedFromAbove, mlir::FunctionOpInterface::Trait, mlir::OpTrait::AutomaticAllocationScope, mlir::OpTrait::AffineScope, mlir::CallableOpInterface::Trait, mlir::SymbolOpInterface::Trait>
 {
 public:
     struct ExternalFuncTag
@@ -86,19 +86,19 @@ public:
         return this->getOperation()->getRegion(0);
     }
 
-private:
-    // This trait needs access to the hooks defined below.
-    friend class OpTrait::FunctionLike<ValueFuncOp>;
+    /// Returns the type of this function.
+    /// FIXME: We should drive this via the ODS `type` param.
+    FunctionType getType() { 
+      return getTypeAttr().getValue().cast<FunctionType>();
+    }
 
-    /// Returns the number of arguments. This is a hook for OpTrait::FunctionLike.
-    unsigned getNumFuncArguments() { return getType().getInputs().size(); }
+    /// Returns the argument types of this function. This is a hook for FunctionOpInterface.
+    ArrayRef<Type> getArgumentTypes() { return getType().getInputs(); }
 
-    /// Returns the number of results. This is a hook for OpTrait::FunctionLike.
-    unsigned getNumFuncResults() { return getType().getResults().size(); }
+    /// Returns the result types of this function. This is a hook for FunctionOpInterface.
+    ArrayRef<Type> getResultTypes() { return getType().getResults(); }
 
-    /// Hook for OpTrait::FunctionLike, called after verifying that the 'type'
-    /// attribute is present and checks if it holds a function type.  Ensures
-    /// getType, getNumFuncArguments, and getNumFuncResults can be called safely.
+    /// Hook for FunctionOpInterface verifier.
     LogicalResult verifyType();
 };
 

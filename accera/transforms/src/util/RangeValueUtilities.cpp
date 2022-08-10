@@ -10,20 +10,6 @@
 
 #include <ir/include/IRUtil.h>
 
-#include <llvm/IR/GlobalValue.h>
-#include <mlir/Analysis/DataFlowAnalysis.h>
-#include <mlir/Dialect/Affine/IR/AffineOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/Linalg/IR/LinalgOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/SCF.h>
-#include <mlir/Dialect/StandardOps/IR/Ops.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/Dialect.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Interfaces/ControlFlowInterfaces.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
@@ -31,11 +17,8 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/Passes.h>
 
-#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/IR/ConstantRange.h>
 #include <llvm/Support/Debug.h>
-#include <llvm/Support/raw_os_ostream.h>
 
 #include <algorithm>
 
@@ -55,27 +38,21 @@ using llvm::Instruction;
 namespace
 {
 
-RangeValue resolveThreadIdRange(Operation* op, llvm::StringRef dimId)
+RangeValue resolveThreadIdRange(Operation* op, gpu::Dimension dimId)
 {
-    auto upperBound = GetBlockDimSize(op, dimId.str());
+    auto upperBound = GetBlockDimSize(op, dimId);
     return RangeValue(0, upperBound - 1); // -1 because RangeValue will add 1 to the upper bound and the thread id never takes on the upperBound value
 }
 
-RangeValue resolveBlockIdRange(Operation* op, llvm::StringRef dimId)
+RangeValue resolveBlockIdRange(Operation* op, gpu::Dimension dimId)
 {
-    auto upperBound = GetGridDimSize(op, dimId.str());
+    auto upperBound = GetGridDimSize(op, dimId);
     return RangeValue(0, upperBound - 1); // -1 because RangeValue will add 1 to the upper bound and the block id never takes on the upperBound value
 }
 
-RangeValue resolveBlockDimRange(Operation* op, llvm::StringRef dimId)
+RangeValue resolveGridDimRange(Operation* op, gpu::Dimension dimId)
 {
-    auto upperBound = GetBlockDimSize(op, dimId.str());
-    return RangeValue(upperBound, upperBound);
-}
-
-RangeValue resolveGridDimRange(Operation* op, llvm::StringRef dimId)
-{
-    auto upperBound = GetGridDimSize(op, dimId.str());
+    auto upperBound = GetGridDimSize(op, dimId);
     return RangeValue(upperBound, upperBound);
 }
 
@@ -256,7 +233,7 @@ SmallVector<RangeValue, 3> RangeValueAnalysis::resolveOperands(Operation* op)
     return operands;
 }
 
-RangeValue RangeValueAnalysis::resolveRangeValue(ConstantOp op)
+RangeValue RangeValueAnalysis::resolveRangeValue(arith::ConstantOp op)
 {
     auto attr = op.getValue();
     if (auto value = attr.dyn_cast<IntegerAttr>())
@@ -265,19 +242,19 @@ RangeValue RangeValueAnalysis::resolveRangeValue(ConstantOp op)
     }
     return RangeValue();
 }
-RangeValue RangeValueAnalysis::resolveRangeValue(ConstantIndexOp op)
+RangeValue RangeValueAnalysis::resolveRangeValue(arith::ConstantIndexOp op)
 {
-    auto value = op.getValue();
+    auto value = op.value();
     return RangeValue(value, value);
 }
-RangeValue RangeValueAnalysis::resolveRangeValue(ConstantIntOp op)
+RangeValue RangeValueAnalysis::resolveRangeValue(arith::ConstantIntOp op)
 {
-    auto value = op.getValue();
+    auto value = op.value();
     return RangeValue(value, value);
 }
-RangeValue RangeValueAnalysis::resolveRangeValue(IndexCastOp op)
+RangeValue RangeValueAnalysis::resolveRangeValue(arith::IndexCastOp op)
 {
-    auto val = op.in();
+    auto val = op.getIn();
     if (hasRange(val))
     {
         return getRange(val);
@@ -300,11 +277,6 @@ RangeValue RangeValueAnalysis::resolveRangeValue(gpu::BlockIdOp op)
     return resolveBlockIdRange(op, op.dimension());
 }
 
-RangeValue RangeValueAnalysis::resolveRangeValue(mlir::gpu::BlockDimOp op)
-{
-    return resolveBlockDimRange(op, op.dimension());
-}
-
 RangeValue RangeValueAnalysis::resolveRangeValue(mlir::gpu::GridDimOp op)
 {
     return resolveGridDimRange(op, op.dimension());
@@ -322,31 +294,31 @@ RangeValue RangeValueAnalysis::resolveRangeValue(AffineForOp op)
 RangeValue RangeValueAnalysis::resolveRangeValue(scf::ForOp op)
 {
     assert(op.getNumInductionVars() == 1);
-    if (op.upperBound().isa<mlir::BlockArgument>()) // variable upper bound
+    if (op.getUpperBound().isa<mlir::BlockArgument>()) // variable upper bound
     {
         return RangeValue();
     }
 
-    RangeValue lowerBound = resolveRangeValue(op.lowerBound().getDefiningOp());
-    RangeValue upperBound = resolveRangeValue(op.upperBound().getDefiningOp());
+    RangeValue lowerBound = resolveRangeValue(op.getLowerBound().getDefiningOp());
+    RangeValue upperBound = resolveRangeValue(op.getUpperBound().getDefiningOp());
     return lowerBound.isConstant() && upperBound.isConstant() ? RangeValue(lowerBound.range.getLower(), upperBound.range.getUpper() - 1) : RangeValue();
 }
 RangeValue RangeValueAnalysis::resolveRangeValue(mlir::Operation* op)
 {
     return mlir::TypeSwitch<mlir::Operation*, RangeValue>(op)
-        .Case([&](ConstantOp op) { return resolveRangeValue(op); })
-        .Case([&](ConstantIndexOp op) { return resolveRangeValue(op); })
-        .Case([&](ConstantIntOp op) { return resolveRangeValue(op); })
-        .Case([&](IndexCastOp op) { return resolveRangeValue(op); })
+        .Case([&](arith::ConstantOp op) { return resolveRangeValue(op); })
+        .Case([&](arith::ConstantIndexOp op) { return resolveRangeValue(op); })
+        .Case([&](arith::ConstantIntOp op) { return resolveRangeValue(op); })
+        .Case([&](arith::IndexCastOp op) { return resolveRangeValue(op); })
         .Case([&](gpu::ThreadIdOp op) { return resolveRangeValue(op); })
         .Case([&](gpu::BlockIdOp op) { return resolveRangeValue(op); })
-        .Case([&](AddIOp op) { return resolveRangeValue(Instruction::BinaryOps::Add, op); })
-        .Case([&](SubIOp op) { return resolveRangeValue(Instruction::BinaryOps::Sub, op); })
-        .Case([&](MulIOp op) { return resolveRangeValue(Instruction::BinaryOps::Mul, op); })
-        .Case([&](SignedRemIOp op) { return resolveRangeValue(Instruction::BinaryOps::SRem, op); })
-        .Case([&](UnsignedRemIOp op) { return resolveRangeValue(Instruction::BinaryOps::URem, op); })
-        .Case([&](SignedDivIOp op) { return resolveRangeValue(Instruction::BinaryOps::SDiv, op); })
-        .Case([&](UnsignedDivIOp op) { return resolveRangeValue(Instruction::BinaryOps::UDiv, op); })
+        .Case([&](arith::AddIOp op) { return resolveRangeValue(Instruction::BinaryOps::Add, op); })
+        .Case([&](arith::SubIOp op) { return resolveRangeValue(Instruction::BinaryOps::Sub, op); })
+        .Case([&](arith::MulIOp op) { return resolveRangeValue(Instruction::BinaryOps::Mul, op); })
+        .Case([&](arith::RemSIOp op) { return resolveRangeValue(Instruction::BinaryOps::SRem, op); })
+        .Case([&](arith::RemUIOp op) { return resolveRangeValue(Instruction::BinaryOps::URem, op); })
+        .Case([&](arith::DivSIOp op) { return resolveRangeValue(Instruction::BinaryOps::SDiv, op); })
+        .Case([&](arith::DivUIOp op) { return resolveRangeValue(Instruction::BinaryOps::UDiv, op); })
         .Case([&](scf::ForOp op) { return resolveRangeValue(op); })
         .Case([&](AffineForOp op) { return resolveRangeValue(op); })
         .Default([&](mlir::Operation*) { return RangeValue(); });

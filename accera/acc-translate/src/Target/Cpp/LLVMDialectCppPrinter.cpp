@@ -15,7 +15,7 @@ namespace cpp_printer
 {
     LogicalResult LLVMDialectCppPrinter::printFenceOp(LLVM::FenceOp op)
     {
-        if (op.syncscope() == "agent" && op.ordering() == LLVM::AtomicOrdering::seq_cst)
+        if (op.getSyncscope() == "agent" && op.getOrdering() == LLVM::AtomicOrdering::seq_cst)
         {
             os << "__threadfence()";
             return success();

@@ -14,12 +14,13 @@
 #include <utilities/include/TypeTraits.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
-#include <mlir/Dialect/Vector/VectorOps.h>
-#include <mlir/Dialect/Vector/VectorUtils.h>
+#include <mlir/Dialect/Vector/IR/VectorOps.h>
+#include <mlir/Dialect/Vector/Utils/VectorUtils.h>
 
 #include <llvm/ADT/TypeSwitch.h>
 
@@ -103,15 +104,16 @@ bool CanVectorizeOp(mlir::Operation* op,
     auto result =
         mlir::TypeSwitch<mlir::Operation*, bool>(op)
             .Case([](mlir::memref::AllocaOp) { return true; })
-            .Case([](mlir::ConstantOp) { return true; })
+            .Case([](mlir::arith::ConstantOp) { return true; })
             .Case([](mlir::memref::LoadOp) { return true; })
             .Case([](mlir::memref::StoreOp) { return true; })
             .Case([](mlir::AffineLoadOp) { return true; })
             .Case([](mlir::AffineStoreOp) { return true; })
             .Case([](mlir::SelectOp) { return true; })
-            .Case([](mlir::ShiftLeftOp) { return true; })
-            .Case([](mlir::FPToSIOp) { return true; })
-            .Case([](mlir::AbsFOp) { return true; })
+            .Case([](mlir::arith::ShLIOp) { return true; })
+            .Case([](mlir::arith::FPToSIOp) { return true; })
+            .Case([](mlir::arith::ExtSIOp) { return true; })
+            .Case([](mlir::math::AbsOp) { return true; })
             // .Case([&](mlir::AffineApplyOp) { return true; }) // TODO: either enable or remove this
             .Case([](mlir::math::ExpOp) { return true; })
             .Case([](v::BitcastOp) { return true; })
@@ -240,7 +242,7 @@ std::optional<VectorizedOp> VectorizeAllocaOp(mlir::PatternRewriter& rewriter,
 }
 
 std::optional<mlir::Operation*> VectorizeConstantOp(mlir::PatternRewriter& rewriter,
-                                                    mlir::ConstantOp op,
+                                                    mlir::arith::ConstantOp op,
                                                     const VectorizedOpMap& vectorizedOps,
                                                     std::vector<mlir::BlockAndValueMapping>& laneMappings,
                                                     mlir::Value inductionVar,
@@ -371,12 +373,12 @@ std::optional<VectorizedOp> VectorizeLoadOp(mlir::PatternRewriter& rewriter,
     else
     {
         // Fall back to many loads and stores into a vector
-        auto zero = rewriter.create<mlir::ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
+        auto zero = rewriter.create<mlir::arith::ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
         result = rewriter.create<mlir::vector::BroadcastOp>(loc, vectorType, zero);
         for (int64_t i = 0; i < vectorSize; ++i)
         {
             auto elementLoad = rewriter.clone(*op.getOperation(), laneMappings[i]);
-            result = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad->getResult(0), result, i);
+            result = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad->getResult(0), result, rewriter.create<mlir::arith::ConstantIndexOp>(loc, i));
         }
     }
     return result;
@@ -421,7 +423,8 @@ std::optional<VectorizedOp> VectorizeStoreOp(mlir::PatternRewriter& rewriter,
         std::vector<mlir::Operation*> storeOps;
         for (int64_t i = 0; i < vectorSize; ++i)
         {
-            auto element = rewriter.create<mlir::vector::ExtractElementOp>(op.getLoc(), vectorizedValueToStore, i);
+            auto offset = rewriter.create<mlir::arith::ConstantIndexOp>(op.getLoc(), i);
+            auto element = rewriter.create<mlir::vector::ExtractElementOp>(op.getLoc(), vectorizedValueToStore, offset);
             auto elementStore = rewriter.clone(*op.getOperation(), laneMappings[i]);
             elementStore->setOperand(0, element);
             storeOps.push_back(elementStore);
@@ -457,12 +460,12 @@ std::optional<VectorizedOp> VectorizeAffineLoadOp(mlir::PatternRewriter& rewrite
     else
     {
         // Fall back to many loads and stores into a vector
-        auto zero = rewriter.create<mlir::ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
+        auto zero = rewriter.create<mlir::arith::ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
         result = rewriter.create<mlir::vector::BroadcastOp>(loc, vectorType, zero);
         for (int64_t i = 0; i < vectorSize; ++i)
         {
             auto elementLoad = rewriter.clone(*op.getOperation(), laneMappings[i]);
-            result = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad->getResult(0), result, i);
+            result = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad->getResult(0), result, rewriter.create<mlir::arith::ConstantIndexOp>(loc, i));
         }
     }
     return result;
@@ -507,7 +510,8 @@ std::optional<VectorizedOp> VectorizeAffineStoreOp(mlir::PatternRewriter& rewrit
         std::vector<mlir::Operation*> storeOps;
         for (int64_t i = 0; i < vectorSize; ++i)
         {
-            auto element = rewriter.create<mlir::vector::ExtractElementOp>(op.getLoc(), vectorizedValueToStore, i);
+            auto offset = rewriter.create<mlir::arith::ConstantIndexOp>(op.getLoc(), i);
+            auto element = rewriter.create<mlir::vector::ExtractElementOp>(op.getLoc(), vectorizedValueToStore, offset);
             auto elementStore = rewriter.clone(*op.getOperation(), laneMappings[i]);
             elementStore->setOperand(0, element);
             storeOps.push_back(elementStore);
@@ -530,7 +534,7 @@ std::optional<VectorizedOp> VectorizeAffineApplyOp(mlir::PatternRewriter& rewrit
     for (int64_t i = 0; i < vectorSize; ++i)
     {
         // TODO: make a helper function for this indices-array-modification code
-        auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, i);
+        auto offset = rewriter.create<mlir::arith::ConstantIndexOp>(loc, i);
         auto offsetInductionVar = rewriter.create<mlir::AffineApplyOp>(loc, inductionVarMap, mlir::ValueRange{ inductionVar, offset });
 
         mlir::BlockAndValueMapping& operandMap = laneMappings[i];
@@ -568,7 +572,7 @@ std::optional<mlir::Operation*> VectorizeSelectOp(mlir::PatternRewriter& rewrite
 }
 
 std::optional<mlir::Operation*> VectorizeShiftLeftOp(mlir::PatternRewriter& rewriter,
-                                                     mlir::ShiftLeftOp op,
+                                                     mlir::arith::ShLIOp op,
                                                      const VectorizedOpMap& vectorizedOps,
                                                      std::vector<mlir::BlockAndValueMapping>& laneMappings,
                                                      mlir::Value inductionVar,
@@ -576,20 +580,20 @@ std::optional<mlir::Operation*> VectorizeShiftLeftOp(mlir::PatternRewriter& rewr
                                                      int64_t vectorSize)
 {
     // Get (vector) arguments from map
-    auto lhs = GetVectorizedPredecessor(rewriter, op.lhs(), vectorizedOps, laneMappings, inductionVar, step, vectorSize);
-    auto rhs = GetVectorizedPredecessor(rewriter, op.rhs(), vectorizedOps, laneMappings, inductionVar, step, vectorSize);
+    auto lhs = GetVectorizedPredecessor(rewriter, op.getLhs(), vectorizedOps, laneMappings, inductionVar, step, vectorSize);
+    auto rhs = GetVectorizedPredecessor(rewriter, op.getRhs(), vectorizedOps, laneMappings, inductionVar, step, vectorSize);
     if (!lhs || !rhs)
     {
         return std::nullopt;
     }
 
     auto loc = op.getLoc();
-    auto result = rewriter.create<mlir::ShiftLeftOp>(loc, lhs->GetVectorResult(), rhs->GetVectorResult());
+    auto result = rewriter.create<mlir::arith::ShLIOp>(loc, lhs->GetVectorResult(), rhs->GetVectorResult());
     return result;
 }
 
 std::optional<mlir::Operation*> VectorizeFPToSIOp(mlir::PatternRewriter& rewriter,
-                                                  mlir::FPToSIOp op,
+                                                  mlir::arith::FPToSIOp op,
                                                   const VectorizedOpMap& vectorizedOps,
                                                   std::vector<mlir::BlockAndValueMapping>& laneMappings,
                                                   mlir::Value inductionVar,
@@ -597,7 +601,7 @@ std::optional<mlir::Operation*> VectorizeFPToSIOp(mlir::PatternRewriter& rewrite
                                                   int64_t vectorSize)
 {
     // Get (vector) arguments from map
-    auto inputOp = op.in();
+    auto inputOp = op.getIn();
     auto input = GetVectorizedPredecessor(rewriter, inputOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
     if (!input)
     {
@@ -607,20 +611,20 @@ std::optional<mlir::Operation*> VectorizeFPToSIOp(mlir::PatternRewriter& rewrite
     auto loc = op.getLoc();
     auto scalarResultType = op.getResult().getType();
     auto resultType = mlir::VectorType::get({ vectorSize }, scalarResultType);
-    auto result = rewriter.create<mlir::FPToSIOp>(loc, resultType, input->GetVectorResult());
+    auto result = rewriter.create<mlir::arith::FPToSIOp>(loc, resultType, input->GetVectorResult());
     return result;
 }
 
-std::optional<mlir::Operation*> VectorizeAbsFOp(mlir::PatternRewriter& rewriter,
-                                                mlir::AbsFOp op,
-                                                const VectorizedOpMap& vectorizedOps,
-                                                std::vector<mlir::BlockAndValueMapping>& laneMappings,
-                                                mlir::Value inductionVar,
-                                                int64_t step,
-                                                int64_t vectorSize)
+std::optional<mlir::Operation*> VectorizeSignExtendIOp(mlir::PatternRewriter& rewriter,
+                                                       mlir::arith::ExtSIOp op,
+                                                       const VectorizedOpMap& vectorizedOps,
+                                                       std::vector<mlir::BlockAndValueMapping>& laneMappings,
+                                                       mlir::Value inductionVar,
+                                                       int64_t step,
+                                                       int64_t vectorSize)
 {
     // Get (vector) arguments from map
-    auto inputOp = op.operand();
+    auto inputOp = op.getIn();
     auto input = GetVectorizedPredecessor(rewriter, inputOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
     if (!input)
     {
@@ -628,7 +632,30 @@ std::optional<mlir::Operation*> VectorizeAbsFOp(mlir::PatternRewriter& rewriter,
     }
 
     auto loc = op.getLoc();
-    auto result = rewriter.create<mlir::AbsFOp>(loc, input->GetVectorResult());
+    auto scalarResultType = op.getResult().getType();
+    auto resultType = mlir::VectorType::get({ vectorSize }, scalarResultType);
+    auto result = rewriter.create<mlir::arith::ExtSIOp>(loc, resultType, input->GetVectorResult());
+    return result;
+}
+
+std::optional<mlir::Operation*> VectorizeAbsFOp(mlir::PatternRewriter& rewriter,
+                                                mlir::math::AbsOp op,
+                                                const VectorizedOpMap& vectorizedOps,
+                                                std::vector<mlir::BlockAndValueMapping>& laneMappings,
+                                                mlir::Value inductionVar,
+                                                int64_t step,
+                                                int64_t vectorSize)
+{
+    // Get (vector) arguments from map
+    auto inputOp = op.getOperand();
+    auto input = GetVectorizedPredecessor(rewriter, inputOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
+    if (!input)
+    {
+        return std::nullopt;
+    }
+
+    auto loc = op.getLoc();
+    auto result = rewriter.create<mlir::math::AbsOp>(loc, input->GetVectorResult());
     return result;
 }
 
@@ -641,7 +668,7 @@ std::optional<mlir::Operation*> VectorizeExpOp(mlir::PatternRewriter& rewriter,
                                                int64_t vectorSize)
 {
     // Get (vector) arguments from map
-    auto inputOp = op.operand();
+    auto inputOp = op.getOperand();
     auto input = GetVectorizedPredecessor(rewriter, inputOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
     if (!input)
     {
@@ -784,7 +811,7 @@ std::optional<VectorizedOp> VectorizeOp(mlir::PatternRewriter& rewriter,
             .Case([&](memref::AllocaOp allocaOp) {
                 return VectorizeAllocaOp(rewriter, allocaOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
-            .Case([&](mlir::ConstantOp constantOp) {
+            .Case([&](mlir::arith::ConstantOp constantOp) {
                 return VectorizeConstantOp(rewriter, constantOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
             .Case([&](memref::LoadOp loadOp) {
@@ -805,16 +832,16 @@ std::optional<VectorizedOp> VectorizeOp(mlir::PatternRewriter& rewriter,
             .Case([&](mlir::SelectOp selectOp) {
                 return VectorizeSelectOp(rewriter, selectOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
-            .Case([&](mlir::ShiftLeftOp shiftLeftOp) {
+            .Case([&](mlir::arith::ShLIOp shiftLeftOp) {
                 return VectorizeShiftLeftOp(rewriter, shiftLeftOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
-            .Case([&](mlir::FPToSIOp castOp) {
+            .Case([&](mlir::arith::FPToSIOp castOp) {
                 return VectorizeFPToSIOp(rewriter, castOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
-            .Case([&](mlir::AbsFOp absOp) {
-                return VectorizeAbsFOp(rewriter, absOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
+            .Case([&](mlir::arith::ExtSIOp castOp) {
+                return VectorizeSignExtendIOp(rewriter, castOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
-            .Case([&](math::ExpOp expOp) {
+            .Case([&](mlir::math::ExpOp expOp) {
                 return VectorizeExpOp(rewriter, expOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
             .Case([&](v::BinOp binOp) {

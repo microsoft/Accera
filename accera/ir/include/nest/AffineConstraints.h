@@ -8,7 +8,7 @@
 #include "Range.h"
 #include "AffineExpression.h"
 
-#include <mlir/Analysis/AffineStructures.h>
+#include <mlir/Dialect/Affine/Analysis/AffineStructures.h>
 
 #include <vector>
 #include <utility>

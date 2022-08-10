@@ -13,13 +13,16 @@
 namespace mlir
 {
 class MLIRContext;
-class OwningModuleRef;
+
+template <typename OpTy>
+class OwningOpRef;
+class ModuleOp;
 } // namespace mlir
 
 namespace accera
 {
 namespace ir
 {
-    std::unique_ptr<llvm::Module> TranslateToLLVMIR(mlir::OwningModuleRef& module, llvm::LLVMContext& context);
+    std::unique_ptr<llvm::Module> TranslateToLLVMIR(mlir::OwningOpRef<mlir::ModuleOp>& module, llvm::LLVMContext& context);
 } // namespace mlirHelpers
 } // namespace accera

@@ -55,7 +55,6 @@ using mlir::OpAsmPrinter;
 using mlir::OpBuilder;
 using mlir::Operation;
 using mlir::OperationState;
-using mlir::OwningRewritePatternList;
 using mlir::ParseResult;
 using mlir::Region;
 using mlir::ShapedType;

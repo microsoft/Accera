@@ -35,7 +35,7 @@ namespace executionPlan
 
     mlir::DialectAsmPrinter& operator<<(mlir::DialectAsmPrinter& printer, TensorizationInfo tensorizationInfo)
     {
-        printer << "{{" << (int)tensorizationInfo.dim << "}," << tensorizationInfo.numTotalPasses << "," << tensorizationInfo.useStaticOffsets << "," << tensorizationInfo.numFusedPasses << "," << (int)tensorizationInfo.schedulingPolicy << "," << tensorizationInfo._useRocWMMA << "}";
+        printer << "{{" << (int)tensorizationInfo.dim << "}," << tensorizationInfo.numTotalPasses << "," << (tensorizationInfo.useStaticOffsets ? 1 : 0) << "," << tensorizationInfo.numFusedPasses << "," << (int)tensorizationInfo.schedulingPolicy << "," << (tensorizationInfo._useRocWMMA ? 1 : 0) << "}";
         return printer;
     }
 

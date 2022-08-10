@@ -71,7 +71,6 @@ using mlir::Operation;
 using mlir::OperationState;
 using mlir::OpFoldResult;
 using mlir::OpInterface;
-using mlir::OwningRewritePatternList;
 using mlir::ParseResult;
 using mlir::Region;
 using mlir::ShapedType;
@@ -182,6 +181,8 @@ KernelPredicateOpInterface InRange(mlir::OpBuilder& builder, SymbolicIndexOp ind
 
 KernelPredicateOpInterface Conjunction(mlir::OpBuilder& builder, KernelPredicateOpInterface lhs, KernelPredicateOpInterface rhs);
 KernelPredicateOpInterface Disjunction(mlir::OpBuilder& builder, KernelPredicateOpInterface lhs, KernelPredicateOpInterface rhs);
+
+KernelPredicateOpInterface ConstantPredicate(mlir::OpBuilder& builder, bool value);
 
 //
 // Templated method implementations

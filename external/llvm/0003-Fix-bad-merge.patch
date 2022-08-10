@@ -1,19 +1,20 @@
-From 7f9a254015c977405957fb5b2b6e2a1895f0ca69 Mon Sep 17 00:00:00 2001
-From: Kern Handa <kern.handa@gmail.com>
-Date: Wed, 6 Oct 2021 11:09:31 -0700
-Subject: [PATCH 3/3] Fix bad merge
+From 2dbd177abcf79fe183c989824863aafe5b38e1cd Mon Sep 17 00:00:00 2001
+From: Lisa Ong <onglisa@microsoft.com>
+Date: Mon, 14 Feb 2022 16:32:01 +0800
+Subject: [PATCH] From 7f9a254015c977405957fb5b2b6e2a1895f0ca69 Mon Sep 17
+ 00:00:00 2001 From: Kern Handa <kern.handa@gmail.com> Date: Wed, 6 Oct 2021
+ 11:09:31 -0700 Subject: Fix bad merge
 
 ---
+ mlir/tools/mlir-tblgen/OpDocGen.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
 diff --git a/mlir/tools/mlir-tblgen/OpDocGen.cpp b/mlir/tools/mlir-tblgen/OpDocGen.cpp
-index d4a60e30ced1..00fe20a55f53 100644
+index 79a062fd9735..377080b25c36 100644
 --- a/mlir/tools/mlir-tblgen/OpDocGen.cpp
 +++ b/mlir/tools/mlir-tblgen/OpDocGen.cpp
-@@ -59,10 +59,10 @@ static void emitIfNotEmpty(StringRef str, raw_ostream &os) {
- template <typename T>
- static void emitNamedConstraint(const T &it, raw_ostream &os) {
-   if (!it.name.empty())
--    os << "`" << it.name << "`";
-+    os << "| `" << it.name << "`";
+@@ -63,7 +63,7 @@ static void emitNamedConstraint(const T &it, raw_ostream &os) {
+     os << "| `" << it.name << "`";
    else
      os << "&laquo;unnamed&raquo;";
 -  os << " | " << it.constraint.getSummary() << "\n";
@@ -21,14 +22,15 @@ index d4a60e30ced1..00fe20a55f53 100644
  }
  
  //===----------------------------------------------------------------------===//
-@@ -109,8 +109,8 @@ static void emitOpDoc(Operator op, raw_ostream &os) {
-        << "| :-------: | :-------: | ----------- |\n";
+@@ -168,7 +168,7 @@ static void emitOpDoc(const Operator &op, raw_ostream &os) {
      for (const auto &it : op.getAttributes()) {
        StringRef storageType = it.attr.getStorageType();
--      os << "`" << it.name << "` | " << storageType << " | "
+       os << "| `" << it.name << "` | " << storageType << " | "
 -         << it.attr.getSummary() << "\n";
-+      os << "| `" << it.name << "` | " << storageType << " | "
 +         << it.attr.getSummary() << " |\n";
      }
    }
  
+-- 
+2.30.0.windows.1
+

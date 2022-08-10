@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
-# Accera v1.2.7 Reference
+# Accera v1.2.8 Reference
 ## `accera.MMAShape`
 
 The following table shows the matrix multiplication parameters associated with the different enum values, for different data types for a single pass. So for example a single pass of the `M32xN32xK2_B1` operation would take input matrices of dimensions [32x2] (A) and [2x32] (B) to produce a matrix multiplication result of dimensions [32x32] (C). These operations can then be composed together to perform matrix multiplication of larger matrices.
@@ -140,23 +140,62 @@ th {
         <th>Compute Type (C++)</th>
     </tr>
     <tr>
-        <td style="vertical-align:middle;">M16xN16xK16_B1</td>
-        <td style="text-align:center;vertical-align:middle;">16, 16, 16</td>
-        <td rowspan="3" style="text-align:center;vertical-align:middle;">float16</td>
-        <td style="text-align:center;vertical-align:middle;">float16/32</td>
-        <td rowspan="3" style="text-align:center;vertical-align:middle;">float</td>
+        <td style="vertical-align:middle;">M16xN16xK8_B1</td>
+        <td style="text-align:center;vertical-align:middle;">16, 16, 8</td>
+        <td style="text-align:center;vertical-align:middle;">float32</td>
+        <td style="text-align:center;vertical-align:middle;">float32</td>
+        <td style="text-align:center;vertical-align:middle;">tf32<sup>*</sup></td>
     </tr>
     <tr>
-        <td style="vertical-align:middle;">M32xN8xK16_B1</td>
-        <td style="text-align:center;vertical-align:middle;">32, 8, 16</td>
+        <td rowspan="3" style="vertical-align:middle;">M16xN16xK16_B1</td>
+        <td rowspan="3" style="text-align:center;vertical-align:middle;">16, 16, 16</td>
+        <td style="text-align:center;vertical-align:middle;">float16</td>
         <td style="text-align:center;vertical-align:middle;">float16/32</td>
+        <td rowspan="2" style="text-align:center;vertical-align:middle;">float</td>
     </tr>
     <tr>
-        <td style="vertical-align:middle;">M8xN32xK16_B1</td>
-        <td style="text-align:center;vertical-align:middle;">8, 32, 16</td>
+        <td style="text-align:center;vertical-align:middle;">bfloat16</td>
+        <td style="text-align:center;vertical-align:middle;">float32</td>
+    </tr>
+    <tr>
+        <td style="text-align:center;vertical-align:middle;">u/int8</td>
+        <td style="text-align:center;vertical-align:middle;">int32</td>
+        <td style="text-align:center;vertical-align:middle;">int</td>
+    </tr>
+    <tr>
+        <td rowspan="3" style="vertical-align:middle;">M32xN8xK16_B1</td>
+        <td rowspan="3" style="text-align:center;vertical-align:middle;">32, 8, 16</td>
+        <td style="text-align:center;vertical-align:middle;">float16</td>
         <td style="text-align:center;vertical-align:middle;">float16/32</td>
+        <td rowspan="2" style="text-align:center;vertical-align:middle;">float</td>
+    </tr>
+    <tr>
+        <td style="text-align:center;vertical-align:middle;">bfloat16</td>
+        <td style="text-align:center;vertical-align:middle;">float32</td>
+    </tr>
+    <tr>
+        <td style="text-align:center;vertical-align:middle;">u/int8</td>
+        <td style="text-align:center;vertical-align:middle;">int32</td>
+        <td style="text-align:center;vertical-align:middle;">int</td>
+    </tr>
+    <tr>
+        <td rowspan="3" style="vertical-align:middle;">M8xN32xK16_B1</td>
+        <td rowspan="3" style="text-align:center;vertical-align:middle;">8, 32, 16</td>
+        <td style="text-align:center;vertical-align:middle;">float16</td>
+        <td style="text-align:center;vertical-align:middle;">float16/32</td>
+        <td rowspan="2" style="text-align:center;vertical-align:middle;">float</td>
+    </tr>
+    <tr>
+        <td style="text-align:center;vertical-align:middle;">bfloat16</td>
+        <td style="text-align:center;vertical-align:middle;">float32</td>
+    </tr>
+    <tr>
+        <td style="text-align:center;vertical-align:middle;">u/int8</td>
+        <td style="text-align:center;vertical-align:middle;">int32</td>
+        <td style="text-align:center;vertical-align:middle;">int</td>
     </tr>
 </table>
 
-
 <div style="page-break-after: always;"></div>
+
+<a name="m">*</a>TensorFloat-32 is a floating-point type introduced in the Nvidia Ampere architecture for accelerating FP32 performance. Information about this can be found [here](https://blogs.nvidia.com/blog/2020/05/14/tensorfloat-32-precision-format/) and in more detail in the [architecture whitepaper](https://images.nvidia.com/aem-dam/en-zz/Solutions/data-center/nvidia-ampere-architecture-whitepaper.pdf). In this mode, multiplication is performed in TF32 precision and accumulation happens in FP32 precision.

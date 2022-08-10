@@ -8,20 +8,19 @@
 namespace mlir
 {
 class RewritePatternSet;
-using OwningRewritePatternList = RewritePatternSet;
 } // namespace mlir
 
 namespace accera::transforms
 {
-void populateRangeResolutionPatterns(mlir::OwningRewritePatternList& patterns);
-void populateScheduleScaffoldingPatterns(bool printLoops, mlir::OwningRewritePatternList& patterns);
-void populateScheduledOperationsPatterns(mlir::OwningRewritePatternList& patterns);
-void populateScheduleToValueRewritePatterns(mlir::OwningRewritePatternList& patterns);
-void populateScheduleToValuePatterns(mlir::OwningRewritePatternList& patterns);
-void populateUnlinkSymbolicIndicesPatterns(mlir::OwningRewritePatternList& patterns);
-void populateSymIndexCleanupPatterns(mlir::OwningRewritePatternList& patterns);
-void populateGPUIndexMappingRewritePatterns(mlir::OwningRewritePatternList& patterns);
-void populateLoopOptimizationPatterns(mlir::OwningRewritePatternList& patterns);
-void populateLoopMergingPatterns(mlir::OwningRewritePatternList& patterns);
-void populateLoopSimplificationPatterns(mlir::OwningRewritePatternList& patterns);
+void populateRangeResolutionPatterns(mlir::RewritePatternSet& patterns);
+void populateScheduleScaffoldingPatterns(bool printLoops, mlir::RewritePatternSet& patterns);
+void populateScheduledOperationsPatterns(mlir::RewritePatternSet& patterns);
+void populateScheduleToValueRewritePatterns(mlir::RewritePatternSet& patterns);
+void populateScheduleToValuePatterns(mlir::RewritePatternSet& patterns);
+void populateUnlinkSymbolicIndicesPatterns(mlir::RewritePatternSet& patterns);
+void populateSymIndexCleanupPatterns(mlir::RewritePatternSet& patterns);
+void populateGPUIndexMappingRewritePatterns(mlir::RewritePatternSet& patterns);
+void populateLoopOptimizationPatterns(mlir::RewritePatternSet& patterns);
+void populateLoopMergingPatterns(mlir::RewritePatternSet& patterns);
+void populateLoopSimplificationPatterns(mlir::RewritePatternSet& patterns);
 } // namespace accera::transforms

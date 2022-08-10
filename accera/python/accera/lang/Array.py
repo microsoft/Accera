@@ -12,8 +12,9 @@ from .._lang_python import ScalarType, _MemoryLayout
 from .._lang_python._lang import Array as NativeArray
 from .Layout import Layout, MemoryMapLayout
 from ..Parameter import DelayedParameter
-from ..Constants import inf
+from ..Constants import inf, k_dynamic_size
 from .NativeLoopNestContext import NativeLoopNestContext
+from .Dimension import Dimension
 
 
 class Array:
@@ -35,7 +36,7 @@ class Array:
         element_type: Union["accera.ScalarType", type] = None,
         layout: Union["accera.Array.Layout", Tuple[int]] = Layout.FIRST_MAJOR,
         offset: int = 0,
-        shape: Tuple[Union[int, DelayedParameter]] = None
+        shape: Tuple[Union[int, DelayedParameter, Dimension]] = None
     ):
         """Creates an Array
 
@@ -210,8 +211,10 @@ class Array:
         self._offset = self._offset.get_value() if isinstance(self._offset, DelayedParameter) else self._offset
         self._layout = self._layout.get_value() if isinstance(self._layout, DelayedParameter) else self._layout
 
-        mm_layout = MemoryMapLayout(self._layout, self._shape, self._offset)
-        memory_layout = _MemoryLayout(self._shape, order=mm_layout.order)
+        runtime_shape = [k_dynamic_size if isinstance(x, Dimension) else x for x in self._shape]
+
+        mm_layout = MemoryMapLayout(self._layout, runtime_shape, self._offset)
+        memory_layout = _MemoryLayout(runtime_shape, order=mm_layout.order)
 
         if self._role == Array.Role.CONST:
             if self._layout != Array.Layout.DEFERRED:
@@ -324,6 +327,8 @@ class SubArray(Array):
         # NativeArray.sub_array() on the source NativeArray after it is materialized.
         self._shape = [x.get_value() if isinstance(x, DelayedParameter) else x for x in self._shape]
 
-        self._layout = _MemoryLayout.get_subarray_layout(self._source._layout, self._shape)
+        runtime_shape = [k_dynamic_size if isinstance(x, Dimension) else x for x in self._shape]
+
+        self._layout = _MemoryLayout.get_subarray_layout(self._source._layout, runtime_shape)
         self._native_array = NativeArray(self._element_type, self._layout)
 

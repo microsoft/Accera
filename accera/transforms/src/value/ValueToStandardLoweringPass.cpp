@@ -16,9 +16,10 @@
 #include <utilities/include/MathUtil.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/GPU/Passes.h>
-#include <mlir/Dialect/Linalg/IR/LinalgOps.h>
+// #include <mlir/Dialect/Linalg/IR/Linalg.h>
 #include <mlir/Dialect/Math/Transforms/Passes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/SCF.h>
@@ -26,7 +27,7 @@
 #include <mlir/Dialect/SPIRV/IR/SPIRVOps.h>
 #include <mlir/Dialect/SPIRV/IR/TargetAndABI.h>
 #include <mlir/Dialect/StandardOps/Transforms/Passes.h>
-#include <mlir/Dialect/Vector/VectorOps.h>
+#include <mlir/Dialect/Vector/IR/VectorOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Types.h>
 #include <mlir/Pass/Pass.h>
@@ -474,12 +475,12 @@ struct AllocOpLowering : public OpRewritePattern<ValueAllocOp>
             switch (allocType)
             {
             case vir::MemoryAllocType::Global: {
-                auto globalOp = irutil::CreateGlobalBufferOp(rewriter, op, MemRefType::Builder{ memrefType }.setAffineMaps({}), kGlobalOpSymNameFormat);
+                auto globalOp = irutil::CreateGlobalBufferOp(rewriter, op, MemRefType::Builder{ memrefType }.setLayout({}), kGlobalOpSymNameFormat);
                 rewriter.replaceOpWithNewOp<vir::ReferenceGlobalOp>(op, memrefType, globalOp.sym_name());
             }
             break;
             case vir::MemoryAllocType::Stack:
-                rewriter.replaceOpWithNewOp<memref::AllocaOp>(op, MemRefType::Builder{ memrefType }.setAffineMaps({}), mlir::ValueRange{}, op.alignmentAttr());
+                rewriter.replaceOpWithNewOp<memref::AllocaOp>(op, MemRefType::Builder{ memrefType }.setLayout({}), mlir::ValueRange{}, op.alignmentAttr());
                 break;
             default:
                 llvm_unreachable("Unknown alloc type");
@@ -681,15 +682,15 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
         [[maybe_unused]] auto gridDimsLaunchConfig = launchConfig.take_front(kLocalSizeDimSize);
         auto blockDimsLaunchConfig = launchConfig.drop_front(kLocalSizeDimSize);
 
-        fnAttrs.emplace_back(rewriter.getIdentifier(mlir::gpu::GPUDialect::getKernelFuncAttrName()),
-                             rewriter.getUnitAttr());
+        fnAttrs.emplace_back(mlir::NamedAttribute(rewriter.getStringAttr(mlir::gpu::GPUDialect::getKernelFuncAttrName()),
+                                                  rewriter.getUnitAttr()));
         if (gpuRuntime == vir::ExecutionRuntime::VULKAN)
         {
             // Add vulkan-specific versions of the launch attributes
             auto entryPointLocalSize = blockDimsLaunchConfig;
             assert(entryPointLocalSize.size() == kLocalSizeDimSize);
             fnAttrs.emplace_back(
-                rewriter.getIdentifier(mlir::spirv::getEntryPointABIAttrName()),
+                rewriter.getStringAttr(mlir::spirv::getEntryPointABIAttrName()),
                 mlir::spirv::getEntryPointABIAttr(entryPointLocalSize, rewriter.getContext()));
         }
 
@@ -704,9 +705,9 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
             blockDimsLaunchConfigAttrs.emplace_back(rewriter.getI32IntegerAttr(dim));
         }
         fnAttrs.emplace_back(
-            rewriter.getIdentifier("gridSize"), rewriter.getArrayAttr(gridDimsLaunchConfigAttrs));
+            rewriter.getStringAttr("gridSize"), rewriter.getArrayAttr(gridDimsLaunchConfigAttrs));
         fnAttrs.emplace_back(
-            rewriter.getIdentifier("blockSize"), rewriter.getArrayAttr(blockDimsLaunchConfigAttrs));
+            rewriter.getStringAttr("blockSize"), rewriter.getArrayAttr(blockDimsLaunchConfigAttrs));
 
         auto newFuncOp = rewriter.create<gpu::GPUFuncOp>(
             loc,
@@ -748,7 +749,7 @@ struct GenericOpTypeConversionPattern : public ConversionPattern
     LogicalResult matchAndRewrite(Operation* op, ArrayRef<mlir::Value> operands, ConversionPatternRewriter& rewriter) const final
     {
         NamedAttrList attrDic = op->getAttrDictionary();
-        auto typeAttr = attrDic.get(function_like_impl::getTypeAttrName()).dyn_cast_or_null<TypeAttr>();
+        auto typeAttr = attrDic.get(FunctionOpInterface::getTypeAttrName()).dyn_cast_or_null<TypeAttr>();
         if (op->getNumOperands() == 0 && op->getNumResults() == 0 && !typeAttr)
             return failure();
 
@@ -792,9 +793,9 @@ struct GenericOpTypeConversionPattern : public ConversionPattern
             // Copy over all attributes other than the function name and type.
             for (const auto& namedAttr : funcOp->getAttrs())
             {
-                if (namedAttr.first != function_like_impl::getTypeAttrName() &&
-                    namedAttr.first != SymbolTable::getSymbolAttrName())
-                    newFuncOp->setAttr(namedAttr.first, namedAttr.second);
+                if (namedAttr.getName() != FunctionOpInterface::getTypeAttrName() &&
+                    namedAttr.getName() != SymbolTable::getSymbolAttrName())
+                    newFuncOp->setAttr(namedAttr.getName(), namedAttr.getValue());
             }
 
             rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(), newFuncOp.end());
@@ -806,7 +807,7 @@ struct GenericOpTypeConversionPattern : public ConversionPattern
 
         if (typeAttr)
         {
-            attrDic.set(rewriter.getIdentifier(function_like_impl::getTypeAttrName()), TypeAttr::get(typeConverter->convertType(typeAttr.getValue())));
+            attrDic.set(rewriter.getStringAttr(FunctionOpInterface::getTypeAttrName()), TypeAttr::get(typeConverter->convertType(typeAttr.getValue())));
         }
         auto attrs = attrDic.getAttrs();
 
@@ -853,7 +854,7 @@ struct ValueLaunchFuncOpRewritePattern : OpRewritePattern<vir::LaunchFuncOp>
             rewriter.replaceOpWithNewOp<mlir::CallOp>(op, callee, ArrayRef<mlir::Type>{}, ValueRange{ op.operands() });
             return success();
         case vir::ExecutionTarget::GPU:
-            auto gpuSymRef = rewriter.getSymbolRefAttr(callee.str() + "_module", rewriter.getSymbolRefAttr(callee));
+            auto gpuSymRef = SymbolRefAttr::get(rewriter.getContext(), callee.str() + "_module", SymbolRefAttr::get(callee));
             auto gpuFuncOp = SymbolTable::lookupNearestSymbolFrom<gpu::GPUFuncOp>(op, gpuSymRef);
             if (!gpuFuncOp) return failure();
 
@@ -871,20 +872,21 @@ struct ValueLaunchFuncOpRewritePattern : OpRewritePattern<vir::LaunchFuncOp>
             }
 
             auto gridSize = gpu::KernelDim3{
-                rewriter.create<ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::BlockX]),
-                rewriter.create<ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::BlockY]),
-                rewriter.create<ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::BlockZ]),
+                rewriter.create<arith::ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::BlockX]),
+                rewriter.create<arith::ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::BlockY]),
+                rewriter.create<arith::ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::BlockZ]),
             };
             auto blockSize = gpu::KernelDim3{
-                rewriter.create<ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::ThreadX]),
-                rewriter.create<ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::ThreadY]),
-                rewriter.create<ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::ThreadZ]),
+                rewriter.create<arith::ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::ThreadX]),
+                rewriter.create<arith::ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::ThreadY]),
+                rewriter.create<arith::ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::ThreadZ]),
             };
 
             rewriter.replaceOpWithNewOp<gpu::LaunchFuncOp>(op,
                                                            gpuFuncOp,
                                                            gridSize,
                                                            blockSize,
+                                                           /*dynamicSharedMemorySize=*/nullptr,
                                                            op.getOperands());
             return success();
         }
@@ -921,15 +923,15 @@ LogicalResult BinOpLowering::matchAndRewrite(
             switch (pred)
             {
             case BinaryOpPredicate::ADD:
-                return rewriter.create<AddFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
+                return rewriter.create<arith::AddFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
             case BinaryOpPredicate::DIV:
-                return rewriter.create<DivFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
+                return rewriter.create<arith::DivFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
             case BinaryOpPredicate::MOD:
-                return rewriter.create<RemFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
+                return rewriter.create<arith::RemFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
             case BinaryOpPredicate::MUL:
-                return rewriter.create<MulFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
+                return rewriter.create<arith::MulFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
             case BinaryOpPredicate::SUB:
-                return rewriter.create<SubFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
+                return rewriter.create<arith::SubFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
             default:
                 assert(false);
                 return {};
@@ -940,29 +942,29 @@ LogicalResult BinOpLowering::matchAndRewrite(
             switch (pred)
             {
             case BinaryOpPredicate::ADD:
-                return rewriter.create<AddIOp>(loc, lhs, rhs);
+                return rewriter.create<arith::AddIOp>(loc, lhs, rhs);
             case BinaryOpPredicate::DIV: {
                 if (elementType.isUnsignedInteger())
                 {
-                    return rewriter.create<UnsignedDivIOp>(loc, lhs, rhs);
+                    return rewriter.create<arith::DivUIOp>(loc, lhs, rhs);
                 }
-                return rewriter.create<SignedDivIOp>(loc, lhs, rhs);
+                return rewriter.create<arith::DivSIOp>(loc, lhs, rhs);
             }
             case BinaryOpPredicate::MOD: {
                 if (elementType.isUnsignedInteger())
                 {
-                    return rewriter.create<UnsignedRemIOp>(loc, lhs, rhs);
+                    return rewriter.create<arith::RemUIOp>(loc, lhs, rhs);
                 }
-                return rewriter.create<SignedRemIOp>(loc, lhs, rhs);
+                return rewriter.create<arith::RemSIOp>(loc, lhs, rhs);
             }
             case BinaryOpPredicate::MUL:
-                return rewriter.create<MulIOp>(loc, lhs, rhs);
+                return rewriter.create<arith::MulIOp>(loc, lhs, rhs);
             case BinaryOpPredicate::SUB:
-                return rewriter.create<SubIOp>(loc, lhs, rhs);
+                return rewriter.create<arith::SubIOp>(loc, lhs, rhs);
             case BinaryOpPredicate::LOGICAL_AND:
-                return rewriter.create<AndOp>(loc, lhs, rhs);
+                return rewriter.create<arith::AndIOp>(loc, lhs, rhs);
             case BinaryOpPredicate::LOGICAL_OR:
-                return rewriter.create<OrOp>(loc, lhs, rhs);
+                return rewriter.create<arith::OrIOp>(loc, lhs, rhs);
             default:
                 assert(false);
                 return {};
@@ -981,7 +983,7 @@ LogicalResult GetElementOpLowering::matchAndRewrite(
 {
     auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
 
-    auto zero = rewriter.create<ConstantIndexOp>(loc, 0);
+    auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     auto loaded = [&]() -> mlir::Value {
         auto v = op.value();
 
@@ -1026,8 +1028,9 @@ LogicalResult GlobalOpLowering::matchAndRewrite(
         adaptor.sym_name(),
         rewriter.getStringAttr(op.external() ? "public" : "nested"),
         adaptor.type(),
-        adaptor.value(),
-        adaptor.constant());
+        adaptor.value().hasValue() ? adaptor.value().getValue() : nullptr,
+        adaptor.constant(),
+        /*alignment=*/IntegerAttr());
 
     return success();
 }
@@ -1038,7 +1041,7 @@ LogicalResult UnaryOpLowering::matchAndRewrite(
 {
     auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
 
-    auto True = rewriter.create<ConstantIntOp>(loc, 1, rewriter.getI1Type());
+    auto True = rewriter.create<arith::ConstantIntOp>(loc, 1, rewriter.getI1Type());
     auto loaded = op.input();
 
     auto result = [&]() -> mlir::Value {
@@ -1046,7 +1049,7 @@ LogicalResult UnaryOpLowering::matchAndRewrite(
         switch (op.getPredicate())
         {
         case UnaryOpPredicate::NOT:
-            return rewriter.create<XOrOp>(loc, loaded, True);
+            return rewriter.create<arith::XOrIOp>(loc, loaded, True);
         default:
             assert(false);
         }
@@ -1063,7 +1066,7 @@ LogicalResult LoadOpLowering::matchAndRewrite(
 {
     auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
 
-    auto zero = rewriter.create<ConstantIndexOp>(loc, 0);
+    auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     auto indexType = rewriter.getIndexType();
 
     llvm::SmallVector<mlir::Value, 4> resolvedIndices;
@@ -1076,7 +1079,7 @@ LogicalResult LoadOpLowering::matchAndRewrite(
         else
         {
             resolvedIndices.push_back(
-                rewriter.create<IndexCastOp>(loc, rewriter.create<vir::GetElementOp>(loc, index), indexType));
+                rewriter.create<arith::IndexCastOp>(loc, rewriter.create<vir::GetElementOp>(loc, index), indexType));
         }
     }
 
@@ -1105,9 +1108,9 @@ LogicalResult StoreOpLowering::matchAndRewrite(
         else
         {
             resolvedIndices.push_back(
-                rewriter.create<IndexCastOp>(loc,
-                                             rewriter.create<vir::GetElementOp>(loc, index),
-                                             indexType));
+                rewriter.create<arith::IndexCastOp>(loc,
+                                                    rewriter.create<vir::GetElementOp>(loc, index),
+                                                    indexType));
         }
     }
 
@@ -1143,11 +1146,11 @@ static ValueCmpOpPredicate NegateCmpOpPredicate(ValueCmpOpPredicate pred)
 #undef MAP_PREDICATE
 }
 
-static CmpFPredicate CmpOpPredicateToCmpFPredicate(ValueCmpOpPredicate pred)
+static arith::CmpFPredicate CmpOpPredicateToCmpFPredicate(ValueCmpOpPredicate pred)
 {
 #define MAP_PREDICATE(v)         \
     case ValueCmpOpPredicate::v: \
-        return CmpFPredicate::U##v
+        return arith::CmpFPredicate::U##v
 
     switch (pred)
     {
@@ -1164,11 +1167,11 @@ static CmpFPredicate CmpOpPredicateToCmpFPredicate(ValueCmpOpPredicate pred)
 #undef MAP_PREDICATE
 }
 
-static CmpIPredicate CmpOpPredicateToCmpIPredicate(ValueCmpOpPredicate pred)
+static arith::CmpIPredicate CmpOpPredicateToCmpIPredicate(ValueCmpOpPredicate pred)
 {
 #define MAP_PREDICATE(v1, v2)     \
     case ValueCmpOpPredicate::v1: \
-        return CmpIPredicate::v2
+        return arith::CmpIPredicate::v2
 
     switch (pred)
     {
@@ -1196,11 +1199,11 @@ LogicalResult CmpOpLowering::matchAndRewrite(
     auto result = [&]() -> mlir::Value {
         if (auto pred = op.getPredicate(); util::GetElementType(lhs.getType()).isa<FloatType>())
         {
-            return rewriter.create<CmpFOp>(loc, CmpOpPredicateToCmpFPredicate(pred), lhs, rhs);
+            return rewriter.create<arith::CmpFOp>(loc, CmpOpPredicateToCmpFPredicate(pred), lhs, rhs);
         }
         else
         {
-            return rewriter.create<CmpIOp>(loc, CmpOpPredicateToCmpIPredicate(pred), lhs, rhs);
+            return rewriter.create<arith::CmpIOp>(loc, CmpOpPredicateToCmpIPredicate(pred), lhs, rhs);
         }
     }();
 
@@ -1228,7 +1231,7 @@ LogicalResult OffsetOpLowering::matchAndRewrite(
     auto shape = sourceType.getShape();
 
     llvm::SmallVector<mlir::Value, 4> resolvedOffsets;
-    llvm::SmallVector<mlir::Value, 4> strides(shape.size(), rewriter.create<ConstantIndexOp>(loc, 1));
+    llvm::SmallVector<mlir::Value, 4> strides(shape.size(), rewriter.create<arith::ConstantIndexOp>(loc, 1));
     for (auto index : op.offsets())
     {
         if (index.getType().isIndex())
@@ -1241,9 +1244,9 @@ LogicalResult OffsetOpLowering::matchAndRewrite(
             if (indexShape.size() == 0 || indexShape.size() == 1)
             {
                 resolvedOffsets.push_back(
-                    rewriter.create<IndexCastOp>(loc,
-                                                 rewriter.create<vir::GetElementOp>(loc, index),
-                                                 indexType));
+                    rewriter.create<arith::IndexCastOp>(loc,
+                                                        rewriter.create<vir::GetElementOp>(loc, index),
+                                                        indexType));
             }
             else
             {
@@ -1255,7 +1258,7 @@ LogicalResult OffsetOpLowering::matchAndRewrite(
     llvm::SmallVector<mlir::Value, 4> sizes;
     for (auto extent : shape)
     {
-        sizes.push_back(rewriter.create<ConstantIndexOp>(loc, extent));
+        sizes.push_back(rewriter.create<arith::ConstantIndexOp>(loc, extent));
     }
 
     rewriter.replaceOp(op, { rewriter.create<memref::SubViewOp>(loc, op.getType(), source, resolvedOffsets, sizes, strides) });
@@ -1294,7 +1297,7 @@ LogicalResult ViewOpLowering::matchAndRewrite(
     llvm::SmallVector<mlir::Value, 4> offsets, sizes, strides;
     for (auto offset : op.offsets())
     {
-        if (auto r = mlir::dyn_cast<linalg::RangeOp>(offset.getDefiningOp()))
+        if (auto r = mlir::dyn_cast<vir::RangeOp>(offset.getDefiningOp()))
         {
             auto min = r.min();
             auto max = r.max();
@@ -1315,14 +1318,14 @@ LogicalResult ViewOpLowering::matchAndRewrite(
         llvm::SmallVector<int64_t, 4> staticOffsets, staticSizes, staticStrides;
         for (auto [size, offset, stride] : llvm::zip(sizes, offsets, strides))
         {
-            auto sizeOp = size.getDefiningOp<ConstantIndexOp>();
-            auto offsetOp = offset.getDefiningOp<ConstantIndexOp>();
-            auto strideOp = stride.getDefiningOp<ConstantIndexOp>();
+            auto sizeOp = size.getDefiningOp<arith::ConstantIndexOp>();
+            auto offsetOp = offset.getDefiningOp<arith::ConstantIndexOp>();
+            auto strideOp = stride.getDefiningOp<arith::ConstantIndexOp>();
             if (sizeOp && offsetOp && strideOp)
             {
-                staticSizes.push_back(sizeOp.getValue());
-                staticOffsets.push_back(offsetOp.getValue());
-                staticStrides.push_back(strideOp.getValue());
+                staticSizes.push_back(sizeOp.value());
+                staticOffsets.push_back(offsetOp.value());
+                staticStrides.push_back(strideOp.value());
             }
             else
             {
@@ -1347,8 +1350,8 @@ LogicalResult ViewOpLowering::matchAndRewrite(
 
         for (auto idx = 0; idx < op.getNumOffsets(); ++idx)
         {
-            sizes.push_back(rewriter.create<ConstantIndexOp>(loc, shape[idx]));
-            strides.push_back(rewriter.create<ConstantIndexOp>(loc, 1));
+            sizes.push_back(rewriter.create<arith::ConstantIndexOp>(loc, shape[idx]));
+            strides.push_back(rewriter.create<arith::ConstantIndexOp>(loc, 1));
         }
 
         rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, source, offsets, sizes, strides);
@@ -1373,10 +1376,10 @@ LogicalResult SliceOpLowering::matchAndRewrite(
     llvm::SmallVector<mlir::Value, 4> linalgSliceIndexings;
     for (auto extent : shape)
     {
-        auto min = rewriter.create<ConstantIndexOp>(loc, 0);
-        auto max = rewriter.create<ConstantIndexOp>(loc, extent);
-        auto step = rewriter.create<ConstantIndexOp>(loc, 1);
-        auto range = rewriter.create<linalg::RangeOp>(loc, min, max, step);
+        auto min = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+        auto max = rewriter.create<arith::ConstantIndexOp>(loc, extent);
+        auto step = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+        auto range = rewriter.create<vir::RangeOp>(loc, min, max, step);
         offsets.push_back(min);
         sizes.push_back(max);
         strides.push_back(step);
@@ -1395,7 +1398,7 @@ LogicalResult SliceOpLowering::matchAndRewrite(
             auto indexShape = index.getType().cast<mlir::ShapedType>().getShape();
             if (indexShape.size() == 0 || indexShape.size() == 1)
             {
-                index = rewriter.create<IndexCastOp>(loc, rewriter.create<vir::GetElementOp>(loc, index), indexType);
+                index = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.create<vir::GetElementOp>(loc, index), indexType);
             }
             else
             {
@@ -1403,8 +1406,8 @@ LogicalResult SliceOpLowering::matchAndRewrite(
             }
         }
         offsets[dim] = index;
-        sizes[dim] = rewriter.create<ConstantIndexOp>(loc, 1);
-        linalgSliceIndexings[dim] = rewriter.create<ConstantIndexOp>(loc, 0);
+        sizes[dim] = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+        linalgSliceIndexings[dim] = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     }
 
     auto view = rewriter.create<memref::SubViewOp>(loc, source, offsets, sizes, strides);
@@ -1537,7 +1540,7 @@ LogicalResult ReduceOpVectorization::matchAndRewrite(
     ValueReduceOp op,
     PatternRewriter& rewriter) const
 {
-    auto vectorizationInfoIdentifier = rewriter.getIdentifier(ir::executionPlan::VectorizationInfoAttr::getKeyName());
+    auto vectorizationInfoIdentifier = rewriter.getStringAttr(ir::executionPlan::VectorizationInfoAttr::getKeyName());
     auto vectorizationInfoAttr = op->getAttrOfType<ir::executionPlan::VectorizationInfoAttr>(vectorizationInfoIdentifier);
     if (!vectorizationInfoAttr)
     {
@@ -1790,9 +1793,9 @@ LogicalResult ReduceOpLowering::matchAndRewrite(
     auto size = inputType.getShape()[0];
     auto loopSize = isParallelReduction ? RoundDownToMultiple(size, vectorSize) : size;
     auto remainder = size - loopSize;
-    auto lowerBound = rewriter.create<ConstantIndexOp>(loc, 0);
-    auto upperBound = rewriter.create<ConstantIndexOp>(loc, loopSize);
-    auto step = rewriter.create<ConstantIndexOp>(loc, stepValue);
+    auto lowerBound = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    auto upperBound = rewriter.create<arith::ConstantIndexOp>(loc, loopSize);
+    auto step = rewriter.create<arith::ConstantIndexOp>(loc, stepValue);
     auto loop = rewriter.create<scf::ForOp>(loc, lowerBound, upperBound, step, initialValue);
     auto loopBody = loop.getBody();
     {
@@ -1805,22 +1808,21 @@ LogicalResult ReduceOpLowering::matchAndRewrite(
         if (isParallelReduction)
         {
             auto elementType = inputType.getElementType();
-            auto zero = rewriter.create<mlir::ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
+            auto zero = rewriter.create<arith::ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
             auto vectorType = initialValueType;
             element = rewriter.create<mlir::vector::BroadcastOp>(loc, vectorType, zero);
             for (int64_t i = 0; i < vectorSize; ++i)
             {
-                auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, i);
-                auto offsetInductionVar = rewriter.create<mlir::AddIOp>(loc, loop.getInductionVar(), offset);
+                auto offset = rewriter.create<arith::ConstantIndexOp>(loc, i);
+                auto offsetInductionVar = rewriter.create<arith::AddIOp>(loc, loop.getInductionVar(), offset);
                 auto elementLoad = rewriter.create<memref::LoadOp>(loc, input, ValueRange{ offsetInductionVar });
-                element = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad.getResult(), element, i);
+                element = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad.getResult(), element, offset);
             }
         }
         else if (isHorizontalReduction)
         {
             // extract element from input vector
-            auto laneIndex = rewriter.create<mlir::IndexCastOp>(loc, loop.getInductionVar(), rewriter.getI32Type()).getResult();
-            element = rewriter.create<mlir::vector::ExtractElementOp>(loc, input, laneIndex).getResult();
+            element = rewriter.create<mlir::vector::ExtractElementOp>(loc, input, loop.getInductionVar()).getResult();
         }
         else
         {
@@ -1852,10 +1854,10 @@ LogicalResult ReduceOpLowering::matchAndRewrite(
         mlir::Value element = initialValue;
         for (int64_t i = 0; i < remainder; ++i)
         {
-            auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, i);
-            auto offsetInductionVar = rewriter.create<mlir::AddIOp>(loc, upperBound, offset);
+            auto offset = rewriter.create<arith::ConstantIndexOp>(loc, i);
+            auto offsetInductionVar = rewriter.create<arith::AddIOp>(loc, upperBound, offset);
             auto elementLoad = rewriter.create<memref::LoadOp>(loc, input, ValueRange{ offsetInductionVar });
-            element = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad.getResult(), element, i);
+            element = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad.getResult(), element, offset);
         }
 
         BlockAndValueMapping operandMap;
@@ -1886,7 +1888,7 @@ LogicalResult ReferenceGlobalOpLowering::matchAndRewrite(
 
     mlir::Value getGlobalOpValue = rewriter.create<memref::GetGlobalOp>(
         loc,
-        static_cast<MemRefType>(MemRefType::Builder{ op.getType() }.setAffineMaps({})),
+        static_cast<MemRefType>(MemRefType::Builder{ op.getType() }.setLayout({})),
         adaptor.global_name());
 
     rewriter.replaceOpWithNewOp<memref::CastOp>(
@@ -1930,7 +1932,7 @@ LogicalResult MapReduceOpVectorization::matchAndRewrite(
     ValueMapReduceOp op,
     PatternRewriter& rewriter) const
 {
-    auto vectorizationInfoIdentifier = rewriter.getIdentifier(ir::executionPlan::VectorizationInfoAttr::getKeyName());
+    auto vectorizationInfoIdentifier = rewriter.getStringAttr(ir::executionPlan::VectorizationInfoAttr::getKeyName());
     auto vectorizationInfoAttr = op->getAttrOfType<ir::executionPlan::VectorizationInfoAttr>(vectorizationInfoIdentifier);
     if (!vectorizationInfoAttr)
     {
@@ -2112,9 +2114,9 @@ LogicalResult MapReduceOpLowering::matchAndRewrite(
     auto size = inputType.getShape()[0];
     auto loopSize = isParallelReduction ? RoundDownToMultiple(size, vectorSize) : size;
     auto remainder = size - loopSize;
-    auto lowerBound = rewriter.create<ConstantIndexOp>(loc, 0);
-    auto upperBound = rewriter.create<ConstantIndexOp>(loc, loopSize);
-    auto step = rewriter.create<ConstantIndexOp>(loc, stepValue);
+    auto lowerBound = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    auto upperBound = rewriter.create<arith::ConstantIndexOp>(loc, loopSize);
+    auto step = rewriter.create<arith::ConstantIndexOp>(loc, stepValue);
 
     // Map loop values
     auto oldMapInputValue = op.getMapInputValueVar();
@@ -2139,15 +2141,15 @@ LogicalResult MapReduceOpLowering::matchAndRewrite(
         if (isParallelReduction)
         {
             auto elementType = inputType.getElementType();
-            auto zero = rewriter.create<mlir::ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
+            auto zero = rewriter.create<arith::ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
             auto vectorType = initialValueType;
             mapElement = rewriter.create<mlir::vector::BroadcastOp>(loc, vectorType, zero);
             for (int64_t i = 0; i < vectorSize; ++i)
             {
-                auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, i);
-                auto offsetInductionVar = rewriter.create<mlir::AddIOp>(loc, mapReduceLoop.getInductionVar(), offset);
+                auto offset = rewriter.create<arith::ConstantIndexOp>(loc, i);
+                auto offsetInductionVar = rewriter.create<arith::AddIOp>(loc, mapReduceLoop.getInductionVar(), offset);
                 auto elementLoad = rewriter.create<memref::LoadOp>(loc, input, ValueRange{ offsetInductionVar });
-                mapElement = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad.getResult(), mapElement, i);
+                mapElement = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad.getResult(), mapElement, offset);
             }
         }
         else
@@ -2170,9 +2172,9 @@ LogicalResult MapReduceOpLowering::matchAndRewrite(
         {
             for (int64_t i = 0; i < vectorSize; ++i)
             {
-                auto element = rewriter.create<mlir::vector::ExtractElementOp>(op.getLoc(), newMapYieldValue, i);
-                auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, i);
-                auto offsetInductionVar = rewriter.create<mlir::AddIOp>(loc, mapReduceLoop.getInductionVar(), offset);
+                auto offset = rewriter.create<arith::ConstantIndexOp>(loc, i);
+                auto element = rewriter.create<mlir::vector::ExtractElementOp>(op.getLoc(), newMapYieldValue, offset);
+                auto offsetInductionVar = rewriter.create<arith::AddIOp>(loc, mapReduceLoop.getInductionVar(), offset);
                 rewriter.create<memref::StoreOp>(loc, element, input, ValueRange{ offsetInductionVar });
             }
         }
@@ -2211,15 +2213,15 @@ LogicalResult MapReduceOpLowering::matchAndRewrite(
         // map the "input element value" to "input[i]"
         BlockAndValueMapping mapOperandMap;
         auto elementType = inputType.getElementType();
-        auto zero = rewriter.create<mlir::ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
+        auto zero = rewriter.create<arith::ConstantOp>(loc, elementType, rewriter.getZeroAttr(elementType));
         auto vectorType = initialValueType;
         mlir::Value mapElement = rewriter.create<mlir::vector::BroadcastOp>(loc, vectorType, zero);
         for (int64_t i = 0; i < remainder; ++i)
         {
-            auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, i);
-            auto offsetInductionVar = rewriter.create<mlir::AddIOp>(loc, upperBound, offset);
+            auto offset = rewriter.create<arith::ConstantIndexOp>(loc, i);
+            auto offsetInductionVar = rewriter.create<arith::AddIOp>(loc, upperBound, offset);
             auto elementLoad = rewriter.create<memref::LoadOp>(loc, input, ValueRange{ offsetInductionVar });
-            mapElement = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad.getResult(), mapElement, i);
+            mapElement = rewriter.create<mlir::vector::InsertElementOp>(loc, elementLoad.getResult(), mapElement, offset);
         }
 
         mapOperandMap.map(oldMapInputValue, mapElement);
@@ -2235,12 +2237,12 @@ LogicalResult MapReduceOpLowering::matchAndRewrite(
         auto maskedMapYieldValue = initialValue;
         for (int64_t i = 0; i < remainder; ++i)
         {
-            auto element = rewriter.create<mlir::vector::ExtractElementOp>(op.getLoc(), newMapYieldValue, i);
-            auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, i);
-            auto offsetInductionVar = rewriter.create<mlir::AddIOp>(loc, upperBound, offset);
+            auto offset = rewriter.create<arith::ConstantIndexOp>(loc, i);
+            auto element = rewriter.create<mlir::vector::ExtractElementOp>(op.getLoc(), newMapYieldValue, offset);
+            auto offsetInductionVar = rewriter.create<arith::AddIOp>(loc, upperBound, offset);
             rewriter.create<memref::StoreOp>(loc, element, input, ValueRange{ offsetInductionVar });
 
-            maskedMapYieldValue = rewriter.create<mlir::vector::InsertElementOp>(loc, element, maskedMapYieldValue, i);
+            maskedMapYieldValue = rewriter.create<mlir::vector::InsertElementOp>(loc, element, maskedMapYieldValue, offset);
         }
 
         // Add remainder to value yielded by the vectorized loop
@@ -2282,11 +2284,11 @@ LogicalResult ReduceMaxOpLowering::matchAndRewrite(
 
     mlir::Value memrefToCast = input;
     mlir::Value loadedVector = nullptr;
-    if (!memRefType.getAffineMaps().empty())
+    if (!memRefType.getLayout().isIdentity())
     {
         auto elementType = memRefType.getElementType();
         auto vectorType = mlir::VectorType::get(memRefType.getShape(), elementType);
-        auto zero = rewriter.create<ConstantIndexOp>(loc, 0);
+        auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
         loadedVector = rewriter.create<mlir::vector::TransferReadOp>(loc, vectorType, memrefToCast, mlir::ValueRange{ zero });
     }
     else
@@ -2425,11 +2427,11 @@ LogicalResult ReduceSumOpLowering::matchAndRewrite(
     }
     mlir::Value memrefToCast = input;
     mlir::Value loadedVector = nullptr;
-    if (!memRefType.getAffineMaps().empty())
+    if (!memRefType.getLayout().isIdentity())
     {
         auto elementType = memRefType.getElementType();
         auto vectorType = mlir::VectorType::get(memRefType.getShape(), elementType);
-        auto zero = rewriter.create<ConstantIndexOp>(loc, 0);
+        auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
         loadedVector = rewriter.create<mlir::vector::TransferReadOp>(loc, vectorType, memrefToCast, mlir::ValueRange{ zero });
     }
     else
@@ -2460,7 +2462,7 @@ LogicalResult PrintOpLowering::matchAndRewrite(
     auto printElement = [&](mlir::Value el) {
         if (elementType.isF32())
         {
-            el = rewriter.create<mlir::FPExtOp>(loc, el, rewriter.getF64Type());
+            el = rewriter.create<mlir::arith::ExtFOp>(loc, el, rewriter.getF64Type());
         }
         rewriter.create<ValuePrintFOp>(loc, formatStr, ValueRange{ el }, toStderr);
     };
@@ -2476,9 +2478,9 @@ LogicalResult PrintOpLowering::matchAndRewrite(
 
         for (unsigned i = 0; i < rank; ++i)
         {
-            auto lowerBound = rewriter.create<ConstantIndexOp>(loc, 0);
-            auto upperBound = rewriter.create<ConstantIndexOp>(loc, inputShape[i]);
-            auto step = rewriter.create<ConstantIndexOp>(loc, 1);
+            auto lowerBound = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+            auto upperBound = rewriter.create<arith::ConstantIndexOp>(loc, inputShape[i]);
+            auto step = rewriter.create<arith::ConstantIndexOp>(loc, 1);
 
             auto loop = rewriter.create<scf::ForOp>(loc, lowerBound, upperBound, step);
             loopIvs.push_back(loop.getInductionVar());
@@ -2504,7 +2506,7 @@ LogicalResult PrintOpLowering::matchAndRewrite(
     {
         if (shapedType)
         {
-            auto zero = rewriter.create<ConstantIndexOp>(loc, 0);
+            auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
             input = rewriter.create<memref::LoadOp>(loc, input, ValueRange{ zero.getResult() });
         }
         printElement(input);
@@ -2529,11 +2531,11 @@ void ValueToStdLoweringPass::runOnModule()
 
     for (auto vModule : make_early_inc_range(module.getOps<vir::ValueModuleOp>()))
     {
-        OwningRewritePatternList vecPatterns(context);
+        RewritePatternSet vecPatterns(context);
         vtr::populateVectorizeValueOpPatterns(vecPatterns);
         (void)applyPatternsAndFoldGreedily(vModule, std::move(vecPatterns));
 
-        OwningRewritePatternList patterns(context);
+        RewritePatternSet patterns(context);
         vtr::populateValueToStandardPatterns(this->enableProfiling, patterns);
         vtr::populateValueSimplifyPatterns(patterns);
         vtr::populateValueLaunchFuncPatterns(patterns);
@@ -2543,7 +2545,7 @@ void ValueToStdLoweringPass::runOnModule()
     }
 
     {
-        OwningRewritePatternList valueModRewritePatterns(context);
+        RewritePatternSet valueModRewritePatterns(context);
         vtr::populateValueModuleRewritePatterns(valueModRewritePatterns);
 
         (void)applyPatternsAndFoldGreedily(module, std::move(valueModRewritePatterns));
@@ -2559,7 +2561,7 @@ void ValueToStdLoweringPass::runOnModule()
     target.addLegalOp<gpu::GPUModuleOp, ModuleOp, vir::ModuleTerminatorOp, UnrealizedConversionCastOp>();
     target.markOpRecursivelyLegal<gpu::GPUModuleOp>();
     auto isLegalOperation = [&](Operation* op) {
-        if (auto typeAttr = op->getAttrOfType<TypeAttr>(function_like_impl::getTypeAttrName()); typeAttr && !typeConverter.isLegal(typeAttr.getValue()))
+        if (auto typeAttr = op->getAttrOfType<TypeAttr>(FunctionOpInterface::getTypeAttrName()); typeAttr && !typeConverter.isLegal(typeAttr.getValue()))
         {
             return false;
         }
@@ -2567,10 +2569,11 @@ void ValueToStdLoweringPass::runOnModule()
     };
 
     target.addDynamicallyLegalDialect<
-        linalg::LinalgDialect,
+        // linalg::LinalgDialect,
         vir::ValueDialect,
         StandardOpsDialect,
         AffineDialect,
+        arith::ArithmeticDialect,
         math::MathDialect,
         memref::MemRefDialect,
         scf::SCFDialect,
@@ -2582,7 +2585,7 @@ void ValueToStdLoweringPass::runOnModule()
         return typeConverter.isSignatureLegal(fn.getType()) && typeConverter.isLegal(&fn.getBody());
     });
 
-    OwningRewritePatternList genericTypeConversionPatterns(context);
+    RewritePatternSet genericTypeConversionPatterns(context);
     genericTypeConversionPatterns.insert<GenericOpTypeConversionPattern>(context, typeConverter);
     if (failed(applyFullConversion(module, target, std::move(genericTypeConversionPatterns))))
     {
@@ -2592,21 +2595,21 @@ void ValueToStdLoweringPass::runOnModule()
 
 namespace accera::transforms::value
 {
-void populateValueModuleRewritePatterns(mlir::OwningRewritePatternList& patterns)
+void populateValueModuleRewritePatterns(mlir::RewritePatternSet& patterns)
 {
     uint16_t benefit = 1;
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<ValueModuleOpRewritePattern>(context, benefit++);
 }
 
-void populateValueLaunchFuncPatterns(mlir::OwningRewritePatternList& patterns)
+void populateValueLaunchFuncPatterns(mlir::RewritePatternSet& patterns)
 {
     uint16_t benefit = 1;
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<ValueLaunchFuncOpRewritePattern>(context, benefit++);
 }
 
-void populateVectorizeValueOpPatterns(mlir::OwningRewritePatternList& patterns)
+void populateVectorizeValueOpPatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     accera::generated::populateWithGenerated(patterns);
@@ -2615,7 +2618,7 @@ void populateVectorizeValueOpPatterns(mlir::OwningRewritePatternList& patterns)
         MapReduceOpVectorization>(context);
 }
 
-void populateValueToStandardPatterns(bool enableProfiling, mlir::OwningRewritePatternList& patterns)
+void populateValueToStandardPatterns(bool enableProfiling, mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     accera::generated::populateWithGenerated(patterns);

@@ -21,7 +21,6 @@ class PassManager;
 class SPIRVTypeConverter;
 class LLVMTypeConverter;
 class TypeConverter;
-using OwningRewritePatternList = RewritePatternSet;
 
 template <typename OpT>
 class OperationPass;
@@ -35,19 +34,20 @@ namespace gpu
 
 namespace accera::transforms
 {
+void populateGPUSimplificationPatterns(mlir::RewritePatternSet& patterns);
+std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createGPUSimplificationPass();
+
 void populateAcceraToSPIRVPatterns(
     mlir::SPIRVTypeConverter& typeConverter,
     mlir::MLIRContext* context,
-    mlir::OwningRewritePatternList& patterns);
+    mlir::RewritePatternSet& patterns);
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createAcceraToSPIRVPass();
 
-void populateGPUSimplificationPatterns(mlir::OwningRewritePatternList& patterns);
-
-void populateAcceraToNVVMPatterns(mlir::OwningRewritePatternList& patterns);
+void populateAcceraToNVVMPatterns(mlir::RewritePatternSet& patterns);
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createAcceraToNVVMPass();
 
-void populateAcceraToROCDLPatterns(mlir::OwningRewritePatternList& patterns);
-void populateGPUToROCDLPatterns(mlir::LLVMTypeConverter& converter, mlir::OwningRewritePatternList& patterns);
+void populateAcceraToROCDLPatterns(mlir::RewritePatternSet& patterns);
+void populateGPUToROCDLPatterns(mlir::LLVMTypeConverter& converter, mlir::RewritePatternSet& patterns);
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createAcceraToROCDLPass();
 
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createGPUToROCDLPass();

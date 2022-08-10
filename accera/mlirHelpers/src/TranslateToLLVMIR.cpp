@@ -22,7 +22,7 @@
 
 namespace accera::ir
 {
-std::unique_ptr<llvm::Module> TranslateToLLVMIR(mlir::OwningModuleRef& module, llvm::LLVMContext& context)
+std::unique_ptr<llvm::Module> TranslateToLLVMIR(mlir::OwningOpRef<mlir::ModuleOp>& module, llvm::LLVMContext& context)
 {
     return mlir::translateModuleToLLVMIR(*module, context);
 }

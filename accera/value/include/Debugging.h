@@ -14,6 +14,7 @@
 #include <mlir/IR/Location.h>
 
 #include "Array.h"
+#include "ScalarDimension.h"
 
 #define GET_LOCATION()     \
     FileLocation           \
@@ -44,7 +45,7 @@ namespace value
     };
 
     // implementation of an output verifier function
-    void CheckAllClose(Array actual, Array desired, float tolerance);
+    void CheckAllClose(Array actual, Array desired, float tolerance, const std::vector<ScalarDimension>& runtimeSizes = {});
 
 } // namespace value
 

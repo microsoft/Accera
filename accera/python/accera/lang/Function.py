@@ -10,6 +10,7 @@ from functools import wraps, singledispatch
 
 from ..Targets import Target
 from ..lang.Array import Array
+from ..lang.Dimension import Dimension
 from .._lang_python._lang import Array as NativeArray
 
 
@@ -47,7 +48,7 @@ Did you specify role=Array.Role.TEMP?"""
 def role_to_usage(role):
     from .._lang_python import _FunctionParameterUsage
 
-    if role == Array.Role.INPUT:
+    if role == Array.Role.INPUT or role == Dimension.Role.INPUT:
         return _FunctionParameterUsage.INPUT
     else:
         return _FunctionParameterUsage.INPUT_OUTPUT

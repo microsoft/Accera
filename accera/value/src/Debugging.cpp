@@ -47,7 +47,7 @@ namespace value
     // Compares two arrays by checking whether they are equal up to the specified tolerance
     // Outputs mismatches to stderr
     // Inspired by numpy.testing.assert_allclose
-    void CheckAllClose(Array actual, Array desired, float tolerance)
+    void CheckAllClose(Array actual, Array desired, float tolerance, const std::vector<ScalarDimension>& runtimeSizes)
     {
         using namespace std::string_literals;
 
@@ -65,7 +65,7 @@ namespace value
         auto oneCount = Cast(Scalar(1), count.GetType());
         auto total = Cast(Scalar(actual.Size()), count.GetType());
 
-        Nest nest(actual.Shape());
+        Nest nest(actual.Shape(), runtimeSizes);
         auto indices = nest.GetIndices();
         nest.Set([&]() {
             diff(indices) = Cast(actual(indices) - desired(indices), diff.GetType());

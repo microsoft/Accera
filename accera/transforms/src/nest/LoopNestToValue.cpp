@@ -22,8 +22,9 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_os_ostream.h>
 
-#include <mlir/Analysis/LoopAnalysis.h>
+#include <mlir/Dialect/Affine/Analysis/LoopAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/ROCDLDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -253,7 +254,7 @@ struct RemoveKernelLikeOpPattern : public OpRewritePattern<OpType>
     LogicalResult matchAndRewrite(OpType op, PatternRewriter& rewriter) const final
     {
         auto symTableOp = SymbolTable::getNearestSymbolTable(op);
-        auto kernelName = op.getId();
+        auto kernelName = StringAttr::get(op.getContext(), op.getId());
         auto isUnused = SymbolTable::symbolKnownUseEmpty(kernelName, symTableOp);
 
         [[maybe_unused]] auto symUses = SymbolTable::getSymbolUses(kernelName, symTableOp);
@@ -335,7 +336,7 @@ void ResolveAffineRangeEnd(PatternRewriter& rewriter, mlir::AffineApplyOp affine
             auto dimensionIndex = dimSizeOp.dimensionIndex();
             auto dimSize = util::GetDimSizeAt(dimensionIndex.getValue(), op);
             assert(dimSize.has_value());
-            rewriter.replaceOpWithNewOp<mlir::ConstantIndexOp>(op, *dimSize);
+            rewriter.replaceOpWithNewOp<arith::ConstantIndexOp>(op, *dimSize);
         }
         else if (auto innerAffineApply = mlir::dyn_cast_or_null<mlir::AffineApplyOp>(op))
         {
@@ -356,7 +357,7 @@ void ResolveAffineRangeEnd(PatternRewriter& rewriter, mlir::AffineApplyOp affine
     for (auto operand : llvm::make_early_inc_range(affineApplyOp.mapOperands()))
     {
         auto op = operand.getDefiningOp();
-        if (auto constantOp = mlir::dyn_cast_or_null<mlir::ConstantOp>(op))
+        if (auto constantOp = mlir::dyn_cast_or_null<arith::ConstantOp>(op))
         {
             constantAttrs.push_back(constantOp.getValue());
         }
@@ -367,7 +368,7 @@ void ResolveAffineRangeEnd(PatternRewriter& rewriter, mlir::AffineApplyOp affine
     }
     auto foldResult = affineApplyOp.fold(constantAttrs);
     auto foldAttr = foldResult.get<mlir::Attribute>();
-    rewriter.replaceOpWithNewOp<mlir::ConstantOp>(affineApplyOp, foldAttr);
+    rewriter.replaceOpWithNewOp<arith::ConstantOp>(affineApplyOp, foldAttr);
 }
 
 void ResolveRange(ScheduleOp& op, PatternRewriter& rewriter, lnir::Range& range)
@@ -399,7 +400,7 @@ void ResolveRange(ScheduleOp& op, PatternRewriter& rewriter, lnir::Range& range)
             endValOp = endVal.getDefiningOp();
         }
 
-        if (auto constantEnd = mlir::dyn_cast_or_null<mlir::ConstantOp>(endValOp))
+        if (auto constantEnd = mlir::dyn_cast_or_null<arith::ConstantOp>(endValOp))
         {
             // If this affine end has already been canonicalized to a constant, replace the range with the constant
             auto constantAttr = constantEnd.getValue();
@@ -477,10 +478,11 @@ LogicalResult ScheduleOpConversion::matchAndRewrite(ScheduleOp op, PatternRewrit
     });
     op.setDomain(domain);
 
-    // Copy the domain to the generated loops
-    auto domainAttr = TransformedDomainAttr::get(domain, op->getContext());
     LoopNestBuilder builder(op, rewriter, printLoops);
     auto loops = builder.BuildLoopNest();
+
+    // Copy the domain to the generated loops
+    auto domainAttr = TransformedDomainAttr::get(domain, op->getContext());
     for (auto& loop : loops)
     {
         loop->setAttr("domain", domainAttr);
@@ -617,8 +619,8 @@ LogicalResult SaturatedAccumulateLoopRewrite::matchAndRewrite(AffineForOp loopOp
         return success();
 
     auto isExtFromInt8 = [](mlir::Value v) {
-        return (mlir::isa<SignExtendIOp>(v.getDefiningOp()) ||
-                mlir::isa<ZeroExtendIOp>(v.getDefiningOp())) &&
+        return (mlir::isa<arith::ExtSIOp>(v.getDefiningOp()) ||
+                mlir::isa<arith::ExtUIOp>(v.getDefiningOp())) &&
                v.getDefiningOp()->getOperand(0).getType().isInteger(8);
     };
     auto isMulOfExtFromInt8 = [&](mlir::Value v) {
@@ -677,7 +679,7 @@ LogicalResult SaturatedAccumulateLoopRewrite::matchAndRewrite(AffineForOp loopOp
     [[maybe_unused]] auto inductionVarMap = AffineMap::get(1, 1, rewriter.getAffineDimExpr(0) + step * rewriter.getAffineSymbolExpr(0));
     for (int64_t i = 0; i < numIter; ++i)
     {
-        auto offset = rewriter.create<mlir::ConstantIndexOp>(loc, step * i + begin);
+        auto offset = rewriter.create<arith::ConstantIndexOp>(loc, step * i + begin);
         indexMap.map(inductionVar, offset);
 
         for (auto& op : loopOp.getBody()->without_terminator())
@@ -794,7 +796,7 @@ LogicalResult ScheduledLoopOpRewrite::matchAndRewrite(ScheduledLoopOp op, Patter
 
         if (op.hasVariableEnd())
         {
-            auto beginValue = rewriter.create<ConstantIndexOp>(loc, begin).getResult();
+            auto beginValue = rewriter.create<arith::ConstantIndexOp>(loc, begin).getResult();
             auto endValue = op.endValue().front();
             return rewriter.create<AffineForOp>(loc, beginValue, rewriter.getDimIdentityMap(), endValue, rewriter.getDimIdentityMap(), step);
         }
@@ -807,9 +809,9 @@ LogicalResult ScheduledLoopOpRewrite::matchAndRewrite(ScheduledLoopOp op, Patter
 
     // Transfer attributes
     auto scheduledLoopOpAttrs = op->getAttrs();
-    for (auto& [identifier, attrValue] : scheduledLoopOpAttrs)
+    for (auto& attr : scheduledLoopOpAttrs)
     {
-        bodyLoop->setAttr(identifier, attrValue);
+        bodyLoop->setAttr(attr.getName(), attr.getValue());
     }
 
     auto bodyLoopRegion = &bodyLoop.region();
@@ -1036,7 +1038,7 @@ LogicalResult DimSizeOpConversion::matchAndRewrite(DimSizeOp op, PatternRewriter
     auto dimensionSize = util::GetDimSizeAt(dimensionIndex, op.getOperation());
     if (dimensionSize.has_value())
     {
-        auto constantOp = rewriter.create<mlir::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getIndexType(), *dimensionSize));
+        auto constantOp = rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getIndexType(), *dimensionSize));
         constantOp->setAttr(DimSizeOp::getIndexAttrName(), dimensionIndexAttr);
         rewriter.replaceOp(op, constantOp.getResult());
     }
@@ -1044,7 +1046,7 @@ LogicalResult DimSizeOpConversion::matchAndRewrite(DimSizeOp op, PatternRewriter
     {
         // If DimSizeOp doesn't have a parent or doesn't have one of the subdomain size or index order attributes, then treat it
         // as being outside the iteration domain and return 0
-        auto constantOp = rewriter.create<mlir::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+        auto constantOp = rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
         constantOp->setAttr(DimSizeOp::getIndexAttrName(), dimensionIndexAttr);
         rewriter.replaceOp(op, constantOp.getResult());
     }
@@ -1075,7 +1077,7 @@ LogicalResult UnlinkAndRemoveSymbolicIndexOpPattern::matchAndRewrite(SymbolicInd
 {
     auto loc = util::GetLocation(rewriter, "UnlinkAndRemoveSymbolicIndexOpPattern", op.getLoc());
 
-    auto zeroOp = rewriter.create<mlir::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+    auto zeroOp = rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
     op.getOperation()->replaceAllUsesWith(zeroOp);
 
     rewriter.eraseOp(op);
@@ -1305,19 +1307,19 @@ namespace
 namespace accera::transforms
 {
 
-void populateRangeResolutionPatterns(mlir::OwningRewritePatternList& patterns)
+void populateRangeResolutionPatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<ScheduleOpDomainResolution>(context);
 }
 
-void populateScheduleScaffoldingPatterns(bool printLoops, mlir::OwningRewritePatternList& patterns)
+void populateScheduleScaffoldingPatterns(bool printLoops, mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<ScheduleOpConversion>(context, printLoops);
 }
 
-void populateScheduledOperationsPatterns(mlir::OwningRewritePatternList& patterns)
+void populateScheduledOperationsPatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<DimSizeOpConversion,
@@ -1325,19 +1327,19 @@ void populateScheduledOperationsPatterns(mlir::OwningRewritePatternList& pattern
                     ScheduledLoopOpIndexConversion>(context);
 }
 
-void populateScheduleToValueRewritePatterns(mlir::OwningRewritePatternList& patterns)
+void populateScheduleToValueRewritePatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<ScheduledLoopOpRewrite>(context);
 }
 
-void populateGPUIndexMappingRewritePatterns(mlir::OwningRewritePatternList& patterns)
+void populateGPUIndexMappingRewritePatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<GPUMappedAffineForOpRewrite>(context);
 }
 
-void populateScheduleToValuePatterns(mlir::OwningRewritePatternList& patterns)
+void populateScheduleToValuePatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     populateWithGenerated(patterns);
@@ -1346,25 +1348,25 @@ void populateScheduleToValuePatterns(mlir::OwningRewritePatternList& patterns)
                     RemoveSymIndexOpPattern>(context);
 }
 
-void populateSymIndexCleanupPatterns(mlir::OwningRewritePatternList& patterns)
+void populateSymIndexCleanupPatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<RemoveSymIndexOpPattern>(context);
 }
 
-void populateLoopOptimizationPatterns(mlir::OwningRewritePatternList& patterns)
+void populateLoopOptimizationPatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<SaturatedAccumulateLoopRewrite>(context);
 }
 
-void populateLoopMergingPatterns(mlir::OwningRewritePatternList& patterns)
+void populateLoopMergingPatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<MergeNearlyIdenticalSiblingLoops>(context);
 }
 
-void populateLoopSimplificationPatterns(mlir::OwningRewritePatternList& patterns)
+void populateLoopSimplificationPatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<RemoveZeroIterationLoopPattern,

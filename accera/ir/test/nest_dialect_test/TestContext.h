@@ -78,14 +78,14 @@ public:
         (void)bodyBuilder.create<mlir::ReturnOp>(bodyBuilder.getUnknownLoc());
     }
 
-    mlir::OwningModuleRef& Module() { return _ownedModule; }
+    mlir::OwningOpRef<mlir::ModuleOp>& Module() { return _ownedModule; }
     mlir::FuncOp& Func() { return _fnOp; }
 
 private:
     mlir::MLIRContext _ownedContext;
     llvm::SourceMgr _sourceMgr;
     mlir::MLIRContext* _context;
-    mlir::OwningModuleRef _ownedModule;
+    mlir::OwningOpRef<mlir::ModuleOp> _ownedModule;
     mlir::ModuleOp _module;
     mlir::SourceMgrDiagnosticHandler _sourceMgrHandler;
     mlir::OpBuilder _builder;

@@ -219,7 +219,7 @@ class Package:
         source: Union[
             "accera.Nest", "accera.Schedule", "accera.Plan", "accera.Function", Callable
         ],
-        args: List["accera.Array"] = None,
+        args: List[Union["accera.Dimension", "accera.Array"]] = None,
         base_name: str = "",
         parameters: Union[dict, List[dict]] = {},
         function_opts: dict = {},
@@ -269,7 +269,7 @@ class Package:
         source: Union[
             "accera.Nest", "accera.Schedule", "accera.Plan", "accera.Function", Callable
         ],
-        args: List["accera.Array"] = None,
+        args: List[Union["accera.Dimension", "accera.Array"]] = None,
         base_name: str = "",
         parameters: dict = {},
         function_opts: dict = {},
@@ -333,7 +333,9 @@ class Package:
                                 ]
                                 + [
                                     (a.role, a.element_type, a.shape, a.layout)
-                                    for a in args
+                                    if isinstance(a, lang.Array) else (a.role)
+                                    if isinstance(a, lang.Dimension) else None
+                                    for a in args 
                                 ],
                             )
                         )
@@ -348,7 +350,8 @@ class Package:
 
         # Resolve any undefined argument shapes based on the source usage pattern
         for arr in args:
-            _resolve_array_shape(source, arr)
+            if isinstance(arr, lang.Array):
+                _resolve_array_shape(source, arr)
 
         if isinstance(source, lang.Nest) or isinstance(source, lang.Schedule):
             # assumption: convenience functions are for host targets only
@@ -368,14 +371,14 @@ class Package:
             # due to the fall-through, we only need to validate here
             validate_target(source.target)
 
-            native_array_args = [arg._get_native_array() for arg in args]
+            native_array_dim_args = [arg._get_native_array() if isinstance(arg, lang.Array) else arg._native_dim for arg in args ]
 
             assert source.public
             source.name = get_function_name(source.target)
             source.base_name = base_name
             source.auxiliary = auxiliary_metadata
             source.param_overrides = parameters
-            source.args = tuple(native_array_args)
+            source.args = tuple(native_array_dim_args)
             source.requested_args = args
             self._fns[source.name] = source
             return source  # for composability

@@ -17,15 +17,14 @@ class Pass;
 template <typename OpT> class OperationPass;
 
 class RewritePatternSet;
-using OwningRewritePatternList = RewritePatternSet;
 } // namespace mlir
 
 namespace accera::transforms::value
 {
 
-void populateValueLambdaToFuncPatterns(mlir::MLIRContext* context, mlir::OwningRewritePatternList& patterns);
-void populateValueFuncToTargetPatterns(mlir::MLIRContext* context, mlir::OwningRewritePatternList& patterns);
-void populateValueLaunchFuncInlinerPatterns(mlir::MLIRContext*, mlir::OwningRewritePatternList&);
+void populateValueLambdaToFuncPatterns(mlir::MLIRContext* context, mlir::RewritePatternSet& patterns);
+void populateValueFuncToTargetPatterns(mlir::MLIRContext* context, mlir::RewritePatternSet& patterns);
+void populateValueLaunchFuncInlinerPatterns(mlir::MLIRContext*, mlir::RewritePatternSet&);
 
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueFuncToTargetPass();
 } // namespace accera::transforms::value

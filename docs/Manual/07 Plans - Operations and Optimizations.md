@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
 # Section 7: Plans - Operations and Optimizations
 We can control target-specific operations and optimizations using a plan. Examples include instruction pipelining, applying SIMD vector instructions, and so on.
@@ -210,6 +210,9 @@ Static scheduling strategy is invoked by setting the argument `policy="static"` 
 
 ### Dynamic scheduling policy
 Dynamic scheduling strategy is invoked by setting the argument `policy="dynamic"` in the call to `parallelize`. Dynamic scheduling creates a single work queue that is shared across different cores.
+
+### Specifying thread limit
+Setting the argument `max_threads` to a positive integer value will tell the compiler to have an upper bound on the number of threads used for distributing the workload.
 
 ### __Not yet implemented:__ Pinning to specific cores
 The `pin` argument allows the parallel work to be pinned to specific cores.

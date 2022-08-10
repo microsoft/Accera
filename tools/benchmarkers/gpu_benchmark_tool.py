@@ -40,7 +40,7 @@ def exec_ext_benchmarker(gpu_id: int, gemm: gemm_opts.GemmOpts, datatype, benchm
     proc.check_returncode()
     return proc.stdout
 
-def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, git_branch: str, target_name: str, output_prefix: str, rocblas: str, composable_kernel: str, cublas: str, cutlass: str, available_gpus, container_name, verbose, check, compiler_ver, deviceProperties):
+def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int, git_branch: str, target_name: str, output_prefix: str, rocblas: str, composable_kernel: str, cublas: str, cutlass: str, available_gpus, container_name, verbose, check, compiler_ver, deviceProperties):
     result_dir = os.path.split(output_prefix)[0] or '.'
     if not os.path.isdir(result_dir):
         os.makedirs(result_dir)
@@ -102,7 +102,8 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, git_branch: str
             ldb = gemm.k if not gemm.transB else gemm.n
             ldc = gemm.m
             benchmarkResult = accera_gemm.BenchmarkResult(opts=gemm, dtype=dtype, gpu_id=0, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=deviceProperties[0])
-            proc = subprocess.run([composable_kernel, 'gemm', datatype, layout, '0', '0', '0', '2', str(gemm.m), str(gemm.n), str(gemm.k), str(lda), str(ldb), str(ldc)], capture_output=True, text=True)
+            #                                          op     datatype  layout  verify  init  log  repeat  M___         N___         K___         StrideA   StrideB   StrideC
+            proc = subprocess.run([composable_kernel, 'gemm', datatype, layout, '1',    '0',  '0', '2',    str(gemm.m), str(gemm.n), str(gemm.k), str(lda), str(ldb), str(ldc)], capture_output=True, text=True)
             print(proc.stdout)
             benchmarkResult.compiler_version = compiler_ver
             benchmarkResult.target_rt = 'ROCM'
@@ -160,7 +161,7 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, git_branch: str
     else:
         for gemm in data:
             print(f"\nProcessing input: {gemm}")
-            accera_gemm.benchmark_gemm(gemm, dtype, output_prefix, available_gpus, container_name, verbose, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, check, deviceProperties)
+            accera_gemm.benchmark_gemm(gemm, dtype, batch_size, output_prefix, available_gpus, container_name, verbose, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, check, deviceProperties)
         # else:
         #     if container_name:
         #         cosmosdb.show_benchmark_summary(container_name)
@@ -207,11 +208,22 @@ def prepare_system_for_benchmark(target, available_gpus):
 
     return deviceProperties, compiler_ver
 
+def get_gemm_input_from_stream(stream):
+    reader = csv.DictReader(stream, gemm_opts.CONFIG_HEADERS)
+    return [gemm_opts.GemmOpts(**data) for data in islice(reader, 1, None)]
+
+def get_gemm_input_from_file(file):
+    result = []
+    with open(file) as f:
+        result = get_gemm_input_from_stream(f)
+    return result
+
 def main(args=[]):
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--devices', help='The devices to use for the benchmark', required=False, default="0,1,2,3")
-    parser.add_argument('-i', '--input', help='Comma-separated list of input config files (csv)', required=False)
+    parser.add_argument('-i', '--input', nargs="+", help='Comma-separated list of input config files (csv)', required=False)
     parser.add_argument('-y', '--type', help='The data type for the input set, h or fp16, s for fp32', required=False)
+    parser.add_argument('-s', '--batch_size', type=int, help='No. of iterations for the benchmark run', required=False, default=2)
     parser.add_argument('-b', '--branch', help='The git branch to use to tag the results to', required=False)
     parser.add_argument('-z', '--string', help='input config string (csv, semi-colon per row)', required=False)
     parser.add_argument('-t', '--target', help='The target the emitter is emitting HAT package for')
@@ -221,9 +233,9 @@ def main(args=[]):
     parser.add_argument('-ck', '--composable_kernel', help="The path to the composable-kernel tool", required=False)
     parser.add_argument('-cl', '--cutlass', help="The path to the cutlass tool", required=False)
     parser.add_argument('-u', '--upload', help="Specify the CosmosDB container name to upload the results to", required=False)
-    parser.add_argument('-v', '--verbose', help="Enable verbose logging", required=False)
-    parser.add_argument('-c', '--check', help="Verify correctness of the generated kernels", required=False)
-    parser.add_argument('-j', '--janitor', help="Cleanup the output dir after running benchmark", required=False)
+    parser.add_argument('-v', '--verbose', action="store_true", help="Enable verbose logging", required=False)
+    parser.add_argument('-c', '--check', action="store_true", help="Verify correctness of the generated kernels", required=False)
+    parser.add_argument('-j', '--no_janitor', action="store_false", help="Don't cleanup the output dir after running benchmark", required=False)
 
     args = parser.parse_args(args)
 
@@ -243,16 +255,10 @@ def main(args=[]):
 
     gemm_inputs = []
     if f is None:
-        input_files = args.input.split(",")
-        for file in input_files:
-            try:
-                f = open(file)
-
-                reader = csv.DictReader(f, gemm_opts.CONFIG_HEADERS)
-                gemm_inputs += [gemm_opts.GemmOpts(**data) for data in islice(reader, 1, None)]
-
-            finally:
-                f.close()
+        for file in args.input:
+            gemm_inputs += get_gemm_input_from_file(file)
+    else:
+        gemm_inputs = get_gemm_input_from_stream(f)
 
     available_gpus = []
     devices = args.devices.split(",")
@@ -274,10 +280,12 @@ def main(args=[]):
 
     deviceProperties, compiler_ver = prepare_system_for_benchmark(args.target, available_gpus)
 
-    benchmark_gemm_shapes(gemm_inputs, args.type, args.branch, args.target, args.output, args.rocblas, args.composable_kernel, args.cublas, args.cutlass, available_gpus, args.upload, args.verbose, args.check, compiler_ver, deviceProperties)
+    benchmark_gemm_shapes(gemm_inputs, args.type, args.batch_size, args.branch, args.target, args.output,
+                            args.rocblas, args.composable_kernel, args.cublas, args.cutlass, available_gpus,
+                            args.upload, args.verbose, args.check, compiler_ver, deviceProperties)
 
     print("Cleaning up output directory after benchmark")
-    if args.janitor:
+    if args.no_janitor: # This is the correct logic since this option is a store_false
         shutil.rmtree(output_dir)
 
     print(datetime.now())

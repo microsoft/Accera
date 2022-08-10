@@ -46,7 +46,7 @@ async function RunViz(Viz, SceneView) {
             arrow_alignment_side: CUBE_SIDES.FRONT,
             arrow_distance_from_edge: 1,
             arrow_start_offset: 0,
-            label: "i", 
+            label: "1", 
             label_pos: 0.5, 
             label_size: 1
         },
@@ -56,7 +56,7 @@ async function RunViz(Viz, SceneView) {
             arrowhead_thickness: 0.5, 
             arrowhead_length: 1, 
             arrow_length: d1+1, 
-            label: "j", 
+            label: "2", 
             label_pos: 0.1, 
             label_size: 1,
             arrow_start_offset: 0,
@@ -71,7 +71,7 @@ async function RunViz(Viz, SceneView) {
             arrowhead_length: 2, 
             arrow_length: d2+1, 
             arrow_start_offset: 0,
-            label: "k", 
+            label: "3", 
             label_pos: 0.1, 
             label_size: 1,
             arrow_distance_from_edge: 1,
@@ -95,7 +95,7 @@ async function RunViz(Viz, SceneView) {
 
     await Viz.SaveImage("space_3_12_15");
 
-    let movie = await Viz.CreateSequence("Movie3", 60);
+    let movie = await Viz.CreateSequence("space_3_12_15_animation", 60);
     await movie.AddFrame(500);
 
     for(let i = 0; i < d0; ++i) {

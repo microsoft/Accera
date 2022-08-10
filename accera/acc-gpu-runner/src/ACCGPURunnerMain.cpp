@@ -181,7 +181,7 @@ int main(int argc, char** argv)
     context.appendDialectRegistry(accera::ir::GetDialectRegistry());
     context.loadAllAvailableDialects();
 
-    mlir::OwningModuleRef moduleRef = parseMLIRInput(inputFilename, &context);
+    mlir::OwningOpRef<mlir::ModuleOp> moduleRef = parseMLIRInput(inputFilename, &context);
     // TODO: this will segfault if the module has no name
     auto moduleName = moduleRef->getName()->str();
     PassManager passManager(&context);

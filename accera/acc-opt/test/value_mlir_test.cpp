@@ -317,9 +317,9 @@ TEST_CASE("mlir_test3")
 // CHECK-NEXT: accv.module "mlir_test4" {
 // CHECK-NEXT: accv.func nested @foo_{{[0-9]+}}(%arg0: memref<10x10xi32, [[MAP:#map[0-9]*]]>) attributes {exec_target = 0 : i64} {
 // COM: CHECK-NEXT: accv.func @foo_{{[0-9]+}}(%arg0: memref<10x10xi32>) attributes {exec_target = 0 : i64, sym_visibility = "nested"} {
-// CHECK-NEXT: [[c0:%c[0-9]+]] = constant 0 : index
-// CHECK-NEXT: [[c10_1:%c[0-9_]+]] = constant 10 : index
-// CHECK-NEXT: [[c10_2:%c[0-9_]+]] = constant 10 : index
+// CHECK-NEXT: [[c0:%c[0-9]+]] = arith.constant 0 : index
+// CHECK-NEXT: [[c10_1:%c[0-9_]+]] = arith.constant 10 : index
+// CHECK-NEXT: [[c10_2:%c[0-9_]+]] = arith.constant 10 : index
 // CHECK-NEXT: affine.for [[iv0:%arg[0-9]+]] = 0 to 10 {
 // CHECK: affine.for [[iv1:%arg[0-9]+]] = 0 to 10 {
 // CHECK: }
@@ -460,17 +460,17 @@ TEST_CASE("mlir_test11")
     // CHECK-NEXT:    accv.func nested @constant_scalar_test_{{[0-9]+}}() attributes  {exec_target = 0 : i64} {
     DeclareFunction("constant_scalar_test")
         .Define([] {
-            // CHECK-NEXT:      [[c0_0:%c[0-9a-z_]+]] = constant 0 : i32
-            // CHECK-NEXT:      [[c4_0:%c[0-9a-z_]+]] = constant 4
-            // CHECK-NEXT:      [[c4_1:%c[0-9a-z_]+]] = constant 4
+            // CHECK-NEXT:      [[c0_0:%c[0-9a-z_]+]] = arith.constant 0 : i32
+            // CHECK-NEXT:      [[c4_0:%c[0-9a-z_]+]] = arith.constant 4
+            // CHECK-NEXT:      [[c4_1:%c[0-9a-z_]+]] = arith.constant 4
             // CHECK-NEXT:      [[v0:%[a-z0-9_]+]] = "accv.alloc"() {sym_name = "a"} : () -> memref<1xi32, 3>
             Scalar a = MakeVector<int>(1, "a")[0];
             Scalar c = 4;
-            // CHECK-NEXT:      %[[v1:[a-z0-9_]+]] = index_cast [[c0_0]] : i32 to index
+            // CHECK-NEXT:      %[[v1:[a-z0-9_]+]] = arith.index_cast [[c0_0]] : i32 to index
             // CHECK-NEXT:      [[v2:%[a-z0-9_]+]] = "accv.slice"([[v0]], %[[v1]]) {sliceDimensions = [0]} : (memref<1xi32, 3>, index) -> memref<i32>
             // CHECK-NEXT:      [[v3:%[0-9]+]] = "accv.cmp"([[c4_0]], [[c4_1]]) {predicate = 0 : i64} : (i32, i32) -> i1
             // CHECK-NEXT:      scf.if [[v3]] {
-            // CHECK-NEXT:        [[c2_0:%c[0-9a-z_]+]] = constant 2 : i32
+            // CHECK-NEXT:        [[c2_0:%c[0-9a-z_]+]] = arith.constant 2 : i32
             // CHECK-NEXT:        "accv.copy"([[c2_0]], [[v2]]) : (i32, memref<i32>) -> ()
             // CHECK-NEXT:      }
             If(c == 4, [&] { a = 2; });
@@ -837,7 +837,7 @@ TEST_CASE("mlir_schedule_test_4")
 // CHECK: "accv.slice"(%arg0, %{{[0-9]+}}, %{{[0-9]+}}) {sliceDimensions = [0, 1]} : (memref<10x10xf32, #map0>, index, index) -> memref<f32>
 // CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [0]} : (memref<10x10xf32, #map0>, index) -> memref<10xf32, #map1>
 // CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [1]} : (memref<10x10xf32, #map0>, index) -> memref<10xf32, #map2>
-// CHECK: "accv.view"(%arg0, %{{[0-9]+}}, %{{[0-9]+}}) : (memref<10x10xf32, #map0>, !linalg.range, !linalg.range) -> memref<3x4xf32, #map3>
+// CHECK: "accv.view"(%arg0, %{{[0-9]+}}, %{{[0-9]+}}) : (memref<10x10xf32, #map0>, !accv.range, !accv.range) -> memref<3x4xf32, #map3>
 TEST_CASE("mlir_matrix_view_test")
 {
     DeclareFunction("MatrixView")
@@ -870,7 +870,7 @@ TEST_CASE("mlir_matrix_view_test")
 // CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [0, 1]} : (memref<5x10x15xf32, #map0>, index, index) -> memref<15xf32, #map4>
 // CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [0, 2]} : (memref<5x10x15xf32, #map0>, index, index) -> memref<10xf32, #map5>
 // CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [1, 2]} : (memref<5x10x15xf32, #map0>, index, index) -> memref<5xf32, #map6>
-// CHECK: "accv.view"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) : (memref<5x10x15xf32, #map0>, !linalg.range, !linalg.range, !linalg.range) -> memref<3x2x1xf32, #map7>
+// CHECK: "accv.view"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) : (memref<5x10x15xf32, #map0>, !accv.range, !accv.range, !accv.range) -> memref<3x2x1xf32, #map7>
 TEST_CASE("mlir_tensor_view_test")
 {
     DeclareFunction("TensorView")
@@ -902,27 +902,27 @@ TEST_CASE("mlir_intrinsic_test")
             Scalar acc = MakeScalar<float>();
             acc = x + y;
 
-            // CHECK: absf %{{[0-9]+}} : f32
+            // CHECK: math.abs %{{[0-9]+}} : f32
             acc += Abs(acc);
-            // CHECK: cos %{{[0-9]+}} : f32
+            // CHECK: math.cos %{{[0-9]+}} : f32
             acc += Cos(acc);
-            // CHECK: exp %{{[0-9]+}} : f32
+            // CHECK: math.exp %{{[0-9]+}} : f32
             acc += Exp(acc);
-            // CHECK: log %{{[0-9]+}} : f32
+            // CHECK: math.log %{{[0-9]+}} : f32
             acc += Log(acc);
-            // CHECK: log10 %{{[0-9]+}} : f32
+            // CHECK: math.log10 %{{[0-9]+}} : f32
             acc += Log10(acc);
-            // CHECK: log2 %{{[0-9]+}} : f32
+            // CHECK: math.log2 %{{[0-9]+}} : f32
             acc += Log2(acc);
-            // CHECK: sin %{{[0-9]+}} : f32
+            // CHECK: math.sin %{{[0-9]+}} : f32
             acc += Sin(acc);
-            // CHECK: sqrt %{{[0-9]+}} : f32
+            // CHECK: math.sqrt %{{[0-9]+}} : f32
             acc += Sqrt(acc);
-            // CHECK: tanh %{{[0-9]+}} : f32
+            // CHECK: math.tanh %{{[0-9]+}} : f32
             acc += Tanh(acc);
-            // CHECK: ceilf %{{[0-9]+}} : f32
+            // CHECK: math.ceil %{{[0-9]+}} : f32
             acc += Ceil(acc);
-            // CHECK: powf %{{[0-9]+}}, %arg1 : f32
+            // CHECK: math.powf %{{[0-9]+}}, %arg1 : f32
             acc += Pow(acc, y);
 
             // CHECK:[[c:%[0-9]+]] = "accv.cmp"(%arg0, %arg1)
@@ -992,49 +992,49 @@ TEST_CASE("mlir_scalar_float_test")
         .Define([](Scalar idx, Scalar A, Vector B, Matrix C, Tensor D, Array E) {
             auto c = 2;
 
-            // CHECK-DAG:  %[[CST:cst[0-9_]*]] = constant 2.000000e+00 : f32
-            // CHECK-NEXT: %[[v0:[0-9]+]] = index_cast %[[IDX]] : i32 to index
+            // CHECK-DAG:  %[[CST:cst[0-9_]*]] = arith.constant 2.000000e+00 : f32
+            // CHECK-NEXT: %[[v0:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // CHECK-NEXT: %[[v1:[0-9]+]] = "accv.slice"(%[[B]], %[[v0]]) {sliceDimensions = [0]} : (memref<10xf32>, index) -> memref<f32>
             // CHECK-NEXT: %[[v2:[0-9]+]] = "accv.get_element"(%[[v1]]) : (memref<f32>) -> f32
             // CHECK-NEXT: %[[v3:[0-9]+]] = "accv.cmp"(%[[v2]], %[[A]]) {predicate = 1 : i64} : (f32, f32) -> i1
             // CHECK-NEXT: scf.if %[[v3]] {
             If(B[idx] != A, [&] {
-                // CHECK-NEXT:  %[[v0:[0-9]+]] = index_cast %[[IDX]] : i32 to index
+                // CHECK-NEXT:  %[[v0:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
                 // CHECK-NEXT:  %[[v1:[0-9]+]] = "accv.slice"(%[[B]], %[[v0]]) {sliceDimensions = [0]} : (memref<10xf32>, index) -> memref<f32>
                 // CHECK-NEXT:  "accv.copy"(%[[A]], %[[v1]]) : (f32, memref<f32>) -> ()
                 B[idx] = A;
                 // CHECK-NEXT: }
             });
 
-            // COM: CHECK-NEXT: %[[v0:[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // COM: CHECK-NEXT: %[[v1:[0-9]+]] = index_cast %[[IDX]] : i32 to index
+            // COM: CHECK-NEXT: %[[v0:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // COM: CHECK-NEXT: %[[v1:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // COM: CHECK-NEXT: %[[v2:[0-9]+]] = memref.subview %[[C]][%[[v0]], %[[v1]]] [1, 1] [100, 1] : memref<100x100xf32, #map0> to memref<f32, #map3>
             // COM: CHECK-NEXT: %[[v3:[0-9]+]] = "accv.get_element"(%[[v2]]) : (memref<f32, #map3>) -> f32
             // COM: CHECK-NEXT: %[[v4:[0-9]+]] = "accv.cmp"(%[[v3]], %[[A]]) {predicate = 1 : i64} : (f32, f32) -> i1
             // COM: CHECK-NEXT: scf.if %[[v4]] {
-            // CHECK-NEXT: [[v0:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // CHECK-NEXT: [[v1:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
+            // CHECK-NEXT: [[v0:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // CHECK-NEXT: [[v1:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // CHECK-NEXT: [[v2:%[0-9]+]] = "accv.slice"(%[[C]], [[v0]], [[v1]]) {sliceDimensions = [0, 1]} : (memref<100x100xf32, #map0>, index, index) -> memref<f32>
             // CHECK-NEXT: [[v3:%[0-9]+]] = "accv.get_element"([[v2]]) : (memref<f32>) -> f32
             // CHECK-NEXT: [[v4:%[0-9]+]] = "accv.cmp"([[v3]], %[[A]]) {predicate = 1 : i64} : (f32, f32) -> i1
             // CHECK-NEXT: scf.if [[v4]] {
             If(C(idx, idx) != A, [&] {
-                // COM: CHECK-DAG:  %[[CST0:cst[0-9_]*]] = constant 2.000000e+00 : f32
-                // COM: CHECK-DAG:  %[[v0:[0-9]+]] = index_cast %[[IDX]] : i32 to index
+                // COM: CHECK-DAG:  %[[CST0:cst[0-9_]*]] = arith.constant 2.000000e+00 : f32
+                // COM: CHECK-DAG:  %[[v0:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
                 // COM: CHECK-DAG:  %[[Bslice:[0-9]+]] = memref.subview %[[B]][%[[v0]]] [1] [1] : memref<10xf32> to memref<f32, #map3>
                 // COM: CHECK-DAG:  %[[v2:[0-9]+]] = "accv.get_element"(%[[Bslice]]) : (memref<f32, #map3>) -> f32
                 // COM: CHECK:      %[[v3:[0-9]+]] = "accv.bin_op"(%[[v2]], %[[CST0]]) {predicate = 0 : i64} : (f32, f32) -> f32
-                // COM: CHECK-NEXT: %[[v0:[0-9]+]] = index_cast %[[IDX]] : i32 to index
-                // COM: CHECK-NEXT: %[[v1:[0-9]+]] = index_cast %[[IDX]] : i32 to index
+                // COM: CHECK-NEXT: %[[v0:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+                // COM: CHECK-NEXT: %[[v1:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
                 // COM: CHECK-NEXT: %[[Cslice:[0-9]+]] = memref.subview %[[C]][%[[v0]], %[[v1]]] [1, 1] [100, 1] : memref<100x100xf32, #map0> to memref<f32, #map3>
                 // COM: CHECK-NEXT: "accv.copy"(%[[v3]], %[[Cslice]]) : (f32, memref<f32, #map3>) -> ()
-                // CHECK-DAG:  [[CST0:%cst[0-9_]*]] = constant 2.000000e+00 : f32
-                // CHECK-DAG:  [[v0:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
+                // CHECK-DAG:  [[CST0:%cst[0-9_]*]] = arith.constant 2.000000e+00 : f32
+                // CHECK-DAG:  [[v0:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
                 // CHECK-DAG:  [[Bslice:%[0-9]+]] = "accv.slice"(%[[B]], [[v0]]) {sliceDimensions = [0]} : (memref<10xf32>, index) -> memref<f32>
                 // CHECK-DAG:  [[v2:%[0-9]+]] = "accv.get_element"([[Bslice]]) : (memref<f32>) -> f32
                 // CHECK:      [[v3:%[0-9]+]] = "accv.bin_op"([[v2]], [[CST0]]) {predicate = 0 : i64} : (f32, f32) -> f32
-                // CHECK-NEXT: [[v0:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
-                // CHECK-NEXT: [[v1:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
+                // CHECK-NEXT: [[v0:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+                // CHECK-NEXT: [[v1:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
                 // CHECK-NEXT: [[Cslice:%[0-9]+]] = "accv.slice"(%[[C]], [[v0]], [[v1]]) {sliceDimensions = [0, 1]} : (memref<100x100xf32, #map0>, index, index) -> memref<f32>
                 // CHECK-NEXT: "accv.copy"([[v3]], [[Cslice]]) : (f32, memref<f32>) -> ()
                 C(idx, idx) = B[idx] + Cast(c, A.GetType());
@@ -1042,13 +1042,13 @@ TEST_CASE("mlir_scalar_float_test")
                 // CHECK-NEXT: }
             });
 
-            // COM: CHECK-NEXT: %[[v0:[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // COM: CHECK-NEXT: %[[v1:[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // COM: CHECK-NEXT: %[[v2:[0-9]+]] = index_cast %[[IDX]] : i32 to index
+            // COM: CHECK-NEXT: %[[v0:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // COM: CHECK-NEXT: %[[v1:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // COM: CHECK-NEXT: %[[v2:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // COM: CHECK-NEXT: %[[Dslice:[0-9]+]] = memref.subview %[[D]][%[[v0]], %[[v1]], %[[v2]]] [1, 1, 1] [1000000, 1000, 1] : memref<1000x1000x1000xf32, #map1> to memref<f32, #map3>
-            // CHECK-NEXT: [[v0:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // CHECK-NEXT: [[v1:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // CHECK-NEXT: [[v2:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
+            // CHECK-NEXT: [[v0:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // CHECK-NEXT: [[v1:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // CHECK-NEXT: [[v2:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // CHECK-NEXT: [[Dslice:%[0-9]+]] = "accv.slice"(%[[D]], [[v0]], [[v1]], [[v2]]) {sliceDimensions = [0, 1, 2]} : (memref<1000x1000x1000xf32, #map1>, index, index, index) -> memref<f32>
             auto dVal = D(idx, idx, idx);
 
@@ -1056,17 +1056,17 @@ TEST_CASE("mlir_scalar_float_test")
             // CHECK-NEXT: %[[v4:[0-9]+]] = "accv.cmp"(%[[v3]], %[[A]]) {predicate = 1 : i64} : (f32, f32) -> i1
             // CHECK-NEXT: scf.if %[[v4]] {
             If(dVal != A, [&] {
-                // COM: CHECK-NEXT:  %[[c2_0:c2[0-9a-z_]+]] = constant 2 : i32
+                // COM: CHECK-NEXT:  %[[c2_0:c2[0-9a-z_]+]] = arith.constant 2 : i32
                 // COM: CHECK-NEXT:  %[[v0:[0-9]+]] = "accv.bin_op"(%[[IDX]], %[[c2_0]]) {predicate = 0 : i64} : (i32, i32) -> i32
-                // COM: CHECK-DAG:   %[[v1:[0-9]+]] = index_cast %[[v0]] : i32 to index
-                // COM: CHECK-DAG:   %[[v2:[0-9]+]] = index_cast %[[IDX]] : i32 to index
+                // COM: CHECK-DAG:   %[[v1:[0-9]+]] = arith.index_cast %[[v0]] : i32 to index
+                // COM: CHECK-DAG:   %[[v2:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
                 // COM: CHECK:       %[[v3:[0-9]+]] = memref.subview %[[C]][%[[v1]], %[[v2]]] [1, 1] [100, 1] : memref<100x100xf32, #map0> to memref<f32, #map3>
                 // COM: CHECK-NEXT:  %[[v4:[0-9]+]] = "accv.get_element"(%[[v3]]) : (memref<f32, #map3>) -> f32
                 // COM: CHECK-NEXT:  "accv.copy"(%[[v4]], %[[Dslice]]) : (f32, memref<f32, #map3>) -> ()
-                // CHECK-NEXT:  [[c2_0:%c2[0-9a-z_]+]] = constant 2 : i32
+                // CHECK-NEXT:  [[c2_0:%c2[0-9a-z_]+]] = arith.constant 2 : i32
                 // CHECK-NEXT:  [[v0:%[0-9]+]] = "accv.bin_op"(%[[IDX]], [[c2_0]]) {predicate = 0 : i64} : (i32, i32) -> i32
-                // CHECK-DAG:   [[v1:%[0-9]+]] = index_cast [[v0]] : i32 to index
-                // CHECK-DAG:   [[v2:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
+                // CHECK-DAG:   [[v1:%[0-9]+]] = arith.index_cast [[v0]] : i32 to index
+                // CHECK-DAG:   [[v2:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
                 // CHECK:       [[v3:%[0-9]+]] = "accv.slice"(%[[C]], [[v1]], [[v2]]) {sliceDimensions = [0, 1]} : (memref<100x100xf32, #map0>, index, index) -> memref<f32>
                 // CHECK-NEXT:  [[v4:%[0-9]+]] = "accv.get_element"([[v3]]) : (memref<f32>) -> f32
                 // CHECK-NEXT:  "accv.copy"([[v4]], [[Dslice]]) : (f32, memref<f32>) -> ()
@@ -1081,15 +1081,15 @@ TEST_CASE("mlir_scalar_float_test")
             // CHECK:      %[[v1:[0-9]+]] = "accv.bin_op"(%[[v0]], %[[CST]]) {predicate = 2 : i64} : (f32, f32) -> f32
             dValCopy *= Cast(c, dVal.GetType());
 
-            // COM: CHECK-NEXT: %[[v2:[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // COM: CHECK-NEXT: %[[v3:[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // COM: CHECK-NEXT: %[[v4:[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // COM: CHECK-NEXT: %[[v5:[0-9]+]] = index_cast %[[IDX]] : i32 to index
+            // COM: CHECK-NEXT: %[[v2:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // COM: CHECK-NEXT: %[[v3:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // COM: CHECK-NEXT: %[[v4:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // COM: CHECK-NEXT: %[[v5:[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // COM: CHECK-NEXT: %[[Eslice:[0-9]+]] = memref.subview %[[E]][%[[v2]], %[[v3]], %[[v4]], %[[v5]]] [1, 1, 1, 1] [1000000000000, 100000000, 10000, 1] : memref<10000x10000x10000x10000xf32, #map2> to memref<f32, #map3>
-            // CHECK-NEXT: [[v2:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // CHECK-NEXT: [[v3:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // CHECK-NEXT: [[v4:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
-            // CHECK-NEXT: [[v5:%[0-9]+]] = index_cast %[[IDX]] : i32 to index
+            // CHECK-NEXT: [[v2:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // CHECK-NEXT: [[v3:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // CHECK-NEXT: [[v4:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
+            // CHECK-NEXT: [[v5:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // CHECK-NEXT: [[Eslice:%[0-9]+]] = "accv.slice"(%[[E]], [[v2]], [[v3]], [[v4]], [[v5]]) {sliceDimensions = [0, 1, 2, 3]} : (memref<10000x10000x10000x10000xf32, #map2>, index, index, index, index) -> memref<f32>
             auto eVal = E(idx, idx, idx, idx);
 

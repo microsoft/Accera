@@ -6,7 +6,7 @@ import operator as ops
 from typing import Any, List, Callable, Union
 from varname import varname
 
-
+# TODO: rename DelayedParameter to Parameter
 class DelayedParameter:
     def __init__(
         self,

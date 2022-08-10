@@ -11,7 +11,7 @@
 #include "IterationDomain.h"
 
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/Analysis/AffineStructures.h>
+#include <mlir/Dialect/Affine/Analysis/AffineStructures.h>
 
 #include <optional>
 #include <ostream>
@@ -113,7 +113,7 @@ namespace loopnest
         struct IndexInfo
         {
             IndexInfo() :
-                expr({}), range(0, 0), parents({}), padding({}) {}
+                expr({}), range(0, 0), padding({}), parents({}) {}
 
             IndexInfo(const AffineExpression& expr_, const Range& range_, std::vector<int64_t> padding_, const std::vector<Index>& parents_) :
                 expr(expr_), range(range_), padding(padding_)
@@ -123,7 +123,6 @@ namespace loopnest
 
             AffineExpression expr;
             Range range;
-            std::unordered_set<Index> parents;
 
             // Padding (the sign indicates location in the iteration space):
             //   negative: front-padding (at beginning of index),
@@ -131,6 +130,8 @@ namespace loopnest
             // When multiple values are present, this index has been fused with one or more padded indices
             // the padding will follow the correspondence index (i.e. its fusing-index) ordering
             std::vector<int64_t> padding;
+
+            std::unordered_set<Index> parents;
 
             friend bool operator==(const TransformedDomain::IndexInfo& a, const TransformedDomain::IndexInfo& b);
             friend bool operator!=(const TransformedDomain::IndexInfo& a, const TransformedDomain::IndexInfo& b);

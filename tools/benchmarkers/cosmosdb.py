@@ -11,7 +11,7 @@ HOST = config.settings['host']
 MASTER_KEY = config.settings['master_key']
 DATABASE_ID = config.settings['database_id']
 
-def get_container(container_name, verbose):
+def get_container(container_name: str, verbose: bool):
     client = CosmosClient(HOST, credential=MASTER_KEY)
     db = client.get_database_client(DATABASE_ID)
 
@@ -21,7 +21,7 @@ def get_container(container_name, verbose):
 
     return container
 
-def upsert_benchmark_results(result_rows, container_name, verbose):
+def upsert_benchmark_results(result_rows, container_name: str, verbose: bool):
     if verbose:
         print(f"Uploading {len(result_rows)} results to Cosmos DB {DATABASE_ID} in container {container_name}...")
     container = get_container(container_name, verbose)
@@ -32,7 +32,7 @@ def upsert_benchmark_results(result_rows, container_name, verbose):
     if verbose:
         print("Finished Uploading results to Cosmos DB storage.")
 
-def getTopResultFromParition(container, partitionKey):
+def get_top_result_for_partition(container, partitionKey: str):
     topPerf = list(container.query_items(query="SELECT VALUE MAX(c.TFlops) FROM c", partition_key=partitionKey))
     if len(topPerf) == 0:
         return None
@@ -46,40 +46,53 @@ def getTopResultFromParition(container, partitionKey):
 
     return items[0]
 
-def show_benchmark_summary(container_name):
+def show_partition_top_result(container, partitionKey: str, print_kernel: bool = False):
+    print(f'Top result for partition {partitionKey}:')
+    item = get_top_result_for_partition(container, partitionKey)
+    if item is None:
+        return
+
+    throughput = item['TFlops']
+    mma_shape = item['mma_shape']
+    use_static_offsets = item['use_static_offsets']
+    cache_layout_A = item['cache_layout_A']
+    cache_layout_B = item['cache_layout_B']
+    block_tile = item['block_tile']
+    k_split = item['k_split']
+    double_buffering = item['double_buffering']
+    vectorize = item['vectorize']
+    num_fused_passes = item['num_fused_passes']
+    scheduling_policy = item['scheduling_policy']
+    itemId = item['id']
+    print(f'{throughput} TFlops')
+    print(f'Item id: {itemId}')
+    print(f'(Optimizations: MMA shape: {mma_shape}, Static offsets: {use_static_offsets}, CacheA: {cache_layout_A}, CacheB: {cache_layout_B}, Block tile: {block_tile}, k-split: {k_split}, double buffering: {double_buffering}, vectorize: {vectorize}, fused passes: {num_fused_passes}, scheduling policy: {scheduling_policy})')
+    if print_kernel:
+        kernel = item['kernelCode']
+        print(f'\nKernel code:\n{kernel}')
+    print('------------------------------------------')
+
+def show_benchmark_summary(container_name: str):
     container = get_container(container_name, False)
     partitions = list(container.query_items(query="SELECT DISTINCT c.partitionKey from c", enable_cross_partition_query=True))
     partitions = list(list(partitionDict.values())[0] for partitionDict in partitions)
+    print(f"Total number of partitions: {len(partitions)}")
     for partitionKey in partitions:
-        print(f'Top result for partition {partitionKey}:')
-        item = getTopResultFromParition(container, partitionKey)
-        if item is None:
-            continue
-
-        throughput = item['TFlops']
-        mma_shape = item['mma_shape']
-        use_static_offsets = item['use_static_offsets']
-        cache_layout_A = item['cache_layout_A']
-        cache_layout_B = item['cache_layout_B']
-        block_tile = item['block_tile']
-        k_split = item['k_split']
-        double_buffering = item['double_buffering']
-        vectorize = item['vectorize']
-        num_fused_passes = item['num_fused_passes']
-        scheduling_policy = item['scheduling_policy']
-        itemId = item['id']
-        print(f'{throughput} TFlops')
-        print(f'Item id: {itemId}')
-        print(f'(Optimizations: MMA shape: {mma_shape}, Static offsets: {use_static_offsets}, CacheA: {cache_layout_A}, CacheB: {cache_layout_B}, Block tile: {block_tile}, k-split: {k_split}, double buffering: {double_buffering}, vectorize: {vectorize}, fused passes: {num_fused_passes}, scheduling policy: {scheduling_policy})')
-        print('------------------------------------------')
+        show_partition_top_result(container, partitionKey)
+    else:
+        print("--------------Done--------------")
 
 def main(args=[]):
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--container', help='The Cosmos DB container to get summary from', required=True)
+    parser.add_argument('-p', '--partition', help='The parition key for which to print the top result', required=False)
 
     args = parser.parse_args(args)
 
-    show_benchmark_summary(args.container)
+    if args.partition:
+        show_partition_top_result(get_container(args.container, False), args.partition, True)
+    else:
+        show_benchmark_summary(args.container)
 
 if __name__ == "__main__":
     main(sys.argv[1:])

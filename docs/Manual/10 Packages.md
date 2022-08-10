@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
 # Section 10: Building Packages
 The `Package` class represents a collection of Accera-generated functions. Whenever a package is built, it creates a stand-alone function library that other pieces of software can use. Currently, Accera supports two package formats: HAT and MLIR.
@@ -10,8 +10,8 @@ The `Package` class represents a collection of Accera-generated functions. Whene
 Consider a nest that holds some loop-nest logic. To build a HAT package containing a function with this logic for the Windows operating system, we write the following lines of code: 
 ```python
 package = acc.Package()
-package.add(nest, base_name="func1")
-package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", platform=acc.Packag+-e.Platform.WINDOWS)
+package.add(nest, args=(A, B), base_name="myFunc")
+package.build(format=acc.Package.Format.HAT_DYNAMIC, name="myPackage", platform=acc.Package.Platform.WINDOWS)
 ```
 
 The result is two files: `myPackage.hat` and `myPackage.dll`. The output directory defaults to current working directory. We can change the output directory with `output_dir` set to a relative or absolute path:

@@ -194,7 +194,7 @@ struct constant_float_op_binder
             if (auto splatAttr = attr.dyn_cast<mlir::SplatElementsAttr>())
             {
                 return mlir::detail::attr_value_binder<mlir::FloatAttr>(bind_value)
-                    .match(splatAttr.getSplatValue());
+                    .match(splatAttr.getSplatValue<mlir::Attribute>());
             }
         }
         return false;
@@ -368,28 +368,28 @@ struct ValueModuleOpConversion : public mlir::OpRewritePattern<v::ValueModuleOp>
 
 } // namespace
 
-void v::CopyOp::getCanonicalizationPatterns(mlir::OwningRewritePatternList& patterns,
+void v::CopyOp::getCanonicalizationPatterns(mlir::RewritePatternSet& patterns,
                                             mlir::MLIRContext* context)
 {
     patterns.insert<SimplifyRank0SliceFollowedByCopy>(context);
 }
 
-void v::BarrierOp::getCanonicalizationPatterns(mlir::OwningRewritePatternList& patterns, mlir::MLIRContext* context)
+void v::BarrierOp::getCanonicalizationPatterns(mlir::RewritePatternSet& patterns, mlir::MLIRContext* context)
 {
     patterns.insert<BarrierCanonicalizationPattern>(context);
 }
 
-void v::ValueModuleOp::getCanonicalizationPatterns(mlir::OwningRewritePatternList& patterns, mlir::MLIRContext* context)
+void v::ValueModuleOp::getCanonicalizationPatterns(mlir::RewritePatternSet& patterns, mlir::MLIRContext* context)
 {
     patterns.insert<ValueModuleOpConversion>(context);
 }
 
-void v::BinOp::getCanonicalizationPatterns(mlir::OwningRewritePatternList& patterns, mlir::MLIRContext* context)
+void v::BinOp::getCanonicalizationPatterns(mlir::RewritePatternSet& patterns, mlir::MLIRContext* context)
 {
     patterns.insert<ValueBinOpSimplification>(context);
 }
 
-void v::SliceOp::getCanonicalizationPatterns(mlir::OwningRewritePatternList& patterns, mlir::MLIRContext* context)
+void v::SliceOp::getCanonicalizationPatterns(mlir::RewritePatternSet& patterns, mlir::MLIRContext* context)
 {
     patterns.insert<MergeSliceOps>(context);
 }
@@ -424,7 +424,7 @@ struct SimplifyRank0SliceFollowedByGetElement : public mlir::OpRewritePattern<v:
 };
 } // namespace
 
-void v::GetElementOp::getCanonicalizationPatterns(mlir::OwningRewritePatternList& patterns,
+void v::GetElementOp::getCanonicalizationPatterns(mlir::RewritePatternSet& patterns,
                                                   mlir::MLIRContext* context)
 {
     patterns.insert<SimplifyRank0SliceFollowedByGetElement>(context);

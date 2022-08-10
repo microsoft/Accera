@@ -6,10 +6,12 @@
 
 #include "StdDialectCppPrinter.h"
 
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -18,30 +20,30 @@ namespace mlir
 namespace cpp_printer
 {
 
-    static bool isStandardBinaryOp(Operation* op)
+    static bool isBinaryOp(Operation* op)
     {
         return isa<
             // KEEP THIS SORTED
-            AddFOp,
-            AddIOp,
-            AndOp,
-            CmpFOp,
-            CmpIOp,
-            DivFOp,
-            MulFOp,
-            MulIOp,
-            OrOp,
-            RemFOp,
-            ShiftLeftOp,
-            SignedDivIOp,
-            SignedRemIOp,
-            SignedShiftRightOp,
-            SubFOp,
-            SubIOp,
-            UnsignedDivIOp,
-            UnsignedRemIOp,
-            UnsignedShiftRightOp,
-            XOrOp>(op);
+            arith::AddFOp,
+            arith::AddIOp,
+            arith::AndIOp,
+            arith::CmpFOp,
+            arith::CmpIOp,
+            arith::DivFOp,
+            arith::DivSIOp,
+            arith::DivUIOp,
+            arith::MulFOp,
+            arith::MulIOp,
+            arith::OrIOp,
+            arith::RemFOp,
+            arith::RemSIOp,
+            arith::RemUIOp,
+            arith::ShLIOp,
+            arith::ShRSIOp,
+            arith::ShRUIOp,
+            arith::SubFOp,
+            arith::SubIOp,
+            arith::XOrIOp>(op);
     }
 
     // Simple CastOps are those that we don't care about the signed-ness of the
@@ -51,10 +53,10 @@ namespace cpp_printer
     {
         return isa<
             // KEEP THIS SORTED
-            FPExtOp,
-            FPTruncOp,
-            SIToFPOp,
-            TruncateIOp>(op);
+            arith::ExtFOp,
+            arith::SIToFPOp,
+            arith::TruncFOp,
+            arith::TruncIOp>(op);
     }
 
     static bool isSupportedCudaMemSpace(unsigned memspace)
@@ -147,7 +149,7 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult StdDialectCppPrinter::printConstantOp(ConstantOp constOp)
+    LogicalResult StdDialectCppPrinter::printConstantOp(arith::ConstantOp constOp)
     {
         if (isConstantScalarOp(constOp))
         {
@@ -298,9 +300,9 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult StdDialectCppPrinter::printIndexCastOp(IndexCastOp op)
+    LogicalResult StdDialectCppPrinter::printIndexCastOp(arith::IndexCastOp op)
     {
-        state.nameState.addNameAlias(op.getResult(), op.in());
+        state.nameState.addNameAlias(op.getResult(), op.getIn());
         return success();
     }
 
@@ -312,7 +314,7 @@ namespace cpp_printer
             return op->emitError() << "<<casting on VectorType is not supported yet>>";
         }
 
-        if (isa<FPExtOp, FPTruncOp>(op) && state.hasRuntime(Runtime::ROCM))
+        if (isa<arith::ExtFOp, arith::TruncFOp>(op) && state.hasRuntime(Runtime::ROCM))
         {
             auto fromTy = op->getOperand(0).getType();
             if (fromTy.isBF16() || toTy.isBF16())
@@ -379,14 +381,14 @@ namespace cpp_printer
 
     LogicalResult StdDialectCppPrinter::printGetGlobalOp(memref::GetGlobalOp getGlobalOp)
     {
-        auto globalName = getGlobalOp.name();
+        auto globalName = getGlobalOp.nameAttr();
         auto result = getGlobalOp.getResult();
 
         auto symTableOp = mlir::SymbolTable::getNearestSymbolTable(getGlobalOp);
         auto globalOp = dyn_cast<memref::GlobalOp>(mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, globalName));
 
         // if the global was nested, then create the instance of the global here
-        if (globalOp && globalOp.sym_visibilityAttr() == StringAttr::get(getGlobalOp->getContext(), "nested"))
+        if (globalOp && globalOp.sym_visibilityAttr() == "nested")
         {
             MemRefType memrefType = globalOp.type().dyn_cast<MemRefType>();
 
@@ -402,7 +404,7 @@ namespace cpp_printer
         os << " ";
         os << state.nameState.getOrCreateName(result,
                                               SSANameState::SSANameKind::Variable);
-        os << " = " << globalName;
+        os << " = " << globalName.getValue();
 
         return success();
     }
@@ -433,37 +435,39 @@ namespace cpp_printer
         return success();
     }
 
-    static StringRef getCmpIOpString(CmpIPredicate predicate)
+    static StringRef getCmpIOpString(arith::CmpIPredicate predicate)
     {
         switch (predicate)
         {
         default:
             return "<<Invalid CmpIOp>>";
-        case CmpIPredicate::eq:
+        case arith::CmpIPredicate::eq:
             return "==";
-        case CmpIPredicate::ne:
+        case arith::CmpIPredicate::ne:
             return "!=";
 
-        case CmpIPredicate::slt: // Fall-through
-        case CmpIPredicate::ult:
+        case arith::CmpIPredicate::slt: // Fall-through
+        case arith::CmpIPredicate::ult:
             return "<";
 
-        case CmpIPredicate::sle: // Fall-through
-        case CmpIPredicate::ule:
+        case arith::CmpIPredicate::sle: // Fall-through
+        case arith::CmpIPredicate::ule:
             return "<=";
 
-        case CmpIPredicate::sgt: // Fall-through
-        case CmpIPredicate::ugt:
+        case arith::CmpIPredicate::sgt: // Fall-through
+        case arith::CmpIPredicate::ugt:
             return ">";
 
-        case CmpIPredicate::sge: // Fall-through
-        case CmpIPredicate::uge:
+        case arith::CmpIPredicate::sge: // Fall-through
+        case arith::CmpIPredicate::uge:
             return ">=";
         }
     }
 
-    static StringRef getCmpFOpString(CmpFPredicate predicate)
+    static StringRef getCmpFOpString(arith::CmpFPredicate predicate)
     {
+        using arith::CmpFPredicate;
+
         switch (predicate)
         {
         default:
@@ -499,7 +503,8 @@ namespace cpp_printer
         }
     }
 
-    LogicalResult StdDialectCppPrinter::printStandardBinaryOp(Operation* binOp)
+    // TODO: ArithDialectCppPrinter?
+    LogicalResult StdDialectCppPrinter::printBinaryOp(Operation* binOp)
     {
         if (binOp->getNumOperands() != 2)
             return binOp->emitError("<<Invalid binOp Operands>>");
@@ -518,21 +523,21 @@ namespace cpp_printer
 
         // TODO: invoke fp functions for fp ops such as remf, exp, etc
         llvm::TypeSwitch<Operation*, void>(binOp)
-            .Case<AddIOp, AddFOp>([&](auto&) { os << "+"; })
-            .Case<SubIOp, SubFOp>([&](auto&) { os << "-"; })
-            .Case<MulIOp, MulFOp>([&](auto&) { os << "*"; })
-            .Case<UnsignedDivIOp, SignedDivIOp, DivFOp>([&](auto&) { os << "/"; })
-            .Case<UnsignedRemIOp, SignedRemIOp>([&](auto&) { os << "%"; })
-            .Case<AndOp>([&](auto&) { os << "&"; })
-            .Case<OrOp>([&](auto&) { os << "|"; })
-            .Case<XOrOp>([&](auto&) { os << "^"; })
-            .Case<ShiftLeftOp>([&](auto&) { os << "<<"; })
-            .Case<UnsignedShiftRightOp, SignedShiftRightOp>(
+            .Case<arith::AddIOp, arith::AddFOp>([&](auto&) { os << "+"; })
+            .Case<arith::AndIOp>([&](auto&) { os << "&"; })
+            .Case<arith::CmpFOp>(
+                [&](arith::CmpFOp op) { os << getCmpFOpString(op.getPredicate()); })
+            .Case<arith::CmpIOp>(
+                [&](arith::CmpIOp op) { os << getCmpIOpString(op.getPredicate()); })
+            .Case<arith::DivUIOp, arith::DivSIOp, arith::DivFOp>([&](auto&) { os << "/"; })
+            .Case<arith::MulIOp, arith::MulFOp>([&](auto&) { os << "*"; })
+            .Case<arith::OrIOp>([&](auto&) { os << "|"; })
+            .Case<arith::RemUIOp, arith::RemSIOp>([&](auto&) { os << "%"; })
+            .Case<arith::ShLIOp>([&](auto&) { os << "<<"; })
+            .Case<arith::ShRUIOp, arith::ShRSIOp>(
                 [&](auto&) { os << ">>"; })
-            .Case<CmpIOp>(
-                [&](CmpIOp op) { os << getCmpIOpString(op.getPredicate()); })
-            .Case<CmpFOp>(
-                [&](CmpFOp op) { os << getCmpFOpString(op.getPredicate()); })
+            .Case<arith::SubIOp, arith::SubFOp>([&](auto&) { os << "-"; })
+            .Case<arith::XOrIOp>([&](auto&) { os << "^"; })
             .Default([&](auto&) { os << "<<unknown ArithmeticOp>>"; });
 
         os << " " << state.nameState.getName(binOp->getOperand(1));
@@ -629,10 +634,10 @@ namespace cpp_printer
             return printAllocaOp(allocaOp);
 
         // Binary Ops
-        if (isStandardBinaryOp(op))
-            return printStandardBinaryOp(op);
+        if (isBinaryOp(op))
+            return printBinaryOp(op);
 
-        if (auto indexCastOp = dyn_cast<IndexCastOp>(op))
+        if (auto indexCastOp = dyn_cast<arith::IndexCastOp>(op))
             return printIndexCastOp(indexCastOp);
 
         if (isSimpleCastOp(op))
@@ -641,7 +646,7 @@ namespace cpp_printer
         if (auto callOp = dyn_cast<CallOp>(op))
             return printCallOp(callOp);
 
-        if (auto constOp = dyn_cast<ConstantOp>(op))
+        if (auto constOp = dyn_cast<arith::ConstantOp>(op))
             return printConstantOp(constOp);
 
         if (auto deallocOp = dyn_cast<memref::DeallocOp>(op))
@@ -674,10 +679,10 @@ namespace cpp_printer
         if (auto reinterpretCastOp = dyn_cast<memref::ReinterpretCastOp>(op))
             return printReinterpretCastOp(reinterpretCastOp);
 
-        if (isa<SignExtendIOp>(op))
+        if (isa<arith::ExtSIOp>(op))
             return printCastToIntegerOp(op, /*isSigned*/ true);
 
-        if (isa<ZeroExtendIOp>(op))
+        if (isa<arith::ExtUIOp>(op))
             return printCastToIntegerOp(op, /*isSigned*/ false);
 
         if (auto transposeOp = dyn_cast<memref::TransposeOp>(op))

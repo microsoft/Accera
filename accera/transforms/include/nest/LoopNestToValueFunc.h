@@ -19,7 +19,6 @@ template <typename OpT>
 class OperationPass;
 
 class RewritePatternSet;
-using OwningRewritePatternList = RewritePatternSet;
 
 } // namespace mlir
 
@@ -38,7 +37,7 @@ namespace transforms::loopnest
         bool printVecOpDetails = false;
     };
 
-    void populateLoopnestToValueFuncPatterns(mlir::OwningRewritePatternList& patterns);
+    void populateLoopnestToValueFuncPatterns(mlir::RewritePatternSet& patterns);
     std::unique_ptr<mlir::OperationPass<accera::ir::value::ValueFuncOp>> createLoopNestToValueFuncPass(const LoopNestToValueFuncOptions& options);
     std::unique_ptr<mlir::OperationPass<accera::ir::value::ValueFuncOp>> createLoopNestToValueFuncPass();
 } // namespace transforms::loopnest

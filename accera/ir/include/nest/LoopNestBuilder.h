@@ -13,6 +13,7 @@
 #include "TransformedDomain.h"
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/BlockAndValueMapping.h>
 #include <mlir/Pass/Pass.h>
@@ -82,11 +83,12 @@ namespace loopnest
         };
 
         // The main "passes" in code generation
-        RecursionState GenerateLoopStructure(const RecursionState& state, const LoopVisitSchedule& schedule);
+        RecursionState GenerateInitialLoopStructure(const RecursionState& state, const LoopVisitSchedule& schedule);
+        RecursionState AddInvokeOps(const std::vector<ScheduledLoopOp>& loops, const RecursionState& state, const LoopVisitSchedule& schedule);
+        void VerifyPredicates(const std::vector<ScheduledLoopOp>& loops, const LoopVisitSchedule& schedule);
+        LoopNestBuilder::RecursionState UnswitchLoops(const std::vector<ScheduledLoopOp>& loops, const RecursionState& state, const LoopVisitSchedule& schedule);
         void MergeAdjacentKernelBodies(std::vector<ScheduledLoopOp> loops, const LoopVisitSchedule& schedule);
         RecursionState EmitLoopBodies(std::vector<ScheduledLoopOp> loops, const RecursionState& state, const LoopVisitSchedule& schedule);
-        // TODO: unswitch loops
-        // TODO: add kernels
         void ApplyInjectableMappings();
 
         void InvokeKernel(OpBuilder& builder, ScheduledKernelOp kernel, Position position, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule);
@@ -95,6 +97,8 @@ namespace loopnest
         LoopVisitSchedule GetLoopSchedule() const;
 
         ScheduledLoopOp EmitLoopOp(const LoopRange& range, const RecursionState& state, const LoopVisitSchedule& schedule);
+        void AddLoopLimitMetadata(ScheduledLoopOp loop);
+        void GenerateInitialLoopBody(ScheduledLoopOp loop, const LoopRange& r, const RecursionState& state, const LoopVisitSchedule& schedule);
         void GenerateLoopBody(ScheduledLoopOp loop, const LoopRange& r, const RecursionState& state, const LoopVisitSchedule& schedule);
         void EmitLoopBody(ScheduledLoopOp loop, const RecursionState& state, const LoopVisitSchedule& schedule);
         void EndLoopRange(const LoopRange& range, const RecursionState& state, const LoopVisitSchedule& schedule);
@@ -105,10 +109,11 @@ namespace loopnest
         /// Returns `true` if the current loop body is inside the loop for the given index (so, "inside" counts the current loop being emitted)
         bool AreAllFullyDefined(const std::vector<Index>& indices, const LoopVisitSchedule& schedule) const;
 
-        RecursionState InvokeKernels(const LoopRange& r, Position position, const RecursionState& state, const LoopVisitSchedule& schedule);
+        RecursionState InvokeKernels(ScheduledLoopOp loop, const LoopRange& r, Position position, const RecursionState& state, const LoopVisitSchedule& schedule);
+        RecursionState UpdateKernelState(ScheduledLoopOp loop, const LoopRange& r, Position position, const RecursionState& state, const LoopVisitSchedule& schedule);
         void ReplaceInvokeOps(Block* loopBlock, const RecursionState& state);
 
-        bool InvokeKernelGroup(std::string id, Position position, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule);
+        bool MaybeInvokeKernelGroup(std::string id, bool invoke, Position position, ScheduledLoopOp loop, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule);
         RecursionState GenerateAfterBodyState(const LoopRange& r, const RecursionState& state, const LoopVisitSchedule& schedule);
         std::set<KernelId> GetEpilogueKernelIds(const LoopRange& r, const RecursionState& state, const LoopVisitSchedule& schedule);
         std::vector<std::string> GetPossiblyValidKernelIds(const RecursionState& state) const;
@@ -117,7 +122,7 @@ namespace loopnest
         std::vector<Partition> GetPartitions(const Index& loopIndex, Range loopRange, const RecursionState& state, const LoopVisitSchedule& schedule) const;
 
         // TODO: change this to take a KernelPredicate instead of Operation*
-        void AddSplits(const Index& loopIndex, const Range& loopRange, Operation* predicate, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule, std::set<int64_t>& splits) const;
+        void AddSplits(const Index& loopIndex, const Range& loopRange, KernelPredicateOpInterface predicate, const LoopIndexSymbolTable& runtimeIndexVariables, const LoopVisitSchedule& schedule, std::set<int64_t>& splits) const;
 
         void UpdateSubdomainSizes(const Index& loopIndex, const LoopRange& range, std::vector<int64_t>& subdomainSize);
 
@@ -135,11 +140,12 @@ namespace loopnest
         std::vector<size_t> GetLogicalDimensionPositions(const Index& index) const;
 
         SymbolicIndexOp GetSymbolicIndex(Index index);
-        mlir::ConstantIndexOp GetConstantIndex(mlir::OpBuilder& builder, int64_t value);
+        mlir::arith::ConstantIndexOp GetConstantIndex(mlir::OpBuilder& builder, int64_t value);
         LoopRange MakeLoopRange(mlir::OpBuilder& builder, int64_t start, int64_t stop, int64_t increment);
         LoopRange MakeLoopRange(mlir::OpBuilder& builder, const Range& range);
         std::vector<ScheduledLoopOp> FindAllScheduledLoops(Index index);
         mlir::OpBuilder GetCurrentLoopBuilder(const LoopVisitSchedule& schedule);
+        mlir::OpBuilder GetCurrentLoopBuilder(const LoopVisitSchedule& schedule, ScheduledLoopOp innerLoop);
         ScheduledLoopOp FindLatestScheduledLoop(Index index);
 
         bool IsSaturated(Index loopIndex) const;
@@ -155,7 +161,7 @@ namespace loopnest
         ScheduleOp _schedule;
         std::map<std::string, std::vector<ScheduledKernelOp>> _kernelGroups;
         std::map<Index, std::vector<ScheduledLoopOp>> _loops;
-        std::map<int64_t, mlir::ConstantIndexOp> _constantIndices;
+        std::map<int64_t, mlir::arith::ConstantIndexOp> _constantIndices;
         mlir::PatternRewriter& _builder;
         mlir::OpBuilder _constantOpBuilder;
         bool _printLoops = true;

@@ -26,9 +26,9 @@ namespace ir
         }
         for (auto dictPair : metadataDictionary)
         {
-            auto key = dictPair.first;
+            auto key = dictPair.getName();
             auto keyStr = key.str();
-            auto attr = dictPair.second;
+            auto attr = dictPair.getValue();
             if (auto boolAttr = attr.dyn_cast_or_null<mlir::BoolAttr>())
             {
                 metadataMap.emplace(keyStr, boolAttr.getValue());

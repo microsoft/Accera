@@ -1,9 +1,9 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
-# Accera v1.2.7 Reference
+# Accera v1.2.8 Reference
 
-## `accera.create_parameter_grid(parameter_choices, filter_func, sample, seed)`
+## `accera.create_parameter_grid(parameter_choices, [filter_func, sample, seed])`
 Create a parameter grid from a dictionary that maps each parameter to its possible values.
 
 ## Arguments

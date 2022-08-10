@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
-# Accera v1.2.7 Reference
+# Accera v1.2.8 Reference
 
 ## `accera.Array(role[, data, element_type, layout, offset, shape])`
 Constructs an array.
@@ -10,12 +10,12 @@ Constructs an array.
 
 argument | description | type/default
 --- | --- | ---
-`role` | The role of the array determines if the array scope is internal or external and if the array is mutable or immutable. | [`accera.Array.Role`](<Role.md>)
-`data` | The contents of a constant array. Required for `accera.Array,Role.CONST` arrays but should not be specified for other roles. | Python buffer or `numpy.ndarray`.
+`role` | The role of the array determines if the array scope is internal or external, if the array is mutable or immutable, and if the array memory is dynamically allocated. | [`accera.Array.Role`](<Role.md>)
+`data` | The contents of a constant array. Required for `accera.Array.Role.CONST` arrays but should not be specified for other roles. | Python buffer or `numpy.ndarray`.
 `element_type` | The array element type. | [`accera.ScalarType`](<../../enumerations/ScalarType.md>), default: `accera.ScalarType.float32`.
-`layout` | The affine memory map. | tuple of integers or [`accera.Array.Layout`](<Layout.md>), default: `accera.Array.Layout.FIRST_MAJOR`.
+`layout` | The affine memory map. | [`accera.Array.Layout`](<Layout.md>), or tuple of (integers or [`accera.Dimension`](<../Dimension/Dimension.md>)), default: `accera.Array.Layout.FIRST_MAJOR`.
 `offset` | The offset of the affine memory map | integer (positive, zero, or negative), default: 0.
-`shape` | The array shape. Required for roles other than `accera.Array.Role.CONST`, should not be specified for `accera.Array.Role.CONST`.
+`shape` | The array shape. Required for roles other than `accera.Array.Role.CONST`, should not be specified for `accera.Array.Role.CONST`. | tuple of (integers or [`accera.Dimension`](<../Dimension/Dimension.md>)).
 
 ## Examples
 
@@ -40,10 +40,35 @@ Construct an input array with an infinite (undefined) major dimension:
 A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(10, acc.inf), layout=acc.Array.Layout.LAST_MAJOR)
 ```
 
+Construct a input array with both runtime and compile-time dimension sizes:
+```python
+M = acc.create_dimensions()
+A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, 20))
+```
+
 Construct an input/output array:
 ```python
 A = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(10, 20))
 ```
+
+Construct an input/output array with runtime input dimension sizes:
+```python
+M, N = acc.create_dimensions()
+A = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
+```
+
+Construct an output array with runtime output dimension sizes:
+```python
+M, N = acc.create_dimensions(role=acc.Dimension.Role.OUTPUT)
+A = acc.Array(role=acc.Array.Role.OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
+```
+
+Construct an output array with explicit affine memory map:
+```python
+M, N = acc.create_dimensions(role=acc.Dimension.Role.OUTPUT)
+A = acc.Array(role=acc.Array.Role.OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N), layout=(1, M))
+```
+
 
 Construct a constant array:
 ```python

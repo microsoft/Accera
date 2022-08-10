@@ -21,6 +21,7 @@
 #include <llvm/Support/raw_os_ostream.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -551,7 +552,7 @@ namespace value
 
             builder.setInsertionPointToStart(&bufferSizeFuncOp.body().front());
 
-            mlir::Value constantSize = builder.create<mlir::ConstantIntOp>(loc, GetCacheVolume(), builder.getI64Type());
+            mlir::Value constantSize = builder.create<mlir::arith::ConstantIntOp>(loc, GetCacheVolume(), builder.getI64Type());
             builder.create<vir::ReturnOp>(loc, constantSize);
         }
     };
@@ -678,7 +679,7 @@ namespace value
                 else
                 {
                     size_t flattenedUnpackedIndex = static_cast<size_t>(inputLayout.GetEntryOffset(inputCoordinates));
-                    packedBuffer[flattenedPackedBufferIndex] = inputData.getValue<ElementType>({ flattenedUnpackedIndex });
+                    packedBuffer[flattenedPackedBufferIndex] = inputData.getValues<ElementType>()[{ flattenedUnpackedIndex }];
                 }
             });
         }

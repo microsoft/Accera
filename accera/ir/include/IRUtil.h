@@ -52,7 +52,7 @@ namespace accera::ir
 namespace util
 {
     void CanonicalizeGreedily(mlir::Operation* op);
-    void FillCanonicalPatternsRecursively(mlir::Operation* op, mlir::OwningRewritePatternList& patterns);
+    void FillCanonicalPatternsRecursively(mlir::Operation* op, mlir::RewritePatternSet& patterns);
 
     template <typename OpTy, typename... TerminatorOpTys>
     mlir::OpBuilder::InsertPoint GetTerminalInsertPoint(OpTy op)
@@ -252,7 +252,7 @@ namespace util
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string tag, mlir::Location opLocation);
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string filename, int64_t lineNumber);
 
-    std::vector<mlir::Value> MultiDimAffineApply(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineMap map, std::vector<mlir::Value>& operands, bool simplify = false);
+    std::vector<mlir::Value> MultiDimAffineApply(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineMap map, const std::vector<mlir::Value>& operands, bool simplify = false);
     mlir::AffineMap MakeIdentityAccessMap(mlir::Value val, mlir::MLIRContext* context);
 
     mlir::AffineValueMap AffineApplyToAffineValueMap(mlir::AffineApplyOp applyOp);
@@ -356,8 +356,6 @@ namespace util
     mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::memref::StoreOp op);
     mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::memref::LoadOp op);
 
-    mlir::AffineMap ComposeAffineMapSequence(const std::vector<mlir::AffineMap>& maps);
-
     struct TempOpCleanupGuard
     {
         TempOpCleanupGuard(std::stack<mlir::Operation*>* opStack, mlir::PatternRewriter& rewriter);
@@ -405,8 +403,8 @@ namespace util
     int64_t GetBlockDimSize(mlir::gpu::BlockDimOp op);
     int64_t GetGridDimSize(mlir::gpu::GridDimOp op);
 
-    int64_t GetBlockDimSize(mlir::Operation* where, const std::string& dimId);
-    int64_t GetGridDimSize(mlir::Operation* where, const std::string& dimId);
+    int64_t GetBlockDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId);
+    int64_t GetGridDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId);
 
     // Gets the flattened thread ID of the current GPU thread within the context of the current block
     mlir::Value GetCurrentGPUBlockThreadID(mlir::OpBuilder& builder, mlir::Location loc);

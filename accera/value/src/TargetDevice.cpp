@@ -14,8 +14,8 @@
 
 #include <llvm/ADT/Triple.h>
 #include <llvm/MC/SubtargetFeature.h>
+#include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/Host.h>
-#include <llvm/Support/TargetRegistry.h>
 #include <llvm/Target/TargetMachine.h>
 
 #ifdef _MSC_VER

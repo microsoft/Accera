@@ -7,7 +7,7 @@
 
 #include <utilities/include/TypeTraits.h>
 
-#include <mlir/Dialect/Vector/VectorOps.h>
+#include <mlir/Dialect/Vector/IR/VectorOps.h>
 
 #include <algorithm>
 #include <stdexcept>

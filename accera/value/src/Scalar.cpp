@@ -20,6 +20,15 @@ namespace accera
 {
 namespace value
 {
+    bool IsLogicalComparable(ValueType type1, ValueType type2)
+    {
+        if ((type1 == ValueType::Index && IsIntegerType(type2)) ||
+            (type2 == ValueType::Index && IsIntegerType(type1)))
+            return true;
+        else
+            return false;
+    }
+    
     using namespace utilities;
 
     Scalar::Scalar() = default;

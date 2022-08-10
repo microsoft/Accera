@@ -283,7 +283,7 @@ struct SmallNumeratorTermFloorDivSimplification : public OpRewritePattern<Affine
         auto exprs = helper.map.getResults();
         MutableAffineMap mutableMap(helper.map);
         bool modifiedMap = false;
-        auto constantZeroOp = rewriter.create<mlir::ConstantIntOp>(loc, 0, rewriter.getI64Type());
+        auto constantZeroOp = rewriter.create<mlir::arith::ConstantIntOp>(loc, 0, rewriter.getI64Type());
         auto constantZeroRV = helper.rangeAnalysis.addOperation(constantZeroOp);
         for (size_t exprIdx = 0; exprIdx < exprs.size(); ++exprIdx)
         {
@@ -319,7 +319,7 @@ struct SmallNumeratorTermFloorDivSimplification : public OpRewritePattern<Affine
                     {
                         // If there's only one term in the numerator, check if its range is greater than 0 and less than the denominator
                         // In which case this floordiv is always 0
-                        auto constantDenominatorOp = rewriter.create<mlir::ConstantIntOp>(loc, denominatorValue, rewriter.getI64Type());
+                        auto constantDenominatorOp = rewriter.create<mlir::arith::ConstantIntOp>(loc, denominatorValue, rewriter.getI64Type());
                         RangeValue constantDenominatorRV = helper.rangeAnalysis.addOperation(constantDenominatorOp);
                         if (lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SGE, constantZeroRV) &&
                             lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SLT, constantDenominatorRV))
@@ -331,7 +331,7 @@ struct SmallNumeratorTermFloorDivSimplification : public OpRewritePattern<Affine
                     if (successiveCoefficientGCDsAndExprs.size() >= 2)
                     {
                         auto secondSmallestGCD = successiveCoefficientGCDsAndExprs[successiveCoefficientGCDsAndExprs.size() - 2].first;
-                        auto constantGCD = rewriter.create<mlir::ConstantIntOp>(loc, secondSmallestGCD, rewriter.getI64Type());
+                        auto constantGCD = rewriter.create<mlir::arith::ConstantIntOp>(loc, secondSmallestGCD, rewriter.getI64Type());
                         RangeValue constantGCDRV = helper.rangeAnalysis.addOperation(constantGCD);
                         if (lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SGE, constantZeroRV) &&
                             lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SLT, constantGCDRV))
@@ -389,7 +389,7 @@ struct SmallNumeratorTermModSimplification : public OpRewritePattern<AffineOpTy>
         auto exprs = helper.map.getResults();
         MutableAffineMap mutableMap(helper.map);
         bool modifiedMap = false;
-        auto constantZeroOp = rewriter.create<mlir::ConstantIntOp>(loc, 0, rewriter.getI64Type());
+        auto constantZeroOp = rewriter.create<mlir::arith::ConstantIntOp>(loc, 0, rewriter.getI64Type());
         auto constantZeroRV = helper.rangeAnalysis.addOperation(constantZeroOp);
         for (size_t exprIdx = 0; exprIdx < exprs.size(); ++exprIdx)
         {
@@ -426,7 +426,7 @@ struct SmallNumeratorTermModSimplification : public OpRewritePattern<AffineOpTy>
                     {
                         // If there's only one term in the numerator, check if its range is greater than 0 and less than the denominator
                         // In which case this mod is unnecessary
-                        auto constantDenominatorOp = rewriter.create<mlir::ConstantIntOp>(loc, denominatorValue, rewriter.getI64Type());
+                        auto constantDenominatorOp = rewriter.create<mlir::arith::ConstantIntOp>(loc, denominatorValue, rewriter.getI64Type());
                         RangeValue constantDenominatorRV = helper.rangeAnalysis.addOperation(constantDenominatorOp);
                         if (lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SGE, constantZeroRV) &&
                             lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SLT, constantDenominatorRV))
@@ -438,7 +438,7 @@ struct SmallNumeratorTermModSimplification : public OpRewritePattern<AffineOpTy>
                     if (successiveCoefficientGCDsAndExprs.size() >= 2)
                     {
                         auto secondSmallestGCD = successiveCoefficientGCDsAndExprs[successiveCoefficientGCDsAndExprs.size() - 2].first;
-                        auto constantGCD = rewriter.create<mlir::ConstantIntOp>(loc, secondSmallestGCD, rewriter.getI64Type());
+                        auto constantGCD = rewriter.create<mlir::arith::ConstantIntOp>(loc, secondSmallestGCD, rewriter.getI64Type());
                         RangeValue constantGCDRV = helper.rangeAnalysis.addOperation(constantGCD);
                         if (lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SGE, constantZeroRV) &&
                             lastExprRange.icmp(llvm::CmpInst::Predicate::ICMP_SLT, constantGCDRV))
@@ -499,13 +499,13 @@ struct PropagateGPUConstants : public OpRewritePattern<AffineOpTy>
             {
                 auto handleBlockDimOp = [&](gpu::BlockDimOp blockDimOp) {
                     auto dimSize = GetBlockDimSize(blockDimOp);
-                    mlir::Value dimSizeConstantOp = rewriter.create<mlir::ConstantIntOp>(loc, dimSize, rewriter.getI64Type());
+                    mlir::Value dimSizeConstantOp = rewriter.create<mlir::arith::ConstantIntOp>(loc, dimSize, rewriter.getI64Type());
                     affineOp->replaceUsesOfWith(operand, dimSizeConstantOp);
                     replaced = true;
                 };
                 auto handleGridDimOp = [&](gpu::GridDimOp gridDimOp) {
                     auto dimSize = GetGridDimSize(gridDimOp);
-                    mlir::Value dimSizeConstantOp = rewriter.create<mlir::ConstantIntOp>(loc, dimSize, rewriter.getI64Type());
+                    mlir::Value dimSizeConstantOp = rewriter.create<mlir::arith::ConstantIntOp>(loc, dimSize, rewriter.getI64Type());
                     affineOp->replaceUsesOfWith(operand, dimSizeConstantOp);
                     replaced = true;
                 };
@@ -516,7 +516,7 @@ struct PropagateGPUConstants : public OpRewritePattern<AffineOpTy>
                     .Case([&](gpu::GridDimOp gridDimOp) {
                         handleGridDimOp(gridDimOp);
                     })
-                    .Case([&](mlir::ConstantOp constantOp) {
+                    .Case([&](mlir::arith::ConstantOp constantOp) {
                         // Canonicalize the constant int into the operation
                         replaced = true;
                     });

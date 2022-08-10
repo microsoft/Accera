@@ -28,6 +28,6 @@ def Value_Dialect : Dialect {
 //   * The parent dialect of the operation.
 //   * The mnemonic for the operation, or the name without the dialect prefix.
 //   * A list of traits for the operation.
-class accv_Op<string mnemonic, list<OpTrait> traits = []> : Op<Value_Dialect, mnemonic, traits>;
+class accv_Op<string mnemonic, list<Trait> traits = []> : Op<Value_Dialect, mnemonic, traits>;
 
 #endif // ACCERA_accv_BASE

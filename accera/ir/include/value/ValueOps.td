@@ -12,12 +12,13 @@ include "ir/include/value/ValueBase.td"
 include "ir/include/value/ValueAttrs.td"
 
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/IR/FunctionInterfaces.td"
 include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.td"
 
 def accv_ValueLambdaOp : accv_Op<"lambda", [
     SymbolTable,
     Symbol,
-    FunctionLike,
+    FunctionOpInterface,
     DeclareOpInterfaceMethods<CallableOpInterface>,
     AffineScope]> {
   let summary = "Executable inline function for either CPU or GPU";
@@ -32,9 +33,6 @@ def accv_ValueLambdaOp : accv_Op<"lambda", [
   ];
 
   let extraClassDeclaration = [{
-    // FunctionLike trait needs access to the functions below.
-    friend class OpTrait::FunctionLike<ValueLambdaOp>;
-
     static StringRef getGPULaunchAttrName() { return "gpu_launch"; }
 
     static StringRef getExecTargetAttrName() { return "exec_target"; }
@@ -45,11 +43,20 @@ def accv_ValueLambdaOp : accv_Op<"lambda", [
         return static_cast<::accera::ir::value::ExecutionTarget>(attr.getInt());
     }
 
-    /// Hooks for the input/output type enumeration in FunctionLike .
-    unsigned getNumFuncArguments() { return getType().getNumInputs(); }
-    unsigned getNumFuncResults() { return getType().getNumResults(); }
+    /// Returns the type of this function.
+    /// FIXME: We should drive this via the ODS `type` param.
+    FunctionType getType() { 
+      return getTypeAttr().getValue().cast<FunctionType>();
+    }
 
-    /// Hook for FunctionLike verifier.
+    /// Hooks for the input/output type enumeration in FunctionOpInterface.
+    /// Returns the argument types of this function.
+    ArrayRef<Type> getArgumentTypes() { return getType().getInputs(); }
+
+    /// Returns the result types of this function.
+    ArrayRef<Type> getResultTypes() { return getType().getResults(); }
+
+    /// Hook for FunctionOpInterface verifier.
     LogicalResult verifyType();
   }];
 }
@@ -153,7 +160,7 @@ def accv_ReferenceGlobalOp : accv_Op<"ref_global"> {
   let builders = [
     OpBuilder<(ins "MemRefType":$resType, "StringRef":$name),
     [{
-      $_state.addAttribute("global_name", $_builder.getSymbolRefAttr(name));
+      $_state.addAttribute("global_name", SymbolRefAttr::get($_builder.getContext(), name));
       $_state.addTypes(resType);
     }]>,
 
@@ -546,7 +553,7 @@ def accv_LaunchFuncOp : accv_Op<"launch_func", [CallOpInterface]> {
 
   let builders = [OpBuilder<(ins "ValueFuncOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
       $_state.addOperands(operands);
-      $_state.addAttribute("callee", $_builder.getSymbolRefAttr(callee));
+      $_state.addAttribute("callee", SymbolRefAttr::get(callee));
       $_state.addAttribute("exec_target", callee.exec_targetAttr());
       if (auto attr = $_builder.getStringAttr(getGPULaunchAttrName()))
       {
@@ -603,19 +610,20 @@ def accv_CallOp : accv_Op<"call", [CallOpInterface]> {
 
   let builders = [OpBuilder<(ins "ValueFuncOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
       $_state.addOperands(operands);
-      $_state.addAttribute("callee", $_builder.getSymbolRefAttr(callee));
+      $_state.addAttribute("callee", SymbolRefAttr::get(callee));
       $_state.addTypes(callee.getType().getResults());
   }]>, OpBuilder<(ins "SymbolRefAttr":$callee, "ArrayRef<Type>":$results, CArg<"ValueRange", "{}">:$operands), [{
       $_state.addOperands(operands);
       $_state.addAttribute("callee", callee);
       $_state.addTypes(results);
   }]>, OpBuilder<(ins "StringRef":$callee, "ArrayRef<Type>":$results, CArg<"ValueRange", "{}">:$operands), [{
-      build($_builder, $_state, $_builder.getSymbolRefAttr(callee), results,
+      build($_builder, $_state, StringAttr::get($_builder.getContext(), callee), results,
             operands);
   }]>];
 
   let extraClassDeclaration = [{
     StringRef getCallee() { return callee(); }
+    StringAttr getCalleeAttr() { return calleeAttr().getAttr(); }
     FunctionType getCalleeType();
 
     /// Get the argument operands to the called function.
@@ -722,7 +730,7 @@ def accv_ViewOp : accv_Op<"view", [NoSideEffect]> {
 
   let arguments = (ins
     AnyMemRef:$source,
-    Variadic<AnyType>:$offsets // TODO: change AnyType to linalg.range
+    Variadic<AnyType>:$offsets // TODO: change AnyType to accv.range
   );
   let results = (outs AnyMemRef);
 
@@ -1132,6 +1140,37 @@ def accv_PrintProfileResultsOp : accv_Op<"print_profile"> {
   let summary = "Print out a summary of the profile counters";
 }
 
+// RangeOp (based on the now defunct linalg::RangeOp)
+// Whether a type is a RangeType.
+def IsRangeTypePred : CPred<"$_self.isa<RangeType>()">;
+def Range : DialectType<Value_Dialect, IsRangeTypePred, "range">;
+def accv_RangeOp :
+    accv_Op<"range", [NoSideEffect]>,
+    Arguments<(ins Index:$min, Index:$max, Index:$step)>,
+    Results<(outs Range)> {
+  let summary = "Create a `range` type value, used to create `view`s";
+  let description = [{
+    The `accv.range` op creates a `!accv.range` from 3 values of type
+    `index` that represent the min, max and step values of the `range`. This
+    type does not pass function boundaries at the moment.
+
+    Example:
+
+    ```mlir
+    %3 = accv.range %0:%1:%2 : !accv.range
+    ````
+  }];
+  let builders = [
+    OpBuilder<(ins "Value":$min, "Value":$max, "Value":$step),
+    [{
+      auto rangeType = RangeType::get($_builder.getContext());
+      build($_builder, $_state, rangeType, min, max, step);
+    }]>];
+
+  // Fully specified by traits.
+  let verifier = ?;
+  let assemblyFormat = "$min `:` $max `:` $step attr-dict `:` type(results)";
+}
 
 // matrix-fuse-multiply-add
 
@@ -1146,18 +1185,18 @@ def accv_MMAComputeSyncOp: accv_Op<"wmma_compute_sync", [NoSideEffect, AllTypesM
   }];
 
   let arguments = (ins
-                  Arg<MemRefRankOf<[I8, F16, F32], [1]>>:$opA,
-                  Arg<MemRefRankOf<[I8, F16, F32], [1]>>:$opB,
-                  Arg<MemRefRankOf<[I32, F32], [1]>>:$opC,
+                  Arg<MemRefRankOf<[UI8, I8, F16, BF16, F32], [2]>>:$opA,
+                  Arg<MemRefRankOf<[UI8, I8, F16, BF16, F32], [2]>>:$opB,
+                  Arg<MemRefRankOf<[I32, F16, F32], [2]>>:$opC,
                   I32Attr:$mmaShapeType,
                   I32Attr:$cbsz,
                   I32Attr:$abid,
                   I32Attr:$blgp);
 
-  let results = (outs MemRefRankOf<[I32, F32], [1]>:$result);
+  let results = (outs MemRefRankOf<[I32, F16, F32], [2]>:$result);
 
   let assemblyFormat = [{
-    $opA `,` $opB`,` $opC `,` $cbsz `,` $abid `,` $blgp attr-dict `:` type($opA) `,` type($opB) `,` type($opC) `->` type($result) `[` $mmaShapeType `]`
+    $opA `,` $opB`,` $opC `,` $cbsz `,` $abid `,` $blgp `,` attr-dict `:` type($opA) `,` type($opB) `,` type($opC) `->` type($result)
   }];
 
   let verifier = [{ return ::verify(*this); }];
@@ -1189,7 +1228,7 @@ def accv_MMAFillSyncOp : accv_Op<"wmma_fill_sync",
   let results = (outs MemRefRankOf<[I8, I32, F16, F32], [1]>:$result);
 
   let assemblyFormat = [{
-    $value attr-dict `:` type($value) `->` type($result) `[` $mmaShapeType `]`
+    $value `,` attr-dict `:` type($value) `->` type($result)
   }]; 
   let verifier = [{ return ::verify(*this); }];
 }
@@ -1213,44 +1252,30 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
   }];
 
   let arguments = (ins
-    Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "", [MemRead]>:$memref,
+    Arg<MemRefRankOf<[UI8, I8, I32, F16, BF16, F32], [2]>, "", [MemRead]>:$memref,
     UI32Attr:$mmaShapeType,
     I8Attr:$operandType,
+    BoolAttr:$rowMajor,
     Variadic<acc_Indexlike>:$indices,
-    AffineMapAttr:$map, // TODO : maybe rename this positionMap or something?
-    OptionalAttr<AffineMapAttr>:$tileAccessMap
+    AffineMapAttr:$map
   );
 
-  let results = (outs MemRefRankOf<[I8, I32, F16, F32], [1]>:$result);
+  let results = (outs MemRefRankOf<[UI8, I8, I32, F16, BF16, F32], [2]>:$result);
 
   let builders = [
-    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "AffineMap":$map, "ValueRange":$mapOperands, "AffineMap":$tileAccessMap), [{
-        assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
-        $_state.addOperands(memref);
-        $_state.addOperands(mapOperands);
-        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
-        $_state.addAttribute("operandType", $_builder.getI8IntegerAttr((int8_t)operandType));
-        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
-        $_state.addAttribute(getTileAccessMapAttrName(), AffineMapAttr::get(tileAccessMap));
-        $_state.addTypes(resultType);
-    }]>,
-    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "AffineMap":$map, "ValueRange":$mapOperands), [{
-        assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
-        $_state.addOperands(memref);
-        $_state.addOperands(mapOperands);
-        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
-        $_state.addAttribute("operandType", $_builder.getI8IntegerAttr((int8_t)operandType));
-        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
-        $_state.addTypes(resultType);
-    }]>,
-    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "ValueRange":$indices), [{
+    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "bool":$rowMajor, "ValueRange":$indices), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
-        // Create identity map for memrefs with at least one dimension or () -> ()
-        // for zero-dimensional memrefs.
-        auto map =
-            rank ? $_builder.getMultiDimIdentityMap(rank) : $_builder.getEmptyAffineMap();
-        return build($_builder, $_state, resultType, memref, mmaShapeType, operandType, map, indices);
+        // Create identity map for memrefs with at least one dimension or () -> () for zero-dimensional memrefs.
+        auto map = rank ? $_builder.getMultiDimIdentityMap(rank) : $_builder.getEmptyAffineMap();
+        assert(map.getNumInputs() == indices.size() && "inconsistent index info");
+        $_state.addOperands(memref);
+        $_state.addOperands(indices);
+        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
+        $_state.addAttribute("operandType", $_builder.getI8IntegerAttr((int8_t)operandType));
+        $_state.addAttribute("rowMajor", $_builder.getBoolAttr(rowMajor));
+        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
+        $_state.addTypes(resultType);
     }]>
   ];
 
@@ -1258,19 +1283,16 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
     /// Returns the operand index of the memref.
     unsigned getMemRefOperandIndex() { return 0; }
 
-    void setMemRef(Value value) { setOperand(getMemRefOperandIndex(), value); }
-
     /// Returns the affine map used to index the memref for this operation.
     AffineMapAttr getAffineMapAttr() {
       return (*this)->getAttr(getMapAttrName()).cast<AffineMapAttr>();
     }
 
     static StringRef getMapAttrName() { return "map"; }
-    static StringRef getTileAccessMapAttrName() { return "tileAccessMap"; }
   }];
 
   let assemblyFormat = [{
-    $memref `[` $indices `]` attr-dict `:` type($memref) `[` type($indices) `]` `->` type($result) `[` $mmaShapeType `]` `[` $operandType `]`
+    $memref `[` $indices `]` attr-dict `:` type($memref) `[` type($indices) `]` `->` type($result)
   }]; 
   let verifier = [{ return ::verify(*this); }];
 }
@@ -1291,40 +1313,25 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
   }];
 
   let arguments = (ins 
-        Arg<MemRefRankOf<[I32, F32], [1]>>:$src,
+        Arg<MemRefRankOf<[I32, F16, F32], [2]>>:$src,
         Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "",[MemWrite]>:$memref,
         UI32Attr:$mmaShapeType,
         Variadic<acc_Indexlike>:$indices,
-        AffineMapAttr:$map, // TODO : maybe rename this positionMap or something?
-        OptionalAttr<AffineMapAttr>:$tileAccessMap);
+        AffineMapAttr:$map);
 
   let builders = [
-    OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShape":$mmaShapeType, "AffineMap":$map, "ValueRange":$mapOperands, "AffineMap":$tileAccessMap), [{
-        assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
-        $_state.addOperands(src);
-        $_state.addOperands(memref);
-        $_state.addOperands(mapOperands);
-        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
-        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
-        $_state.addAttribute(getTileAccessMapAttrName(), AffineMapAttr::get(tileAccessMap));
-        
-    }]>,
-    OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShape":$mmaShapeType, "AffineMap":$map, "ValueRange":$mapOperands), [{
-        assert(map.getNumInputs() == mapOperands.size() && "inconsistent index info");
-        $_state.addOperands(src);
-        $_state.addOperands(memref);
-        $_state.addOperands(mapOperands);
-        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
-        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
-    }]>,
     OpBuilder<(ins "Value":$src, "Value":$memref, "MMAShape":$mmaShapeType, "ValueRange":$indices), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> ()
         // for zero-dimensional memrefs.
-        auto map =
-            rank ? $_builder.getMultiDimIdentityMap(rank) : $_builder.getEmptyAffineMap();
-        return build($_builder, $_state, src, memref, mmaShapeType, map, indices);
+        auto map = rank ? $_builder.getMultiDimIdentityMap(rank) : $_builder.getEmptyAffineMap();
+        assert(map.getNumInputs() == indices.size() && "inconsistent index info");
+        $_state.addOperands(src);
+        $_state.addOperands(memref);
+        $_state.addOperands(indices);
+        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
+        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
     }]>
   ];
 
@@ -1335,19 +1342,16 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
     /// Returns the operand index of the memref.
     unsigned getMemRefOperandIndex() { return 1; }
 
-    void setMemRef(Value value) { setOperand(getMemRefOperandIndex(), value); }
-
     /// Returns the affine map used to index the memref for this operation.
     AffineMapAttr getAffineMapAttr() {
       return (*this)->getAttr(getMapAttrName()).cast<AffineMapAttr>();
     }
 
     static StringRef getMapAttrName() { return "map"; }
-    static StringRef getTileAccessMapAttrName() { return "tileAccessMap"; }
   }];
 
   let assemblyFormat = [{
-    $src`,` $memref `[` $indices `]` attr-dict `:` type($src)`,` type($memref) `[` type($indices) `]` `[` $mmaShapeType `]`
+    $src`,` $memref `[` $indices `]` attr-dict `:` type($src) `,` type($memref) `[` type($indices) `]`
   }];
 
   let verifier = [{ return ::verify(*this); }];

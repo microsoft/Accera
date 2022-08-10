@@ -41,7 +41,7 @@ namespace accera
 namespace jit
 {
     // TODO : move to either utilities or ir library
-    mlir::OwningModuleRef parseMLIRInput(const std::string& inputFilename,
+    mlir::OwningOpRef<mlir::ModuleOp> parseMLIRInput(const std::string& inputFilename,
                                          mlir::MLIRContext* context)
     {
         // Set up the input file.
@@ -55,7 +55,7 @@ namespace jit
 
         llvm::SourceMgr sourceMgr;
         sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
-        return mlir::OwningModuleRef(mlir::parseSourceFile(sourceMgr, context));
+        return mlir::OwningOpRef<mlir::ModuleOp>(mlir::parseSourceFile(sourceMgr, context));
     }
 
     static inline llvm::Error make_string_error(const llvm::Twine& message)
@@ -109,7 +109,7 @@ namespace jit
         if (!expectedFPtr)
             return expectedFPtr.takeError();
 
-        void (*fptr)(void**) = *expectedFPtr;
+        auto fptr = reinterpret_cast<void(*)(void **)>(*expectedFPtr);
         (*fptr)(args);
 
         return llvm::Error::success();

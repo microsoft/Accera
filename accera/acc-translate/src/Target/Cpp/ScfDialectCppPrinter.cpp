@@ -35,8 +35,8 @@ namespace cpp_printer
         // We control the parentheses instead of passing down to printRegion,
         // because we want to include yield-to-retval assignments within
         // the ``then'' and ``else'' blocks.
-        os << "if (" << state.nameState.getName(ifOp.condition()) << ") {\n";
-        auto& thenRegion = ifOp.thenRegion();
+        os << "if (" << state.nameState.getName(ifOp.getCondition()) << ") {\n";
+        auto& thenRegion = ifOp.getThenRegion();
         // If we have yield block terminators, we will treat them specially
         // because we will need to assign yielded values to retNames that
         // we just created. So, we ask printBlock to skip the terminators.
@@ -51,7 +51,7 @@ namespace cpp_printer
         }
         os << "}\n";
 
-        auto& elseRegion = ifOp.elseRegion();
+        auto& elseRegion = ifOp.getElseRegion();
         if (!elseRegion.empty())
         {
             os << "else {\n";
@@ -116,11 +116,11 @@ namespace cpp_printer
         StringRef idxName =
             state.nameState.getOrCreateName(idx, SSANameState::SSANameKind::LoopIdx);
         StringRef lowerBoundName = state.nameState.getOrCreateName(
-            forOp.lowerBound(), SSANameState::SSANameKind::Variable);
+            forOp.getLowerBound(), SSANameState::SSANameKind::Variable);
         StringRef upperBoundName = state.nameState.getOrCreateName(
-            forOp.upperBound(), SSANameState::SSANameKind::Variable);
+            forOp.getUpperBound(), SSANameState::SSANameKind::Variable);
         StringRef stepName = state.nameState.getOrCreateName(
-            forOp.step(), SSANameState::SSANameKind::Variable);
+            forOp.getStep(), SSANameState::SSANameKind::Variable);
 
         // The ForOp has been canonicalized to allow us to safely generate
         // canonicalized for loops as well, like below:
@@ -131,7 +131,7 @@ namespace cpp_printer
         os << idxName << " < " << upperBoundName << "; ";
         os << idxName << " += " << stepName << ") {\n";
 
-        auto& loopRegion = forOp.region();
+        auto& loopRegion = forOp.getRegion();
         // We generate parentheses here instead of passinig down to printRegion,
         // because we will append assignments for YieldOp. Similarly, we ask
         // printRegion to skip block terminators, i.e. YieldOp

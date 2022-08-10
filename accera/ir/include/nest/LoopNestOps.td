@@ -21,7 +21,7 @@ include "ir/include/value/ValueAttrs.td"
 //   * The parent dialect of the operation.
 //   * The mnemonic for the operation, or the name without the dialect prefix.
 //   * A list of traits for the operation.
-class accln_Op<string mnemonic, list<OpTrait> traits = []> :
+class accln_Op<string mnemonic, list<Trait> traits = []> :
     Op<LoopNest_Dialect, mnemonic, traits>;
 
 //
@@ -149,7 +149,7 @@ def accln_ScheduleOp : accln_Op<"schedule",
 
     AffineMap getGlobalDimensionsToInputDimensionsMap(const std::vector<Index>& dims);
 
-    void addLoopAttribute(Index targetIndex, mlir::Identifier name, mlir::Attribute value);
+    void addLoopAttribute(Index targetIndex, mlir::StringAttr name, mlir::Attribute value);
     std::optional<mlir::DictionaryAttr> getLoopAttributes(Index targetIndex);
 
     bool hasConstantRanges();
@@ -255,6 +255,7 @@ def accln_ScheduledLoopOp : accln_Op<"scheduled_loop",
 
   let extraClassDeclaration = [{
     int64_t getNumIterations();
+    Range getRange();
     Block* getPrologue() {
       return &prologue().front();
     }
@@ -281,6 +282,9 @@ def accln_ScheduledLoopOp : accln_Op<"scheduled_loop",
     }
     mlir::BlockArgument getEpilogueArgPlaceholder() {
       return getEpilogue()->getArgument(0);
+    }
+    Index getIndex() {
+      return index().getValue();
     }
     SymbolicIndexOp getSymbolicIndex();
     void setBegin(int64_t begin)
@@ -324,7 +328,7 @@ def accln_ScheduledLoopOp : accln_Op<"scheduled_loop",
 //
 // Then add the kernel to the nest (via n.addKernel(kernel)), which moves %n to the current point and adds an invoke call
 
-// TODO: add CallableOpInterface, FunctionLike ?
+// TODO: add CallableOpInterface, FunctionOpInterface ?
 def accln_KernelOp : accln_Op<"kernel",
        [SingleBlockImplicitTerminator<"TerminatorOp">, Symbol]> {
   let summary = "kernel operation";
@@ -354,13 +358,6 @@ def accln_KernelOp : accln_Op<"kernel",
     // TODO: getName
 
     std::vector<SymbolicIndexOp> getIndices();
-
-    // FunctionLike trait needs access to the functions below.
-    // friend class OpTrait::FunctionLike<accln_KernelOp>;
-
-    // Hooks for the input/output type enumeration in FunctionLike trait
-    // unsigned getNumFuncArguments() { return getType().getNumInputs(); }
-    // unsigned getNumFuncResults() { return getType().getNumResults(); }
 
     OpBuilder getBodyBuilder() {
       return OpBuilder(getBody(), std::prev(getBody()->end()));
@@ -403,8 +400,9 @@ def accln_ScheduledKernelOp : accln_Op<"scheduled_kernel", [Symbol]> {
     StringRef getId();
     StringRef getKernel();
 
-    Operation* getPredicate();
-    Operation* getPlacementPredicate();
+    KernelPredicateOpInterface getKernelPredicate();
+    EvaluatablePredicateOpInterface getEvaluatablePredicate();
+    KernelPredicateOpInterface getPlacementPredicate();
   }];
 
   // Invoke a static verify method to verify this operation.
@@ -460,7 +458,7 @@ def accln_DimSizeOp : accln_Op<"dim_size",
 // Kernel predicates
 //
 
-class accln_KernelPredicateOp<string mnemonic, list<OpTrait> traits = []> : accln_Op<!interleave([mnemonic, "pred"], "_"), !listconcat(traits, [IsolatedFromAbove, NoSideEffect])> {
+class accln_KernelPredicateOp<string mnemonic, list<Trait> traits = []> : accln_Op<!interleave([mnemonic, "pred"], "_"), !listconcat(traits, [IsolatedFromAbove, NoSideEffect])> {
   let results = (outs I1:$result);
 }
 

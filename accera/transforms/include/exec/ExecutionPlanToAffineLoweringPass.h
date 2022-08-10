@@ -12,30 +12,30 @@ namespace mlir
 class MLIRContext;
 class RewritePatternSet;
 class Pass;
-using OwningRewritePatternList = RewritePatternSet;
+using RewritePatternSet = RewritePatternSet;
 } // namespace mlir
 
 namespace accera::transforms::executionPlan
 {
-void populateExecutionPlanCacheFinalizePatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanMultiCachePatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanCopyReducePatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanCacheRegionHoistingPatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanCacheRegionMergingPatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanCacheRegionPatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanCacheMappingPatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanAdjustHierarchicalCacheRegionPositionPatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanAdjustCacheMappingPositionPatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanMaxElementCacheRegionPatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanVectorizePatterns(bool printVectorizationDetails, mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanTensorizePatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanParallelizePatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanScaleHoistingPatterns(mlir::OwningRewritePatternList& patterns);
-void populateOutOfBoundsAccessHandlingPatterns(mlir::OwningRewritePatternList& patterns);
-void populateConvergeLoadStoresPatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanThriftyCachePatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanDelayedMappingPatterns(mlir::OwningRewritePatternList& patterns);
-void populateExecutionPlanLoopUnswitchingPatterns(mlir::OwningRewritePatternList& patterns);
+void populateExecutionPlanCacheFinalizePatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanMultiCachePatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanCopyReducePatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanCacheRegionHoistingPatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanCacheRegionMergingPatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanCacheRegionPatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanCacheMappingPatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanAdjustHierarchicalCacheRegionPositionPatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanAdjustCacheMappingPositionPatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanMaxElementCacheRegionPatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanVectorizePatterns(bool printVectorizationDetails, mlir::RewritePatternSet& patterns);
+void populateExecutionPlanTensorizePatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanParallelizePatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanScaleHoistingPatterns(mlir::RewritePatternSet& patterns);
+void populateOutOfBoundsAccessHandlingPatterns(mlir::RewritePatternSet& patterns);
+void populateConvergeLoadStoresPatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanThriftyCachePatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanDelayedMappingPatterns(mlir::RewritePatternSet& patterns);
+void populateExecutionPlanLoopUnswitchingPatterns(mlir::RewritePatternSet& patterns);
 
 std::unique_ptr<mlir::Pass> createExecutionPlanMakeCachePass();
 std::unique_ptr<mlir::Pass> createExecutionPlanCopyReducePass();

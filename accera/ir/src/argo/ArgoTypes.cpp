@@ -19,10 +19,7 @@
 #else
 #include "argo/ArgoOps.h"
 #include "argo/ArgoTypes.h"
-namespace mlir
-{
 #include "argo/ArgoDialect.cpp.inc"
-}
 #endif // !__ACCERA__
 
 using namespace mlir;

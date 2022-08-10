@@ -288,7 +288,7 @@ namespace cpp_printer
         else if (auto elemAttr = attr.dyn_cast<DenseElementsAttr>())
         {
             os << '{';
-            llvm::interleaveComma(elemAttr.getAttributeValues(), os, [&](Attribute attr_) { (void)printAttribute(attr_); });
+            llvm::interleaveComma(elemAttr.getValues<Attribute>(), os, [&](Attribute attr_) { (void)printAttribute(attr_); });
             os << '}';
         }
         else if (auto typeAttr = attr.dyn_cast<TypeAttr>())
@@ -430,16 +430,7 @@ namespace cpp_printer
             return failure();
         }
 
-        auto affineMaps = memrefType.getAffineMaps();
-        if (affineMaps.empty())
-        {
-            return success();
-        }
-        else if (affineMaps.size() != 1)
-        {
-            os << "<<MemRefType with multiple affine maps is not supported>>";
-            return failure();
-        }
+        // MemrefType only supports 1 affine map
 
         return success();
     }
@@ -584,12 +575,6 @@ namespace cpp_printer
         return success();
     }
 
-    static bool isPrivateOrWorkgroupMemSpace(unsigned memspace)
-    {
-        return (memspace != gpu::GPUDialect::getPrivateAddressSpace()) ||
-               (memspace != gpu::GPUDialect::getWorkgroupAddressSpace());
-    }
-
     LogicalResult CppPrinter::printMemRefLoadOrStore(bool isLoad, Value memref, MemRefType memRefType, Operation::operand_range indices, Value targetOrSrc)
     {
         auto rank = memRefType.getRank();
@@ -631,8 +616,7 @@ namespace cpp_printer
         auto shape = memRefType.getShape();
         bool usingBrackets = false;
 
-        if (auto affineMaps = memRefType.getAffineMaps(); affineMaps.empty() || (affineMaps.size() == 1 &&
-                                                                                 affineMaps.front().isIdentity()))
+        if (memRefType.getLayout().isIdentity())
         {
             auto memspace = memRefType.getMemorySpaceAsInt();
             usingBrackets = (isPrivateOrWorkgroupMemSpace(memspace) && rank > 1) || rank == 1;
@@ -664,7 +648,7 @@ namespace cpp_printer
         {
             AffineDialectCppPrinter* affineDialectPrinter = dynamic_cast<AffineDialectCppPrinter*>(getDialectPrinter("Affine"));
             assert(affineDialectPrinter && "Affine dialect printer not found");
-            auto map = memRefType.getAffineMaps()[0];
+            auto map = memRefType.getLayout().getAffineMap();
             std::string affineFuncArgs;
             llvm::raw_string_ostream tmpOs(affineFuncArgs);
             interleaveComma(indices, tmpOs, [&](Value operand) {
@@ -940,6 +924,7 @@ namespace cpp_printer
 
     LogicalResult CppPrinter::printGlobalOp(memref::GlobalOp globalOp)
     {
+        // TODO: globalOp.alignment()?
         if (globalOp.sym_visibilityAttr() == StringAttr::get(globalOp->getContext(), "nested"))
         {
             return success();

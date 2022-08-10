@@ -3,11 +3,11 @@
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
 from .Targets import Target
 from .Package import Package
-from .lang import Array, Nest, Function
+from .lang import Array, Nest, Function, Dimension
 
 
 def get_args_to_debug(func: Function) -> List[Array]:
@@ -29,26 +29,31 @@ def add_check_allclose(package: Package, array: Array, atol: float = 1e-5, targe
         array: the array specification
         atol: the absolute tolerance
     """
-    from ._lang_python._lang import CheckAllClose, Scalar
+    from ._lang_python._lang import CheckAllClose
 
     shape = array.shape
     element_type = array.element_type
     layout = array._requested_layout
-    shape_str = '_'.join(map(str, shape))
+    resolved_shape = [-1 if isinstance(s, Dimension) else s for s in shape]
+    shape_str = '_'.join(map(str, resolved_shape))
 
     # placeholders
     actual = Array(role=Array.Role.INPUT, element_type=element_type, shape=shape, layout=layout)
     desired = Array(role=Array.Role.INPUT, element_type=element_type, shape=shape, layout=layout)
 
-    nest = Nest((1, ))    # so that we can unwrap the native arrays
+    runtime_sizes = [x._native_dim for x in shape if isinstance(x, Dimension)]
+    dims = [x for x in shape if isinstance(x, Dimension)]
+
+    # so that we can unwrap the native arrays
+    nest = Nest(shape if len(runtime_sizes) > 0 else (1, )) 
 
     @nest.iteration_logic
     def _():
-        CheckAllClose(actual, desired, atol)
+        CheckAllClose(actual, desired, atol, runtime_sizes)
 
     plan = nest.create_plan(target)
-
-    return package.add(plan, args=(actual, desired), base_name=f"_debug_check_allclose_{shape_str}")
+    args = dims + [actual, desired]
+    return package.add(plan, args=args, base_name=f"_debug_check_allclose_{shape_str}")
 
 
 def add_debugging_functions(

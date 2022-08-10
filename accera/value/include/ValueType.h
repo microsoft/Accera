@@ -171,6 +171,31 @@ namespace value
         }
     }
 
+    constexpr inline bool IsIntegerType(ValueType t)
+    {
+        switch (t)
+        {
+        case ValueType::Byte:
+            [[fallthrough]];
+        case ValueType::Int8:
+            [[fallthrough]];
+        case ValueType::Int16:
+            [[fallthrough]];
+        case ValueType::Uint16:
+            [[fallthrough]];
+        case ValueType::Int32:
+            [[fallthrough]];
+        case ValueType::Uint32:
+            [[fallthrough]];
+        case ValueType::Int64:
+            [[fallthrough]];
+        case ValueType::Uint64:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     constexpr inline bool IsSignedType(ValueType t)
     {
         switch (t)

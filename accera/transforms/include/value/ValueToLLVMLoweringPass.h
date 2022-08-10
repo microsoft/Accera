@@ -30,14 +30,13 @@ template <typename OpT>
 class OperationPass;
 
 class RewritePatternSet;
-using OwningRewritePatternList = RewritePatternSet;
 } // namespace mlir
 
 namespace accera::transforms::value
 {
-void populateValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::OwningRewritePatternList& patterns);
-void populateGlobalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::OwningRewritePatternList& patterns);
-void populateLocalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::OwningRewritePatternList& patterns);
+void populateValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateGlobalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateLocalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
 
 const mlir::LowerToLLVMOptions& GetDefaultAcceraLLVMOptions(mlir::MLIRContext* context);
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueToLLVMPass(mlir::LowerToLLVMOptions options);

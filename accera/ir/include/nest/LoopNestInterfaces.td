@@ -38,7 +38,7 @@ def accln_KernelPredicateOpInterface : OpInterface<"KernelPredicateOpInterface">
         Simplifies the predicate
       }],
 
-      "Operation*", "simplify", (ins "const TransformedDomain&":$domain, "const LoopIndexSymbolTable&":$indices, "const LoopVisitSchedule&":$schedule)
+      "KernelPredicateOpInterface", "simplify", (ins "OpBuilder&":$builder, "const TransformedDomain&":$domain, "const LoopIndexSymbolTable&":$indices, "const LoopVisitSchedule&":$schedule)
     >
   ];
 }

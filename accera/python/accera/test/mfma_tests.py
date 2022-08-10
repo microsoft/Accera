@@ -25,13 +25,15 @@ else:
 
 if sys.platform == 'linux':
     try:
-        LIBHIB_LIBNAME = 'libamdhip64.so'
         import ctypes
-        ROCM_AVAILABLE = bool(ctypes.cdll.LoadLibrary(LIBHIB_LIBNAME))
+        ROCM_AVAILABLE = bool(ctypes.cdll.LoadLibrary('libamdhip64.so'))
     except:
         ROCM_AVAILABLE = False
 else:
     ROCM_AVAILABLE = False
+
+print(f"ROCM_AVAILABLE: {ROCM_AVAILABLE}")
+print(f"CUDA_AVAILABLE: {CUDA_AVAILABLE}")
 
 DEV_MODE = False
 if "@CMAKE_INSTALL_PREFIX@"[1:-1] != "CMAKE_INSTALL_PREFIX":
@@ -64,6 +66,9 @@ def _get_type_str(datatype: ScalarType):
 
     if datatype == ScalarType.int8:
         return "i8"
+
+    if datatype == ScalarType.uint8:
+        return "ui8"
 
     if datatype == ScalarType.int32:
         return "i32"
@@ -109,9 +114,11 @@ class TensorizeTest(unittest.TestCase):
 
     def _get_random_data(self, p):
         datatype = self._get_np_datatype(p)
-        if p.element_type in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64, ScalarType.uint8,
-                              ScalarType.uint16, ScalarType.uint32, ScalarType.uint64]:
+        if p.element_type in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64]:
             return np.random.randint(-2, 2, p.shape, datatype)
+
+        if p.element_type in [ScalarType.uint8, ScalarType.uint16, ScalarType.uint32, ScalarType.uint64]:
+            return np.random.randint(0, 2, p.shape, datatype)
 
         return np.random.random(p.shape).astype(datatype)
 
@@ -1451,12 +1458,8 @@ class TensorizeTest(unittest.TestCase):
         package = Package()
         test_name = "test_cuda_tensorize"
         test_name += f"_{M}x{N}x{K}"
-        test_name += "_fp32" if intype == ScalarType.float32 else ("_fp16" if intype == ScalarType.float16 else "_bfp16")
-        test_name += "_fp32_t" if outtype == ScalarType.float32 else ("_fp16_t" if intype == ScalarType.float16 else "_bfp16_t")
-        test_name += str(tensor_splits[2]) + "_w"
-        test_name += str(tensor_splits[1])
-        if num_fused_passes is not None:
-            test_name += "_p" + str(num_fused_passes)
+        test_name += f"_{_get_type_str(intype)}"
+        test_name += f"_{_get_type_str(outtype)}"
         function = package.add(plan, args=(A, B, C), base_name=test_name)
 
         self._verify_matrix_multiplication_function(
@@ -1469,69 +1472,129 @@ class TensorizeTest(unittest.TestCase):
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
 
-    def test_cuda_tensorize_16x16x16_fp16_fp16_t16_w2(self) -> None:
+    def test_cuda_tensorize_16x16x16_fp16_fp16(self) -> None:
         self._cuda_tensorize(16, 16, 16, 16, 16, _MMAShape.M16xN16xK16_B1, 1, tolerance=1e-3)
 
-    def test_cuda_tensorize_16x16x32_fp16_fp16_t16_w2(self) -> None:
+    def test_cuda_tensorize_16x16x32_fp16_fp16(self) -> None:
         self._cuda_tensorize(16, 16, 32, 16, 16, _MMAShape.M16xN16xK16_B1, 2, tolerance=1e-2)
 
-    def test_cuda_tensorize_16x16x384_fp16_fp32_t192_w2_p4(self) -> None:
+    def test_cuda_tensorize_16x16x384_fp16_fp32(self) -> None:
         self._cuda_tensorize(16, 16, 384, 16, 16, _MMAShape.M16xN16xK16_B1, 12, tolerance=1e-2,
                              intype=ScalarType.float16, outtype=ScalarType.float32, num_fused_passes=4)
 
-    def test_cuda_tensorize_64x64x64_fp16_fp16_t16_w2(self) -> None:
-        self._cuda_tensorize(64, 64, 64, 64, 64, _MMAShape.M16xN16xK16_B1, 1, tolerance=1e-2)
+    def test_cuda_tensorize_64x128x64_fp16_fp16(self) -> None:
+        self._cuda_tensorize(64, 128, 64, 64, 64, _MMAShape.M16xN16xK16_B1, 1, tolerance=1e-2)
 
-    def test_cuda_tensorize_1024x1024x1024_fp16_fp16_t16_w2(self) -> None:
-        self._cuda_tensorize(1024, 1024, 1024, 64, 64, _MMAShape.M16xN16xK16_B1, 1, tolerance=1e-2)
+    def test_cuda_tensorize_1024x512x1024_fp16_fp16(self) -> None:
+        self._cuda_tensorize(1024, 512, 1024, 64, 64, _MMAShape.M16xN16xK16_B1, 1, tolerance=1e-2)
 
-    def test_cuda_tensorize_1024x1024x2048_fp16_fp32_t512_w2_p8(self) -> None:
-        self._cuda_tensorize(1024, 1024, 2048, 64, 64, _MMAShape.M16xN16xK16_B1, 32, tolerance=1e-2, intype=ScalarType.float16,
+    def test_cuda_tensorize_1024x1024x1024_fp16_fp32(self) -> None:
+        self._cuda_tensorize(1024, 1024, 1024, 64, 64, _MMAShape.M16xN16xK16_B1, 32, tolerance=1e-2, intype=ScalarType.float16,
                              outtype=ScalarType.float32, num_fused_passes=8, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
 
-    def test_cuda_tensorize_16x16x16_fp16_fp32_t16_w2(self) -> None:
+    def test_cuda_tensorize_16x16x16_fp16_fp32(self) -> None:
         self._cuda_tensorize(16, 16, 16, 16, 16, _MMAShape.M16xN16xK16_B1, 1, tolerance=1e-3, intype=ScalarType.float16,
                              outtype=ScalarType.float32)
 
-    def test_cuda_tensorize_32x8x16_fp16_fp16_t16_w1(self) -> None:
+    def test_cuda_tensorize_16x16x256_bfp16_fp32(self) -> None:
+        self._cuda_tensorize(16, 16, 256, 16, 16, _MMAShape.M16xN16xK16_B1, 1, tolerance=1e-5, intype=ScalarType.bfloat16,
+                             outtype=ScalarType.float32)
+
+    def test_cuda_tensorize_16x16x128_i8_i32(self) -> None:
+        self._cuda_tensorize(16, 16, 128, 16, 16, _MMAShape.M16xN16xK16_B1, 1, tolerance=1e-5, intype=ScalarType.int8,
+                             outtype=ScalarType.int32)
+
+    def test_cuda_tensorize_64x16x128_ui8_i32(self) -> None:
+        self._cuda_tensorize(64, 16, 128, 16, 16, _MMAShape.M16xN16xK16_B1, 1, tolerance=1e-5, intype=ScalarType.uint8,
+                             outtype=ScalarType.int32)
+
+    def test_cuda_tensorize_32x8x16_fp16_fp16(self) -> None:
         self._cuda_tensorize(32, 8, 16, 32, 8, _MMAShape.M32xN8xK16_B1, 1, tolerance=1e-3)
 
-    def test_cuda_tensorize_32x8x32_fp16_fp16_t32_w1(self) -> None:
+    def test_cuda_tensorize_32x8x32_fp16_fp16(self) -> None:
         self._cuda_tensorize(32, 8, 32, 32, 8, _MMAShape.M32xN8xK16_B1, 2, tolerance=1e-2)
 
-    def test_cuda_tensorize_32x8x384_fp16_fp32_t192_w1_p4(self) -> None:
+    def test_cuda_tensorize_32x8x384_fp16_fp32(self) -> None:
         self._cuda_tensorize(32, 8, 384, 32, 8, _MMAShape.M32xN8xK16_B1, 12, tolerance=1e-2, intype=ScalarType.float16,
                              outtype=ScalarType.float32, num_fused_passes=4)
 
-    def test_cuda_tensorize_64x64x64_fp16_fp16_t16_w1(self) -> None:
+    def test_cuda_tensorize_64x64x64_fp16_fp16(self) -> None:
         self._cuda_tensorize(64, 64, 64, 64, 64, _MMAShape.M32xN8xK16_B1, 1, tolerance=1e-2)
 
-    def test_cuda_tensorize_1024x1024x1024_fp16_fp16_t16_w1(self) -> None:
-        self._cuda_tensorize(1024, 1024, 1024, 64, 64, _MMAShape.M32xN8xK16_B1, 1, tolerance=1e-2)
+    def test_cuda_tensorize_1024x1024x2048_fp16_fp16(self) -> None:
+        self._cuda_tensorize(1024, 1024, 2048, 64, 64, _MMAShape.M32xN8xK16_B1, 1, tolerance=1e-2)
 
-    def test_cuda_tensorize_1024x1024x2048_fp16_fp32_t512_w1_p8(self) -> None:
-        self._cuda_tensorize(1024, 1024, 2048, 64, 64, _MMAShape.M32xN8xK16_B1, 32, tolerance=1e-2, intype=ScalarType.float16,
+    def test_cuda_tensorize_1024x1024x512_fp16_fp32(self) -> None:
+        self._cuda_tensorize(1024, 1024, 512, 64, 64, _MMAShape.M32xN8xK16_B1, 32, tolerance=1e-2, intype=ScalarType.float16,
                              outtype=ScalarType.float32, num_fused_passes=8, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
 
-    def test_cuda_tensorize_8x32x16_fp16_fp16_t16_w4(self) -> None:
+    def test_cuda_tensorize_32x8x192_bfp16_fp32(self) -> None:
+        self._cuda_tensorize(32, 8, 192, 32, 8, _MMAShape.M32xN8xK16_B1, 12, tolerance=1e-5, intype=ScalarType.bfloat16,
+                             outtype=ScalarType.float32, num_fused_passes=4)
+
+    def test_cuda_tensorize_32x8x96_i8_i32(self) -> None:
+        self._cuda_tensorize(32, 8, 96, 32, 8, _MMAShape.M32xN8xK16_B1, 6, tolerance=1e-5, intype=ScalarType.int8,
+                             outtype=ScalarType.int32, num_fused_passes=2)
+
+    def test_cuda_tensorize_32x64x48_ui8_i32(self) -> None:
+        self._cuda_tensorize(32, 64, 48, 32, 8, _MMAShape.M32xN8xK16_B1, 3, tolerance=1e-5, intype=ScalarType.uint8,
+                             outtype=ScalarType.int32, num_fused_passes=1)
+
+    def test_cuda_tensorize_8x32x16_fp16_fp16(self) -> None:
         self._cuda_tensorize(8, 32, 16, 8, 32, _MMAShape.M8xN32xK16_B1, 1, tolerance=1e-3)
 
-    def test_cuda_tensorize_8x32x32_fp16_fp16_t32_w4(self) -> None:
+    def test_cuda_tensorize_8x32x32_fp16_fp16(self) -> None:
         self._cuda_tensorize(8, 32, 32, 8, 32, _MMAShape.M8xN32xK16_B1, 2, tolerance=1e-2)
 
-    def test_cuda_tensorize_8x32x384_fp16_fp32_t192_w4_p4(self) -> None:
+    def test_cuda_tensorize_8x32x384_fp16_fp32(self) -> None:
         self._cuda_tensorize(8, 32, 384, 8, 32, _MMAShape.M8xN32xK16_B1, 12, tolerance=1e-2, intype=ScalarType.float16,
                              outtype=ScalarType.float32, num_fused_passes=4)
 
-    def test_cuda_tensorize_128x64x64_fp16_fp16_t16_w4(self) -> None:
+    def test_cuda_tensorize_128x64x64_fp16_fp16(self) -> None:
         self._cuda_tensorize(128, 64, 64, 64, 64, _MMAShape.M8xN32xK16_B1, 1, tolerance=1e-2)
 
-    def test_cuda_tensorize_1024x1024x1024_fp16_fp16_t64_w4(self) -> None:
+    def test_cuda_tensorize_1024x1024x1024_fp16_fp16(self) -> None:
         self._cuda_tensorize(1024, 1024, 1024, 64, 64, _MMAShape.M8xN32xK16_B1, 4, tolerance=1e-2)
 
-    def test_cuda_tensorize_1024x1024x2048_fp16_fp32_t512_w4_p4(self) -> None:
+    def test_cuda_tensorize_1024x1024x2048_fp16_fp32(self) -> None:
         self._cuda_tensorize(1024, 1024, 2048, 64, 64, _MMAShape.M8xN32xK16_B1, 32, tolerance=1e-2, intype=ScalarType.float16,
                              outtype=ScalarType.float32, num_fused_passes=4, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
+
+    def test_cuda_tensorize_512x512x1024_bfp16_fp32(self) -> None:
+        self._cuda_tensorize(512, 512, 1024, 64, 64, _MMAShape.M8xN32xK16_B1, 16, tolerance=1e-5, intype=ScalarType.bfloat16,
+                             outtype=ScalarType.float32, num_fused_passes=4, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
+
+    def test_cuda_tensorize_512x512x64_i8_i32(self) -> None:
+        self._cuda_tensorize(512, 512, 64, 64, 64, _MMAShape.M8xN32xK16_B1, 4, tolerance=1e-5, intype=ScalarType.int8,
+                             outtype=ScalarType.int32, num_fused_passes=4, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
+
+    def test_cuda_tensorize_512x256x64_ui8_i32(self) -> None:
+        self._cuda_tensorize(512, 256, 64, 64, 64, _MMAShape.M8xN32xK16_B1, 4, tolerance=1e-5, intype=ScalarType.uint8,
+                             outtype=ScalarType.int32, num_fused_passes=4, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
+
+    def test_cuda_tensorize_16x16x16_fp32_fp32(self) -> None:
+        self._cuda_tensorize(16, 16, 16, 16, 16, _MMAShape.M16xN16xK8_B1, 1, tolerance=1e-3, intype=ScalarType.float32,
+                             outtype=ScalarType.float32)
+
+    def test_cuda_tensorize_16x16x32_fp32_fp32(self) -> None:
+        self._cuda_tensorize(16, 16, 32, 16, 16, _MMAShape.M16xN16xK8_B1, 2, tolerance=1e-3, intype=ScalarType.float32,
+                             outtype=ScalarType.float32)
+
+    def test_cuda_tensorize_16x16x384_fp32_fp32(self) -> None:
+        self._cuda_tensorize(16, 16, 384, 16, 16, _MMAShape.M16xN16xK8_B1, 12, tolerance=1e-3, intype=ScalarType.float32,
+                             outtype=ScalarType.float32, num_fused_passes=4)
+
+    def test_cuda_tensorize_64x64x64_fp32_fp32(self) -> None:
+        self._cuda_tensorize(64, 64, 64, 64, 64, _MMAShape.M16xN16xK8_B1, 1, tolerance=1e-3, intype=ScalarType.float32,
+                             outtype=ScalarType.float32)
+
+    def test_cuda_tensorize_1024x1024x1024_fp32_fp32(self) -> None:
+        self._cuda_tensorize(1024, 1024, 1024, 64, 64, _MMAShape.M16xN16xK8_B1, 1, tolerance=1e-3, intype=ScalarType.float32,
+                             outtype=ScalarType.float32)
+
+    def test_cuda_tensorize_1024x1024x2048_fp32_fp32(self) -> None:
+        self._cuda_tensorize(1024, 1024, 2048, 64, 64, _MMAShape.M16xN16xK8_B1, 32, tolerance=1e-3, intype=ScalarType.float32,
+                             outtype=ScalarType.float32, num_fused_passes=8, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
 
 
     def _cuda_cache_tensorize(self, M, N, K, outer_tile_m, outer_tile_n, outer_tile_k, test_name,
@@ -1541,12 +1604,12 @@ class TensorizeTest(unittest.TestCase):
                               scheduling_policy=_MMASchedulingPolicy.PASS_ORDER,
                               bind_order=[GridUnits.BLOCK_Y, GridUnits.BLOCK_X, GridUnits.THREAD_Y, GridUnits.THREAD_X],
                               array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
-                              element_type=ScalarType.float16) -> None:
+                              element_type=ScalarType.float16, output_type=ScalarType.float16) -> None:
         from accera import Array, Nest, Package, Target
 
         A = Array(role=Array.Role.INPUT, element_type=element_type, shape=(M, K), layout=array_layouts[0])
         B = Array(role=Array.Role.INPUT, element_type=element_type, shape=(K, N), layout=array_layouts[1])
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=element_type, shape=(M, N), layout=array_layouts[2])
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=output_type, shape=(M, N), layout=array_layouts[2])
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -1619,32 +1682,30 @@ class TensorizeTest(unittest.TestCase):
     def test_cuda_cache_tensorize(self) -> None:
         self._cuda_cache_tensorize(M=1024, N=1024, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64, test_name="test_cuda_cache_tensorize")
 
-    # These are unexpected successes since it produces code without caching and succeeds, hence commenting. Enable tests once caching is working.
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_cache_double_buffering_tensorize(self) -> None:
-    #     self._cuda_cache_tensorize(M=1024, N=1024, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
-    #                                 test_name="test_cuda_cache_double_buffering_tensorize", tensorize=True, cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE)
+    def test_cuda_cache_double_buffering_tensorize(self) -> None:
+        self._cuda_cache_tensorize(M=1024, N=1024, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
+                                    test_name="test_cuda_cache_double_buffering_tensorize", tensorize=True, cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE)
 
     def test_cuda_non_square_simple(self) -> None:
         self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
-                                    test_name="test_cuda_non_square_simple", tensorize=False, cache=False, element_type=ScalarType.float32)
+                                    test_name="test_cuda_non_square_simple", tensorize=False, cache=False, element_type=ScalarType.float32, output_type=ScalarType.float32)
 
     def test_cuda_non_square_last_major_inputs(self) -> None:
         self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
                                    test_name="test_cuda_non_square_last_major_inputs", tensorize=False,
-                                   cache=False, vectorize=False, element_type=ScalarType.float32,
+                                   cache=False, vectorize=False, element_type=ScalarType.float32, output_type=ScalarType.float32,
                                    array_layouts=[Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR])
 
     def test_cuda_non_square_last_major_output(self) -> None:
         self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
                                    test_name="test_cuda_non_square_last_major_output", tensorize=False,
-                                   cache=False, vectorize=False, element_type=ScalarType.float32,
+                                   cache=False, vectorize=False, element_type=ScalarType.float32, output_type=ScalarType.float32,
                                    array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR])
 
     def test_cuda_non_square_last_major_inputs_output(self) -> None:
         self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
                                    test_name="test_cuda_non_square_last_major_inputs_output", tensorize=False,
-                                   cache=False, vectorize=False, element_type=ScalarType.float32,
+                                   cache=False, vectorize=False, element_type=ScalarType.float32, output_type=ScalarType.float32,
                                    array_layouts=[Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR])
 
     def test_cuda_tensorize_non_square_last_major_inputs(self) -> None:
@@ -1669,102 +1730,88 @@ class TensorizeTest(unittest.TestCase):
         self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
                                     test_name="test_cuda_tensorize_non_square", tensorize=True, cache=False)
 
-    # These are unexpected successes since it produces code without caching and succeeds, hence commenting. Enable tests once caching is working.
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_cache_non_square(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
-    #                                 test_name="test_cuda_cache_non_square", tensorize=False)
+    def test_cuda_cache_non_square(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
+                                    test_name="test_cuda_cache_non_square", tensorize=False, cache=True, output_type=ScalarType.float32)
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_cache_double_buffering_non_square(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
-    #                                 test_name="test_cuda_cache_double_buffering_non_square", tensorize=False, cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE)
+    def test_cuda_cache_double_buffering_non_square(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
+                                    test_name="test_cuda_cache_double_buffering_non_square", tensorize=False, cache=True,
+                                    double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, output_type=ScalarType.float32)
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_cache_double_buffering_tensorize_non_square(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
-    #                                 test_name="test_cuda_cache_double_buffering_tensorize_non_square", tensorize=True, cache=True,
-    #                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE)
+    def test_cuda_cache_double_buffering_tensorize_non_square(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
+                                    test_name="test_cuda_cache_double_buffering_tensorize_non_square", tensorize=True, cache=True,
+                                    double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE)
 
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_double_buffering_tensorize_non_square(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
-    #                                 test_name="test_cuda_vectorized_cache_double_buffering_tensorize_non_square", tensorize=True, cache=True,
-    #                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True)
+    def test_cuda_vectorized_cache_double_buffering_tensorize_non_square(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
+                                    test_name="test_cuda_vectorized_cache_double_buffering_tensorize_non_square", tensorize=True, cache=True,
+                                    double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True)
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_double_buffering_tensorize_non_square_blockorder(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
-    #                                 test_name="test_cuda_vectorized_cache_double_buffering_tensorize_non_square_blockorder", tensorize=True, cache=True,
-    #                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
+    def test_cuda_vectorized_cache_double_buffering_tensorize_non_square_blockorder(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
+                                    test_name="test_cuda_vectorized_cache_double_buffering_tensorize_non_square_blockorder", tensorize=True, cache=True,
+                                    double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_non_square(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
-    #                                test_name="test_cuda_vectorized_cache_non_square", tensorize=False, tensor_splits=None,
-    #                                cache=True, vectorize=True,
-    #                                bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+    def test_cuda_vectorized_cache_non_square(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_cuda_vectorized_cache_non_square", tensorize=False,
+                                   cache=True, vectorize=True, output_type=ScalarType.float32,
+                                   bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_non_square_last_major_inputs(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
-    #                                test_name="test_cuda_vectorized_cache_non_square_last_major_inputs", tensorize=False, tensor_splits=None,
-    #                                cache=True, vectorize=True,
-    #                                bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y],
-    #                                array_layouts=[Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR])
+    def test_cuda_vectorized_cache_non_square_last_major_inputs(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_cuda_vectorized_cache_non_square_last_major_inputs", tensorize=False,
+                                   cache=True, vectorize=True, output_type=ScalarType.float32,
+                                   bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y],
+                                   array_layouts=[Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR])
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_non_square_last_major_output(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
-    #                                test_name="test_cuda_vectorized_cache_non_square_last_major_output", tensorize=False, tensor_splits=None,
-    #                                cache=True, vectorize=True,
-    #                                bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y],
-    #                                array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR])
+    def test_cuda_vectorized_cache_non_square_last_major_output(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_cuda_vectorized_cache_non_square_last_major_output", tensorize=False,
+                                   cache=True, vectorize=True, output_type=ScalarType.float32,
+                                   bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y],
+                                   array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR])
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_non_square_last_major_inputs_output(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
-    #                                test_name="test_cuda_vectorized_cache_non_square_last_major_inputs_output", tensorize=False, tensor_splits=None,
-    #                                cache=True, vectorize=True,
-    #                                bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y],
-    #                                array_layouts=[Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR])
+    def test_cuda_vectorized_cache_non_square_last_major_inputs_output(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_cuda_vectorized_cache_non_square_last_major_inputs_output", tensorize=False,
+                                   cache=True, vectorize=True, output_type=ScalarType.float32,
+                                   bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y],
+                                   array_layouts=[Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR])
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_non_square_small_tiles(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=32,
-    #                                test_name="test_cuda_vectorized_cache_non_square_small_tiles", tensorize=False, tensor_splits=None,
-    #                                cache=True, vectorize=True,
-    #                                bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+    def test_cuda_vectorized_cache_non_square_small_tiles(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=32,
+                                   test_name="test_cuda_vectorized_cache_non_square_small_tiles", tensorize=False,
+                                   cache=True, vectorize=True, output_type=ScalarType.float32,
+                                   bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_non_square_transpose(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
-    #                                test_name="test_cuda_vectorized_cache_non_square_transpose", tensorize=False, tensor_splits=None,
-    #                                cache=True, cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR],
-    #                                vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+    def test_cuda_vectorized_cache_non_square_transpose(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_cuda_vectorized_cache_non_square_transpose", tensorize=False,
+                                   cache=True, cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR], output_type=ScalarType.float32,
+                                   vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_non_square_double_buffer(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
-    #                                test_name="test_cuda_vectorized_cache_non_square_double_buffer", tensorize=False, tensor_splits=None,
-    #                                cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
-    #                                vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+    def test_cuda_vectorized_cache_non_square_double_buffer(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_cuda_vectorized_cache_non_square_double_buffer", tensorize=False,
+                                   cache=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, output_type=ScalarType.float32,
+                                   vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_non_square_double_buffer_small_tiles(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=32,
-    #                                test_name="test_cuda_vectorized_cache_non_square_double_buffer_small_tiles", tensorize=False, tensor_splits=None,
-    #                                cache=True, vectorize=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
-    #                                bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+    def test_cuda_vectorized_cache_non_square_double_buffer_small_tiles(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=32,
+                                   test_name="test_cuda_vectorized_cache_non_square_double_buffer_small_tiles", tensorize=False,
+                                   cache=True, vectorize=True, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, output_type=ScalarType.float32,
+                                   bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
 
-    # @unittest.skip("Caching not yet implemented for CUDA")
-    # def test_cuda_vectorized_cache_non_square_double_buffer_transpose(self) -> None:
-    #     self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
-    #                                test_name="test_cuda_vectorized_cache_non_square_double_buffer_transpose", tensorize=False, tensor_splits=None,
-    #                                cache=True, cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR],
-    #                                double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
-    #                                vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+    def test_cuda_vectorized_cache_non_square_double_buffer_transpose(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
+                                   test_name="test_cuda_vectorized_cache_non_square_double_buffer_transpose", tensorize=False,
+                                   cache=True, cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR],
+                                   double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, output_type=ScalarType.float32,
+                                   vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
 
     def _rocm_tensorize(self, M, N, K, outer_tile_m, outer_tile_n, outer_tile_k=None,
                         mma_shape=_MMAShape.M16xN16xK4_B1, num_total_passes=1, tolerance=1e-5,
@@ -2277,34 +2324,40 @@ class TensorizeTest(unittest.TestCase):
         self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(64, 64), outer_tile_k=128,
                                    test_name="test_rocm_invalid_block_size", tensorize=False, tensor_splits=None, vectorize=False)
 
-    def test_batchgemm_rocm_vectorized_cache_non_square_transpose(self) -> None:
+    def test_rocm_batchgemm_vectorized_cache_non_square_transpose(self) -> None:
         self._rocm_batch_matmul(batch_count=3, M=1280, N=768, K=1024, block_tile=(32, 32), outer_tile_k=64,
-                                test_name="test_batchgemm_rocm_vectorized_cache_non_square_transpose", tensorize=False,
+                                test_name="test_rocm_batchgemm_vectorized_cache_non_square_transpose", tensorize=False,
+                                cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR],
+                                vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
+
+    def test_rocm_batchgemm_vectorized_cache_non_square_tensorize_transpose(self) -> None:
+        self._rocm_batch_matmul(batch_count=3, M=1280, N=768, K=1024, block_tile=(32, 32), outer_tile_k=64,
+                                test_name="test_rocm_batchgemm_vectorized_cache_non_square_tensorize_transpose", tensorize=True,
                                 cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR],
                                 vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
 
     def test_batchgemm_rocm_vectorized_cache_double_buffering_non_square(self) -> None:
         self._rocm_batch_matmul(batch_count=8, M=1280, N=768, K=1024, block_tile=(32, 32), outer_tile_k=64,
-                                test_name="test_batchgemm_rocm_vectorized_cache_double_buffering_non_square", tensorize=False,
+                                test_name="test_rocm_batchgemm_vectorized_cache_double_buffering_non_square", tensorize=False,
                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True)
 
-    def test_batchgemm_rocm_vectorized_cache_double_buffering_tensorize_non_square_tensormap(self) -> None:
+    def test_rocm_batchgemm_vectorized_cache_double_buffering_tensorize_non_square_tensormap(self) -> None:
         self._rocm_batch_matmul(batch_count=8, M=1280, N=768, K=1024, block_tile=(64, 64), outer_tile_k=64,
-                                test_name="test_batchgemm_rocm_vectorized_cache_double_buffering_tensorize_non_square_tensormap",
+                                test_name="test_rocm_batchgemm_vectorized_cache_double_buffering_tensorize_non_square_tensormap",
                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, use_static_offsets=True)
 
-    def test_batchgemm_rocm_vectorized_cache_double_buffering_tensorize_square(self) -> None:
+    def test_rocm_batchgemm_vectorized_cache_double_buffering_tensorize_square(self) -> None:
         self._rocm_batch_matmul(batch_count=1, M=64, N=64, K=64, block_tile=(64, 64), outer_tile_k=64,
-                                test_name="test_batchgemm_rocm_vectorized_cache_double_buffering_tensorize_square",
+                                test_name="test_rocm_batchgemm_vectorized_cache_double_buffering_tensorize_square",
                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, use_static_offsets=False)
 
-    def test_batchgemm_rocm_vectorized_cache_double_buffering_tensorize_square_bsplit(self) -> None:
+    def test_rocm_batchgemm_vectorized_cache_double_buffering_tensorize_square_bsplit(self) -> None:
         self._rocm_batch_matmul(batch_count=32, b_split=2, M=128, N=128, K=128, block_tile=(16, 16), outer_tile_k=16,
-                                test_name="test_batchgemm_rocm_vectorized_cache_double_buffering_tensorize_square_bsplit",
+                                test_name="test_rocm_batchgemm_vectorized_cache_double_buffering_tensorize_square_bsplit",
                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, use_static_offsets=False)
 
-    def _test_rocm_cache_memory_order_helper(self, a_layout, a_cache_layout, double_buffer, vectorize, tensorize) -> None:
-
+    def _test_cache_memory_order_helper(self, a_layout, a_cache_layout, double_buffer, vectorize, tensorize, element_type = ScalarType.float32,
+                                        mma_shape = _MMAShape.M16xN16xK4_B1, num_total_passes = 4, model = Target.Model.AMD_MI100) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
 
         M = 512
@@ -2316,9 +2369,11 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_y = 64
         outer_tile_k = 64
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=a_layout)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        output_type = element_type if tensorize else ScalarType.float32
+
+        A = Array(role=Array.Role.INPUT, element_type=element_type, shape=(M, K), layout=a_layout)
+        B = Array(role=Array.Role.INPUT, element_type=element_type, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=output_type, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -2335,9 +2390,7 @@ class TensorizeTest(unittest.TestCase):
             k: outer_tile_k
         })
 
-        mma_shape = _MMAShape.M16xN16xK4_B1
-        num_total_passes = 4
-        target = Target(Target.Model.AMD_MI100)
+        target = Target(model)
         tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=num_total_passes)
 
         iii, jjj, kkk = schedule.tile({
@@ -2373,13 +2426,18 @@ class TensorizeTest(unittest.TestCase):
             Array.Layout.FIRST_MAJOR : "F",
             Array.Layout.LAST_MAJOR : "L"
         }
+        bool_str_map = {
+            True : "T",
+            False : "F"
+        }
+        platform = "rocm" if model == Target.Model.AMD_MI100 else "cuda"
         name_parts = [
-            "test_rocm_cache_tensorized",
+            f"test_{platform}_memory_order_cache_tensorized",
             layout_str_map[a_layout],
             layout_str_map[a_cache_layout],
-            f"_db_{double_buffer}",
-            f"_vec_{vectorize}",
-            f"_tens_{tensorize}"
+            bool_str_map[double_buffer],
+            bool_str_map[vectorize],
+            bool_str_map[tensorize]
         ]
         test_name = "_".join(name_parts)
         package = Package()
@@ -2389,111 +2447,234 @@ class TensorizeTest(unittest.TestCase):
             function,
             package,
             test_name,
-            check_correctness=ROCM_AVAILABLE,
+            check_correctness=(platform == "rocm" and ROCM_AVAILABLE) or (platform == "cuda" and CUDA_AVAILABLE),
+            tolerance=1e-5 if element_type == ScalarType.float32 else 1e-2,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
 
-    # FIRST-FIRST
+    # FIRST-FIRST (ROCM)
     def test_rocm_memory_order_cache_tensorized_F_F_T_T_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, True)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, True)
 
     def test_rocm_memory_order_cache_tensorized_F_F_T_T_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, False)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, False)
 
     def test_rocm_memory_order_cache_tensorized_F_F_T_F_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, True)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, True)
 
     def test_rocm_memory_order_cache_tensorized_F_F_F_T_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, True)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, True)
 
     def test_rocm_memory_order_cache_tensorized_F_F_T_F_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, False)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, False)
 
     def test_rocm_memory_order_cache_tensorized_F_F_F_F_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, True)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, True)
 
     def test_rocm_memory_order_cache_tensorized_F_F_F_T_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, False)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, False)
 
     def test_rocm_memory_order_cache_tensorized_F_F_F_F_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, False)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, False)
 
-    # FIRST-LAST
+    # FIRST-LAST (ROCM)
     def test_rocm_memory_order_cache_tensorized_F_L_T_T_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, True, True)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, True, True)
 
     def test_rocm_memory_order_cache_tensorized_F_L_T_T_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, True, False)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, True, False)
 
     def test_rocm_memory_order_cache_tensorized_F_L_T_F_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, False, True)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, False, True)
 
     def test_rocm_memory_order_cache_tensorized_F_L_F_T_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, True, True)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, True, True)
 
     def test_rocm_memory_order_cache_tensorized_F_L_T_F_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, False, False)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, False, False)
 
     def test_rocm_memory_order_cache_tensorized_F_L_F_F_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, False, True)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, False, True)
 
     def test_rocm_memory_order_cache_tensorized_F_L_F_T_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, True, False)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, True, False)
 
     def test_rocm_memory_order_cache_tensorized_F_L_F_F_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, False, False)
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, False, False)
 
-    # LAST-FIRST
+    # LAST-FIRST (ROCM)
     def test_rocm_memory_order_cache_tensorized_L_F_T_T_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, True)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, True)
 
     def test_rocm_memory_order_cache_tensorized_L_F_T_T_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, False)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, False)
 
     def test_rocm_memory_order_cache_tensorized_L_F_T_F_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, True)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, True)
 
     def test_rocm_memory_order_cache_tensorized_L_F_F_T_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, True)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, True)
 
     def test_rocm_memory_order_cache_tensorized_L_F_T_F_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, False)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, False)
 
     def test_rocm_memory_order_cache_tensorized_L_F_F_F_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, True)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, True)
 
     def test_rocm_memory_order_cache_tensorized_L_F_F_T_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, False)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, False)
 
     def test_rocm_memory_order_cache_tensorized_L_F_F_F_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, False)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, False)
 
-    # LAST-LAST
+    # LAST-LAST (ROCM)
     def test_rocm_memory_order_cache_tensorized_L_L_T_T_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, True, True)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, True, True)
 
     def test_rocm_memory_order_cache_tensorized_L_L_T_T_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, True, False)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, True, False)
 
     def test_rocm_memory_order_cache_tensorized_L_L_T_F_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, False, True)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, False, True)
 
     def test_rocm_memory_order_cache_tensorized_L_L_F_T_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, True, True)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, True, True)
 
     def test_rocm_memory_order_cache_tensorized_L_L_T_F_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, False, False)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, False, False)
 
     def test_rocm_memory_order_cache_tensorized_L_L_F_F_T(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, False, True)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, False, True)
 
     def test_rocm_memory_order_cache_tensorized_L_L_F_T_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, True, False)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, True, False)
 
     def test_rocm_memory_order_cache_tensorized_L_L_F_F_F(self) -> None:
-        self._test_rocm_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, False, False)
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, False, False)
 
+    # FIRST-FIRST (CUDA)
+    def test_cuda_memory_order_cache_tensorized_F_F_T_T_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_F_T_T_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_F_T_F_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_F_F_T_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_F_T_F_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_F_F_F_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_F_F_T_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_F_F_F_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    # FIRST-LAST (CUDA)
+    def test_cuda_memory_order_cache_tensorized_F_L_T_T_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, True, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_L_T_T_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, True, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_L_T_F_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, False, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_L_F_T_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, True, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_L_T_F_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, True, False, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_L_F_F_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, False, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_L_F_T_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, True, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_F_L_F_F_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, False, False, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    # LAST-FIRST (CUDA)
+    def test_cuda_memory_order_cache_tensorized_L_F_T_T_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_F_T_T_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, True, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_F_T_F_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_F_F_T_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_F_T_F_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, True, False, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_F_F_F_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_F_F_T_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, True, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_F_F_F_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR, False, False, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    # LAST-LAST (CUDA)
+    def test_cuda_memory_order_cache_tensorized_L_L_T_T_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, True, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_L_T_T_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, True, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_L_T_F_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, False, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_L_F_T_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, True, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_L_T_F_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, True, False, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_L_F_F_T(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, False, True, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_L_F_T_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, True, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    def test_cuda_memory_order_cache_tensorized_L_L_F_F_F(self) -> None:
+        self._test_cache_memory_order_helper(Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, False, False, False, ScalarType.float16, _MMAShape.M16xN16xK16_B1, 1, Target.Model.NVIDIA_RTX_A6000)
+
+    @unittest.skip("This test doesn't need to run in automated runs, only meant for debugging.")
+    def test_benchmark(self) -> None:
+        from accera import Package, Target
+        from accera_gemm import benchmark_kernel
+
+        target = Target(Target.Model.AMD_MI100)
+        test_name = "test_benchmark"
+
+        plan, A, B, C = benchmark_kernel(target, 1024, 1024, 1024, False, False, "s", 32, 32, 256, Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR,
+                                         _MMAShape.M16xN16xK4_B1, False, True, True, 32, 32, _MMASchedulingPolicy.PASS_ORDER)
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE,
+            tolerance=1e-5,
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.MLIR | Package.Format.DEFAULT # Remove MLIR and it will break correctness
+        )
 
 if __name__ == '__main__':
     unittest.main(verbosity=10)

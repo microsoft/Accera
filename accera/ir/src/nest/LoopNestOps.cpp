@@ -37,6 +37,7 @@
 #include <numeric>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_map>
 
 // Include tablegen-generated cpp
@@ -144,19 +145,19 @@ namespace loopnest
         {
             using OpAsmDialectInterface::OpAsmDialectInterface;
 
-            LogicalResult getAlias(Attribute attr, raw_ostream& os) const override
+            AliasResult getAlias(Attribute attr, raw_ostream& os) const override
             {
                 if (attr.isa<IterationDomainAttr>())
                 {
                     os << "domain";
-                    return success();
+                    return AliasResult::OverridableAlias; // or AliasResult::FinalAlias?
                 }
                 if (attr.isa<TransformedDomainAttr>())
                 {
                     os << "xdomain";
-                    return success();
+                    return AliasResult::OverridableAlias; // or AliasResult::FinalAlias?
                 }
-                return failure();
+                return AliasResult::NoAlias;
             }
         };
 
@@ -279,12 +280,12 @@ namespace loopnest
             }
         };
 
-        void populateKernelCanonicalizationPatterns(mlir::OwningRewritePatternList& patterns, mlir::MLIRContext* context)
+        void populateKernelCanonicalizationPatterns(mlir::RewritePatternSet& patterns, mlir::MLIRContext* context)
         {
             patterns.insert<RemoveUnusedKernelOpPattern>(context);
         }
 
-        void populateScheduledKernelCanonicalizationPatterns(mlir::OwningRewritePatternList& patterns, mlir::MLIRContext* context)
+        void populateScheduledKernelCanonicalizationPatterns(mlir::RewritePatternSet& patterns, mlir::MLIRContext* context)
         {
             patterns.insert<RemoveUnusedScheduledKernelOpPattern>(context);
         }
@@ -460,7 +461,7 @@ namespace loopnest
         if (auto dictAttr = getLoopAttributes(targetIndex))
         {
             OpBuilder builder(getContext());
-            auto attrName = builder.getIdentifier(getFusedIndicesAttrName());
+            auto attrName = builder.getStringAttr(getFusedIndicesAttrName());
             if (auto attr = dictAttr->get(attrName))
             {
                 auto fusedIndicesAttr = attr.cast<ArrayAttr>().getValue();
@@ -486,7 +487,7 @@ namespace loopnest
             indexAttrs.push_back(IndexAttr::get(i, getContext()));
         }
         auto fusedIndexAttr = builder.getArrayAttr(indexAttrs);
-        auto attrName = builder.getIdentifier(getFusedIndicesAttrName());
+        auto attrName = builder.getStringAttr(getFusedIndicesAttrName());
         addLoopAttribute(targetIndex, attrName, fusedIndexAttr);
     }
 
@@ -501,10 +502,10 @@ namespace loopnest
             namedAttrs = llvm::to_vector<4>(llvm::make_range(indices.begin(), indices.end()));
         }
 
-        auto id = b.getIdentifier(std::to_string(index.GetId()));
+        auto id = b.getStringAttr(std::to_string(index.GetId()));
         for (auto it = namedAttrs.begin(), e = namedAttrs.end(); it != e; ++it)
         {
-            if (it->first == id)
+            if (it->getName() == id)
             {
                 namedAttrs.erase(it);
                 break;
@@ -515,7 +516,7 @@ namespace loopnest
         {
             auto sizeValue = size ? *size : std::numeric_limits<int64_t>::max(); // to be cast to int64_t
 
-            namedAttrs.emplace_back(id, b.getI64IntegerAttr((int64_t)sizeValue));
+            namedAttrs.emplace_back(NamedAttribute(id, b.getI64IntegerAttr((int64_t)sizeValue)));
         }
         auto dictAttr = b.getDictionaryAttr(namedAttrs);
 
@@ -557,7 +558,7 @@ namespace loopnest
         mlir::Builder b(getContext());
         mlir::NamedAttrList indices = (*this)->getAttrOfType<DictionaryAttr>(getUnrollAndJammedIndicesAttrName());
 
-        if (auto id = b.getIdentifier(std::to_string(index.GetId())); factor == 0)
+        if (auto id = b.getStringAttr(std::to_string(index.GetId())); factor == 0)
         {
             indices.erase(id);
         }
@@ -722,10 +723,12 @@ namespace loopnest
         return result;
     }
 
+    // TODO: use StringAttr for id to avoid the extra conversion
     ScheduledKernelOp ScheduleOp::getKernel(llvm::StringRef id)
     {
         auto symTableOp = mlir::SymbolTable::getNearestSymbolTable(getOperation());
-        auto symbolOp = mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, id);
+        auto idAttr = StringAttr::get(getOperation()->getContext(), id);
+        auto symbolOp = mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, idAttr);
         auto kernelOp = mlir::cast<ScheduledKernelOp>(symbolOp);
         assert(kernelOp && "Kernel not found");
         return kernelOp;
@@ -735,7 +738,7 @@ namespace loopnest
     {
         OpBuilder builder(*this);
         auto kernels = std::vector<Attribute>((*this)->getAttrOfType<ArrayAttr>(getKernelsAttrName()).getValue());
-        kernels.push_back(builder.getSymbolRefAttr(kernelId));
+        kernels.push_back(SymbolRefAttr::get(builder.getContext(), kernelId));
         (*this)->setAttr(getKernelsAttrName(), builder.getArrayAttr(kernels));
     }
 
@@ -917,7 +920,7 @@ namespace loopnest
         return resultMap;
     }
 
-    void ScheduleOp::addLoopAttribute(Index targetIndex, mlir::Identifier name, mlir::Attribute value)
+    void ScheduleOp::addLoopAttribute(Index targetIndex, mlir::StringAttr name, mlir::Attribute value)
     {
         OpBuilder builder(getContext());
 
@@ -945,7 +948,7 @@ namespace loopnest
         else
         {
             // We didn't have any attributes for this index, so create a new entry in the dictionary
-            auto indexAttrKeyIdentifier = builder.getIdentifier(getIndexAttrKeyName());
+            auto indexAttrKeyIdentifier = builder.getStringAttr(getIndexAttrKeyName());
 
             mlir::NamedAttrList newDictEntries;
             newDictEntries.set(indexAttrKeyIdentifier, IndexAttr::get(targetIndex, getContext()));
@@ -965,7 +968,7 @@ namespace loopnest
         auto currentArrayAttr = (*this)->getAttrOfType<ArrayAttr>(getLoopAttrsName());
         assert(currentArrayAttr != nullptr);
 
-        auto indexAttrKeyIdentifier = builder.getIdentifier(getIndexAttrKeyName());
+        auto indexAttrKeyIdentifier = builder.getStringAttr(getIndexAttrKeyName());
 
         auto dictionaryAttrs = util::ArrayAttrToVector<mlir::DictionaryAttr>(currentArrayAttr);
 
@@ -1308,7 +1311,8 @@ namespace loopnest
         {
             for (auto& scheduledKernel : ScheduleOp{ schedules[idx] }.getKernels())
             {
-                auto oldPredicateOp = scheduledKernel.getPredicate();
+                // #### TODO: deal with evaluatable predicates
+                auto oldPredicateOp = scheduledKernel.getKernelPredicate();
                 auto predicate = predicates[idx];
                 if (mlir::isa<KernelPredicateOpInterface>(oldPredicateOp) && !mlir::isa<NullPredicateOp>(oldPredicateOp))
                 {
@@ -1382,23 +1386,23 @@ namespace loopnest
 
         // Create a dictionary attribute that holds the index attribute and the affine map
         std::vector<mlir::NamedAttribute> boundIndexAndMap;
-        boundIndexAndMap.emplace_back(mlir::Identifier::get("index", context), indexAttr);
-        boundIndexAndMap.emplace_back(mlir::Identifier::get("map", context), mlir::AffineMapAttr::get(map));
+        boundIndexAndMap.emplace_back(mlir::StringAttr::get(context, "index"), indexAttr);
+        boundIndexAndMap.emplace_back(mlir::StringAttr::get(context, "map"), mlir::AffineMapAttr::get(map));
         boundIndicesAndMaps.emplace_back(mlir::DictionaryAttr::get(context, boundIndexAndMap));
 
         // DictionaryAttrs are immutable, so modify the key-value pair entry and create a new DictionaryAttr
         std::vector<mlir::NamedAttribute> currentBindingsEntries = currentBindings.getValue().vec();
         auto fullProcBindingInfo = mlir::ArrayAttr::get(context, boundIndicesAndMaps);
         auto existingEntryIter = std::find_if(currentBindingsEntries.begin(), currentBindingsEntries.end(), [&](const mlir::NamedAttribute& existingDictEntry) {
-            return existingDictEntry.first.strref() == procStr;
+            return existingDictEntry.getName().strref() == procStr;
         });
         if (existingEntryIter == currentBindingsEntries.end())
         {
-            currentBindingsEntries.emplace_back(mlir::Identifier::get(procStr, context), fullProcBindingInfo);
+            currentBindingsEntries.emplace_back(mlir::StringAttr::get(context, procStr), fullProcBindingInfo);
         }
         else
         {
-            *existingEntryIter = mlir::NamedAttribute(mlir::Identifier::get(procStr, context), fullProcBindingInfo);
+            *existingEntryIter = mlir::NamedAttribute(mlir::StringAttr::get(context, procStr), fullProcBindingInfo);
         }
         bindingsAttr(mlir::DictionaryAttr::get(context, currentBindingsEntries));
     }
@@ -1424,8 +1428,10 @@ namespace loopnest
         }
         mlir::DictionaryAttr currentBindings = currentBindingsOpt.getValue();
         std::vector<mlir::NamedAttribute> procMappingEntries = currentBindings.getValue();
-        for (auto [procStr, boundIndexMapAttr] : procMappingEntries)
+        for (auto procMappingEntry : procMappingEntries)
         {
+            auto procStr = procMappingEntry.getName();
+            auto boundIndexMapAttr = procMappingEntry.getValue();
             auto boundIndexMapArrayAttr = boundIndexMapAttr.cast<mlir::ArrayAttr>();
             auto iter = getIterForIndex(index, boundIndexMapArrayAttr);
             if (iter != boundIndexMapArrayAttr.end())
@@ -1454,8 +1460,9 @@ namespace loopnest
         }
         mlir::DictionaryAttr currentBindings = currentBindingsOpt.getValue();
         std::vector<mlir::NamedAttribute> procMappingEntries = currentBindings.getValue();
-        for (auto [procStr, boundIndexMapAttr] : procMappingEntries)
+        for (auto procMappingEntry : procMappingEntries)
         {
+            auto boundIndexMapAttr = procMappingEntry.getValue();
             auto boundIndexMapArrayAttr = boundIndexMapAttr.cast<mlir::ArrayAttr>();
             if (getIterForIndex(index, boundIndexMapArrayAttr) != boundIndexMapArrayAttr.end())
             {
@@ -1474,14 +1481,28 @@ namespace loopnest
     {
         size_t numSymbols = 0;
         std::vector<IndexRange> constantOrSymbolicRanges;
+        auto argumentList = builder.getBlock()->getArguments();
+        std::vector<mlir::Value> blockArgRuntimeSizes;
+
         for (auto range : domain.GetRanges())
         {
             // Reference symbolic ranges to operand indices
             if (range.End() == mlir::ShapedType::kDynamicSize)
             {
+                if (argumentList.size() > 0)
+                    blockArgRuntimeSizes.push_back(argumentList[numSymbols]);
+                else
+                {
+                    argumentList = builder.getBlock()->getParentOp()->getBlock()->getArguments();
+                    if (argumentList.size() > 0)
+                        blockArgRuntimeSizes.push_back(argumentList[numSymbols]);
+                    else
+                        blockArgRuntimeSizes.push_back(runtimeSizes[numSymbols]);
+                }
+                    
                 constantOrSymbolicRanges.push_back(
                     IndexRange(range.GetName(),
-                               Range(range.Begin(), OperandIndex(numSymbols++), range.Increment())));
+                                Range(range.Begin(), blockArgRuntimeSizes[numSymbols++], range.Increment())));
             }
             else
             {
@@ -1498,7 +1519,7 @@ namespace loopnest
         }
 
         // Pass the runtimeSizes as operands
-        build(builder, result, builder.getArrayAttr({}), domainAttr, {}, runtimeSizes.size() > 0 ? ArrayRef(runtimeSizes) : llvm::None);
+        build(builder, result, builder.getArrayAttr({}), domainAttr, {}, blockArgRuntimeSizes.size() > 0 ? ArrayRef(blockArgRuntimeSizes) : llvm::None);
         ensureTerminator(*result.regions.front(), builder, result.location);
     }
 
@@ -1590,10 +1611,12 @@ namespace loopnest
         return result;
     }
 
+    // TODO: use StringAttr for id to avoid the extra conversion
     KernelOp NestOp::getKernel(llvm::StringRef id)
     {
         auto symTableOp = mlir::SymbolTable::getNearestSymbolTable(getOperation());
-        auto symbolOp = mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, id);
+        auto idAttr = StringAttr::get(getOperation()->getContext(), id);
+        auto symbolOp = mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, idAttr);
         auto kernelOp = mlir::cast<KernelOp>(symbolOp);
         assert(kernelOp && "Kernel not found");
         return kernelOp;
@@ -1682,15 +1705,15 @@ namespace loopnest
 
         Region* prologueRegion = result.addRegion();
         ScheduledLoopOp::ensureTerminator(*prologueRegion, builder, result.location);
-        prologueRegion->front().addArgument(builder.getIndexType());
+        prologueRegion->front().addArgument(builder.getIndexType(), result.location);
 
         Region* bodyRegion = result.addRegion();
         ScheduledLoopOp::ensureTerminator(*bodyRegion, builder, result.location);
-        bodyRegion->front().addArgument(builder.getIndexType());
+        bodyRegion->front().addArgument(builder.getIndexType(), result.location);
 
         Region* epilogueRegion = result.addRegion();
         ScheduledLoopOp::ensureTerminator(*epilogueRegion, builder, result.location);
-        epilogueRegion->front().addArgument(builder.getIndexType());
+        epilogueRegion->front().addArgument(builder.getIndexType(), result.location);
     }
 
     // Create a constant range ScheduledLoopOp
@@ -1716,6 +1739,15 @@ namespace loopnest
         build(builder, result, builder.getI64IntegerAttr(begin), endSentinel, { endValue }, builder.getI64IntegerAttr(step), index, symbolicIndex, builder.getI64ArrayAttr(subdomainSize), subdomainIndexOrderAttr);
 
         InitScheduledLoopOpRegions(builder, result);
+    }
+
+    Range ScheduledLoopOp::getRange()
+    {
+        if (static_cast<int64_t>(end()) == mlir::ShapedType::kDynamicSize)
+        {
+            return Range(begin(), endValue().front(), step());
+        }
+        return Range(begin(), end(), step());
     }
 
     int64_t ScheduledLoopOp::getNumIterations()
@@ -1922,7 +1954,7 @@ namespace loopnest
         return std::vector(result.begin(), result.end());
     }
 
-    void KernelOp::getCanonicalizationPatterns(OwningRewritePatternList& results,
+    void KernelOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                                MLIRContext* context)
     {
         populateKernelCanonicalizationPatterns(results, context);
@@ -1977,7 +2009,7 @@ namespace loopnest
     {
         auto kernelId = kernel.getId();
         result.addAttribute(getIdAttrName(), builder.getStringAttr(id));
-        result.addAttribute(getKernelIdAttrName(), builder.getSymbolRefAttr(kernelId));
+        result.addAttribute(getKernelIdAttrName(), SymbolRefAttr::get(builder.getContext(), kernelId));
         result.addOperands(predicate);
     }
 
@@ -1985,7 +2017,7 @@ namespace loopnest
     {
         auto kernelId = kernel.getId();
         result.addAttribute(getIdAttrName(), builder.getStringAttr(id));
-        result.addAttribute(getKernelIdAttrName(), builder.getSymbolRefAttr(kernelId));
+        result.addAttribute(getKernelIdAttrName(), SymbolRefAttr::get(builder.getContext(), kernelId));
         result.addOperands({ predicate, placementPredicate });
     }
 
@@ -1993,7 +2025,7 @@ namespace loopnest
     {
         auto kernelId = kernel.getId();
         result.addAttribute(getIdAttrName(), builder.getStringAttr(id));
-        result.addAttribute(getKernelIdAttrName(), builder.getSymbolRefAttr(kernelId));
+        result.addAttribute(getKernelIdAttrName(), SymbolRefAttr::get(builder.getContext(), kernelId));
         result.addOperands(predicate.getOperation()->getResult(0));
     }
 
@@ -2001,7 +2033,7 @@ namespace loopnest
     {
         auto kernelId = kernel.getId();
         result.addAttribute(getIdAttrName(), builder.getStringAttr(id));
-        result.addAttribute(getKernelIdAttrName(), builder.getSymbolRefAttr(kernelId));
+        result.addAttribute(getKernelIdAttrName(), SymbolRefAttr::get(builder.getContext(), kernelId));
         result.addOperands({ predicate.getOperation()->getResult(0), placementPredicate.getOperation()->getResult(0) });
     }
 
@@ -2009,7 +2041,7 @@ namespace loopnest
     {
         auto kernelId = kernel.getId();
         result.addAttribute(getIdAttrName(), builder.getStringAttr(id));
-        result.addAttribute(getKernelIdAttrName(), builder.getSymbolRefAttr(kernelId));
+        result.addAttribute(getKernelIdAttrName(), SymbolRefAttr::get(builder.getContext(), kernelId));
         result.addOperands(predicate.getOperation()->getResult(0));
     }
 
@@ -2033,25 +2065,34 @@ namespace loopnest
         return (*this)->getAttrOfType<FlatSymbolRefAttr>(getKernelIdAttrName()).getValue();
     }
 
-    Operation* ScheduledKernelOp::getPredicate()
+    KernelPredicateOpInterface ScheduledKernelOp::getKernelPredicate()
     {
         auto pred = predicate();
         if (pred)
-            return pred.getDefiningOp();
+            return dyn_cast_or_null<KernelPredicateOpInterface>(pred.getDefiningOp());
         else
             return nullptr;
     }
 
-    Operation* ScheduledKernelOp::getPlacementPredicate()
+    EvaluatablePredicateOpInterface ScheduledKernelOp::getEvaluatablePredicate()
+    {
+        auto pred = predicate();
+        if (pred)
+            return dyn_cast_or_null<EvaluatablePredicateOpInterface>(pred.getDefiningOp());
+        else
+            return nullptr;
+    }
+
+    KernelPredicateOpInterface ScheduledKernelOp::getPlacementPredicate()
     {
         auto pred = placementPredicate();
         if (pred)
-            return pred.getDefiningOp();
+            return dyn_cast_or_null<KernelPredicateOpInterface>(pred.getDefiningOp());
         else
             return nullptr;
     }
 
-    void ScheduledKernelOp::getCanonicalizationPatterns(OwningRewritePatternList& results,
+    void ScheduledKernelOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                                         MLIRContext* context)
     {
         populateScheduledKernelCanonicalizationPatterns(results, context);
@@ -2136,9 +2177,9 @@ namespace loopnest
         return {};
     }
 
-    Operation* NullPredicateOp::simplify(const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
+    KernelPredicateOpInterface NullPredicateOp::simplify(OpBuilder& builder, const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
     {
-        return getOperation();
+        return *this;
     }
 
     static mlir::LogicalResult verify(NullPredicateOp op)
@@ -2151,9 +2192,9 @@ namespace loopnest
         return value();
     }
 
-    Operation* ConstantPredicateOp::simplify(const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
+    KernelPredicateOpInterface ConstantPredicateOp::simplify(OpBuilder& builder, const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
     {
-        return getOperation();
+        return *this;
     }
 
     static mlir::LogicalResult verify(ConstantPredicateOp op)
@@ -2265,98 +2306,101 @@ namespace loopnest
         return true;
     }
 
-    Operation* FragmentTypePredicateOp::simplify(const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
+    KernelPredicateOpInterface FragmentTypePredicateOp::simplify(OpBuilder& builder, const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
     {
-#if 0
-    if (_condition == Fragment::all)
+        // #### TODO: fix this
+        return *this;
+
+        auto condition = fragment();
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointAfter(getOperation());
+
+        if (condition == FragmentType::all)
+        {
+            return ConstantPredicate(builder, true);
+        }
+
+        auto index = this->index().cast<IndexAttr>().getValue();
+
+        // Get all index variables dependent on the predicate index
+        auto loopIndices = domain.GetDependentLoopIndices(index, true); // "true" means "include self"
+
+        // Evaluate a little equality "sub-predicate" for each dependent variable. All of them must be true for the result to be true.
+        for (auto loopIndex : loopIndices)
+        {
+            auto fullRange = schedule.GetActiveLoopRange(domain, loopIndex, indices);
+
+            int testVal = 0;
+            bool valid = true;
+            switch (condition)
             {
-                return ConstantPredicate(true);
+            case FragmentType::first:
+                testVal = fullRange.Begin();
+                break;
+            case FragmentType::last:
+                testVal = fullRange.End() - (fullRange.Size() % fullRange.Increment());
+                if (testVal == fullRange.End()) // not a boundary
+                {
+                    testVal = fullRange.End() - fullRange.Increment();
+                }
+                break;
+            case FragmentType::endBoundary:
+                testVal = fullRange.End() - (fullRange.Size() % fullRange.Increment());
+                if (testVal == fullRange.End()) // not a boundary
+                {
+                    valid = false;
+                }
+                break;
+            default:
+                valid = false;
+                // throw?
+                break;
             }
 
-            const auto index = GetIndex();
-            const auto condition = GetCondition();
-
-            // Get all index variables dependent on the predicate index
-            const auto& domain = schedule.GetLoopNest().GetDomain();
-            auto loopIndices = domain.GetDependentLoopIndices(index, true);
-
-            // Evaluate a little equality "sub-predicate" for each dependent variable. All of them must be true for the result to be true.
-            for (auto loopIndex : loopIndices)
+            if (valid)
             {
-                // TODO: move `GetLoopRage` somewhere else
-                auto fullRange = LoopNestVisitor::GetLoopRange(loopIndex, indices, schedule);
-
-                int testVal = 0;
-                bool valid = true;
-                switch (condition)
+                // Loop up range of the active loop
+                auto activeRange = fullRange;
+                if (const auto it = indices.find(loopIndex); it != indices.end())
                 {
-                case Fragment::first:
-                    testVal = fullRange.Begin();
-                    break;
-                case Fragment::last:
-                    testVal = fullRange.End() - (fullRange.Size() % fullRange.Increment());
-                    if (testVal == fullRange.End()) // not a boundary
+                    if (it->second.state == LoopIndexState::inProgress)
                     {
-                        testVal = fullRange.End() - fullRange.Increment();
+                        activeRange = it->second.loopRange;
                     }
-                    break;
-                case Fragment::endBoundary:
-                    testVal = fullRange.End() - (fullRange.Size() % fullRange.Increment());
-                    if (testVal == fullRange.End()) // not a boundary
-                    {
-                        valid = false;
-                    }
-                    break;
-                default:
-                    valid = false;
-                    // throw?
-                    break;
                 }
 
-                if (valid)
+                // Now check if testVal intersects with the loop's range
+                if (activeRange.Increment() == 0) // bad range
                 {
-                    // Loop up range of the active loop
-                    auto activeRange = fullRange;
-                    if (const auto it = indices.find(loopIndex); it != indices.end())
-                    {
-                        if (it->second.state == LoopIndexState::inProgress)
-                        {
-                            activeRange = it->second.loopRange;
-                        }
-                    }
+                    return getOperation();
+                }
+                int numIterations = CeilDiv(activeRange.End() - activeRange.Begin(), activeRange.Increment());
+                if (numIterations == 0)
+                {
+                    return getOperation();
+                }
 
-                    // Now check if testVal intersects with the loop's range
-                    if (activeRange.Increment() == 0) // bad range
+                if (Intersects(activeRange, { testVal, testVal + 1 }))
+                {
+                    if (numIterations == 1)
                     {
-                        return *this;
-                    }
-                    int numIterations = CeilDiv(activeRange.End() - activeRange.Begin(), activeRange.Increment());
-                    if (numIterations == 0)
-                    {
-                        return *this;
-                    }
-
-                    if (Intersects(activeRange, { testVal, testVal + 1 }))
-                    {
-                        if (numIterations == 1)
-                        {
-                            // true -- don't add anything to AND list
-                        }
-                        else
-                        {
-                            return *this;
-                            // TODO: add index, testVal to AND list, later return a conjunction of equality predicates
-                        }
+                        // true -- don't add anything to AND list
                     }
                     else
                     {
-                        return ConstantPredicate(false);
+                        return getOperation();
+                        // TODO: add index, testVal to AND list, later return a conjunction of equality predicates
                     }
                 }
+                else
+                {
+                    return ConstantPredicate(builder, false);
+                }
             }
-            return ConstantPredicate(true);
-#endif
-        return getOperation();
+        }
+
+        // return getOperation();
+        return ConstantPredicate(builder, true);
     }
 
     std::vector<int64_t> FragmentTypePredicateOp::getIndexValues()
@@ -2377,9 +2421,9 @@ namespace loopnest
         return {};
     }
 
-    Operation* PlacementPredicateOp::simplify(const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
+    KernelPredicateOpInterface PlacementPredicateOp::simplify(OpBuilder& builder, const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
     {
-        return getOperation();
+        return *this;
     }
 
     static mlir::LogicalResult verify(PlacementPredicateOp op)
@@ -2395,9 +2439,10 @@ namespace loopnest
         return {};
     }
 
-    Operation* IndexDefinedPredicateOp::simplify(const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
+    KernelPredicateOpInterface IndexDefinedPredicateOp::simplify(OpBuilder& builder, const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
     {
-        return getOperation();
+        throw std::runtime_error("IsDefined predicate not implemented");
+        return *this;
     }
 
     static mlir::LogicalResult verify(IndexDefinedPredicateOp op)
@@ -2430,21 +2475,87 @@ namespace loopnest
             }
             else
             {
-                // throw?
+                throw std::runtime_error("Error: ConjunctionPredicateOp had non-predicate arg");
                 return {};
             }
         }
         return result;
     }
 
-    Operation* ConjunctionPredicateOp::simplify(const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
+    KernelPredicateOpInterface ConjunctionPredicateOp::simplify(OpBuilder& builder, const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
     {
-        auto result = evaluate(domain, indices, schedule);
-        if (result.has_value())
+        mlir::OpBuilder::InsertionGuard guard(builder);
+
+        Operation* lastOp = getOperation();
+        builder.setInsertionPointAfter(lastOp);
+
+        std::vector<KernelPredicateOpInterface> simplifiedArgs;
+        bool didSimplify = false;
+        for (auto arg : values())
         {
-            // build a constant op and return it
+            if (auto castArg = dyn_cast<KernelPredicateOpInterface>(arg.getDefiningOp()))
+            {
+                auto simplifiedArg = castArg.simplify(builder, domain, indices, schedule);
+                auto predicateResult = simplifiedArg.evaluate(domain, indices, schedule);
+                if (!predicateResult.has_value())
+                {
+//                    if (lastOp->isBeforeInBlock(simplifiedArg))
+//                    {
+//                        lastOp = simplifiedArg;
+//                        builder.setInsertionPointAfter(lastOp);
+//                    }
+//                    simplifiedArgs.push_back(simplifiedArg);
+                }
+                else if (!*predicateResult)
+                {
+                    // Short circuit on false
+                    return ConstantPredicate(builder, false);
+                }
+                else
+                {
+                    // Note: replacing this with a `true` constant doesn't work
+                    if (lastOp->isBeforeInBlock(simplifiedArg))
+                    {
+                        lastOp = simplifiedArg;
+                        builder.setInsertionPointAfter(lastOp);
+                    }
+                    didSimplify |= (simplifiedArg != castArg);
+                    simplifiedArgs.push_back(simplifiedArg);
+
+                    // This fails for the fusion example (why???)
+//                    auto constPred =  ConstantPredicate(builder, true);
+//                    if (lastOp->isBeforeInBlock(constPred.getOperation()))
+//                    {
+//                        lastOp = constPred.getOperation();
+//                        builder.setInsertionPointAfter(lastOp);
+//                    }
+//                    simplifiedArgs.push_back(ConstantPredicate(builder, true));
+                }
+            }
+            else
+            {
+                throw std::runtime_error("ConjunctionPredicateOp::simplify: cast arg to KernelPredicateOpInterface failed");
+            }
         }
-        return getOperation();
+
+        if (simplifiedArgs.size() == 0)
+        {
+            return builder.create<NullPredicateOp>(getLoc());
+            // return *this;
+        }
+        else if (simplifiedArgs.size() == 1)
+        {
+            return simplifiedArgs.front();
+        }
+        else
+        {
+            if (didSimplify)
+                return builder.create<ConjunctionPredicateOp>(getLoc(), simplifiedArgs);
+            else
+                return *this;
+        }
+
+        return *this;
     }
 
     static mlir::LogicalResult verify(ConjunctionPredicateOp op)
@@ -2490,7 +2601,7 @@ namespace loopnest
         return result;
     }
 
-    Operation* DisjunctionPredicateOp::simplify(const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
+    KernelPredicateOpInterface DisjunctionPredicateOp::simplify(OpBuilder& builder, const TransformedDomain& domain, const LoopIndexSymbolTable& indices, const LoopVisitSchedule& schedule)
     {
         auto result = evaluate(domain, indices, schedule);
         if (result.has_value())
@@ -2498,7 +2609,7 @@ namespace loopnest
             // build a constant op and return it
         }
 
-        return getOperation();
+        return *this;
     }
 
     static mlir::LogicalResult verify(DisjunctionPredicateOp op)
@@ -2718,6 +2829,14 @@ namespace loopnest
         return dyn_cast<KernelPredicateOpInterface>(disjPred.getOperation());
     }
 
+    KernelPredicateOpInterface ConstantPredicate(mlir::OpBuilder& builder, bool value)
+    {
+        auto loc = builder.getUnknownLoc();
+        auto valueAttr = builder.getBoolAttr(value);
+        auto constPred = builder.create<ConstantPredicateOp>(loc, valueAttr);
+        return dyn_cast<KernelPredicateOpInterface>(constPred.getOperation());
+    }
+
     //
     // PrintOp
     //
@@ -2744,7 +2863,7 @@ namespace loopnest
         }
         else
         {
-            return builder.create<ConstantOp>(loc, type, value);
+            return builder.create<arith::ConstantOp>(loc, type, value);
         }
     }
 

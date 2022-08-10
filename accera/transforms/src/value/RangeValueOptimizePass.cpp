@@ -13,8 +13,9 @@
 #include <llvm/IR/GlobalValue.h>
 #include <mlir/Analysis/DataFlowAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/Linalg/IR/LinalgOps.h>
+#include <mlir/Dialect/Linalg/IR/Linalg.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
@@ -64,12 +65,12 @@ struct RangeValueOptimizePass : public ConvertRangeValueOptimizeBase<RangeValueO
         auto ctx = &getContext();
         OpBuilder builder(ctx);
         Type i1Ty = builder.getI1Type();
-        getOperation()->walk([&](CmpIOp op) {
+        getOperation()->walk([&](arith::CmpIOp op) {
             auto classification = classifyCmpIOp(op);
             if (classification != CmpIOpClassification::Unknown)
             {
                 builder.setInsertionPoint(op);
-                Value val = builder.create<ConstantOp>(op->getLoc(), i1Ty, builder.getBoolAttr(classification == CmpIOpClassification::AlwaysTrue));
+                Value val = builder.create<arith::ConstantOp>(op->getLoc(), i1Ty, builder.getBoolAttr(classification == CmpIOpClassification::AlwaysTrue));
                 op.replaceAllUsesWith(val);
                 op.erase();
             }
@@ -84,11 +85,11 @@ private:
         AlwaysTrue
     };
 
-    CmpIOpClassification classifyCmpIOp(CmpIOp op)
+    CmpIOpClassification classifyCmpIOp(arith::CmpIOp op)
     {
         auto predicate = op.getPredicate();
-        auto lhs = op.lhs();
-        auto rhs = op.rhs();
+        auto lhs = op.getLhs();
+        auto rhs = op.getRhs();
         if (!rangeValue->hasRange(lhs) || !rangeValue->hasRange(rhs))
         {
             return CmpIOpClassification::Unknown;
@@ -102,7 +103,7 @@ private:
 
         switch (predicate)
         {
-        case CmpIPredicate::slt:
+        case arith::CmpIPredicate::slt:
             if (lhsRange.icmp(CmpInst::Predicate::ICMP_SLT, rhsRange))
             {
                 return CmpIOpClassification::AlwaysTrue;
@@ -112,7 +113,7 @@ private:
                 return CmpIOpClassification::AlwaysFalse;
             }
             break;
-        case CmpIPredicate::sle:
+        case arith::CmpIPredicate::sle:
             if (lhsRange.icmp(CmpInst::Predicate::ICMP_SLE, rhsRange))
             {
                 return CmpIOpClassification::AlwaysTrue;
@@ -122,7 +123,7 @@ private:
                 return CmpIOpClassification::AlwaysFalse;
             }
             break;
-        case CmpIPredicate::sgt:
+        case arith::CmpIPredicate::sgt:
             if (lhsRange.icmp(CmpInst::Predicate::ICMP_SGT, rhsRange))
             {
                 return CmpIOpClassification::AlwaysTrue;
@@ -132,7 +133,7 @@ private:
                 return CmpIOpClassification::AlwaysFalse;
             }
             break;
-        case CmpIPredicate::sge:
+        case arith::CmpIPredicate::sge:
             if (lhsRange.icmp(CmpInst::Predicate::ICMP_SGE, rhsRange))
             {
                 return CmpIOpClassification::AlwaysTrue;

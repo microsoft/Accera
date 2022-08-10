@@ -1,10 +1,11 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //  Copyright (c) Microsoft Corporation. All rights reserved.
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
-//  Authors: Kern Handa
+//  Authors: Kern Handa, Captain Jack Sparrow
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "AcceraDialectCppPrinter.h"
+#include "CppPrinterUtils.h"
 
 #include "AMDGPU.h"
 #include "NVGPU.h"
@@ -66,32 +67,57 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult AcceraDialectCppPrinter::printOp(vir::MMAComputeSyncOp mfmaOp)
+    LogicalResult AcceraDialectCppPrinter::printOp(vir::MMAFillSyncOp constantMatrixOp)
     {
-        return failure();
-        // assert(mfmaOp);
-        // auto funName = GetAMDMFMAOpName(mfmaOp.opA().getType(), mfmaOp.opB().getType(), mfmaOp.opC().getType(), mfmaOp.result().getType());
-        // if (!funName)
-        // {
-        //     return failure();
-        // }
-        // auto idx = state.nameState.getOrCreateName(
-        //     mfmaOp.result(), SSANameState::SSANameKind::Variable);
-        // auto ty = mfmaOp.result().getType();
-        // if (auto memrefTy = ty.dyn_cast<MemRefType>())
-        // {
-        //     ty = VectorType::get(memrefTy.getNumElements(), memrefTy.getElementType());
-        // }
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            return constantMatrixOp.emitError("non-cuda version is not supported.");
+        }
 
-        // RETURN_IF_FAILED(printer->printType(ty));
-        // os << " " << idx << " = ";
-        // os << funName << "(";
-        // os << state.nameState.getName(mfmaOp.opA()) << ", ";
-        // os << state.nameState.getName(mfmaOp.opB()) << ", ";
-        // os << state.nameState.getName(mfmaOp.opC()) << ", ";
-        // os << "0, 0, 0";
-        // os << ")";
-        // return success();
+        auto memRefType = constantMatrixOp.result().getType().cast<MemRefType>();
+        const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(constantMatrixOp.mmaShapeType()) };
+        const auto cShape = std::make_tuple(mfmaOpType.getM(), mfmaOpType.getN(), mfmaOpType.getK());
+        return printConstantMatrixOp(state, printer, memRefType.getElementType(), cShape, constantMatrixOp.result(), constantMatrixOp.value());
+    }
+
+    LogicalResult AcceraDialectCppPrinter::printOp(vir::MMALoadSyncOp loadMatrixOp)
+    {
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            return loadMatrixOp.emitError("non-cuda version is not supported.");
+        }
+
+        auto memRefType = loadMatrixOp.result().getType().cast<MemRefType>();
+        const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(loadMatrixOp.mmaShapeType()) };
+        const auto rowcolIndices = std::make_pair(loadMatrixOp.indices()[0], loadMatrixOp.indices()[1]);
+        const auto operandType = static_cast<vir::MMAOperandType>(loadMatrixOp.operandType());
+        const auto memrefShape = std::make_tuple(mfmaOpType.getM(), mfmaOpType.getN(), mfmaOpType.getK());
+
+        return printLoadMatrixOp(state, printer, memRefType.getElementType(), memrefShape, loadMatrixOp.memref(), loadMatrixOp.result(), operandType, rowcolIndices, loadMatrixOp.rowMajor());
+    }
+
+    LogicalResult AcceraDialectCppPrinter::printOp(vir::MMAComputeSyncOp computeMatrixOp)
+    {
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            return computeMatrixOp.emitError("non-cuda version is not supported.");
+        }
+
+        const auto outputMemrefType = computeMatrixOp.result().getType().cast<MemRefType>();
+        const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(computeMatrixOp.mmaShapeType()) };
+        const auto cShape = std::make_tuple(mfmaOpType.getM(), mfmaOpType.getN(), mfmaOpType.getK());
+        return printComputeMatrixOp(state, printer, outputMemrefType.getElementType(), cShape, computeMatrixOp.opA(), computeMatrixOp.opB(), computeMatrixOp.opC(), computeMatrixOp.result());
+    }
+
+    LogicalResult AcceraDialectCppPrinter::printOp(vir::MMAStoreSyncOp storeMatrixOp)
+    {
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            return storeMatrixOp.emitError("non-cuda version is not supported.");
+        }
+
+        const auto rowcolIndices = std::make_pair(storeMatrixOp.indices()[0], storeMatrixOp.indices()[1]);
+        return printStoreMatrixOp(state, printer, storeMatrixOp.src(), storeMatrixOp.memref(), rowcolIndices);
     }
 
     LogicalResult AcceraDialectCppPrinter::printDialectOperation(
@@ -105,7 +131,10 @@ namespace cpp_printer
         };
 
         TypeSwitch<Operation*>(op)
-            //.Case<vir::MMAComputeSyncOp>(handler)
+            .Case<vir::MMAFillSyncOp>(handler)
+            .Case<vir::MMALoadSyncOp>(handler)
+            .Case<vir::MMAComputeSyncOp>(handler)
+            .Case<vir::MMAStoreSyncOp>(handler)
             .Case<vir::CallOp>(handler)
             .Case<vir::ReturnOp>(handler)
             .Default([&](Operation*) { *consumed = false; });
@@ -142,16 +171,16 @@ namespace cpp_printer
 
         for (const auto& attr : kernel->getAttrs())
         {
-            if (attr.first == "gridSize")
+            if (attr.getName() == "gridSize")
             {
-                auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(attr.second.dyn_cast<ArrayAttr>());
+                auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(attr.getValue().dyn_cast<ArrayAttr>());
                 gridSizeX = arrayAttr[0].getInt();
                 gridSizeY = arrayAttr[1].getInt();
                 gridSizeZ = arrayAttr[2].getInt();
             }
-            else if (attr.first == "blockSize")
+            else if (attr.getName() == "blockSize")
             {
-                auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(attr.second.dyn_cast<ArrayAttr>());
+                auto arrayAttr = accera::ir::util::ArrayAttrToVector<mlir::IntegerAttr>(attr.getValue().dyn_cast<ArrayAttr>());
                 blockSizeX = arrayAttr[0].getInt();
                 blockSizeY = arrayAttr[1].getInt();
                 blockSizeZ = arrayAttr[2].getInt();

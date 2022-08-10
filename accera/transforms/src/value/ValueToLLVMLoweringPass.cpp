@@ -30,11 +30,11 @@
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/Linalg/IR/LinalgOps.h>
+#include <mlir/Dialect/Linalg/IR/Linalg.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
-#include <mlir/Dialect/Vector/VectorOps.h>
-#include <mlir/Dialect/Vector/VectorTransforms.h>
+#include <mlir/Dialect/Vector/IR/VectorOps.h>
+#include <mlir/Dialect/Vector/Transforms/VectorTransforms.h>
 
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
@@ -166,7 +166,7 @@ public:
     using PrintOpLoweringBase<PrintFOp>::PrintOpLoweringBase;
 
     LogicalResult matchAndRewrite(PrintFOp op,
-                                  ArrayRef<Value> operands,
+                                  PrintFOp::Adaptor adaptor,
                                   ConversionPatternRewriter& rewriter) const override;
 };
 
@@ -188,7 +188,7 @@ struct CallOpLowering : public ValueLLVMOpConversionPattern<ValueCallOp>
 
     LogicalResult matchAndRewrite(
         ValueCallOp op,
-        ArrayRef<mlir::Value> operands,
+        OpAdaptor adaptor,
         ConversionPatternRewriter& rewriter) const override;
 };
 
@@ -198,7 +198,7 @@ struct BitcastOpLowering : public OpConversionPattern<BitcastOp>
 
     LogicalResult matchAndRewrite(
         BitcastOp op,
-        ArrayRef<mlir::Value> operands,
+        OpAdaptor adaptor,
         ConversionPatternRewriter& rewriter) const override;
 };
 
@@ -208,7 +208,7 @@ struct GlobalOpToLLVMLowering : public ValueLLVMOpConversionPattern<GlobalOp>
 
     LogicalResult matchAndRewrite(
         GlobalOp op,
-        ArrayRef<mlir::Value> operands,
+        OpAdaptor adaptor,
         ConversionPatternRewriter& rewriter) const override;
 };
 
@@ -218,14 +218,14 @@ struct ReferenceGlobalOpLowering : public ValueLLVMOpConversionPattern<Reference
 
     LogicalResult matchAndRewrite(
         ReferenceGlobalOp op,
-        ArrayRef<mlir::Value> operands,
+        OpAdaptor adaptor,
         ConversionPatternRewriter& rewriter) const override;
 };
 
 struct CPUEarlyReturnRewritePattern : ValueLLVMOpConversionPattern<EarlyReturnOp>
 {
     using ValueLLVMOpConversionPattern::ValueLLVMOpConversionPattern;
-    LogicalResult matchAndRewrite(EarlyReturnOp op, ArrayRef<Value> operands, ConversionPatternRewriter& rewriter) const final
+    LogicalResult matchAndRewrite(EarlyReturnOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const final
     {
         if (auto target = util::ResolveExecutionTarget(op); !target || *target != ExecutionTarget::CPU)
         {
@@ -243,7 +243,7 @@ struct CPUEarlyReturnRewritePattern : ValueLLVMOpConversionPattern<EarlyReturnOp
         // TODO kerha: figure out cleanup semantics
         (void)rewriter.splitBlock(currentBlock, position);
 
-        rewriter.replaceOpWithNewOp<mlir::ReturnOp>(op, operands);
+        rewriter.replaceOpWithNewOp<mlir::ReturnOp>(op, adaptor.getOperands());
         return success();
     }
 };
@@ -254,7 +254,7 @@ struct GetTimeOpLowering : public ValueLLVMOpConversionPattern<GetTimeOp>
 
     LogicalResult matchAndRewrite(
         GetTimeOp op,
-        ArrayRef<mlir::Value> operands,
+        OpAdaptor adaptor,
         ConversionPatternRewriter& rewriter) const override;
 
     mlir::Value GetTime(ConversionPatternRewriter& rewriter, mlir::Location loc, ModuleOp& parentModule) const;
@@ -344,6 +344,17 @@ struct GetTimeOpLowering : public ValueLLVMOpConversionPattern<GetTimeOp>
         return llvmIntTy;
     }
 };
+
+struct RangeOpLowering : public ValueLLVMOpConversionPattern<RangeOp>
+{
+    using ValueLLVMOpConversionPattern::ValueLLVMOpConversionPattern;
+
+    LogicalResult matchAndRewrite(
+        RangeOp op,
+        OpAdaptor adaptor,
+        ConversionPatternRewriter& rewriter) const override;
+};
+
 struct ValueToLLVMLoweringPass : public ConvertValueToLLVMBase<ValueToLLVMLoweringPass>
 {
     ValueToLLVMLoweringPass(bool useBarePtrCallConv, bool emitCWrappers, unsigned indexBitwidth, bool useAlignedAlloc, llvm::DataLayout dataLayout, const IntraPassSnapshotOptions& snapshotteroptions = {}) :
@@ -383,10 +394,10 @@ struct LLVMCallFixupPattern : OpRewritePattern<LLVM::CallOp>
 
     LogicalResult match(LLVM::CallOp op) const final
     {
-        auto optionalCallee = op.callee();
+        auto optionalCallee = op.getCallee();
         if (!optionalCallee) return failure();
 
-        auto callee = *optionalCallee;
+        auto callee = mlir::StringAttr::get(op.getContext(), *optionalCallee);
         auto funcOp = mlir::SymbolTable::lookupNearestSymbolFrom<LLVM::LLVMFuncOp>(op->getParentOfType<ModuleOp>(), callee);
         if (!funcOp) return failure();
 
@@ -425,9 +436,9 @@ struct RawPointerAPIFnConversion : public ConvertOpToLLVMPattern<FuncOp>
     {
         for (const auto& attr : attrs)
         {
-            if (attr.first == SymbolTable::getSymbolAttrName() ||
-                attr.first == function_like_impl::getTypeAttrName() || attr.first == "std.varargs" ||
-                (filterArgAttrs && attr.first == function_like_impl::getArgDictAttrName()))
+            if (attr.getName() == SymbolTable::getSymbolAttrName() ||
+                attr.getName() == FunctionOpInterface::getTypeAttrName() || attr.getName() == "std.varargs" ||
+                (filterArgAttrs && attr.getName() == FunctionOpInterface::getArgDictAttrName()))
                 continue;
             result.push_back(attr);
         }
@@ -465,7 +476,7 @@ struct RawPointerAPIFnConversion : public ConvertOpToLLVMPattern<FuncOp>
                     newArgAttrs[mapping->inputNo + j] = argAttrDicts[i];
             }
             attributes.push_back(
-                rewriter.getNamedAttr(function_like_impl::getArgDictAttrName(),
+                rewriter.getNamedAttr(FunctionOpInterface::getArgDictAttrName(),
                                       rewriter.getArrayAttr(newArgAttrs)));
         }
 
@@ -484,7 +495,7 @@ struct RawPointerAPIFnConversion : public ConvertOpToLLVMPattern<FuncOp>
     }
 
     // cf BarePtrFuncOpConversion in mlir\lib\Conversion\StandardToLLVM\StandardToLLVM.cpp
-    LogicalResult matchAndRewrite(FuncOp funcOp, ArrayRef<Value> operands, ConversionPatternRewriter& rewriter) const override
+    LogicalResult matchAndRewrite(FuncOp funcOp, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override
     {
         if (!funcOp->getAttr(RawPointerAPIAttrName))
         {
@@ -554,7 +565,7 @@ struct RawPointerAPICallOpConversion : public mlir::ConvertOpToLLVMPattern<mlir:
 {
     using ConvertOpToLLVMPattern<mlir::CallOp>::ConvertOpToLLVMPattern;
 
-    LogicalResult matchAndRewrite(mlir::CallOp op, ArrayRef<Value> operands, ConversionPatternRewriter& rewriter) const override
+    LogicalResult matchAndRewrite(mlir::CallOp op, OpAdaptor adaptor, ConversionPatternRewriter& rewriter) const override
     {
         // Only match if this mlir::CallOp is inside of an LLVM::FuncOp with the RawPointerAPI attribute and is calling
         // a function without the RawPointerAPI attribute
@@ -586,7 +597,7 @@ struct RawPointerAPICallOpConversion : public mlir::ConvertOpToLLVMPattern<mlir:
         }
 
         auto promoted = getTypeConverter()->promoteOperands(
-            op->getLoc(), /*opOperands=*/op->getOperands(), operands, rewriter);
+            op->getLoc(), /*opOperands=*/op->getOperands(), adaptor.getOperands(), rewriter);
         auto newOp = rewriter.create<LLVM::CallOp>(
             callOp.getLoc(), packedResult ? TypeRange(packedResult) : TypeRange(), promoted, callOp->getAttrs());
 
@@ -636,7 +647,7 @@ struct RawPointerAPIUnusedUndefRemoval : public OpRewritePattern<LLVM::UndefOp>
 
     LogicalResult match(LLVM::UndefOp op) const final
     {
-        auto isMemref = op.res().getType().isa<MemRefType>();
+        auto isMemref = op.getRes().getType().isa<MemRefType>();
         auto hasNoUses = op->use_empty();
         return success(isMemref && hasNoUses);
     }
@@ -658,7 +669,7 @@ using namespace accera::transforms::value;
 
 LogicalResult GlobalOpToLLVMLowering::matchAndRewrite(
     GlobalOp op,
-    ArrayRef<mlir::Value> operands,
+    OpAdaptor adaptor,
     ConversionPatternRewriter& rewriter) const
 {
     auto type = op.getType();
@@ -707,7 +718,7 @@ LogicalResult GlobalOpToLLVMLowering::matchAndRewrite(
 
 LogicalResult ReferenceGlobalOpLowering::matchAndRewrite(
     ReferenceGlobalOp op,
-    ArrayRef<mlir::Value> operands,
+    OpAdaptor,
     ConversionPatternRewriter& rewriter) const
 {
     auto parentValueFuncOp = op->getParentOfType<ValueFuncOp>();
@@ -753,7 +764,7 @@ LogicalResult ReferenceGlobalOpLowering::matchAndRewrite(
         Value address = rewriter.create<LLVM::AddressOfOp>(loc, globalOp);
         auto elementType = globalOp.getType().cast<LLVM::LLVMArrayType>().getElementType();
         Value memory = rewriter.create<LLVM::GEPOp>(
-            loc, LLVM::LLVMPointerType::get(elementType, globalOp.addr_space()), address, ArrayRef<Value>{ zero, zero });
+            loc, LLVM::LLVMPointerType::get(elementType, globalOp.getAddrSpace()), address, ArrayRef<Value>{ zero, zero });
 
         auto memrefType = op.getType();
         auto memref = MemRefDescriptor::fromStaticShape(rewriter, loc, llvmTypeConverter, memrefType, memory);
@@ -766,7 +777,7 @@ LogicalResult ReferenceGlobalOpLowering::matchAndRewrite(
 }
 
 LogicalResult PrintFOpLowering::matchAndRewrite(PrintFOp op,
-                                                ArrayRef<Value> operands,
+                                                PrintFOp::Adaptor operandAdapter,
                                                 ConversionPatternRewriter& rewriter) const
 {
     auto loc = op.getLoc();
@@ -775,7 +786,6 @@ LogicalResult PrintFOpLowering::matchAndRewrite(PrintFOp op,
     assert(llvmDialect && "expected llvm dialect to be registered");
 
     ModuleOp parentModule = op->getParentOfType<ModuleOp>();
-    PrintFOp::Adaptor operandAdapter(operands);
 
     std::string fmt = op.fmt_spec().str();
     auto tag = "fmt_" + std::to_string(llvm::hash_value(fmt));
@@ -823,12 +833,10 @@ static Type unwrap(Type type)
 
 LogicalResult CallOpLowering::matchAndRewrite(
     ValueCallOp op,
-    ArrayRef<mlir::Value> operands,
+    OpAdaptor adaptor,
     ConversionPatternRewriter& rewriter) const
 {
     auto loc = op.getLoc();
-
-    ValueCallOp::Adaptor adaptor(operands);
 
     SmallVector<UnsignedTypePair, 4> promotedArgsInfo;
     auto funcType = op.getCalleeType();
@@ -837,7 +845,7 @@ LogicalResult CallOpLowering::matchAndRewrite(
     SmallVector<MemRefDescriptor, 4> memrefDescriptors;
     for (auto argInfo : promotedArgsInfo)
     {
-        memrefDescriptors.push_back(MemRefDescriptor{ adaptor.operands()[argInfo.first] });
+        memrefDescriptors.push_back(MemRefDescriptor{ adaptor.getOperands()[argInfo.first] });
     }
 
     SmallVector<mlir::Value, 4> newCallOperands;
@@ -850,7 +858,7 @@ LogicalResult CallOpLowering::matchAndRewrite(
         }
         else
         {
-            newCallOperands.push_back(adaptor.operands()[idx]);
+            newCallOperands.push_back(adaptor.getOperands()[idx]);
         }
     }
 
@@ -870,13 +878,12 @@ LogicalResult CallOpLowering::matchAndRewrite(
 
 LogicalResult BitcastOpLowering::matchAndRewrite(
     BitcastOp op,
-    ArrayRef<mlir::Value> operands,
+    OpAdaptor operandAdapter,
     ConversionPatternRewriter& rewriter) const
 {
     LLVMTypeConverter llvmTypeConverter(rewriter.getContext());
     auto resultType = llvmTypeConverter.convertType(op.getResult().getType());
 
-    BitcastOp::Adaptor operandAdapter(operands);
     auto arg = operandAdapter.input();
     rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, resultType, arg);
     return success();
@@ -953,12 +960,42 @@ mlir::Value GetTimeOpLowering::GetTime(ConversionPatternRewriter& rewriter, mlir
 
 LogicalResult GetTimeOpLowering::matchAndRewrite(
     GetTimeOp op,
-    ArrayRef<mlir::Value> operands,
+    OpAdaptor,
     ConversionPatternRewriter& rewriter) const
 {
     ModuleOp parentModule = op->getParentOfType<ModuleOp>();
     auto currentTime = GetTime(rewriter, op.getLoc(), parentModule);
     rewriter.replaceOp(op, { currentTime });
+    return success();
+}
+
+LogicalResult RangeOpLowering::matchAndRewrite(
+    RangeOp op,
+    OpAdaptor adaptor,
+    ConversionPatternRewriter& rewriter) const
+{
+    auto loc = op.getLoc();
+
+    // Convert the given range descriptor type to the LLVMIR dialect.
+    // Range descriptor contains the range bounds and the step as 64-bit integers.
+    //
+    // struct {
+    //   int64_t min;
+    //   int64_t max;
+    //   int64_t step;
+    // };
+    LLVMTypeConverter llvmTypeConverter(rewriter.getContext());
+    auto rangeType = op.getType().cast<RangeType>();
+    auto *context = rangeType.getContext();
+    auto int64Ty = llvmTypeConverter.convertType(IntegerType::get(context, 64));
+    auto rangeDescriptor = LLVM::LLVMStructType::getLiteral(context, {int64Ty, int64Ty, int64Ty});
+
+    // Fill in an aggregate value of the descriptor.
+    Value desc = rewriter.create<LLVM::UndefOp>(loc, rangeDescriptor);
+    desc = rewriter.create<LLVM::InsertValueOp>(loc, desc, adaptor.min(), rewriter.getI64ArrayAttr(0));
+    desc = rewriter.create<LLVM::InsertValueOp>(loc, desc, adaptor.max(), rewriter.getI64ArrayAttr(1));
+    desc = rewriter.create<LLVM::InsertValueOp>(loc, desc, adaptor.step(), rewriter.getI64ArrayAttr(2));
+    rewriter.replaceOp(op, desc);
     return success();
 }
 
@@ -1012,7 +1049,7 @@ void ValueToLLVMLoweringPass::runOnModule()
 
     // Apply targeted Raw / Bare pointer conversions manually
     {
-        OwningRewritePatternList patterns(&getContext());
+        RewritePatternSet patterns(&getContext());
 
         patterns.insert<RawPointerAPIFnConversion>(barePtrTypeConverter);
         patterns.insert<RawPointerAPICallOpConversion>(llvmTypeConverter, 100);
@@ -1026,7 +1063,7 @@ void ValueToLLVMLoweringPass::runOnModule()
     snapshotter.Snapshot("BarePtrConversion", moduleOp);
 
     {
-        OwningRewritePatternList patterns(&getContext());
+        RewritePatternSet patterns(&getContext());
         populateValueToLLVMPatterns(llvmTypeConverter, patterns);
 
         populateLinalgToLLVMConversionPatterns(llvmTypeConverter, patterns);
@@ -1045,11 +1082,12 @@ void ValueToLLVMLoweringPass::runOnModule()
 
     FrozenRewritePatternSet toLLVMPatterns;
     {
-        OwningRewritePatternList patterns(&getContext());
+        RewritePatternSet patterns(&getContext());
 
         populateMathToLLVMConversionPatterns(llvmTypeConverter, patterns);
         populateMemRefToLLVMConversionPatterns(llvmTypeConverter, patterns);
         populateStdToLLVMConversionPatterns(llvmTypeConverter, patterns);
+        arith::populateArithmeticToLLVMConversionPatterns(llvmTypeConverter, patterns);
 
         populateVectorToLLVMConversionPatterns(llvmTypeConverter, patterns, /*reassociateFPReductions*/ true);
         vector::populateVectorContractLoweringPatterns(patterns, vector::VectorTransformsOptions{}.setVectorTransferSplit(mlir::vector::VectorTransferSplit::VectorTransfer));
@@ -1072,7 +1110,7 @@ void ValueToLLVMLoweringPass::runOnModule()
     snapshotter.Snapshot("ToLLVM_Mem", moduleOp);
 
     {
-        OwningRewritePatternList patterns(&getContext());
+        RewritePatternSet patterns(&getContext());
         patterns.insert<LLVMCallFixupPattern>(&getContext());
 
         FrozenRewritePatternSet frozen{ std::move(patterns) };
@@ -1092,13 +1130,13 @@ void ValueToLLVMLoweringPass::runOnModule()
 namespace accera::transforms::value
 {
 
-void populateGlobalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::OwningRewritePatternList& patterns)
+void populateGlobalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<GlobalOpToLLVMLowering>(typeConverter, context);
 }
 
-void populateLocalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::OwningRewritePatternList& patterns)
+void populateLocalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
 
@@ -1108,10 +1146,11 @@ void populateLocalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, ml
         BitcastOpLowering,
         CallOpLowering,
         PrintFOpLowering,
-        GetTimeOpLowering>(typeConverter, context);
+        GetTimeOpLowering,
+        RangeOpLowering>(typeConverter, context);
 }
 
-void populateValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::OwningRewritePatternList& patterns)
+void populateValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
 {
     populateGlobalValueToLLVMPatterns(typeConverter, patterns);
     populateLocalValueToLLVMPatterns(typeConverter, patterns);

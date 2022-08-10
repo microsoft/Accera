@@ -74,7 +74,7 @@ def ConvertExecutionPlanTensorization : Pass<"convert-exec-plan-tensorize"> {
 // ExecutionPlanMakeCache
 //===----------------------------------------------------------------------===//
 
-def ConvertExecutionPlanMakeCache : FunctionPass<"convert-exec-make-cache"> {
+def ConvertExecutionPlanMakeCache : Pass<"convert-exec-make-cache", "mlir::FuncOp"> {
   let summary = "Lower ExecPlan make cache op";
   let constructor = "accera::transforms::executionPlan::createExecutionPlanMakeCachePass()";
   let dependentDialects = [
@@ -105,7 +105,7 @@ def ConvertExecutionPlanCopyReduce : Pass<"convert-exec-copy-reduce"> {
 // ExecutionPlanScaleHoisting
 //===----------------------------------------------------------------------===//
 
-def ConvertExecutionPlanScaleHoisting : FunctionPass<"hoist-cache-scaling"> {
+def ConvertExecutionPlanScaleHoisting : Pass<"hoist-cache-scaling", "mlir::FuncOp"> {
   let summary = "Hoist scale ops in kernels to cache reduce ops";
   let constructor = "accera::transforms::executionPlan::createExecutionPlanScaleHoistingPass()";
   let dependentDialects = [
@@ -121,7 +121,7 @@ def ConvertExecutionPlanScaleHoisting : FunctionPass<"hoist-cache-scaling"> {
 // HandleOutOfBoundsAccess
 //===----------------------------------------------------------------------===//
 
-def HandleOutOfBoundsAccess : FunctionPass<"handle-out-of-bounds-access"> {
+def HandleOutOfBoundsAccess : Pass<"handle-out-of-bounds-access", "mlir::FuncOp"> {
   let summary = "Detect potential out-of-bounds affine loads and replace them with a conditional access and default value";
   let constructor = "accera::transforms::executionPlan::createOutOfBoundsAccessHandlingPass()";
   let dependentDialects = [
@@ -137,7 +137,7 @@ def HandleOutOfBoundsAccess : FunctionPass<"handle-out-of-bounds-access"> {
 // ScheduledOperations
 //===----------------------------------------------------------------------===//
 
-def ConvertScheduledOperations : FunctionPass<"convert-loopnest-scheduledops"> {
+def ConvertScheduledOperations : Pass<"convert-loopnest-scheduledops", "mlir::FuncOp"> {
   let summary = "Lower LoopNest ops";
   let constructor = "accera::transforms::loopnest::createScheduledOperationsPass()";
   let dependentDialects = [
@@ -151,7 +151,7 @@ def ConvertScheduledOperations : FunctionPass<"convert-loopnest-scheduledops"> {
 // ScheduleToValue
 //===----------------------------------------------------------------------===//
 
-def ConvertScheduleToValue : FunctionPass<"convert-loopnest-to-value"> {
+def ConvertScheduleToValue : Pass<"convert-loopnest-to-value", "mlir::FuncOp"> {
   let summary = "Lower LoopNest ops to Value dialect ops";
   let constructor = "accera::transforms::loopnest::createScheduleToValuePass()";
   let dependentDialects = [
@@ -184,7 +184,7 @@ def ConvertValueSimplify : Pass<"simplify-value"> {
   let dependentDialects = [
     "mlir::StandardOpsDialect",
     "mlir::AffineDialect",
-    "mlir::linalg::LinalgDialect",
+    // "mlir::linalg::LinalgDialect",
     "mlir::memref::MemRefDialect",
     "mlir::math::MathDialect"
   ];
@@ -200,7 +200,7 @@ def ConvertRangeValueOptimize : Pass<"optimize-range-value"> {
   let dependentDialects = [
     "mlir::StandardOpsDialect",
     "mlir::AffineDialect",
-    "mlir::linalg::LinalgDialect",
+    // "mlir::linalg::LinalgDialect",
     "mlir::memref::MemRefDialect",
     "mlir::math::MathDialect",
     "mlir::scf::SCFDialect",
@@ -296,8 +296,8 @@ def ConvertValueToStd : accModulePass<"convert-value-to-std"> {
     "mlir::StandardOpsDialect",
     "mlir::AffineDialect",
     "mlir::scf::SCFDialect",
-    "mlir::memref::MemRefDialect",
-    "mlir::linalg::LinalgDialect"
+    "mlir::memref::MemRefDialect"
+    // "mlir::linalg::LinalgDialect"
   ];
 }
 
@@ -333,8 +333,8 @@ def LoopNestToValueFunc : Pass<"loopnest-to-value-func", "accera::ir::value::Val
     "mlir::StandardOpsDialect",
     "mlir::AffineDialect",
     "mlir::scf::SCFDialect",
-    "mlir::gpu::GPUDialect",
-    "mlir::linalg::LinalgDialect"
+    "mlir::gpu::GPUDialect"
+    // "mlir::linalg::LinalgDialect"
   ];
 }
 
@@ -399,6 +399,16 @@ def SerializeToHSACO : Pass<"serialize-to-hsaco", "::mlir::gpu::GPUModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// GPUSimplification
+//===----------------------------------------------------------------------===//
+
+def GPUSimplification : Pass<"gpu-simplification", "::mlir::ModuleOp"> {
+  let summary = "Simplifies GPU operations";
+  let constructor = "accera::transforms::createGPUSimplificationPass()";
+  let dependentDialects = ["accera::ir::value::ValueDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // AcceraToSPIRV
 //===----------------------------------------------------------------------===//
 
@@ -409,7 +419,7 @@ def ConvertAcceraToSPIRV : Pass<"convert-accera-to-spirv", "::mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// AcceraToRocm
+// AcceraToROCDL
 //===----------------------------------------------------------------------===//
 
 def ConvertAcceraToROCDL : Pass<"convert-accera-to-rocdl", "::mlir::ModuleOp"> {

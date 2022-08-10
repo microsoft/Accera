@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.7)
+[//]: # (Version: v1.2.8)
 
 # Section 6: Plans - Caching
 In the previous sections, we defined the logic and then scheduled its iterations. Now, let's move on to completing the implementation with target-specific options.
@@ -11,6 +11,8 @@ plan = schedule.create_plan()
 The Accera programming model allows us to create multiple plans from a single schedule. More importantly, we can modify individual plans without changing the schedule. We can manually specify the target platform by calling `create_plan` that takes a `target` argument. The default value of this `target` argument is `acc.Target.HOST`, which refers to the current host computer.
 
 In this section, we discuss how to add data caching strategies to a plan.
+
+__Not yet implemented__: Data caching strategies are not supported when one or more of the Array's dimension sizes are specified at runtime.
 
 ## Key slices
 

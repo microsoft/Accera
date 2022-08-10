@@ -10,8 +10,11 @@
 namespace mlir
 {
 class FuncOp;
-class OwningModuleRef;
 class OpBuilder;
+
+template <typename OpTy>
+class OwningOpRef;
+class ModuleOp;
 }
 
 mlir::OpBuilder& GetTestBuilder();
@@ -19,10 +22,10 @@ mlir::OpBuilder& GetTestBuilder();
 //
 // Test function verifiers
 //
-bool VerifyGenerate(mlir::OwningModuleRef& module, mlir::FuncOp& fn);
-bool VerifyParse(mlir::OwningModuleRef& module, mlir::FuncOp& fn);
-bool VerifyLowerToValue(mlir::OwningModuleRef& module, mlir::FuncOp& fn);
-bool VerifyLowerToStd(mlir::OwningModuleRef& module, mlir::FuncOp& fn);
-bool VerifyLowerToLLVM(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp);
-bool VerifyTranslateToLLVMIR(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp);
-bool VerifyJIT(mlir::OwningModuleRef& module, mlir::FuncOp& fnOp);
+bool VerifyGenerate(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fn);
+bool VerifyParse(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fn);
+bool VerifyLowerToValue(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fn);
+bool VerifyLowerToStd(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fn);
+bool VerifyLowerToLLVM(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp);
+bool VerifyTranslateToLLVMIR(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp);
+bool VerifyJIT(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp);

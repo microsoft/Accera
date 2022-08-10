@@ -823,10 +823,20 @@ MI100_TENSORCORE_INFO = TensorCoreInformation([
 NV_A6000_TENSORCORE_INFO = TensorCoreInformation([
     TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),
     TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.bfloat16, outType=ScalarType.float32),
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.int8, outType=ScalarType.int32),
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.uint8, outType=ScalarType.int32),
     TensorCoreInformationEntry(shape=_MMAShape.M32xN8xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),
     TensorCoreInformationEntry(shape=_MMAShape.M32xN8xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN8xK16_B1, inType=ScalarType.bfloat16, outType=ScalarType.float32),
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN8xK16_B1, inType=ScalarType.int8, outType=ScalarType.int32),
+    TensorCoreInformationEntry(shape=_MMAShape.M32xN8xK16_B1, inType=ScalarType.uint8, outType=ScalarType.int32),
     TensorCoreInformationEntry(shape=_MMAShape.M8xN32xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),
     TensorCoreInformationEntry(shape=_MMAShape.M8xN32xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),
+    TensorCoreInformationEntry(shape=_MMAShape.M8xN32xK16_B1, inType=ScalarType.bfloat16, outType=ScalarType.float32),
+    TensorCoreInformationEntry(shape=_MMAShape.M8xN32xK16_B1, inType=ScalarType.int8, outType=ScalarType.int32),
+    TensorCoreInformationEntry(shape=_MMAShape.M8xN32xK16_B1, inType=ScalarType.uint8, outType=ScalarType.int32),
+    TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK8_B1, inType=ScalarType.float32, outType=ScalarType.float32),
 ])
 
 # Tensor Cores is current unused

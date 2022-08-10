@@ -10,6 +10,7 @@ include "mlir/IR/OpBase.td"
 
 def Argo_Dialect : Dialect {
   let name = "argo";
+  let cppNamespace = "mlir::argo";
   let description = [{
     The `argo` dialect includes Microsoft extension on top of MLIR's
     `linalg` dialect.

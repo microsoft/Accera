@@ -13,8 +13,9 @@
 
 #include <utilities/include/StringUtil.h>
 
-#include <mlir/Analysis/LoopAnalysis.h>
+#include <mlir/Dialect/Affine/Analysis/LoopAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/ROCDLDialect.h>
@@ -45,30 +46,30 @@ namespace accera::ir
 {
 namespace util
 {
-    void FillCanonicalPatternsRecursively(mlir::Operation* op, mlir::OwningRewritePatternList& patterns)
+    void FillCanonicalPatternsRecursively(mlir::Operation* op, mlir::RewritePatternSet& patterns)
     {
-        std::set<const mlir::AbstractOperation*> s;
+        std::set<const void*> s;
         auto context = op->getContext();
 
-        auto abstractOp = op->getAbstractOperation();
-        if (s.count(abstractOp) == 0)
+        auto opInfo = op->getRegisteredInfo();
+        if (opInfo && s.count(opInfo->getAsOpaquePointer()) == 0)
         {
-            abstractOp->getCanonicalizationPatterns(patterns, context);
-            s.insert(abstractOp);
+            opInfo->getCanonicalizationPatterns(patterns, context);
+            s.insert(opInfo->getAsOpaquePointer());
         }
         op->walk([&patterns, &s, context](mlir::Operation* childOp) {
-            auto childAbstractOp = childOp->getAbstractOperation();
-            if (s.count(childAbstractOp) == 0)
+            auto childInfo = childOp->getRegisteredInfo();
+            if (childInfo && s.count(childInfo->getAsOpaquePointer()) == 0)
             {
-                childAbstractOp->getCanonicalizationPatterns(patterns, context);
-                s.insert(childAbstractOp);
+                childInfo->getCanonicalizationPatterns(patterns, context);
+                s.insert(childInfo->getAsOpaquePointer());
             }
         });
     }
 
     void CanonicalizeGreedily(mlir::Operation* op)
     {
-        mlir::OwningRewritePatternList patterns(op->getContext());
+        mlir::RewritePatternSet patterns(op->getContext());
         FillCanonicalPatternsRecursively(op, patterns);
         (void)applyPatternsAndFoldGreedily(op, std::move(patterns));
     }
@@ -177,7 +178,7 @@ namespace util
         auto insertionBlock = anchorOp->getBlock();
         auto it = insertionBlock->begin();
         auto end = insertionBlock->end();
-        while (it != end && llvm::isa<mlir::ConstantOp,
+        while (it != end && llvm::isa<mlir::arith::ConstantOp,
                                       ir::value::ReferenceGlobalOp>(it))
         {
             ++it;
@@ -202,7 +203,7 @@ namespace util
         auto insertionBlock = anchorOp->getBlock();
         auto it = insertionBlock->begin();
         auto end = insertionBlock->end();
-        while (it != end && llvm::isa<mlir::ConstantOp,
+        while (it != end && llvm::isa<mlir::arith::ConstantOp,
                                       mlir::memref::AllocOp,
                                       mlir::memref::AllocaOp,
                                       mlir::LLVM::AllocaOp,
@@ -232,7 +233,7 @@ namespace util
 
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string tag)
     {
-        return mlir::FileLineColLoc::get(mlir::Identifier::get(tag, builder.getContext()), 0, 0);
+        return mlir::FileLineColLoc::get(mlir::StringAttr::get(builder.getContext(), tag), 0, 0);
     }
 
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string tag, mlir::Location opLocation)
@@ -243,10 +244,10 @@ namespace util
     mlir::Location GetLocation(mlir::OpBuilder& builder, std::string filename, int64_t lineNumber)
     {
         utilities::ReplaceAll(filename, "\\", "/");
-        return mlir::FileLineColLoc::get(builder.getIdentifier(filename), lineNumber, 0);
+        return mlir::FileLineColLoc::get(builder.getStringAttr(filename), lineNumber, 0);
     }
 
-    std::vector<mlir::Value> MultiDimAffineApply(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineMap map, std::vector<mlir::Value>& operands, bool simplify)
+    std::vector<mlir::Value> MultiDimAffineApply(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineMap map, const std::vector<mlir::Value>& operands, bool simplify)
     {
         std::vector<mlir::Value> result;
         result.reserve(map.getNumResults());
@@ -332,10 +333,10 @@ namespace util
         auto execTargetAttr = getExecTarget(execAwareOp);
         while (!exact &&
                execAwareOp &&
-               !execAwareOp->hasTrait<mlir::OpTrait::FunctionLike>() &&
+               !mlir::isa<mlir::FunctionOpInterface>(execAwareOp) &&
                !execTargetAttr)
         {
-            if ((execAwareOp = execAwareOp->getParentWithTrait<mlir::OpTrait::FunctionLike>()))
+            if ((execAwareOp = execAwareOp->getParentOfType<mlir::FunctionOpInterface>()))
             {
                 execTargetAttr = getExecTarget(execAwareOp);
             }
@@ -659,16 +660,18 @@ namespace util
         rewriter.mergeBlocks(successorBlock, &predecessorBlock);
     }
 
+    // TODO: use StringAttr for id to avoid the extra conversion
     mlir::Operation* FindOpWithSymbolName(const llvm::StringRef& id, mlir::Operation* rootOp)
     {
         auto symTableOp = mlir::SymbolTable::getNearestSymbolTable(rootOp);
-        auto symbolOp = mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, id);
+        auto idAttr = mlir::StringAttr::get(rootOp->getContext(), id);
+        auto symbolOp = mlir::SymbolTable::lookupNearestSymbolFrom(symTableOp, idAttr);
         return symbolOp;
     }
 
     mlir::LogicalResult PromoteIfSingleIteration(mlir::PatternRewriter& rewriter, mlir::AffineForOp forOp)
     {
-        // Copied and modified from llvm-project\mlir\lib\Transforms\Utils\LoopUtils.cpp : mlir::promoteIfSingleIteration()
+        // Copied and modified from llvm-project/mlir/lib/Dialect/Affine/Utils/LoopUtils.cpp : mlir::promoteIfSingleIteration()
         // Modified to work during a lowering pass (i.e. erase ops via the PatternRewriter rather than erasing the ops directly)
         // and to work within a ValueFuncOp as opposed to a std FuncOp
 
@@ -687,7 +690,7 @@ namespace util
             if (forOp.hasConstantLowerBound())
             {
                 mlir::OpBuilder topBuilder(forOp->getParentOfType<vir::ValueFuncOp>().getBody());
-                auto constOp = topBuilder.create<mlir::ConstantIndexOp>(
+                auto constOp = topBuilder.create<mlir::arith::ConstantIndexOp>(
                     forOp.getLoc(), forOp.getConstantLowerBound());
                 iv.replaceAllUsesWith(constOp);
             }
@@ -730,9 +733,9 @@ namespace util
         // Check that the operations have the same type, operands, and attributes
 
         // Check op type
-        auto abstractLHSOp = lhs->getAbstractOperation();
-        auto abstractRHSOp = rhs->getAbstractOperation();
-        if (abstractLHSOp->typeID != abstractRHSOp->typeID)
+        auto lhsOpInfo = lhs->getRegisteredInfo();
+        auto rhsOpInfo = rhs->getRegisteredInfo();
+        if (lhsOpInfo->getTypeID() != rhsOpInfo->getTypeID())
         {
             return false;
         }
@@ -756,8 +759,8 @@ namespace util
         }
         for (auto namedAttr : lhsAttrDict.getValue())
         {
-            auto lhsAttr = namedAttr.second;
-            auto rhsAttr = rhsAttrDict.get(namedAttr.first);
+            auto lhsAttr = namedAttr.getValue();
+            auto rhsAttr = rhsAttrDict.get(namedAttr.getName());
             if (lhsAttr != rhsAttr)
             {
                 return false;
@@ -802,36 +805,18 @@ namespace util
         return nullptr;
     }
 
-    mlir::AffineMap ComposeAffineMapSequence(const std::vector<mlir::AffineMap>& maps)
-    {
-        if (maps.empty())
-        {
-            return mlir::AffineMap();
-        }
-        else
-        {
-            auto accessMapComposition = maps.front();
-            for (size_t mapIdx = 1; mapIdx < maps.size(); ++mapIdx)
-            {
-                accessMapComposition = maps[mapIdx].compose(accessMapComposition);
-            }
-            return accessMapComposition;
-        }
-    }
-
     template <typename MemoryOp>
     mlir::AffineMap GetMemRefIndexToMemoryLocationMap(mlir::MLIRContext* context, MemoryOp op)
     {
         auto memRefType = op.memref().getType().template cast<mlir::MemRefType>();
-        std::vector<mlir::AffineMap> memRefMaps = memRefType.getAffineMaps().vec();
-        if (memRefMaps.empty())
+
+        auto memRefMap = memRefType.getLayout().getAffineMap();
+        if (memRefMap.isIdentity())
         {
             auto stridedLayout = mlir::makeCanonicalStridedLayoutExpr(memRefType.getShape(), context);
-            memRefMaps.push_back(mlir::AffineMap::get(memRefType.getRank(), 0, stridedLayout));
+            memRefMap = mlir::AffineMap::get(memRefType.getRank(), 0, stridedLayout);
         }
-        auto accessMapComposition = ComposeAffineMapSequence(memRefMaps);
-        assert(accessMapComposition.getNumResults() == 1);
-        return accessMapComposition;
+        return memRefMap;
     }
 
     template <typename AffineMemoryOp>
@@ -949,7 +934,7 @@ namespace util
     template <typename _TyOp>
     auto GetROCDLGPUIndex(mlir::OpBuilder& builder, mlir::Location& loc)
     {
-        return builder.create<mlir::IndexCastOp>(loc, builder.create<_TyOp>(loc, builder.getI32Type()), builder.getIndexType());
+        return builder.create<mlir::arith::IndexCastOp>(loc, builder.create<_TyOp>(loc, builder.getI32Type()), builder.getIndexType());
     }
 
     mlir::Value GetGPUIndex(value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc)
@@ -957,29 +942,29 @@ namespace util
         switch (idxType)
         {
         case value::Processor::ThreadX:
-            return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "x");
+            return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::x);
         case value::Processor::ThreadY:
-            return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "y");
+            return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::y);
         case value::Processor::ThreadZ:
-            return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), "z");
+            return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::z);
         case value::Processor::BlockX:
-            return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "x");
+            return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::x);
         case value::Processor::BlockY:
-            return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "y");
+            return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::y);
         case value::Processor::BlockZ:
-            return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), "z");
+            return builder.create<mlir::gpu::BlockIdOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::z);
         case value::Processor::BlockDimX:
-            return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "x");
+            return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::x);
         case value::Processor::BlockDimY:
-            return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "y");
+            return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::y);
         case value::Processor::BlockDimZ:
-            return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), "z");
+            return builder.create<mlir::gpu::BlockDimOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::z);
         case value::Processor::GridDimX:
-            return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "x");
+            return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::x);
         case value::Processor::GridDimY:
-            return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "y");
+            return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::y);
         case value::Processor::GridDimZ:
-            return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), "z");
+            return builder.create<mlir::gpu::GridDimOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::z);
         default:
             llvm_unreachable("Unexpected");
         }
@@ -990,16 +975,16 @@ namespace util
         assert(gpuOp != nullptr && "Can't get GPU Proc for null op");
         return mlir::TypeSwitch<mlir::Operation*, value::Processor>(gpuOp)
             .Case([&](mlir::gpu::ThreadIdOp threadIdOp) {
-                auto threadStr = threadIdOp.dimension().str();
-                if (threadStr == "x")
+                auto threadDim = threadIdOp.dimension();
+                if (threadDim == mlir::gpu::Dimension::x)
                 {
                     return value::Processor::ThreadX;
                 }
-                else if (threadStr == "y")
+                else if (threadDim == mlir::gpu::Dimension::y)
                 {
                     return value::Processor::ThreadY;
                 }
-                else if (threadStr == "z")
+                else if (threadDim == mlir::gpu::Dimension::z)
                 {
                     return value::Processor::ThreadZ;
                 }
@@ -1010,16 +995,16 @@ namespace util
                 }
             })
             .Case([&](mlir::gpu::BlockIdOp blockIdOp) {
-                auto blockStr = blockIdOp.dimension().str();
-                if (blockStr == "x")
+                auto blockDim = blockIdOp.dimension();
+                if (blockDim == mlir::gpu::Dimension::x)
                 {
                     return value::Processor::BlockX;
                 }
-                else if (blockStr == "y")
+                else if (blockDim == mlir::gpu::Dimension::y)
                 {
                     return value::Processor::BlockY;
                 }
-                else if (blockStr == "z")
+                else if (blockDim == mlir::gpu::Dimension::z)
                 {
                     return value::Processor::BlockZ;
                 }
@@ -1030,16 +1015,16 @@ namespace util
                 }
             })
             .Case([&](mlir::gpu::BlockDimOp blockDimOp) {
-                auto blockStr = blockDimOp.dimension().str();
-                if (blockStr == "x")
+                auto blockDim = blockDimOp.dimension();
+                if (blockDim == mlir::gpu::Dimension::x)
                 {
                     return value::Processor::BlockDimX;
                 }
-                else if (blockStr == "y")
+                else if (blockDim == mlir::gpu::Dimension::y)
                 {
                     return value::Processor::BlockDimY;
                 }
-                else if (blockStr == "z")
+                else if (blockDim == mlir::gpu::Dimension::z)
                 {
                     return value::Processor::BlockDimZ;
                 }
@@ -1050,16 +1035,16 @@ namespace util
                 }
             })
             .Case([&](mlir::gpu::GridDimOp gridDimOp) {
-                auto gridStr = gridDimOp.dimension().str();
-                if (gridStr == "x")
+                auto gridDim = gridDimOp.dimension();
+                if (gridDim == mlir::gpu::Dimension::x)
                 {
                     return value::Processor::GridDimX;
                 }
-                else if (gridStr == "y")
+                else if (gridDim == mlir::gpu::Dimension::y)
                 {
                     return value::Processor::GridDimY;
                 }
-                else if (gridStr == "z")
+                else if (gridDim == mlir::gpu::Dimension::z)
                 {
                     return value::Processor::GridDimZ;
                 }
@@ -1069,9 +1054,9 @@ namespace util
                     return value::Processor::Sequential;
                 }
             })
-            .Case([&](mlir::IndexCastOp castOp) {
+            .Case([&](mlir::arith::IndexCastOp castOp) {
                 // If this is an index cast, recurse to the arg of the index cast
-                auto inputVal = castOp.in();
+                auto inputVal = castOp.getIn();
                 return GetGPUProcessor(inputVal.getDefiningOp());
             })
             .Default([&](mlir::Operation*) {
@@ -1080,22 +1065,19 @@ namespace util
             });
     }
 
-    int DimIndexToInteger(llvm::StringRef dim)
+    int GetDimValByDimIndex(accera::ir::targets::Dim3 dims, mlir::gpu::Dimension dimIndex)
     {
-        return ::llvm::StringSwitch<int>(dim)
-            .Case("x", 0)
-            .Case("y", 1)
-            .Case("z", 2)
-            .Default(-1);
-    }
-
-    int GetDimValByDimIndexStr(accera::ir::targets::Dim3 dims, llvm::StringRef dimStr)
-    {
-        return ::llvm::StringSwitch<int>(dimStr)
-            .Case("x", dims.x)
-            .Case("y", dims.y)
-            .Case("z", dims.z)
-            .Default(-1);
+        switch (dimIndex)
+        {
+        case mlir::gpu::Dimension::x:
+            return dims.x;
+        case mlir::gpu::Dimension::y:
+            return dims.y;
+        case mlir::gpu::Dimension::z:
+            return dims.z;
+        default:
+            return -1;
+        }
     }
 
     template <typename OpTy>
@@ -1117,14 +1099,13 @@ namespace util
             });
     }
 
-    int64_t GetBlockDimSize(mlir::Operation* where, const std::string& dimId)
+    int64_t GetBlockDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId)
     {
         if (auto gpuFunc = where->getParentOfType<mlir::gpu::GPUFuncOp>())
         {
             auto blockIdxAttr = gpuFunc->getAttrOfType<ArrayAttr>("blockSize");
-            auto blockDimIdx = DimIndexToInteger(dimId);
-            assert((blockIdxAttr && blockDimIdx != -1) && "Couldn't resolve block size");
-            auto blockDimSize = blockIdxAttr.getValue()[blockDimIdx].cast<IntegerAttr>().getInt();
+            assert(blockIdxAttr && "Couldn't resolve block size");
+            auto blockDimSize = blockIdxAttr.getValue()[static_cast<size_t>(dimId)].cast<IntegerAttr>().getInt();
             return blockDimSize;
         }
         else
@@ -1139,20 +1120,19 @@ namespace util
             // Prefer using the ValueLambdaOp as inner loopnests will be a ValueLambdaOp nested inside of a ValueFuncOp
             auto op = vLambdaOp != nullptr ? vLambdaOp : vFuncOp;
             auto gpuParams = GetGPUFuncLaunchInfo(op);
-            auto blockDimVal = GetDimValByDimIndexStr(gpuParams.block, dimId);
+            auto blockDimVal = GetDimValByDimIndex(gpuParams.block, dimId);
             assert(blockDimVal != -1 && "Couldn't resolve block size");
             return blockDimVal;
         }
     }
 
-    int64_t GetGridDimSize(mlir::Operation* where, const std::string& dimId)
+    int64_t GetGridDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId)
     {
         if (auto gpuFunc = where->getParentOfType<mlir::gpu::GPUFuncOp>())
         {
             auto gridIdxAttr = gpuFunc->getAttrOfType<ArrayAttr>("gridSize");
-            auto gridDimIdx = DimIndexToInteger(dimId);
-            assert((gridIdxAttr && gridDimIdx != -1) && "Couldn't resolve grid size");
-            auto gridDimSize = gridIdxAttr.getValue()[gridDimIdx].cast<IntegerAttr>().getInt();
+            assert(gridIdxAttr && "Couldn't resolve grid size");
+            auto gridDimSize = gridIdxAttr.getValue()[static_cast<size_t>(dimId)].cast<IntegerAttr>().getInt();
             return gridDimSize;
         }
         else
@@ -1166,7 +1146,7 @@ namespace util
             }
             auto op = vLambdaOp != nullptr ? vLambdaOp : vFuncOp;
             auto gpuParams = GetGPUFuncLaunchInfo(op);
-            auto gridDimVal = GetDimValByDimIndexStr(gpuParams.grid, dimId);
+            auto gridDimVal = GetDimValByDimIndex(gpuParams.grid, dimId);
             assert(gridDimVal != -1 && "Couldn't resolve grid size");
             return gridDimVal;
         }
@@ -1174,12 +1154,12 @@ namespace util
 
     int64_t GetBlockDimSize(mlir::gpu::BlockDimOp op)
     {
-        return GetBlockDimSize(op, op.dimension().str());
+        return GetBlockDimSize(op, op.dimension());
     }
 
     int64_t GetGridDimSize(mlir::gpu::GridDimOp op)
     {
-        return GetGridDimSize(op, op.dimension().str());
+        return GetGridDimSize(op, op.dimension());
     }
 
     mlir::Value GetCurrentGPUBlockThreadID(mlir::OpBuilder& builder, mlir::Location loc)

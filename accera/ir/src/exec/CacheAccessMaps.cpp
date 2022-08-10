@@ -23,12 +23,12 @@ namespace executionPlan
     {
         std::vector<mlir::NamedAttribute> mappings;
 
-        mappings.emplace_back(std::make_pair(
-            builder.getIdentifier(CoefficientsName),
+        mappings.emplace_back(mlir::NamedAttribute(
+            builder.getStringAttr(CoefficientsName),
             builder.getI64ArrayAttr(coefficients.coefficients)));
 
-        mappings.emplace_back(std::make_pair(
-            builder.getIdentifier(OffsetName),
+        mappings.emplace_back(mlir::NamedAttribute(
+            builder.getStringAttr(OffsetName),
             builder.getI64IntegerAttr(coefficients.offset)));
 
         return mlir::DictionaryAttr::get(builder.getContext(),mappings);
@@ -55,33 +55,33 @@ namespace executionPlan
 
         if (relevantIndicesToActiveElementCache)
         {
-            mappings.emplace_back(std::make_pair(
-                builder.getIdentifier(RelevantIndicesToActiveElementCacheName),
+            mappings.emplace_back(mlir::NamedAttribute(
+                builder.getStringAttr(RelevantIndicesToActiveElementCacheName),
                 mlir::AffineMapAttr::get(relevantIndicesToActiveElementCache)));
         }
         if (relevantIndicesToInput)
         {
-            mappings.emplace_back(std::make_pair(
-                builder.getIdentifier(RelevantIndicesToInputName),
+            mappings.emplace_back(mlir::NamedAttribute(
+                builder.getStringAttr(RelevantIndicesToInputName),
                 mlir::AffineMapAttr::get(relevantIndicesToInput)));
         }
         if (inputIndicesToActiveBlockCache)
         {
-            mappings.emplace_back(std::make_pair(
-                builder.getIdentifier(InputIndicesToActiveBlockCacheName),
+            mappings.emplace_back(mlir::NamedAttribute(
+                builder.getStringAttr(InputIndicesToActiveBlockCacheName),
                 mlir::AffineMapAttr::get(inputIndicesToActiveBlockCache)));
         }
         if (!coefficients.coefficients.empty())
         {
-            mappings.emplace_back(std::make_pair(
-                builder.getIdentifier(MemoryAffineCoefficientsName),
+            mappings.emplace_back(mlir::NamedAttribute(
+                builder.getStringAttr(MemoryAffineCoefficientsName),
                 SerializeMemoryAffineCoefficients(builder, coefficients)));
         }
         auto dimOrderVec = dimOrder.ToVector();
         if (!dimOrderVec.empty())
         {
-            mappings.emplace_back(std::make_pair(
-                builder.getIdentifier(DimOrderName),
+            mappings.emplace_back(mlir::NamedAttribute(
+                builder.getStringAttr(DimOrderName),
                 builder.getI64ArrayAttr(dimOrderVec)));
         }
 

@@ -190,8 +190,8 @@ std::vector<mlir::Value> GetTargetFunctionArgs(PatternRewriter& rewriter, Locati
 
     // Replicate output args at the top of the function and copy the data
     std::string name = moduleOp.getName().str() + "_" + dbgFnOp.getName().str() + "_target_output_arg";
-
-    for (auto [blockArg, checkFunction] : llvm::zip(dbgFnOp.getArguments(), GetCheckFunctions(targetFnOp)))
+    auto dbgFnOpArgs = dbgFnOp.getArguments();
+    for (auto [blockArg, checkFunction] : llvm::zip(dbgFnOpArgs, GetCheckFunctions(targetFnOp)))
     {
         if (!checkFunction.empty()) // output arguments have non-empty check functions
         {
@@ -201,23 +201,46 @@ std::vector<mlir::Value> GetTargetFunctionArgs(PatternRewriter& rewriter, Locati
                 // Required by ConvertToLLVMPattern::isConvertibleAndHasIdentityMaps() in GlobalMemrefOpLowering
                 // First, try simplifying the layout as it is
                 memrefType = mlir::canonicalizeStridedLayout(memrefType);
-                if (!memrefType.getLayout().isIdentity())
+
+                auto count = memrefType.getNumDynamicDims(); 
+                if (count > 0)
                 {
-                    // The layout could not be simplified (e.g. SubArrays) - force an identity map
-                    // The logical access indices will still work but there is a potential performance tradeoff with
-                    // a change in the physical layout (acceptable for Debug mode)
-                    memrefType = mlir::MemRefType::Builder(memrefType).setLayout({});
+                    std::vector<mlir::BlockArgument> dbgFnOpArgsOfCount = dbgFnOpArgs.take_front(count).vec();
+                    std::vector<mlir::Value> sizes;
+                    std::transform(dbgFnOpArgsOfCount.begin(), dbgFnOpArgsOfCount.end(), std::back_inserter(sizes), [](mlir::BlockArgument d) { return (mlir::Value)(d); });
+    
+                    // TODO: need to check if this local scoped alloc is freed somewhere
+                    auto localScopeAlloc = rewriter.create<ir::value::AllocOp>(loc,
+                                        memrefType,
+                                        llvm::None,
+                                        llvm::None,
+                                        mlir::ValueRange{ sizes});
+
+                    (void)rewriter.create<ir::value::CopyOp>(loc, blockArg, localScopeAlloc);
+
+                    result.push_back(localScopeAlloc);
                 }
-                auto argCopy = ir::util::CreateGlobalBuffer(rewriter, dbgFnOp, memrefType, name);
+                else
+                {
+                    if (!memrefType.getLayout().isIdentity())
+                    {
+                        // The layout could not be simplified (e.g. SubArrays) - force an identity map
+                        // The logical access indices will still work but there is a potential performance tradeoff with
+                        // a change in the physical layout (acceptable for Debug mode)
+                        memrefType = mlir::MemRefType::Builder(memrefType).setLayout({});
+                    }
 
-                // Replace the global-scoped ReferenceGlobalOp with one within the function context
-                auto globalScopeGlobalRef = mlir::dyn_cast_or_null<ir::value::ReferenceGlobalOp>(argCopy.getDefiningOp());
-                auto localScopeGlobalRef = rewriter.create<ir::value::ReferenceGlobalOp>(loc, globalScopeGlobalRef.getGlobal());
+                    auto argCopy = ir::util::CreateGlobalBuffer(rewriter, dbgFnOp, memrefType, name);
 
-                (void)rewriter.create<ir::value::CopyOp>(loc, blockArg, localScopeGlobalRef);
+                    // Replace the global-scoped ReferenceGlobalOp with one within the function context
+                    auto globalScopeGlobalRef = mlir::dyn_cast_or_null<ir::value::ReferenceGlobalOp>(argCopy.getDefiningOp());
+                    auto localScopeGlobalRef = rewriter.create<ir::value::ReferenceGlobalOp>(loc, globalScopeGlobalRef.getGlobal());
 
-                result.push_back(localScopeGlobalRef);
-                rewriter.eraseOp(globalScopeGlobalRef);
+                    (void)rewriter.create<ir::value::CopyOp>(loc, blockArg, localScopeGlobalRef);
+
+                    result.push_back(localScopeGlobalRef);
+                    rewriter.eraseOp(globalScopeGlobalRef);
+                }
             }
             else
             {
@@ -310,7 +333,22 @@ LogicalResult EmitNestDebugFunction(ir::value::ValueFuncOp& targetFnOp, PatternR
                 {
                     if (auto utilityFnOp = FindValueFunctionOp(moduleOp, checkFunction))
                     {
-                        (void)rewriter.create<ir::value::LaunchFuncOp>(loc, utilityFnOp, mlir::ValueRange{ targetArg, debugArg });
+                        auto memRefType = targetArg.getType().cast<MemRefType>();
+                        if (memRefType.getNumDynamicDims() > 0)
+                        {
+                            std::vector<mlir::Value> operands = {targetArg, debugArg};
+                            auto utilityFnOpArgs = utilityFnOp.getArguments();
+                            int countOfArgsToBeCopied = utilityFnOpArgs.size() - operands.size();
+                            for (int i = countOfArgsToBeCopied - 1; i >= 0; i--)
+                            {
+                                operands.insert(operands.begin(), targetFnArgs[i]);
+                            }
+                            (void)rewriter.create<ir::value::LaunchFuncOp>(loc, utilityFnOp, mlir::ValueRange(operands));
+                        }
+                        else
+                        {
+                            (void)rewriter.create<ir::value::LaunchFuncOp>(loc, utilityFnOp, mlir::ValueRange{ targetArg, debugArg });
+                        }
                     }
 
                     // Set the output arguments of this function so that the caller gets the target result

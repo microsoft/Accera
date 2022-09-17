@@ -73,7 +73,7 @@ namespace value
         CacheImpl(ScheduleOp schedule, std::variant<Value, CacheImpl*> input, CacheIndexing cacheIndexMapping) :
             _scheduleOp(schedule),
             _cacheIndexMapping(cacheIndexMapping),
-            _cacheId(accera::ir::util::GetUniqueId())
+            _cacheId(accera::ir::util::GetUniqueId(_scheduleOp))
         {
             if (std::holds_alternative<Value>(input))
             {
@@ -153,6 +153,7 @@ namespace value
                            Value value,
                            const std::optional<Index>& outermostIncludedSplitIndex,
                            const std::optional<int64_t>& maxElements,
+                           CacheStrategy strategy,
                            CacheIndexing mapping,
                            CacheAllocation allocation,
                            MemorySpace dslMemorySpace,
@@ -194,6 +195,7 @@ namespace value
                                                                              false, // activeBlockCache
                                                                              false, // dimReorderCache
                                                                              false, // thrifty
+                                                                             strategy,
                                                                              false, // doubleBufferCache
                                                                              ir::value::MemorySpace::None, // doubleBufferMemorySpace
                                                                              VectorizationInfo{});
@@ -214,8 +216,10 @@ namespace value
                              const std::optional<Index>& triggerIndex,
                              const std::optional<int64_t>& maxElements,
                              const std::variant<MemoryAffineCoefficients, DimensionOrder>& cacheMapping,
+                             const std::optional<value::ValueType>& elementType,
                              bool thrifty,
                              bool doubleBufferCache,
+                             CacheStrategy strategy,
                              const std::optional<VectorizationInformation>& vecInfo,
                              CacheIndexing mapping,
                              CacheAllocation allocation,
@@ -230,7 +234,7 @@ namespace value
             auto memorySpace = *ir::value::symbolizeMemorySpace((uint64_t)dslMemorySpace);
             auto doubleBufferMemorySpace = *ir::value::symbolizeMemorySpace((uint64_t)dslDoubleBufferMemorySpace);
 
-            _cacheInfo = MakeManualCacheInfo(builder, _baseMlirValueInput, allocation, schedule, keySliceIndex, triggerIndex, maxElements, cacheMapping, memorySpace);
+            _cacheInfo = MakeManualCacheInfo(builder, _baseMlirValueInput, allocation, schedule, elementType, keySliceIndex, triggerIndex, maxElements, cacheMapping, memorySpace);
 
             VectorizationInfo vectorizationInfo;
             if (vecInfo.has_value())
@@ -272,6 +276,7 @@ namespace value
                                                                                                      _hierarchicalCacheLevel,
                                                                                                      _cacheInfo.dimReorderCache,
                                                                                                      thrifty,
+                                                                                                     strategy,
                                                                                                      doubleBufferCache,
                                                                                                      doubleBufferMemorySpace,
                                                                                                      vectorizationInfo);
@@ -290,6 +295,7 @@ namespace value
                                                                                  true, // activeBlockCache
                                                                                  _cacheInfo.dimReorderCache,
                                                                                  thrifty,
+                                                                                 strategy,
                                                                                  doubleBufferCache,
                                                                                  doubleBufferMemorySpace,
                                                                                  vectorizationInfo);
@@ -494,7 +500,8 @@ namespace value
             auto loc = builder.getUnknownLoc();
             [[maybe_unused]] auto cacheZero = builder.create<CacheZeroOp>(loc,
                                                                           cache,
-                                                                          false); // thrifty
+                                                                          false, // thrifty
+                                                                          TensorizationInfoAttr{});
         }
 
         void AddCacheCopy(mlir::OpBuilder& builder, mlir::Value input, CacheAccessContext cacheAccessContext, CopyDirection direction)
@@ -600,7 +607,7 @@ namespace value
                 _packedBuffer = EmbedPackedBuffer<uint64_t>(builder, constData, packedBufferName);
                 break;
             case ValueType::Float16:
-            [[fallthrough]];
+                [[fallthrough]];
             case ValueType::BFloat16:
                 _packedBuffer = EmbedPackedBuffer<short>(builder, constData, packedBufferName);
                 break;
@@ -777,6 +784,7 @@ namespace value
                  ViewAdapter value,
                  const std::optional<ScalarIndex>& keySliceIndex,
                  const std::optional<int64_t>& maxElements,
+                 CacheStrategy strategy,
                  CacheIndexing mapping,
                  CacheAllocation allocation,
                  MemorySpace memorySpace,
@@ -787,7 +795,7 @@ namespace value
         {
             keySlice = GetIndex(*keySliceIndex);
         }
-        _impl = std::make_unique<AutomaticCacheImpl>(schedule, value, keySlice, maxElements, mapping, allocation, memorySpace, execTarget);
+        _impl = std::make_unique<AutomaticCacheImpl>(schedule, value, keySlice, maxElements, strategy, mapping, allocation, memorySpace, execTarget);
     }
 
     // Manual caching version
@@ -797,7 +805,9 @@ namespace value
                  const std::optional<ScalarIndex>& triggerIndex,
                  const std::optional<int64_t>& maxElements,
                  const MemoryAffineCoefficients& memoryMap,
+                 const std::optional<value::ValueType>& elementType,
                  bool thrifty,
+                 CacheStrategy strategy,
                  bool doubleBufferCache,
                  const std::optional<VectorizationInformation>& vectorizationInfo,
                  CacheIndexing mapping,
@@ -824,8 +834,10 @@ namespace value
                                                            resolvedTriggerIndex,
                                                            maxElements,
                                                            memoryMap,
+                                                           elementType,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           strategy,
                                                            vectorizationInfo,
                                                            mapping,
                                                            allocation,
@@ -841,8 +853,10 @@ namespace value
                                                            resolvedTriggerIndex,
                                                            maxElements,
                                                            memoryMap,
+                                                           elementType,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           strategy,
                                                            vectorizationInfo,
                                                            mapping,
                                                            allocation,
@@ -858,7 +872,9 @@ namespace value
                  const std::optional<ScalarIndex>& triggerIndex,
                  const std::optional<int64_t>& maxElements,
                  const DimensionOrder& dimOrder,
+                 const std::optional<value::ValueType>& elementType,
                  bool thrifty,
+                 CacheStrategy strategy,
                  bool doubleBufferCache,
                  const std::optional<VectorizationInformation>& vectorizationInfo,
                  CacheIndexing mapping,
@@ -886,8 +902,10 @@ namespace value
                                                            resolvedTriggerIndex,
                                                            maxElements,
                                                            dimOrder,
+                                                           elementType,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           strategy,
                                                            vectorizationInfo,
                                                            mapping,
                                                            allocation,
@@ -903,8 +921,10 @@ namespace value
                                                            resolvedTriggerIndex,
                                                            maxElements,
                                                            dimOrder,
+                                                           elementType,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           strategy,
                                                            vectorizationInfo,
                                                            mapping,
                                                            allocation,

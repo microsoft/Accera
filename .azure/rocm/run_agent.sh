@@ -5,7 +5,7 @@
 ####################################################################################################
 set -x -e
 
-VARS=(AZP_URL AZP_TOKEN ACR_REPO ACR_USER ACR_SECRET)
+VARS=(AZP_URL AZP_TOKEN ACR_REPO)
 for var in "${VARS[@]}"; do
     if [[ (-z "${!var}") ]]; then
         echo "${var} is not set"
@@ -19,8 +19,6 @@ POOL=LinuxAMDGPUPool
 
 SCRIPT_DIR=$(dirname $(readlink -f "$0"))
 ACCERA_ROOT=${SCRIPT_DIR}/../../
-
-sudo docker login -u ${ACR_USER} -p ${ACR_SECRET} ${ACR_REPO}
 
 #
 # Debugging Example:

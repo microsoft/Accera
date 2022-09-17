@@ -6,6 +6,8 @@ import sys
 from azure.cosmos import CosmosClient, PartitionKey
 import config
 import argparse
+from datetime import datetime
+import progressbar
 
 HOST = config.settings['host']
 MASTER_KEY = config.settings['master_key']
@@ -57,6 +59,8 @@ def show_partition_top_result(container, partitionKey: str, print_kernel: bool =
     use_static_offsets = item['use_static_offsets']
     cache_layout_A = item['cache_layout_A']
     cache_layout_B = item['cache_layout_B']
+    cache_strategy_A = item['cache_strategy_A']
+    cache_strategy_B = item['cache_strategy_B']
     block_tile = item['block_tile']
     k_split = item['k_split']
     double_buffering = item['double_buffering']
@@ -66,7 +70,7 @@ def show_partition_top_result(container, partitionKey: str, print_kernel: bool =
     itemId = item['id']
     print(f'{throughput} TFlops')
     print(f'Item id: {itemId}')
-    print(f'(Optimizations: MMA shape: {mma_shape}, Static offsets: {use_static_offsets}, CacheA: {cache_layout_A}, CacheB: {cache_layout_B}, Block tile: {block_tile}, k-split: {k_split}, double buffering: {double_buffering}, vectorize: {vectorize}, fused passes: {num_fused_passes}, scheduling policy: {scheduling_policy})')
+    print(f'(Optimizations: MMA shape: {mma_shape}, Static offsets: {use_static_offsets}, CacheA: {cache_layout_A}, CacheB: {cache_layout_B}, StrategyA: {cache_strategy_A}, StrategyB: {cache_strategy_B}, Block tile: {block_tile}, k-split: {k_split}, double buffering: {double_buffering}, vectorize: {vectorize}, fused passes: {num_fused_passes}, scheduling policy: {scheduling_policy})')
     if print_kernel:
         kernel = item['kernelCode']
         print(f'\nKernel code:\n{kernel}')
@@ -82,15 +86,36 @@ def show_benchmark_summary(container_name: str):
     else:
         print("--------------Done--------------")
 
+def delete_past_entries(container_name: str, days_to_keep: int):
+    container = get_container(container_name, False)
+    currentUtcDateTime = list(container.query_items(query="SELECT GetCurrentDateTime() AS currentUtcDateTime"))[0]
+    lastDateToKeep = list(container.query_items(query=f"SELECT DateTimeAdd(\"dd\", -{days_to_keep}, \"{currentUtcDateTime['currentUtcDateTime']}\") AS lastDateToKeep"))[0]
+    lastDateToKeepStr = lastDateToKeep['lastDateToKeep']
+    numTotalItems = list(container.query_items(query=f"SELECT value COUNT(c.id) FROM c", enable_cross_partition_query=True))[0]
+    bar = progressbar.ProgressBar(maxval=numTotalItems, widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+    bar.start()
+    numItemsDeleted = 0
+    for i, item in enumerate(container.query_items(query='SELECT * FROM c', enable_cross_partition_query=True)):
+        bar.update(i)
+        if datetime.utcfromtimestamp(item['_ts']) < datetime.fromisoformat(lastDateToKeepStr[0:len(lastDateToKeepStr) - 2]):
+            numItemsDeleted += 1
+            container.delete_item(item, partition_key=item['partitionKey'])
+    else:
+        bar.finish()
+        print(f"Deleted {numItemsDeleted}/{numTotalItems} entries.")
+
 def main(args=[]):
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--container', help='The Cosmos DB container to get summary from', required=True)
     parser.add_argument('-p', '--partition', help='The parition key for which to print the top result', required=False)
+    parser.add_argument('-d', '--days_to_keep', type=int, help='No. of days of most recent data to keep', required=False)
 
     args = parser.parse_args(args)
 
     if args.partition:
         show_partition_top_result(get_container(args.container, False), args.partition, True)
+    elif args.days_to_keep:
+        delete_past_entries(args.container, args.days_to_keep)
     else:
         show_benchmark_summary(args.container)
 

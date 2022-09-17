@@ -129,6 +129,9 @@ namespace value
         void SetName(const std::string& name);
         std::string GetName() const;
 
+        /// <summary> Returns `true` if the layout of Array is variable-sized. </summary>
+        bool IsVariableSized() const;
+
         Array& operator+=(Scalar);
         Array& operator+=(Array);
 
@@ -167,14 +170,14 @@ namespace value
     /// <param name="layout"> The layout of the memory </param>
     /// <param name="type"> The type of the elements </param>
     /// <param name="name"> The name of the allocated array </param>
-    inline Array MakeArray(const utilities::MemoryLayout& layout, ValueType type, const std::string& name = "", AllocateFlags flags = AllocateFlags::None)
+    inline Array MakeArray(const utilities::MemoryLayout& layout, ValueType type, const std::string& name = "", AllocateFlags flags = AllocateFlags::None, const std::vector<ScalarDimension>& runtimeSizes = {})
     {
-        return Array(Allocate(type, layout, flags), name);
+        return Array(Allocate(type, layout, flags, runtimeSizes), name);
     }
 
-    inline Array MakeArray(const utilities::MemoryLayout& layout, ValueType type, AllocateFlags flags)
+    inline Array MakeArray(const utilities::MemoryLayout& layout, ValueType type, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes = {})
     {
-        return Array(Allocate(type, layout, flags));
+        return Array(Allocate(type, layout, flags, runtimeSizes));
     }
 
     /// <summary> Constructs an allocated instance with the specified dimensions </summary>
@@ -182,15 +185,15 @@ namespace value
     /// <param name="layout"> The layout of the memory </param>
     /// <param name="name"> The name of the allocated array </param>
     template <typename T>
-    Array MakeArray(const utilities::MemoryLayout& layout, const std::string& name = "", AllocateFlags flags = AllocateFlags::None)
+    Array MakeArray(const utilities::MemoryLayout& layout, const std::string& name = "", AllocateFlags flags = AllocateFlags::None, const std::vector<ScalarDimension>& runtimeSizes = {})
     {
-        return Array(Allocate<T>(layout, flags), name);
+        return Array(Allocate<T>(layout, flags, runtimeSizes), name);
     }
 
     template <typename T>
-    Array MakeArray(const utilities::MemoryLayout& layout, AllocateFlags flags)
+    Array MakeArray(const utilities::MemoryLayout& layout, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes = {})
     {
-        return Array(Allocate<T>(layout, flags));
+        return Array(Allocate<T>(layout, flags, runtimeSizes));
     }
 } // namespace value
 } // namespace accera

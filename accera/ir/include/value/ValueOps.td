@@ -155,7 +155,7 @@ def accv_GlobalOp : accv_Op<"global", [IsolatedFromAbove, Symbol]> {
 
 def accv_ReferenceGlobalOp : accv_Op<"ref_global"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name);
-  let results = (outs AnyStaticShapeMemRef);
+  let results = (outs AnyMemRef);
 
   let builders = [
     OpBuilder<(ins "MemRefType":$resType, "StringRef":$name),
@@ -202,22 +202,24 @@ def accv_AllocOp : accv_Op<"alloc"> {
 
   let arguments = (ins OptionalAttr<AnyAttr>:$data,
                    Confined<OptionalAttr<I64Attr>, [IntMinValue<0>]>:$alignment,
-                   OptionalAttr<MemoryAllocTypeAttr>:$allocType);
-  let results = (outs AnyStaticShapeMemRef);
+                   OptionalAttr<MemoryAllocTypeAttr>:$allocType,
+                   Variadic<AnyType>:$operands);
+  let results = (outs AnyMemRef);
 
   let builders = [
-    OpBuilder<(ins "MemRefType":$memrefType, CArg<"Optional<int64_t>", "llvm::None">:$alignment, CArg<"Optional<MemoryAllocType>", "llvm::None">:$allocType), [{
+    OpBuilder<(ins "MemRefType":$memrefType, CArg<"Optional<int64_t>", "llvm::None">:$alignment, CArg<"Optional<MemoryAllocType>", "llvm::None">:$allocType, CArg<"ValueRange", "{}">:$operands), [{
        $_state.types.push_back(memrefType);
        if (alignment)
          $_state.addAttribute(getAlignmentAttrName(), $_builder.getI64IntegerAttr(*alignment));
        if (allocType)
          $_state.addAttribute(getAllocTypeAttrName(), $_builder.getI64IntegerAttr(static_cast<int64_t>(*allocType)));
+       $_state.addOperands(operands);
      }]>,
-    OpBuilder<(ins "MemRefType":$memrefType, "MemoryAllocType":$allocType), [{
-        build($_builder, $_state, memrefType, llvm::None, allocType);
+    OpBuilder<(ins "MemRefType":$memrefType, "MemoryAllocType":$allocType, CArg<"ValueRange", "{}">:$operands), [{
+        build($_builder, $_state, memrefType, llvm::None, allocType, operands);
      }]>,
-    OpBuilder<(ins "Attribute":$data), [{
-        build($_builder, $_state, data.getType(), data, IntegerAttr{}, MemoryAllocTypeAttr{});
+    OpBuilder<(ins "Attribute":$data, CArg<"ValueRange", "{}">:$operands), [{
+        build($_builder, $_state, data.getType(), data, IntegerAttr{}, MemoryAllocTypeAttr{}, operands);
     }]>];
 
   let extraClassDeclaration = [{
@@ -669,6 +671,29 @@ def accv_MemRefCastOp : accv_Op<"memref_cast", [SameOperandsAndResultShape]> {
   }];
 }
 
+def accv_CastOp : accv_Op<"cast"> {
+  let summary = "casting operation";
+  let description = [{
+    The `accv.cast` operation converts an element to an element of another type.
+    The `internal` flag indicates that the cast op was generated internally in
+    the compiler and can be aggressively folded.
+  }];
+
+  let arguments = (ins AnyType:$source,
+                       UnitAttr:$internal); // Indicates this was generated internally in the compiler and can be aggressively folded
+  let results = (outs AnyType:$result);
+
+  let builders = [
+    OpBuilder<(ins "mlir::Value":$value, "mlir::Type":$destType, "bool":$internal), [{
+      build($_builder, $_state, destType, value, internal);
+    }]>,
+    OpBuilder<(ins "mlir::Value":$value, "mlir::Type":$destType), [{
+      build($_builder, $_state, destType, value, false);
+    }]>];
+  
+  let hasFolder = 1;
+}
+
 def accv_OffsetOp : accv_Op<"offset", [NoSideEffect]> {
   let summary = "memref offset operation";
   let description = [{
@@ -867,7 +892,9 @@ def accv_SplitDimOp : accv_Op<"split_dim", [NoSideEffect]> {
 }
 
 def accv_StoreOp : accv_Op<"store",
-    [AllElementTypesMatch<["memref", "value"]>]> {
+    [TypesMatchWith<"type of 'value' matches element type of 'memref'",
+                     "memref", "value",
+                     "$_self.cast<MemRefType>().getElementType()">]> {
   let summary = "store operation";
   let description = [{
     The `accv.store` op writes an element to a memref specified by an index list.
@@ -884,7 +911,7 @@ def accv_StoreOp : accv_Op<"store",
   }];
 
   let arguments = (ins
-                   acc_NumericType:$value,
+                   AnyType:$value,
                    AnyMemRef:$memref,
                    Variadic<acc_Indexlike>:$indices);
 
@@ -1172,10 +1199,103 @@ def accv_RangeOp :
   let assemblyFormat = "$min `:` $max `:` $step attr-dict `:` type(results)";
 }
 
+def accv_GPUBlockCacheOp : accv_Op<"gpu_block_cache",
+  [
+    MemoryEffects<[MemRead]>
+  ]>{
+
+  let summary = "Collaboratively copy memory at GPU thread block level.";
+
+  let description = [{
+    The `accv.gpu_block_cache` operation loads data by sharing the responsibility among all the threads of the block.
+
+    This operation takes a memref as its first operand: it is the source matrix
+    from which data is to be loaded. The op returns a memref.
+  }];
+
+  let arguments = (ins
+    acc_Indexlike:$blockThreadId,
+    Arg<MemRefOf<[UI8, I8, I32, F16, BF16, F32]>, "", [MemRead]>:$memref,
+    acc_Indexlike:$srcOffsetRows,
+    acc_Indexlike:$srcOffsetCols,
+    Arg<MemRefOf<[UI8, I8, I32, F16, BF16, F32]>, "", [MemWrite]>:$dest,
+    BoolAttr:$dstRowMajor,
+    ArrayAttr:$tileShape,
+    CacheStrategyAttr:$strategy,
+    I32Attr:$vecWidth,
+    I32Attr:$blockDimX,
+    I32Attr:$blockDimY,
+    I32Attr:$blockDimZ,
+    I32Attr:$workPerThread,
+    AffineMapAttr:$map
+  );
+
+  let results = (outs MemRefOf<[UI8, I8, I32, F16, BF16, F32]>:$result);
+
+  let builders = [
+    OpBuilder<(ins "Type":$resultType, "Value":$blockThreadId, "CacheStrategy":$strategy, "Value":$memref, "Value":$srcOffsetRows, "Value":$srcOffsetCols, "Value":$dest, "bool":$dstRowMajor, "ArrayAttr":$tileShape, "int32_t":$vecWidth, "const std::array<int64_t, 3>&":$blockDim, "int32_t":$workPerThread), [{
+        auto memrefType = memref.getType().cast<MemRefType>();
+        int64_t rank = memrefType.getRank();
+        // Create identity map for memrefs with at least one dimension or () -> () for zero-dimensional memrefs.
+        auto map = rank ? $_builder.getMultiDimIdentityMap(rank) : $_builder.getEmptyAffineMap();
+        $_state.addOperands(blockThreadId);
+        $_state.addOperands(memref);
+        $_state.addOperands(srcOffsetRows);
+        $_state.addOperands(srcOffsetCols);
+        $_state.addOperands(dest);
+        $_state.addAttribute("strategy", CacheStrategyAttr::get($_builder.getContext(), strategy));
+        $_state.addAttribute("tileShape", tileShape);
+        $_state.addAttribute("dstRowMajor", $_builder.getBoolAttr(dstRowMajor));
+        $_state.addAttribute("vecWidth", $_builder.getI32IntegerAttr(vecWidth));
+        $_state.addAttribute("blockDimX", $_builder.getI32IntegerAttr(blockDim[0]));
+        $_state.addAttribute("blockDimY", $_builder.getI32IntegerAttr(blockDim[1]));
+        $_state.addAttribute("blockDimZ", $_builder.getI32IntegerAttr(blockDim[2]));
+        $_state.addAttribute("workPerThread", $_builder.getI32IntegerAttr(workPerThread));
+        $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
+        $_state.addTypes(resultType);
+    }]>
+  ];
+
+  code extraClassDeclaration = [{
+    /// Returns the operand index of the memref.
+    unsigned getMemRefOperandIndex() { return 0; }
+
+    /// Returns the affine map used to index the memref for this operation.
+    AffineMapAttr getAffineMapAttr() {
+      return (*this)->getAttr(getMapAttrName()).cast<AffineMapAttr>();
+    }
+
+    static StringRef getMapAttrName() { return "map"; }
+  }];
+
+  let assemblyFormat = [{
+    $blockThreadId `,` $memref `,` $srcOffsetRows `,` $srcOffsetCols `,` $dest attr-dict `:` type($blockThreadId) `,` type($memref) `,` type($srcOffsetRows) `,` type($srcOffsetCols) `,` type($dest) `->` type($result)
+  }];
+  let verifier = [{ return ::verify(*this); }];
+}
+
 // matrix-fuse-multiply-add
 
-def accv_MMAComputeSyncOp: accv_Op<"wmma_compute_sync", [NoSideEffect, AllTypesMatch<["opC", "result"]>]> {
-  let summary = "MFMA Compute";
+def accv_MMAAllocSyncOp : accv_Op<"wmma_alloc_sync">{
+
+  let summary = "Allocates an MMA matrix";
+
+  let description = [{
+    The `accv.wmma_alloc_sync` allocates a MMA matrix that can be subsequently
+    used with other MMA operations.
+  }];
+
+  let arguments = (ins
+    I32Attr:$mmaShapeType,
+    I8Attr:$operandType,
+    OptionalAttr<BoolAttr>:$rowMajor
+  );
+
+  let results = (outs MemRefRankOf<[UI8, I8, I32, F16, BF16, F32], [2]>:$result);
+}
+
+def accv_MMAComputeSyncOp: accv_Op<"wmma_compute_sync", [NoSideEffect, MemoryEffects<[MemWrite]>]> {
+  let summary = "MMA Compute";
   let description = [{
     The `accv.wmma_compute_sync` op is an abstraction of TensorCore ops (currently GPU centric).
     cbsz: Defines the number of blocks that can do a broadcast within a group. Legal values = 0-4. The block ID of this group comes from ABID.
@@ -1193,10 +1313,8 @@ def accv_MMAComputeSyncOp: accv_Op<"wmma_compute_sync", [NoSideEffect, AllTypesM
                   I32Attr:$abid,
                   I32Attr:$blgp);
 
-  let results = (outs MemRefRankOf<[I32, F16, F32], [2]>:$result);
-
   let assemblyFormat = [{
-    $opA `,` $opB`,` $opC `,` $cbsz `,` $abid `,` $blgp `,` attr-dict `:` type($opA) `,` type($opB) `,` type($opC) `->` type($result)
+    $opA `,` $opB`,` $opC `,` $cbsz `,` $abid `,` $blgp `,` attr-dict `:` type($opA) `,` type($opB) `,` type($opC)
   }];
 
   let verifier = [{ return ::verify(*this); }];
@@ -1207,28 +1325,27 @@ def accv_MMAFillSyncOp : accv_Op<"wmma_fill_sync",
   [
     NoSideEffect,
     TypesMatchWith<"value type matches element type of mfma_matrix",
-                    "result", "value",
+                    "dest", "value",
                     "$_self.cast<MemRefType>().getElementType()">
   ]>{
 
-  let summary = "creates a constant MFMA matrix";
+  let summary = "creates a constant MMA matrix";
 
   let description = [{
-    The `accv.wmma_fill_sync` creates a constant MFMA matrix that can be subsequently
+    The `accv.wmma_fill_sync` creates a constant MMA matrix that can be subsequently
     used within an accv.wmma_compute_sync operation.
 
     This operation takes a constant as its operand. The op returns a memref.
   }];
 
   let arguments = (ins
+    Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "", [MemWrite]>:$dest,
     AnyTypeOf<[I8, I32, F16, F32]>:$value,
     I32Attr:$mmaShapeType
   );
 
-  let results = (outs MemRefRankOf<[I8, I32, F16, F32], [1]>:$result);
-
   let assemblyFormat = [{
-    $value `,` attr-dict `:` type($value) `->` type($result)
+    $dest `,` $value `,` attr-dict `:` type($dest) `,` type($value)
   }]; 
   let verifier = [{ return ::verify(*this); }];
 }
@@ -1253,6 +1370,7 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
 
   let arguments = (ins
     Arg<MemRefRankOf<[UI8, I8, I32, F16, BF16, F32], [2]>, "", [MemRead]>:$memref,
+    Arg<MemRefRankOf<[UI8, I8, I32, F16, BF16, F32], [2]>, "", [MemWrite]>:$dest,
     UI32Attr:$mmaShapeType,
     I8Attr:$operandType,
     BoolAttr:$rowMajor,
@@ -1260,22 +1378,20 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
     AffineMapAttr:$map
   );
 
-  let results = (outs MemRefRankOf<[UI8, I8, I32, F16, BF16, F32], [2]>:$result);
-
   let builders = [
-    OpBuilder<(ins "Type":$resultType, "Value":$memref, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "bool":$rowMajor, "ValueRange":$indices), [{
+    OpBuilder<(ins "Value":$memref, "Value":$dest, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "bool":$rowMajor, "ValueRange":$indices), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> () for zero-dimensional memrefs.
         auto map = rank ? $_builder.getMultiDimIdentityMap(rank) : $_builder.getEmptyAffineMap();
         assert(map.getNumInputs() == indices.size() && "inconsistent index info");
         $_state.addOperands(memref);
+        $_state.addOperands(dest);
         $_state.addOperands(indices);
         $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
         $_state.addAttribute("operandType", $_builder.getI8IntegerAttr((int8_t)operandType));
         $_state.addAttribute("rowMajor", $_builder.getBoolAttr(rowMajor));
         $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
-        $_state.addTypes(resultType);
     }]>
   ];
 
@@ -1289,10 +1405,12 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
     }
 
     static StringRef getMapAttrName() { return "map"; }
+
+    Value getValue() { return dest(); }
   }];
 
   let assemblyFormat = [{
-    $memref `[` $indices `]` attr-dict `:` type($memref) `[` type($indices) `]` `->` type($result)
+    $memref `,` $dest `[` $indices `]` attr-dict `:` type($memref) `,` type($dest) `[` type($indices) `]`
   }]; 
   let verifier = [{ return ::verify(*this); }];
 }
@@ -1313,7 +1431,7 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
   }];
 
   let arguments = (ins 
-        Arg<MemRefRankOf<[I32, F16, F32], [2]>>:$src,
+        Arg<MemRefRankOf<[I32, F16, F32], [2]>, "",[MemRead]>:$src,
         Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "",[MemWrite]>:$memref,
         UI32Attr:$mmaShapeType,
         Variadic<acc_Indexlike>:$indices,

@@ -27,6 +27,7 @@ else:
 
 from accera import ScalarType, Array, Function, Nest, Target, Package, algorithms
 from accera.test import verifiers
+from accera.test.test_utils import expectedFailure, FailedReason
 
 TEST_MODE = Package.Mode.DEBUG if DEV_MODE else Package.Mode.RELEASE
 TEST_FORMAT = Package.Format.MLIR_DYNAMIC if DEV_MODE else Package.Format.HAT_DYNAMIC
@@ -51,29 +52,6 @@ os.environ["OMP_DISPLAY_AFFINITY"] = "TRUE"
 
 
 # TODO: Remove all @expectedFailure decorators as implementation converges with spec
-class FailedReason(Enum):
-    NOT_IN_CORE = "Not yet implemented (core)"
-    NOT_IN_PY = "Not yet implemented (python)"
-    UNKNOWN = "Unknown failure"
-    BUG = "Bug"
-
-
-def expectedFailure(reason: FailedReason, msg: str, condition: bool = True) -> Callable:
-    "Extends the unittest.expectedFailure decorator to print failure details and takes an optional condition"
-
-    def _decorator(func):
-        @unittest.expectedFailure
-        def _wrapper(x):
-            print(f"\n{reason.value}: {msg}")
-            try:
-                return func(x)
-            except Exception as e:
-                print(f"\t{e}\n")
-                raise (e)
-
-        return _wrapper if condition else func
-
-    return _decorator
 
 
 class DSLTest_01Arrays(unittest.TestCase):
@@ -571,6 +549,32 @@ class DSLTest_01Arrays(unittest.TestCase):
                 output_dir=TEST_PACKAGE_DIR,
             )
 
+    def test_runtimesizes(self) -> None:
+        from accera import Dimension
+        M = Dimension()
+        N = Dimension()
+        K = Dimension()
+
+        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
+
+        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
+
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+
+        nest = Nest((M, N, K))
+
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        package = Package()
+
+        package.add(nest, args=(M, N, K, A, B, C), base_name="runtimesizes")
+        package.build(
+            "test_runtimesizes", format=Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR
+        )  # TODO: format=TEST_FORMAT
 
 class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
     def _create_nest(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
@@ -1449,7 +1453,9 @@ class DSLTest_03Schedules(unittest.TestCase):
 
 
 class DSLTest_04Fusing(unittest.TestCase):
-    def _verify_schedule(self, schedule, args: Tuple[Array], package_name, correctness_check_values) -> None:
+    def _verify_schedule(
+        self, schedule, args: Tuple[Array], package_name, correctness_check_values, quiet=True
+    ) -> None:
         # create a HAT package and add the function to it
         package = Package()
         function = package.add(schedule, args, base_name="fusing_test")
@@ -1457,7 +1463,7 @@ class DSLTest_04Fusing(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir)
+            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir, _quiet=quiet)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -1894,7 +1900,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         }
         self._verify_schedule(fused, (A, B), "test_concat_fusing_1", correctness_check_values)
 
-    @expectedFailure(FailedReason.BUG, "Concat fusing is broken")
     def test_concat_fusing_2(self) -> None:
         from accera import fuse, Nest
 
@@ -1998,7 +2003,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         }
         self._verify_schedule(fused, (A, B), "test_concat_fusing_3", correctness_check_values)
 
-    @expectedFailure(FailedReason.BUG, "Concat fusing is broken")
     def test_concat_fusing_4(self) -> None:
         from accera import fuse, Nest
 
@@ -2059,7 +2063,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         }
         self._verify_schedule(fused, (A, B, C), "test_concat_fusing_4", correctness_check_values)
 
-    @unittest.skip("BUG: Compilation takes too long")
     def test_multi_concat_fusing_1(self) -> None:
         from accera import fuse, Nest
 
@@ -2126,6 +2129,96 @@ class DSLTest_04Fusing(unittest.TestCase):
             ],
         }
         self._verify_schedule(fused3, (A, B, C, D), "test_multi_concat_fusing_1", correctness_check_values)
+
+    def test_multi_partial_fusion_1(self) -> None:
+        from accera import fuse, Nest
+
+        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 11))
+        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 7))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 5))
+
+        n1 = Nest(A.shape)
+        n2 = Nest(B.shape)
+        n3 = Nest(C.shape)
+
+        n1_i, n1_j = n1.get_indices()
+
+        @n1.iteration_logic
+        def _():
+            A[n1_i, n1_j] += A[n1_i, n1_j]
+
+        n2_i, n2_j = n2.get_indices()
+
+        @n2.iteration_logic
+        def _():
+            B[n2_i, n2_j] *= B[n2_i, n2_j]
+
+        n3_i, n3_j = n3.get_indices()
+
+        @n3.iteration_logic
+        def _():
+            C[n3_i, n3_j] /= C[n3_i, n3_j]
+
+        fused = fuse([n.create_schedule() for n in [n1, n2, n3]], partial=1)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+
+        A_ref = A_test + A_test
+        B_ref = B_test * B_test
+        C_ref = C_test / C_test
+
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_ref, B_ref, C_ref],
+        }
+        self._verify_schedule(fused, (A, B, C), "test_multi_partial_fusion_1", correctness_check_values)
+
+    def test_multi_partial_fusion_2(self) -> None:
+        from accera import fuse, Nest
+
+        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 11, 4))
+        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 7))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 5, 6, 8))
+
+        n1 = Nest(A.shape)
+        n2 = Nest(B.shape)
+        n3 = Nest(C.shape)
+
+        n1_i, n1_j, n1_k = n1.get_indices()
+
+        @n1.iteration_logic
+        def _():
+            A[n1_i, n1_j, n1_k] += A[n1_i, n1_j, n1_k]
+
+        n2_i, n2_j = n2.get_indices()
+
+        @n2.iteration_logic
+        def _():
+            B[n2_i, n2_j] *= B[n2_i, n2_j]
+
+        n3_i, n3_j, n3_k, n3_k2 = n3.get_indices()
+
+        @n3.iteration_logic
+        def _():
+            C[n3_i, n3_j, n3_k, n3_k2] /= C[n3_i, n3_j, n3_k, n3_k2]
+
+        fused = fuse([n.create_schedule() for n in [n1, n2, n3]], partial=1)
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+
+        A_ref = A_test + A_test
+        B_ref = B_test * B_test
+        C_ref = C_test / C_test
+
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_ref, B_ref, C_ref],
+        }
+        self._verify_schedule(fused, (A, B, C), "test_multi_partial_fusion_2", correctness_check_values)
 
 
 class DSLTest_05Targets(unittest.TestCase):
@@ -3984,36 +4077,6 @@ class DSLTest_09Parameters(unittest.TestCase):
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=TEST_FORMAT, mode=Package.Mode.RELEASE, output_dir=TEST_PACKAGE_DIR)
 
-
-    @expectedFailure(FailedReason.NOT_IN_CORE, "IR layer doesn't fully support runtime size yet") 
-    def test_runtimesizes(self) -> None:
-        from accera import Dimension 
-        M = Dimension()
-        N = Dimension() 
-        K = Dimension() 
-
-        A = Array(shape=(M, K), element_type=ScalarType.float32,  
-            role=Array.Role.INPUT) 
-
-        B = Array(shape=(K, N), element_type=ScalarType.float32,  
-            role=Array.Role.INPUT) 
-
-        C = Array(shape=(M, N),
-                    element_type=ScalarType.float32, 
-                    role=Array.Role.INPUT_OUTPUT) 
-
-        nest = Nest((M, N, K)) 
-
-        i, j, k = nest.get_indices() 
-
-        @nest.iteration_logic 
-        def _(): 
-            C[i, j] += A[i, k] * B[k, j] 
-
-        package = Package() 
-
-        package.add(nest, args=(M, N, K, A, B, C), base_name="runtimesizes") 
-        package.build("test_runtimesizes", format=Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
 
 class DSLTest_10Packages(unittest.TestCase):
     def _create_plan(self, target=Target.HOST) -> Function:

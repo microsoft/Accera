@@ -121,7 +121,7 @@ namespace value
     private:
         void SetLayoutImpl(Value&, const MemoryLayout&) override;
 
-        Value AllocateImpl(ValueType value, MemoryLayout layout, size_t alignment, AllocateFlags flags = AllocateFlags::None) override;
+        Value AllocateImpl(ValueType value, MemoryLayout layout, size_t alignment, AllocateFlags flags = AllocateFlags::None, const std::vector<ScalarDimension>& runtimeSizes = {}) override;
 
         std::optional<Value> GetGlobalValue(GlobalAllocationScope scope, std::string name) override;
 
@@ -150,6 +150,8 @@ namespace value
 
         void CopyDataImpl(const Value& source, Value& destination) override;
 
+        void StoreImpl(const Value& source, Value& destination, const std::vector<int64_t>& indices) override;
+
         Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& shape, const std::vector<int64_t>& strides) override;
 
         Value SliceImpl(Value source, std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets) override;
@@ -173,6 +175,8 @@ namespace value
         Value MMAComputeSyncImpl(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, uint32_t cbsz, uint32_t abid, uint32_t blgp) override;
 
         Scalar CastImpl(Scalar value, ValueType type) override;
+
+        bool IsImplicitlyCastableImpl(ValueType source, ValueType target) const override;
 
         Scalar BitcastImpl(Scalar value, ValueType type) override;
 
@@ -238,6 +242,8 @@ namespace value
         std::unordered_map<FunctionDeclaration, DefinedFunction> _definedFunctions;
     };
 
+    bool HasMLIRTypeConversion(ValueType valueType);
+    mlir::Type ValueTypeToMLIRType(mlir::OpBuilder& builder, ValueType valueType);
     ValueType MLIRTypeToValueType(mlir::Type type);
     mlir::Value Unwrap(ViewAdapter);
     mlir::Value UnwrapScalar(Scalar);

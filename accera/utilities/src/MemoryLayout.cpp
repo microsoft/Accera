@@ -168,6 +168,14 @@ namespace utilities
         MemoryLayout(size, size, MemoryShape(std::vector<int64_t>(size.NumDimensions(), 0)))
     {}
 
+    MemoryLayout::MemoryLayout(const MemoryShape& size, MemorySpace space) :
+        MemoryLayout(size)
+    {
+        // TODO: support MemorySpace in other ctors as needed (e.g. when they represent output memrefs to be allocated)
+        // BUGBUG: why does SetMemorySpace() return a copy
+        _memorySpace = space;
+    }
+
     MemoryLayout::MemoryLayout(const MemoryShape& size, const MemoryShape& extent, const MemoryShape& offset) :
         MemoryLayout(size, extent, offset, ContiguousCumulativeIncrement(extent))
     {}

@@ -32,10 +32,12 @@ namespace cpp_printer
 
         std::string getName() override { return "Accera"; }
 
+        LogicalResult printOp(accera::ir::value::MMAAllocSyncOp op);
         LogicalResult printOp(accera::ir::value::MMAFillSyncOp op);
         LogicalResult printOp(accera::ir::value::MMALoadSyncOp op);
         LogicalResult printOp(accera::ir::value::MMAComputeSyncOp op);
         LogicalResult printOp(accera::ir::value::MMAStoreSyncOp op);
+        LogicalResult printOp(accera::ir::value::GPUBlockCacheOp op);
         LogicalResult printOp(accera::ir::value::CallOp op);
         LogicalResult printOp(accera::ir::value::ReturnOp op);
 
@@ -55,6 +57,9 @@ namespace cpp_printer
         llvm::SmallVector<StringRef, 0> MMAKernelNames;
 
         llvm::SmallVector<FuncOp, 1> CudaKernels;
+
+    private:
+        LogicalResult printVectorType(mlir::Type elementType, const uint32_t stride) const;
     };
 
 } // namespace cpp_printer

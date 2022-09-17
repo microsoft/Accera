@@ -76,7 +76,6 @@ public:
 
     int64_t getNumBlocks() const;
     std::vector<int64_t> getOperandShape(MMAOperandType operandType) const;
-    std::pair<int, int> getTileShape(int warpSizeX, int warpSizeY) const;
 
     std::vector<uint8_t> getOffsetMap() const;
     std::array<int64_t, 2> getOffsetMapSize() const;

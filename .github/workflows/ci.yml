@@ -22,7 +22,7 @@ jobs:
 
     runs-on: ubuntu-latest
     container:
-        image: acceracontainers.azurecr.io/accera-llvm-ubuntu:main-llvmorg-14.0.6
+        image: acceracontainers.azurecr.io/accera-llvm-ubuntu:llvmorg-14.0.6-1
     steps:
     - uses: actions/checkout@v2
       with:

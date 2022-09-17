@@ -71,10 +71,9 @@ using namespace mlir;
 
 namespace
 {
-mlir::Value Alloca(mlir::MemRefType bufferType)
+mlir::Value Alloca(mlir::OpBuilder& builder, mlir::MemRefType bufferType)
 {
     // TODO : return to using std_alloc when aligned_alloc/_aligned_malloc issue in MLIR is fixed on Windows
-    mlir::OpBuilder builder(bufferType.getContext());
     return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), bufferType);
 }
 
@@ -94,7 +93,7 @@ public:
     template <typename... Indices>
     void Set(mlir::OpBuilder& builder, mlir::Value value, Indices... indices)
     {
-        builder.create<mlir::memref::StoreOp>(builder.getUnknownLoc(), _array, value, mlir::ValueRange{ indices... });
+        builder.create<mlir::memref::StoreOp>(builder.getUnknownLoc(), value, _array, mlir::ValueRange{ indices... });
     }
 
 private:
@@ -118,13 +117,13 @@ std::pair<mlir::ArrayAttr, mlir::ArrayAttr> GetEvenOddShuffleMasks(mlir::OpBuild
 } // namespace
 
 //
-// Small int tests
+// 8-bit int tests
 //
 
 // Minimal example that generates vpmaddubsw instructions
 // (Note that when the input was only a single (a, b) pair, LLVM didn't generate a vpmaddubsw for some reason)
 //
-// sat((evens(a) * evens(a)) + (odds(a) * odds(b)))
+// sat((evens(a) * evens(b)) + (odds(a) * odds(b)))
 //
 // unsigned A / signed B
 // size: A: 16x2, B: 16x2, output: 16 (not broadcasted)
@@ -133,6 +132,7 @@ std::pair<mlir::ArrayAttr, mlir::ArrayAttr> GetEvenOddShuffleMasks(mlir::OpBuild
 // result = dot2
 //
 // Int8ub_16x2_vec_shuf_dot2
+// Generates vpmaddubsw
 TEST_CASE("Int8Test1")
 {
     int64_t vecSize = 16;
@@ -211,11 +211,6 @@ TEST_CASE("Int8Test1")
         REQUIRE(VerifyParse(context, true, "Int8Test1.mlir"));
     }
 
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test1_std.mlir"));
-    }
-
     SECTION("LLVM")
     {
         REQUIRE(VerifyTranslateToLLVMIR(context, false, true, "Int8Test1_noopt.ll"));
@@ -224,7 +219,7 @@ TEST_CASE("Int8Test1")
 }
 
 // Version of the above that broadcasts a pair of values from 'a'
-// sat((evens(a) * evens(a)) + (odds(a) * odds(b)))
+// sat((evens(a) * evens(b)) + (odds(a) * odds(b)))
 //
 // unsigned A / signed B
 // size: A: 1x2, B: 16x2, output: 16 (broadcast A)
@@ -233,7 +228,7 @@ TEST_CASE("Int8Test1")
 // result = dot2
 //
 // Int8ub_16x2bcast_vec_shuf_dot2
-// Generates vpmaddubsw
+// Generates vpmaddubsw (now vpmaddwd)
 TEST_CASE("Int8Test1b")
 {
     int64_t vecSize = 16;
@@ -317,11 +312,6 @@ TEST_CASE("Int8Test1b")
         REQUIRE(VerifyParse(context, true, "Int8Test1b.mlir"));
     }
 
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test1b_std.mlir"));
-    }
-
     SECTION("LLVM")
     {
         REQUIRE(VerifyLowerToLLVM(context, true, "Int8Test1b_llvm.mlir"));
@@ -336,7 +326,7 @@ TEST_CASE("Int8Test1b")
 
 // Example that generates vpmaddubsw instructions without explicit shuffle operation
 //
-// sat((evens(a) * evens(a)) + (odds(a) * odds(b)))
+// sat((evens(a) * evens(b)) + (odds(a) * odds(b)))
 //
 // unsigned A / signed B
 // size: A: 16x2, B: 16x2, output: 16 (not broadcasted)
@@ -345,11 +335,12 @@ TEST_CASE("Int8Test1b")
 // result = dot2
 //
 // Int8ub_16x2_vec_slice_dot2
-TEST_CASE("Int8Test1C")
+// Generates vpmaddubsw (now vpmaddwd)
+TEST_CASE("Int8Test1c")
 {
     int64_t vecSize = 16;
     TestContext context(
-        "Int8Test1C",
+        "Int8Test1c",
         [&]() -> std::vector<mlir::Type> {
                             auto& builder = GetTestBuilder();
 
@@ -417,24 +408,19 @@ TEST_CASE("Int8Test1C")
 
     SECTION("Parsing")
     {
-        REQUIRE(VerifyParse(context, true, "Int8Test1C.mlir"));
-    }
-
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test1C_std.mlir"));
+        REQUIRE(VerifyParse(context, true, "Int8Test1c.mlir"));
     }
 
     SECTION("LLVM")
     {
-        REQUIRE(VerifyTranslateToLLVMIR(context, false, true, "Int8Test1C_noopt.ll"));
-        REQUIRE(VerifyTranslateToLLVMIR(context, true, true, "Int8Test1C.ll"));
+        REQUIRE(VerifyTranslateToLLVMIR(context, false, true, "Int8Test1c_noopt.ll"));
+        REQUIRE(VerifyTranslateToLLVMIR(context, true, true, "Int8Test1c.ll"));
     }
 }
 
 // Test that tries to do a 4-elem dot product x 8 columns
 //
-// y = sat((evens(a) * evens(a)) + (odds(a) * odds(b)))
+// y = sat((evens(a) * evens(b)) + (odds(a) * odds(b)))
 // z = evens(y) + odds(y)
 //
 // unsigned A / signed B
@@ -462,6 +448,7 @@ TEST_CASE("Int8Test1C")
 // vzeroupper
 // retq
 //
+// Generates vpmaddubsw
 TEST_CASE("Int8Test2")
 {
     int64_t vecN = 8;
@@ -555,11 +542,6 @@ TEST_CASE("Int8Test2")
         REQUIRE(VerifyParse(context, true, "Int8Test2.mlir"));
     }
 
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test2_std.mlir"));
-    }
-
     SECTION("LLVM")
     {
         REQUIRE(VerifyTranslateToLLVMIR(context, false, true, "Int8Test2_noopt.ll"));
@@ -569,7 +551,7 @@ TEST_CASE("Int8Test2")
 
 // Test that tries to do a 4-elem dot product x 8 columns
 //
-// y = sat((evens(a) * evens(a)) + (odds(a) * odds(b)))
+// y = sat((evens(a) * evens(b)) + (odds(a) * odds(b)))
 // z = evens(y) + odds(y)
 //
 // unsigned A / signed B
@@ -580,7 +562,7 @@ TEST_CASE("Int8Test2")
 //
 // Int8ub_8x4_vec_shuf_dot4
 //
-// Doesn't produce vpmaddubsw / vpmaddwd sequence
+// Doesn't generate vpmaddubsw / vpmaddwd sequence --- just vpmaddwd
 TEST_CASE("Int8Test2b")
 {
     int64_t vecN = 8;
@@ -679,11 +661,6 @@ TEST_CASE("Int8Test2b")
         REQUIRE(VerifyParse(context, true, "Int8Test2b.mlir"));
     }
 
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test2b_std.mlir"));
-    }
-
     SECTION("LLVM")
     {
         REQUIRE(VerifyTranslateToLLVMIR(context, false, true, "Int8Test2b_noopt.ll"));
@@ -693,7 +670,7 @@ TEST_CASE("Int8Test2b")
 
 // Computes many dot products in a loop, accumulating into output buffer
 //
-// sat((evens(a) * evens(a)) + (odds(a) * odds(b)))
+// sat((evens(a) * evens(b)) + (odds(a) * odds(b)))
 //
 // unsigned A / signed B
 // size: A: N * 16x2, B: N * 16x2, output: N*16 (not broadcasted)
@@ -739,14 +716,16 @@ TEST_CASE("Int8Test3")
             auto bbType = bType;
             auto ccType = cType;
 
-            auto AA = IndexedValue{ Alloca(aaType) };
-            auto BB = IndexedValue{ Alloca(bbType) };
-            auto CC = IndexedValue{ Alloca(ccType) };
+            auto AA = IndexedValue{ Alloca(builder, aaType) };
+            auto BB = IndexedValue{ Alloca(builder, bbType) };
+            auto CC = IndexedValue{ Alloca(builder, ccType) };
 
             auto i8Type = builder.getIntegerType(8);
             auto i32Type = builder.getIntegerType(32);
             auto halfVecType = mlir::VectorType::get({ vecSize }, i8Type);
             auto bigVecType = mlir::VectorType::get({ vecSize }, i32Type);
+
+            auto zero = builder.create<arith::ConstantIndexOp>(loc, 0);
 
             // Init A, B, and C
             {
@@ -755,9 +734,9 @@ TEST_CASE("Int8Test3")
                 {
                     auto builder = util::MakeBodyBuilder(iLoop);
 
-                    AA.Set(builder, A.Get(builder, i));
-                    BB.Set(builder, A.Get(builder, i));
-                    CC.Set(builder, A.Get(builder, i));
+                    AA.Set(builder, A.Get(builder, i), zero);
+                    BB.Set(builder, B.Get(builder, i), zero);
+                    CC.Set(builder, C.Get(builder, i), zero);
                 }
             }
 
@@ -817,14 +796,14 @@ TEST_CASE("Int8Test3")
             }
         });
 
-    SECTION("Parsing")
+    SECTION("Generate")
     {
-        REQUIRE(VerifyParse(context, true, "Int8Test3.mlir"));
+        REQUIRE(VerifyGenerate(context, true, "Int8Test3.mlir"));
     }
 
-    SECTION("Std")
+    SECTION("Parsing")
     {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test3_std.mlir"));
+        REQUIRE(VerifyParse(context, true, "Int8Test3_parse.mlir"));
     }
 
     SECTION("LLVM")
@@ -834,8 +813,6 @@ TEST_CASE("Int8Test3")
     }
 }
 
-// Doesn't generate vpmaddubsw -- never calls detectPMADDUBSW
-//
 // unsigned A / signed B
 // size: A: N * 8x2, B: N * 8x2, output: N * 8 (not broadcasted)
 // vector datatypes, vecsize = 8
@@ -843,6 +820,8 @@ TEST_CASE("Int8Test3")
 // result = dot2
 // intermediate datatype = i16
 // Int8ub_16x2_vec_shuf_dot2_accum16
+//
+// Doesn't generate vpmaddubsw -- never calls detectPMADDUBSW
 TEST_CASE("Int8Test3b")
 {
     int64_t N = 212;
@@ -878,9 +857,9 @@ TEST_CASE("Int8Test3b")
             auto bbType = bType;
             auto ccType = cType;
 
-            auto AA = IndexedValue{ Alloca(aaType) };
-            auto BB = IndexedValue{ Alloca(bbType) };
-            auto CC = IndexedValue{ Alloca(ccType) };
+            auto AA = IndexedValue{ Alloca(builder, aaType) };
+            auto BB = IndexedValue{ Alloca(builder, bbType) };
+            auto CC = IndexedValue{ Alloca(builder, ccType) };
 
             auto i8Type = builder.getIntegerType(8);
             auto i16Type = builder.getIntegerType(16);
@@ -968,11 +947,6 @@ TEST_CASE("Int8Test3b")
         REQUIRE(VerifyParse(context, true, "Int8Test3b.mlir"));
     }
 
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test3b_std.mlir"));
-    }
-
     SECTION("LLVM")
     {
         REQUIRE(VerifyTranslateToLLVMIR(context, true, true, "Int8Test3b.ll"));
@@ -980,6 +954,7 @@ TEST_CASE("Int8Test3b")
 }
 
 // Doesn't generate vpmaddubsw instruction -- "Bad result type"
+// (but does generate vpmaddwd)
 TEST_CASE("Int8Test3c")
 {
     // sizes in terms of vector widths
@@ -1024,9 +999,9 @@ TEST_CASE("Int8Test3c")
             auto bbType = bType;
             auto ccType = cType;
 
-            auto AA = IndexedValue{ Alloca(aaType) };
-            auto BB = IndexedValue{ Alloca(bbType) };
-            auto CC = IndexedValue{ Alloca(ccType) };
+            auto AA = IndexedValue{ Alloca(builder, aaType) };
+            auto BB = IndexedValue{ Alloca(builder, bbType) };
+            auto CC = IndexedValue{ Alloca(builder, ccType) };
 
             auto i8Type = builder.getIntegerType(8);
             auto i16Type = builder.getIntegerType(16);
@@ -1166,11 +1141,6 @@ TEST_CASE("Int8Test3c")
         REQUIRE(VerifyParse(context, true, "Int8Test3c.mlir"));
     }
 
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test3c_std.mlir"));
-    }
-
     SECTION("LLVM")
     {
         REQUIRE(VerifyLowerToLLVM(context, true, "Int8Test3c_llvm.mlir"));
@@ -1191,6 +1161,8 @@ TEST_CASE("Int8Test3c")
 // interleaved (shuffled)
 // result = dot2
 // Int8ub_16x2_shuf_dot2
+//
+// Generates vpmaddubsw
 TEST_CASE("Int8Test4")
 {
     int64_t N = 212;
@@ -1225,9 +1197,9 @@ TEST_CASE("Int8Test4")
 
             auto i32Type = builder.getIntegerType(32);
 
-            auto AA = IndexedValue{ Alloca(aaType) };
-            auto BB = IndexedValue{ Alloca(bbType) };
-            auto CC = IndexedValue{ Alloca(ccType) };
+            auto AA = IndexedValue{ Alloca(builder, aaType) };
+            auto BB = IndexedValue{ Alloca(builder, bbType) };
+            auto CC = IndexedValue{ Alloca(builder, ccType) };
 
             auto i1 = builder.create<mlir::arith::ConstantIndexOp>(loc, 1);
             auto i2 = builder.create<mlir::arith::ConstantIndexOp>(loc, 2);
@@ -1310,11 +1282,6 @@ TEST_CASE("Int8Test4")
         REQUIRE(VerifyParse(context, true, "Int8Test4.mlir"));
     }
 
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test4_std.mlir"));
-    }
-
     SECTION("LLVM")
     {
         REQUIRE(VerifyLowerToLLVM(context, true, "Int8Test4_llvm.mlir"));
@@ -1337,7 +1304,7 @@ TEST_CASE("Int8Test4")
 // result = dot2
 // Int8ub_16x2_dot2
 //
-// Generates vpmadd
+// Generates vpmaddubsw
 TEST_CASE("Int8Test5")
 {
     int64_t vecN = 16;
@@ -1381,9 +1348,9 @@ TEST_CASE("Int8Test5")
 
             auto i32Type = builder.getIntegerType(32);
 
-            auto AA = IndexedValue{ Alloca(aaType) };
-            auto BB = IndexedValue{ Alloca(bbType) };
-            auto CC = IndexedValue{ Alloca(ccType) };
+            auto AA = IndexedValue{ Alloca(builder, aaType) };
+            auto BB = IndexedValue{ Alloca(builder, bbType) };
+            auto CC = IndexedValue{ Alloca(builder, ccType) };
             auto accumType = mlir::MemRefType::get({}, i32Type);
 
             // Init A, B, and C
@@ -1412,7 +1379,7 @@ TEST_CASE("Int8Test5")
                 {
                     auto builder = util::MakeBodyBuilder(jLoop);
 
-                    auto accum = Alloca(accumType);
+                    auto accum = Alloca(builder, accumType);
                     builder.create<mlir::memref::StoreOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 0, 32), accum);
 
                     auto iLoop = builder.create<AffineForOp>(loc, 0, M, 1);
@@ -1468,11 +1435,6 @@ TEST_CASE("Int8Test5")
         REQUIRE(VerifyParse(context, true, "Int8Test5.mlir"));
     }
 
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test5_std.mlir"));
-    }
-
     SECTION("LLVM")
     {
         REQUIRE(VerifyLowerToLLVM(context, true, "Int8Test5_llvm.mlir"));
@@ -1495,7 +1457,7 @@ TEST_CASE("Int8Test5")
 // result = dot2
 // Int8ub_16x2_dot2
 //
-// Produces vpmaddubsw
+// Generates vpmaddubsw (now just vpmaddwd)
 TEST_CASE("Int8Test5b")
 {
     int64_t vecN = 16;
@@ -1538,9 +1500,9 @@ TEST_CASE("Int8Test5b")
 
             auto i32Type = builder.getIntegerType(32);
 
-            auto AA = IndexedValue{ Alloca(aaType) };
-            auto BB = IndexedValue{ Alloca(bbType) };
-            auto CC = IndexedValue{ Alloca(ccType) };
+            auto AA = IndexedValue{ Alloca(builder, aaType) };
+            auto BB = IndexedValue{ Alloca(builder, bbType) };
+            auto CC = IndexedValue{ Alloca(builder, ccType) };
             auto accumType = mlir::MemRefType::get({}, i32Type);
 
             // Init A, B, and C
@@ -1581,7 +1543,7 @@ TEST_CASE("Int8Test5b")
                 {
                     auto builder = util::MakeBodyBuilder(jLoop);
 
-                    auto accum = Alloca(accumType);
+                    auto accum = Alloca(builder, accumType);
                     builder.create<mlir::memref::StoreOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 0, 32), accum);
 
                     auto iLoop = builder.create<AffineForOp>(loc, 0, M, 1);
@@ -1634,11 +1596,6 @@ TEST_CASE("Int8Test5b")
     SECTION("Parsing")
     {
         REQUIRE(VerifyParse(context, true, "Int8Test5b.mlir"));
-    }
-
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test5b_std.mlir"));
     }
 
     SECTION("LLVM")
@@ -1712,7 +1669,7 @@ TEST_CASE("Int8Test6")
                     auto jOuter = jOuterLoop.getInductionVar();
 
                     // Init CC
-                    auto CC = IndexedValue{ Alloca(ccType) };
+                    auto CC = IndexedValue{ Alloca(builder, ccType) };
                     auto jInitLoop = builder.create<AffineForOp>(loc, 0, vecN, 1);
                     {
                         auto builder = util::MakeBodyBuilder(jInitLoop);
@@ -1728,8 +1685,8 @@ TEST_CASE("Int8Test6")
                         auto builder = util::MakeBodyBuilder(iOuterLoop);
                         auto iOuter = iOuterLoop.getInductionVar();
 
-                        auto AA = IndexedValue{ Alloca(aaType) };
-                        auto BB = IndexedValue{ Alloca(bbType) };
+                        auto AA = IndexedValue{ Alloca(builder, aaType) };
+                        auto BB = IndexedValue{ Alloca(builder, bbType) };
 
                         // Init AA and BB
                         auto jInitLoop = builder.create<AffineForOp>(loc, 0, vecN, 1);
@@ -1755,7 +1712,7 @@ TEST_CASE("Int8Test6")
                             auto builder = util::MakeBodyBuilder(jInnerLoop);
                             auto jInner = jInnerLoop.getInductionVar();
 
-                            auto accum = Alloca(accumType);
+                            auto accum = Alloca(builder, accumType);
                             builder.create<mlir::memref::StoreOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 0, 32), accum);
 
                             auto iInnerLoop = builder.create<AffineForOp>(loc, 0, vecM, 1);
@@ -1813,18 +1770,13 @@ TEST_CASE("Int8Test6")
         REQUIRE(VerifyParse(context, true, "Int8Test6.mlir"));
     }
 
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test6_std.mlir"));
-    }
-
     SECTION("LLVM")
     {
         REQUIRE(VerifyTranslateToLLVMIR(context, true, true, "Int8Test6.ll"));
     }
 }
 
-// Test case that generates vpmadd without using explicit vector types (3 loops)
+// Test case without using explicit vector types (3 loops)
 //
 // unsigned A / signed B
 // size: A: N * 2, B: N * 2, output: N (not broadcasted)
@@ -1891,12 +1843,12 @@ TEST_CASE("Int8Test8")
             auto accumType = mlir::MemRefType::get({}, i32Type);
 
             // Alloc caches and scratchpad
-            auto AA = IndexedValue{ Alloca(aaType) };
-            auto BB = IndexedValue{ Alloca(bbType) };
-            auto CC = IndexedValue{ Alloca(ccType) };
-            auto AAA = IndexedValue{ Alloca(aaaType) };
-            auto CCC = IndexedValue{ Alloca(cccType) };
-            auto accum = Alloca(accumType);
+            auto AA = IndexedValue{ Alloca(builder, aaType) };
+            auto BB = IndexedValue{ Alloca(builder, bbType) };
+            auto CC = IndexedValue{ Alloca(builder, ccType) };
+            auto AAA = IndexedValue{ Alloca(builder, aaaType) };
+            auto CCC = IndexedValue{ Alloca(builder, cccType) };
+            auto accum = Alloca(builder, accumType);
             {
                 auto jOuterLoop = builder.create<AffineForOp>(loc, 0, N, vecN);
                 {
@@ -2126,11 +2078,6 @@ TEST_CASE("Int8Test8")
         REQUIRE(VerifyParse(context, true, "Int8Test8.mlir"));
     }
 
-    SECTION("Std")
-    {
-        REQUIRE(VerifyLowerToStd(context, true, "Int8Test8_std.mlir"));
-    }
-
     SECTION("LLVM")
     {
         REQUIRE(VerifyLowerToLLVM(context, true, "Int8Test8_llvm.mlir"));
@@ -2140,5 +2087,278 @@ TEST_CASE("Int8Test8")
     {
         REQUIRE(VerifyTranslateToLLVMIR(context, false, true, "Int8Test8_noopt.ll"));
         REQUIRE(VerifyTranslateToLLVMIR(context, true, true, "Int8Test8.ll"));
+    }
+}
+
+//
+// 16-bit int tests
+//
+
+// Minimal example that generates vpmaddwd instructions
+//
+// ((evens(a) * evens(b)) + (odds(a) * odds(b)))
+//
+// signed A / signed B
+// size: A: 8x2, B: 8x2, output: 8 (not broadcasted)
+// vector datatypes
+// shuffled
+// result = dot2
+//
+// Int16_8x2_vec_shuf_dot2
+//
+// Generates vpmaddwd
+TEST_CASE("Int16Test1")
+{
+    int64_t vecSize = 8;
+    TestContext context(
+        "Int16Test1",
+        [&]() -> std::vector<mlir::Type> {
+                            auto& builder = GetTestBuilder();
+
+                            auto i16Type = builder.getIntegerType(16);
+                            auto i32Type = builder.getIntegerType(32);
+
+                            auto aType = mlir::VectorType::get({ 2*vecSize }, i16Type);
+                            auto bType = mlir::VectorType::get({ 2*vecSize }, i16Type);
+                            auto cVecType = mlir::VectorType::get({ vecSize }, i32Type);
+                            auto cType = mlir::MemRefType::get({}, cVecType);
+
+                           return { aType, bType, cType }; },
+        [&](std::vector<mlir::Value> args) {
+            auto& builder = GetTestBuilder();
+            auto loc = builder.getUnknownLoc();
+
+            auto a = args[0];
+            auto b = args[1];
+            auto C = args[2];
+
+            auto i16Type = builder.getIntegerType(16);
+            auto i32Type = builder.getIntegerType(32);
+            auto halfVecType = mlir::VectorType::get({ vecSize }, i16Type);
+            auto bigVecType = mlir::VectorType::get({ vecSize }, i32Type);
+
+            // extract evens/odds from a and b
+            auto evenMask = builder.getI64ArrayAttr({ 0, 2, 4, 6, 8, 10, 12, 14 });
+            auto oddMask = builder.getI64ArrayAttr({ 1, 3, 5, 7, 9, 11, 13, 15 });
+
+            auto mulSum = [&](auto a, auto b) {
+                auto aEven = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, a, a, evenMask);
+                auto aOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, a, a, oddMask);
+                auto bEven = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, evenMask);
+                auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
+
+                // extend to 32 bits
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
+                auto bEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bEven, bigVecType);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
+                auto bOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bOdd, bigVecType);
+
+                auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
+                auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
+
+                auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEven, mulOdd);
+                return sum;
+            };
+
+            auto r = mulSum(a, b);
+            builder.create<mlir::memref::StoreOp>(loc, r, C);
+
+        });
+
+    SECTION("Parsing")
+    {
+        REQUIRE(VerifyParse(context, true, "Int16Test1.mlir"));
+    }
+
+    SECTION("LLVM")
+    {
+        REQUIRE(VerifyTranslateToLLVMIR(context, false, true, "Int16Test1_noopt.ll"));
+        REQUIRE(VerifyTranslateToLLVMIR(context, true, true, "Int16Test1.ll"));
+    }
+}
+
+// Version of the above that broadcasts a pair of values from 'a'
+// sat((evens(a) * evens(b)) + (odds(a) * odds(b)))
+//
+// unsigned A / signed B
+// size: A: 1x2, B: 8x2, output: 8 (broadcast A)
+// vector datatypes
+// shuffled
+// result = dot2
+//
+// Generates vpmaddubsw (now vpmaddwd)
+TEST_CASE("Int16Test1b")
+{
+    int64_t vecSize = 8;
+    TestContext context(
+        "Int16Test1b",
+        [&]() -> std::vector<mlir::Type> {
+                            auto& builder = GetTestBuilder();
+
+                            auto i16Type = builder.getIntegerType(16);
+                            auto i32Type = builder.getIntegerType(32);
+
+                            auto aType = mlir::VectorType::get({ 2 }, i16Type);
+                            auto bType = mlir::VectorType::get({ 2*vecSize }, i16Type);
+                            auto cVecType = mlir::VectorType::get({ vecSize }, i32Type);
+                            auto cType = mlir::MemRefType::get({}, cVecType);
+
+                           return { aType, bType, aType, bType, cType }; },
+        [&](std::vector<mlir::Value> args) {
+            auto& builder = GetTestBuilder();
+            auto loc = builder.getUnknownLoc();
+
+            auto a1 = args[0];
+            auto b1 = args[1];
+            auto a2 = args[2];
+            auto b2 = args[3];
+            auto C = args[4];
+            auto bType = args[1].getType().cast<mlir::VectorType>();
+
+            auto i16Type = builder.getIntegerType(16);
+            auto i32Type = builder.getIntegerType(32);
+            auto halfVecType = mlir::VectorType::get({ vecSize }, i16Type);
+            auto bigVecType = mlir::VectorType::get({ vecSize }, i32Type);
+
+            auto upconvertAMask = builder.getI64ArrayAttr({ 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1 });
+            auto a1v = builder.create<mlir::vector::ShuffleOp>(loc, bType, a1, a1, upconvertAMask);
+            auto a2v = builder.create<mlir::vector::ShuffleOp>(loc, bType, a2, a2, upconvertAMask);
+
+            // extract evens/odds from a and b
+            auto evenMask = builder.getI64ArrayAttr({ 0, 2, 4, 6, 8, 10, 12, 14 });
+            auto oddMask = builder.getI64ArrayAttr({ 1, 3, 5, 7, 9, 11, 13, 15 });
+
+            auto mulSum = [&](auto a, auto b) {
+                auto aEven = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, a, a, evenMask);
+                auto aOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, a, a, oddMask);
+                auto bEven = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, evenMask);
+                auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
+
+                // extend to 32 bits
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
+                auto bEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bEven, bigVecType);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
+                auto bOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bOdd, bigVecType);
+
+                auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
+                auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
+
+                auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEven, mulOdd);
+                return sum;
+            };
+
+            auto r1 = mulSum(a1v, b1);
+            auto r2 = mulSum(a2v, b2);
+            auto finalSum = builder.create<mlir::arith::AddIOp>(loc, r1, r2);
+            builder.create<mlir::memref::StoreOp>(loc, finalSum, C);
+        });
+
+    SECTION("Parsing")
+    {
+        REQUIRE(VerifyParse(context, true, "Int16Test1b.mlir"));
+    }
+
+    SECTION("LLVM")
+    {
+        REQUIRE(VerifyLowerToLLVM(context, true, "Int16Test1b_llvm.mlir"));
+    }
+
+    SECTION("LLVMIR")
+    {
+        REQUIRE(VerifyTranslateToLLVMIR(context, false, true, "Int16Test1b_noopt.ll"));
+        REQUIRE(VerifyTranslateToLLVMIR(context, true, true, "Int16Test1b.ll"));
+    }
+}
+
+// Minimal example that generates vpmaddwd instructions
+//
+// ((evens(a) * evens(b)) + (odds(a) * odds(b)))
+//
+// signed A / signed B
+// size: A: 8x2, B: 8x2, output: 8 (not broadcasted)
+// vector datatypes
+// shuffled
+// result = dot2
+//
+// Int16_8x2_vec_shuf_dot2
+//
+// Generates vpmaddwd
+TEST_CASE("Int16Test2")
+{
+    int64_t vecSize = 8;
+    TestContext context(
+        "Int16Test2",
+        [&]() -> std::vector<mlir::Type> {
+                            auto& builder = GetTestBuilder();
+
+                            auto i16Type = builder.getIntegerType(16);
+                            auto i32Type = builder.getIntegerType(32);
+
+                            auto aType = mlir::VectorType::get({ 2*vecSize }, i16Type);
+                            auto bType = mlir::VectorType::get({ 2*vecSize }, i16Type);
+                            auto cVecType = mlir::VectorType::get({ vecSize }, i32Type);
+                            auto cType = mlir::MemRefType::get({}, cVecType);
+
+                           return { aType, bType, aType, bType, cType, cType, cType }; },
+        [&](std::vector<mlir::Value> args) {
+            auto& builder = GetTestBuilder();
+            auto loc = builder.getUnknownLoc();
+
+            auto a1 = args[0];
+            auto b1 = args[1];
+            auto a2 = args[2];
+            auto b2 = args[3];
+            auto C1 = args[4];
+            auto C2 = args[5];
+            auto C3 = args[6];
+
+            auto i16Type = builder.getIntegerType(16);
+            auto i32Type = builder.getIntegerType(32);
+            auto halfVecType = mlir::VectorType::get({ vecSize }, i16Type);
+            auto bigVecType = mlir::VectorType::get({ vecSize }, i32Type);
+
+            // extract evens/odds from a and b
+            auto evenMask = builder.getI64ArrayAttr({ 0, 2, 4, 6, 8, 10, 12, 14 });
+            auto oddMask = builder.getI64ArrayAttr({ 1, 3, 5, 7, 9, 11, 13, 15 });
+
+            auto mulSum = [&](auto a, auto b) {
+                auto aEven = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, a, a, evenMask);
+                auto aOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, a, a, oddMask);
+                auto bEven = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, evenMask);
+                auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
+
+                // extend to 32 bits
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
+                auto bEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bEven, bigVecType);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
+                auto bOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bOdd, bigVecType);
+
+                auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
+                auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
+
+                auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEven, mulOdd);
+                return sum;
+            };
+
+            auto r1 = mulSum(a1, b1);
+            builder.create<mlir::memref::StoreOp>(loc, r1, C1); // Weirdly, if either of these stores of partial results is left out, poor-quality code is generated
+            
+            auto r2 = mulSum(a2, b2);
+            builder.create<mlir::memref::StoreOp>(loc, r2, C2);
+            
+            auto finalSum = builder.create<mlir::arith::AddIOp>(loc, r1, r2);
+            builder.create<mlir::memref::StoreOp>(loc, finalSum, C3);
+
+        });
+
+    SECTION("Parsing")
+    {
+        REQUIRE(VerifyParse(context, true, "Int16Test2.mlir"));
+    }
+
+    SECTION("LLVM")
+    {
+        REQUIRE(VerifyTranslateToLLVMIR(context, false, true, "Int16Test2_noopt.ll"));
+        REQUIRE(VerifyTranslateToLLVMIR(context, true, true, "Int16Test2.ll"));
     }
 }

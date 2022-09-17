@@ -17,29 +17,8 @@
 #include <mlir/IR/Dialect.h>
 #include <mlir/IR/Location.h>
 
-namespace
-{
-mlir::OpBuilder* s_builder;
-}
-
-mlir::OpBuilder& GetTestBuilder()
-{
-    return *s_builder;
-}
-
 int main(int argc, char** argv)
 {
-    mlir::MLIRContext context;
-
-    llvm::InitLLVM initLLVM(argc, argv);
-    accera::ir::InitializeAccera();
-    context.appendDialectRegistry(accera::ir::GetDialectRegistry());
-
-    mlir::ModuleOp module(mlir::ModuleOp::create(mlir::UnknownLoc::get(&context), llvm::StringRef("testModule")));
-    mlir::OpBuilder builder(&context);
-    s_builder = &builder;
-    builder.setInsertionPoint(module.getBody(), module.getBody()->begin());
-
     int result = Catch::Session().run(argc, argv);
     return result;
 }

@@ -145,7 +145,7 @@ namespace util
     {
         auto loc = anchorOp->getLoc();
         if (appendUniqueSuffix)
-            globalName += "_" + std::to_string(GetUniqueId());
+            globalName += "_" + std::to_string(GetUniqueId(anchorOp));
 
         mlir::OpBuilder::InsertionGuard guard(builder);
 
@@ -292,10 +292,32 @@ namespace util
         return result;
     }
 
-    int64_t GetUniqueId()
+    int64_t GetUniqueId(mlir::Operation* where)
     {
-        static std::atomic<int64_t> nextId = 0;
-        return nextId++;
+        static const std::string UniqueIDAttrName = "acc_next_unique_id";
+
+        // We're going to be modifying a unique ID tagged on the ValueModuleOp, so lock access to the attribute while we're reading it and modifying it
+        static std::mutex _uniqueIDMutex;
+        std::lock_guard<std::mutex> lock(_uniqueIDMutex);
+
+        // Fetch the next unique ID from the ValueModuleOp parent
+        // If it doesn't exist, then return 0 and store the value 1 as the next value
+        auto vModuleOp = CastOrGetParentOfType<vir::ValueModuleOp>(where);
+        assert(vModuleOp && "Can only get a unique id within the context of a ValueModuleOp");
+        int64_t currentId = -1;
+        if (auto nextIdAttr = vModuleOp->getAttrOfType<mlir::IntegerAttr>(UniqueIDAttrName))
+        {
+            currentId = nextIdAttr.getInt();
+        }
+        else
+        {
+            currentId = 0;
+        }
+        int64_t nextId = currentId + 1;
+        mlir::OpBuilder builder(where);
+        vModuleOp->setAttr(UniqueIDAttrName, builder.getI64IntegerAttr(nextId));
+        
+        return currentId;
     }
 
     mlir::Operation* CloneRecursively(mlir::OpBuilder& builder, mlir::Operation* op, mlir::BlockAndValueMapping& mapping)
@@ -371,7 +393,7 @@ namespace util
             });
     }
 
-    std::optional<vir::ExecutionRuntime> ResolveExecutionRuntime(mlir::Operation* op, bool exact /* = false */)
+    vir::ExecutionRuntime ResolveExecutionRuntime(mlir::Operation* op, bool exact /* = false */)
     {
         auto execRuntimeAttrName = ir::value::ValueModuleOp::getExecRuntimeAttrName();
 
@@ -1165,15 +1187,12 @@ namespace util
     mlir::Value GetCurrentGPUBlockThreadID(mlir::OpBuilder& builder, mlir::Location loc)
     {
         auto threadXSym = builder.getAffineSymbolExpr(0);
+
         auto threadYSym = builder.getAffineSymbolExpr(1);
-        auto threadZSym = builder.getAffineSymbolExpr(2);
+        auto blockDimXSym = builder.getAffineSymbolExpr(2);
 
-        auto blockDimXSym = builder.getAffineSymbolExpr(3);
+        auto threadZSym = builder.getAffineSymbolExpr(3);
         auto blockDimYSym = builder.getAffineSymbolExpr(4);
-        [[maybe_unused]] auto blockDimZSym = builder.getAffineSymbolExpr(5);
-
-        auto flattenedTidExpr = (threadZSym * blockDimXSym * blockDimYSym) + (threadYSym * blockDimXSym) + threadXSym;
-        auto flattenedTidMap = mlir::AffineMap::get(0, 6, flattenedTidExpr);
 
         auto threadXOp = GetGPUIndex(vir::Processor::ThreadX, builder, loc);
         auto threadYOp = GetGPUIndex(vir::Processor::ThreadY, builder, loc);
@@ -1182,7 +1201,24 @@ namespace util
         auto blockDimXOp = GetGPUIndex(vir::Processor::BlockDimX, builder, loc);
         auto blockDimYOp = GetGPUIndex(vir::Processor::BlockDimY, builder, loc);
         auto blockDimZOp = GetGPUIndex(vir::Processor::BlockDimZ, builder, loc);
+        if (GetBlockDimSize(blockDimZOp.getDefiningOp<mlir::gpu::BlockDimOp>()) == 1) // 2D or 1D block
+        {
+            if (GetBlockDimSize(blockDimYOp.getDefiningOp<mlir::gpu::BlockDimOp>()) == 1)
+            {
+                // 1D block
+                auto flattenedTidMap = mlir::AffineMap::get(0, 1, threadXSym);
+                return builder.create<mlir::AffineApplyOp>(loc, flattenedTidMap, mlir::ValueRange{ threadXOp });
+            }
 
+            // 2D block
+            auto flattenedTidExpr = (threadYSym * blockDimXSym) + threadXSym;
+            auto flattenedTidMap = mlir::AffineMap::get(0, 3, flattenedTidExpr);
+            return builder.create<mlir::AffineApplyOp>(loc, flattenedTidMap, mlir::ValueRange{ threadXOp, threadYOp, blockDimXOp });
+        }
+
+        // 3D block
+        auto flattenedTidExpr = (threadZSym * blockDimXSym * blockDimYSym) + (threadYSym * blockDimXSym) + threadXSym;
+        auto flattenedTidMap = mlir::AffineMap::get(0, 5, flattenedTidExpr);
         return builder.create<mlir::AffineApplyOp>(loc, flattenedTidMap, mlir::ValueRange{ threadXOp, threadYOp, threadZOp, blockDimXOp, blockDimYOp, blockDimZOp });
     }
 
@@ -1190,7 +1226,7 @@ namespace util
     {
         auto insertionBlock = builder.getInsertionBlock();
         auto parentOp = insertionBlock->getParentOp();
-        auto [warpSizeX, warpSizeY] = ResolveWarpSize(ResolveExecutionRuntime(parentOp).value()).value();
+        auto [warpSizeX, warpSizeY] = ResolveWarpSize(ResolveExecutionRuntime(parentOp)).value();
         const auto warpSize = warpSizeX * warpSizeY;
 
         auto blockTidSym = builder.getAffineSymbolExpr(0);
@@ -1199,6 +1235,38 @@ namespace util
         auto blockTid = GetCurrentGPUBlockThreadID(builder, loc);
 
         return builder.create<mlir::AffineApplyOp>(loc, blockTidToWarpTidMap, mlir::ValueRange{ blockTid });
+    }
+
+    bool ShapesMatch(mlir::ShapedType lhs, mlir::ShapedType rhs)
+    {
+        if (lhs == nullptr || rhs == nullptr)
+        {
+            return false;
+        }
+        auto lhsShape = lhs.getShape();
+        auto rhsShape = rhs.getShape();
+        return lhsShape.size() == rhsShape.size() && std::equal(lhsShape.begin(), lhsShape.end(), rhsShape.begin());
+    }
+
+#define IS_IMPLICITLY_CASTABLE_IF(sourceType, targetType, conditional)              \
+        if (source.isa<sourceType>() && target.isa<targetType>() && conditional)    \
+        {                                                                           \
+            return true;                                                            \
+        }
+
+#define IS_IMPLICITLY_CASTABLE(sourceType, targetType) IS_IMPLICITLY_CASTABLE_IF(sourceType, targetType, true);
+
+    bool IsImplicitlyCastable(mlir::Type source, mlir::Type target)
+    {
+        IS_IMPLICITLY_CASTABLE(mlir::IntegerType, mlir::IndexType);
+        IS_IMPLICITLY_CASTABLE_IF(mlir::IntegerType, mlir::IntegerType, (source.getIntOrFloatBitWidth() <= target.getIntOrFloatBitWidth()));
+        IS_IMPLICITLY_CASTABLE_IF(mlir::IntegerType, mlir::FloatType, (source.getIntOrFloatBitWidth() <= target.getIntOrFloatBitWidth()));
+        IS_IMPLICITLY_CASTABLE_IF(mlir::FloatType, mlir::FloatType, (source.getIntOrFloatBitWidth() <= target.getIntOrFloatBitWidth()));
+
+        auto sourceShapedTypeOrNull = source.dyn_cast<mlir::ShapedType>();
+        auto targetShapedTypeOrNull = target.dyn_cast<mlir::ShapedType>();
+        IS_IMPLICITLY_CASTABLE_IF(mlir::VectorType, mlir::VectorType, (ShapesMatch(sourceShapedTypeOrNull, targetShapedTypeOrNull) && IsImplicitlyCastable(GetElementType(source), GetElementType(target))));
+        return false;
     }
 
 } // namespace util

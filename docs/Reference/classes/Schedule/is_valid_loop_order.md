@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.8)
+[//]: # (Version: v1.2.9)
 
-# Accera v1.2.8 Reference
+# Accera v1.2.9 Reference
 
 ## `accera.Schedule.is_valid_loop_order(*order)`
 The `is_valid_loop_order` function determines if an order of indices is valid. For a description of valid schedule orders, refer to [reorder](reorder.md).

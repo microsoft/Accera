@@ -39,6 +39,8 @@ namespace value
 
     using CacheAllocation = accera::ir::executionPlan::CacheAllocation;
 
+    using CacheStrategy = accera::ir::value::CacheStrategy;
+
     using utilities::DimensionOrder;
     using utilities::MemoryAffineCoefficients;
     using utilities::MemorySpace;
@@ -51,6 +53,7 @@ namespace value
               ViewAdapter value,
               const std::optional<ScalarIndex>& keySliceIndex,
               const std::optional<int64_t>& maxElements,
+              CacheStrategy strategy,
               CacheIndexing mapping = CacheIndexing::GlobalToPhysical,
               CacheAllocation allocation = CacheAllocation::Automatic,
               MemorySpace memorySpace = MemorySpace::None,
@@ -63,7 +66,9 @@ namespace value
               const std::optional<ScalarIndex>& triggerIndex,
               const std::optional<int64_t>& maxElements,
               const MemoryAffineCoefficients& memoryCoefficients,
+              const std::optional<value::ValueType>& elementType,
               bool thrifty,
+              CacheStrategy strategy,
               bool doubleBufferCache = false,
               const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt,
               CacheIndexing mapping = CacheIndexing::GlobalToPhysical,
@@ -78,7 +83,9 @@ namespace value
               const std::optional<ScalarIndex>& triggerIndex,
               const std::optional<int64_t>& maxElements,
               const DimensionOrder& dimOrder,
+              const std::optional<value::ValueType>& elementType,
               bool thrifty,
+              CacheStrategy strategy,
               bool doubleBufferCache = false,
               const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt,
               CacheIndexing mapping = CacheIndexing::GlobalToPhysical,

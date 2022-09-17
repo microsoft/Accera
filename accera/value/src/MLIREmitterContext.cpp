@@ -73,6 +73,7 @@ using ConstantData = accera::value::detail::ConstantData;
 
 namespace
 {
+const int64_t MemRefPointerShape[1] = { 1 }; // shape of memrefs-of-memrefs
 mlir::Type ToLLVMMemrefDescriptorType(mlir::OpBuilder& builder, ::accera::value::Value value); // Forward declare
 
 struct InitAccera
@@ -98,51 +99,6 @@ private:
     std::unique_ptr<mlir::MLIRContext> _ownedContext;
     mlir::MLIRContext* _context;
 };
-
-mlir::Type ToMLIRType(mlir::OpBuilder& builder, ValueType type)
-{
-    switch (type)
-    {
-    // Signed ints are treated as "signless" (i.e. represented without a sign).
-    // Unsigned ints are treated as "non-signless" (i.e. represented with a sign)
-    // Non-signless ints must to be converted to signless ints (preserving their
-    // underlying values) before calling standard / arithmetic ops
-    case ValueType::Boolean:
-        return builder.getIntegerType(1);
-    case ValueType::Byte: // = Uint8
-        return builder.getIntegerType(8, /*isSigned=*/false);
-    case ValueType::Int8:
-        return builder.getIntegerType(8);
-    case ValueType::Int16:
-        return builder.getIntegerType(16);
-    case ValueType::Int32:
-        return builder.getIntegerType(32);
-    case ValueType::Int64:
-        return builder.getIntegerType(64);
-    case ValueType::Uint16:
-        return builder.getIntegerType(16, /*isSigned=*/false);
-    case ValueType::Uint32:
-        return builder.getIntegerType(32, /*isSigned=*/false);
-    case ValueType::Uint64:
-        return builder.getIntegerType(64, /*isSigned=*/false);
-    case ValueType::Index:
-        return builder.getIndexType();
-    case ValueType::Float16:
-        return builder.getF16Type();
-    case ValueType::BFloat16:
-        return builder.getBF16Type();
-    case ValueType::Float:
-        return builder.getF32Type();
-    case ValueType::Double:
-        return builder.getF64Type();
-    case ValueType::Void:
-        [[fallthrough]];
-    case ValueType::Undefined:
-        [[fallthrough]];
-    default:
-        throw LogicException(LogicExceptionErrors::illegalState, "Unknown type conversion");
-    }
-}
 
 MemoryLayout GetSubArrayLayout(const MemoryLayout& originalLayout, const MemoryShape& shape, const std::vector<int64_t>& stridesValue)
 {
@@ -171,14 +127,18 @@ MemoryLayout GetSplitDimLayout(const MemoryLayout& originalLayout, int64_t dim, 
     return originalLayout.GetSplitDimensionLayout(dim, size);
 }
 
-mlir::MemRefType MemoryLayoutToMemRefType(mlir::OpBuilder& builder, const MemoryLayout& layout, ValueType valueType, bool useDynamicOffset)
+mlir::MemRefType MemoryLayoutToMemRefType(mlir::OpBuilder& builder, const MemoryLayout& layout, ValueType valueType, bool useDynamicOffset, int pointerLevel)
 {
-    auto mlirElemType = ToMLIRType(builder, valueType);
+    auto mlirElemType = ValueTypeToMLIRType(builder, valueType);
 
     if (layout == ScalarLayout)
     {
-        return mlir::MemRefType::get({}, mlirElemType);
+        // represent pointers as memrefs of memrefs
+        assert(pointerLevel <= 1 && "Only pointer levels <= 1 are currently supported for scalar layouts");
+        return pointerLevel ? mlir::MemRefType::get(MemRefPointerShape, mlirElemType) : mlir::MemRefType::get({}, mlirElemType);
     }
+
+    assert(pointerLevel <= 2 && "Only pointer levels <= 2 are currently supported for memref layouts");
 
     auto size = layout.GetActiveSize().ToVector();
     auto strides = layout.GetIncrement().ToVector();
@@ -187,14 +147,16 @@ mlir::MemRefType MemoryLayoutToMemRefType(mlir::OpBuilder& builder, const Memory
     auto context = builder.getContext();
     auto stridedMap = mlir::makeStridedLinearLayoutMap(strides, offset, context);
 
-    auto type = mlir::MemRefType::get(size, mlirElemType, stridedMap, (unsigned)layout.GetMemorySpace());
+    // strided maps and memory spaces are not supported for variable-sized layouts
+    auto type = layout.IsVariableSized() ? mlir::MemRefType::get(size, mlirElemType) : mlir::MemRefType::get(size, mlirElemType, stridedMap, (unsigned)layout.GetMemorySpace());
 
-    return type;
+    // represent pointers as memrefs of memrefs (memrefs start at pointer level 1)
+    return (pointerLevel > 1) ? mlir::MemRefType::get(MemRefPointerShape, type) : type;
 }
 
 mlir::MemRefType MemoryLayoutToMemRefType(mlir::OpBuilder& builder, const MemoryLayout& layout, ValueType valueType)
 {
-    return MemoryLayoutToMemRefType(builder, layout, valueType, false);
+    return MemoryLayoutToMemRefType(builder, layout, valueType, /*useDynamicOffset=*/false, /*pointerLevel=*/0);
 }
 
 auto MemoryLayoutToTensorType(mlir::OpBuilder& builder, const MemoryLayout& layout, ValueType valueType)
@@ -202,7 +164,7 @@ auto MemoryLayoutToTensorType(mlir::OpBuilder& builder, const MemoryLayout& layo
     // TODO: Figure out whether this assert needs to be active
     // assert(layout.IsCanonicalOrder() && "Can only get a tensor type from a canonically-ordered layout");
 
-    auto mlirElemType = ToMLIRType(builder, valueType);
+    auto mlirElemType = ValueTypeToMLIRType(builder, valueType);
     llvm::SmallVector<int64_t, 4> extents;
 
     extents.append(layout.GetExtent().begin(), layout.GetExtent().end());
@@ -214,23 +176,33 @@ auto MemoryLayoutToTensorType(mlir::OpBuilder& builder, const MemoryLayout& layo
 
 mlir::Type ToMLIRType(mlir::OpBuilder& builder, Value value)
 {
+    auto pointerLevel = value.PointerLevel();
+    bool pointer = (pointerLevel > 0);
     if (value.IsConstrained())
     {
         auto& layout = value.GetLayout();
-        if (layout == ScalarLayout)
+        if (!pointer && layout == ScalarLayout)
         {
-            return ToMLIRType(builder, value.GetBaseType());
+            return ValueTypeToMLIRType(builder, value.GetBaseType());
         }
         else
         {
-            return MemoryLayoutToMemRefType(builder, layout, value.GetBaseType());
+            return MemoryLayoutToMemRefType(builder, layout, value.GetBaseType(), /*useDynamicOffset=*/false, pointerLevel);
         }
     }
     else
     {
-        auto mlirElemType = ToMLIRType(builder, value.GetBaseType());
+        auto mlirElemType = ValueTypeToMLIRType(builder, value.GetBaseType());
         auto type = mlir::UnrankedMemRefType::get(mlirElemType, 0);
-        return type;
+        if (pointer)
+        {
+            // represent pointers as memrefs of memrefs
+            return mlir::MemRefType::get(MemRefPointerShape, type);
+        }
+        else
+        {
+            return type; // casts from mlir::UnrankedMemRefType to mlir::Type
+        }
     }
 }
 
@@ -390,7 +362,7 @@ mlir::Type ToLLVMMemrefDescriptorType(mlir::OpBuilder& builder, ::accera::value:
 
     mlir::LLVMTypeConverter llvmTypeConverter(context);
 
-    auto mlirElementType = ToMLIRType(builder, value.GetBaseType());
+    auto mlirElementType = ValueTypeToMLIRType(builder, value.GetBaseType());
     auto llvmElementType = llvmTypeConverter.convertType(mlirElementType);
     auto rank = value.GetLayout().NumDimensions();
 
@@ -415,7 +387,7 @@ void SetOpNameAttr(mlir::Operation* op, std::string name)
         }
         else if (mlir::SymbolTable::lookupSymbolIn(symTableOp, name))
         {
-            name += "_" + std::to_string(ir::util::GetUniqueId());
+            name += "_" + std::to_string(ir::util::GetUniqueId(op));
         }
 
         mlir::SymbolTable::setSymbolName(op, name);
@@ -545,6 +517,92 @@ MemoryLayout InferLayoutFromMLIRValue(mlir::Value value)
 
 namespace accera::value
 {
+
+bool HasMLIRTypeConversion(ValueType type)
+{
+    switch (type)
+    {
+    case ValueType::Boolean:
+        [[fallthrough]];
+    case ValueType::Byte:
+        [[fallthrough]];
+    case ValueType::Int8:
+        [[fallthrough]];
+    case ValueType::Int16:
+        [[fallthrough]];
+    case ValueType::Int32:
+        [[fallthrough]];
+    case ValueType::Int64:
+        [[fallthrough]];
+    case ValueType::Uint16:
+        [[fallthrough]];
+    case ValueType::Uint32:
+        [[fallthrough]];
+    case ValueType::Uint64:
+        [[fallthrough]];
+    case ValueType::Index:
+        [[fallthrough]];
+    case ValueType::Float16:
+        [[fallthrough]];
+    case ValueType::BFloat16:
+        [[fallthrough]];
+    case ValueType::Float:
+        [[fallthrough]];
+    case ValueType::Double:
+        return true;
+    case ValueType::Void:
+        [[fallthrough]];
+    case ValueType::Undefined:
+        [[fallthrough]];
+    default:
+        return false;
+    }
+}
+
+mlir::Type ValueTypeToMLIRType(mlir::OpBuilder& builder, ValueType type)
+{
+    switch (type)
+    {
+    // Signed ints are treated as "signless" (i.e. represented without a sign).
+    // Unsigned ints are treated as "non-signless" (i.e. represented with a sign)
+    // Non-signless ints must to be converted to signless ints (preserving their
+    // underlying values) before calling standard / arithmetic ops
+    case ValueType::Boolean:
+        return builder.getIntegerType(1);
+    case ValueType::Byte: // = Uint8
+        return builder.getIntegerType(8, /*isSigned=*/false);
+    case ValueType::Int8:
+        return builder.getIntegerType(8);
+    case ValueType::Int16:
+        return builder.getIntegerType(16);
+    case ValueType::Int32:
+        return builder.getIntegerType(32);
+    case ValueType::Int64:
+        return builder.getIntegerType(64);
+    case ValueType::Uint16:
+        return builder.getIntegerType(16, /*isSigned=*/false);
+    case ValueType::Uint32:
+        return builder.getIntegerType(32, /*isSigned=*/false);
+    case ValueType::Uint64:
+        return builder.getIntegerType(64, /*isSigned=*/false);
+    case ValueType::Index:
+        return builder.getIndexType();
+    case ValueType::Float16:
+        return builder.getF16Type();
+    case ValueType::BFloat16:
+        return builder.getBF16Type();
+    case ValueType::Float:
+        return builder.getF32Type();
+    case ValueType::Double:
+        return builder.getF64Type();
+    case ValueType::Void:
+        [[fallthrough]];
+    case ValueType::Undefined:
+        [[fallthrough]];
+    default:
+        throw LogicException(LogicExceptionErrors::illegalState, "Unknown type conversion");
+    }
+}
 
 GPUIndex::GPUIndex(std::function<Scalar(const GPUIndexDimension)> fn) :
     _fn(std::move(fn))
@@ -884,7 +942,7 @@ GPUIndex MLIRContext::GetGPUIndex()
     }
 }
 
-Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t alignment, AllocateFlags flags)
+Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t alignment, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes)
 {
     auto& b = _impl->builder;
     if (layout.GetMemorySpace() == MemorySpace::None)
@@ -893,29 +951,53 @@ Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t
     }
     auto memrefTy = MemoryLayoutToMemRefType(b, layout, valueType);
 
-    auto insertionBlock = b.getInsertionBlock();
-    auto it = insertionBlock->begin();
-    auto end = insertionBlock->end();
-    while (it != end && llvm::isa<mlir::arith::ConstantOp,
-                                  mlir::memref::AllocOp,
-                                  mlir::memref::AllocaOp,
-                                  ir::value::ReferenceGlobalOp,
-                                  ir::value::AllocOp>(it))
-    {
-        ++it;
-    }
     mlir::OpBuilder::InsertionGuard guard(b);
-    b.setInsertionPoint(insertionBlock, it);
+    // Place the alloc op at the beginning of the block (after other allocs), unless it depends
+    // on runtime sizes that are defined before this
+    if (runtimeSizes.empty())
+    {
+        auto insertionBlock = b.getInsertionBlock();
+        auto it = insertionBlock->begin();
+        auto end = insertionBlock->end();
+        while (it != end && llvm::isa<mlir::arith::ConstantOp,
+                                      mlir::memref::AllocOp,
+                                      mlir::memref::AllocaOp,
+                                      ir::value::ReferenceGlobalOp,
+                                      ir::value::AllocOp>(it))
+        {
+            ++it;
+        }
+        b.setInsertionPoint(insertionBlock, it);
+    }
     auto loc = b.getUnknownLoc();
 
-    mlir::Value result = b.create<ir::value::AllocOp>(loc,
-                                                      memrefTy,
-                                                      alignment
-                                                          ? llvm::Optional{ (int64_t)alignment }
-                                                          : llvm::None,
-                                                      static_cast<bool>(flags & AllocateFlags::Stack)
-                                                          ? llvm::Optional{ accera::ir::value::MemoryAllocType::Stack }
-                                                          : llvm::None);
+    std::vector<mlir::Value> sizes;
+    std::transform(runtimeSizes.cbegin(), runtimeSizes.cend(), std::back_inserter(sizes), [](ScalarDimension d) { return Unwrap(d); });
+    
+    mlir::Value result;
+    if (layout.IsVariableSized())
+    {
+        result = b.create<ir::value::AllocOp>(loc,
+                                            memrefTy,
+                                            alignment
+                                                ? llvm::Optional{ (int64_t)alignment }
+                                                : llvm::None,
+                                            static_cast<bool>(flags & AllocateFlags::Stack)
+                                                ? llvm::Optional{ accera::ir::value::MemoryAllocType::Stack }
+                                                : llvm::None,
+                                            mlir::ValueRange{ sizes});
+    }
+    else
+    {
+        result = b.create<ir::value::AllocOp>(loc,
+                                            memrefTy,
+                                            alignment
+                                                ? llvm::Optional{ (int64_t)alignment }
+                                                : llvm::None,
+                                            static_cast<bool>(flags & AllocateFlags::Stack)
+                                                ? llvm::Optional{ accera::ir::value::MemoryAllocType::Stack }
+                                                : llvm::None);
+    }
 
     EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { valueType, 1 } });
     Emittable emittable{ &emittableInfo };
@@ -1022,7 +1104,7 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
 
     const auto& fnName = decl.GetFunctionName();
     auto argValuesCopy = argValues;
-    auto fnType = ToMLIRType(b, decl);
+    auto fnType = ::ToMLIRType(b, decl);
 
     auto [fnOp, entryBlock] = std::visit(
         [&](auto target) {
@@ -1075,13 +1157,27 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
                     {
                         checkFunctionAttrs.push_back(b.getStringAttr(checkFunctions[checkFunctionIdx++]));
                     }
-                    else
+                    else if (usage == FunctionParameterUsage::input)
                     {
                         // input parameter, set an empty string
                         checkFunctionAttrs.push_back(b.getStringAttr(""));
                     }
+                    else
+                    {
+                        // TODO: implement this
+                        assert(false && "Output parameter usage is not yet supported");
+                    }
                 }
                 fnOp->setAttr(ir::GetOutputVerifiersAttrName(), b.getArrayAttr(checkFunctionAttrs));
+            }
+            if (auto argumentsSymbol = decl.GetArgumentsSymbol(); !argumentsSymbol.empty())
+            {
+                std::vector<mlir::Attribute> argumentsSymbolAttrs;
+                for (const auto& arg : argumentsSymbol)
+                {
+                    argumentsSymbolAttrs.push_back(b.getStringAttr(arg));
+                }
+                fnOp->setAttr(ir::value::ValueFuncOp::getArgumentsSymbolAttrName(), b.getArrayAttr(argumentsSymbolAttrs));
             }
 
             // Collect function tags into a dictionary
@@ -1232,7 +1328,7 @@ EmitterContext::DefinedFunction MLIRContext::DeclareExternalFunctionImpl(Functio
     auto loc = builder.getUnknownLoc();
 
     auto name = decl.GetFunctionName();
-    auto fnTy = ToMLIRType(builder, decl);
+    auto fnTy = ::ToMLIRType(builder, decl);
     auto isPublic = decl.IsPublic();
 
     auto insertionBlock = builder.getBlock();
@@ -1331,7 +1427,7 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
             auto loc = b.getUnknownLoc();
 
             ValueType valueElemTy = GetValueType<ElementType>();
-            auto mlirElemTy = ToMLIRType(b, valueElemTy);
+            auto mlirElemTy = ValueTypeToMLIRType(b, valueElemTy);
             mlir::Value op;
 
             auto insertionBlock = b.getInsertionBlock();
@@ -1392,7 +1488,7 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
             {
                 auto memrefShapeTy = MemoryLayoutToMemRefType(b, layout, valueElemTy);
 
-                auto mlirElemType = ToMLIRType(b, valueElemTy);
+                auto mlirElemType = ValueTypeToMLIRType(b, valueElemTy);
 
                 auto extents = layout.GetExtent().ToVector();
 
@@ -1436,7 +1532,7 @@ Value MLIRContext::StoreConstantDataImpl(ConstantData data, MemoryLayout layout,
                     dataAttribute = mlir::DenseElementsAttr::get(flattenedTensorShapeTy, llvm::makeArrayRef(data));
                 }
 
-                std::string uniquedName = name + "_" + std::to_string(ir::util::GetUniqueId());
+                std::string uniquedName = name + "_" + std::to_string(ir::util::GetUniqueId(b.getInsertionBlock()->getParentOp()));
 
                 mlir::MemRefType globalMemrefTy = mlir::MemRefType::Builder{ memrefShapeTy }.setLayout({}); // remove affine maps
                 [[maybe_unused]] auto globalOp = b.create<ir::value::GlobalOp>(loc, globalMemrefTy, /* isConstant= */ true, uniquedName, dataAttribute, /*addrSpace*/ 0, /*isExternal*/ true);
@@ -1716,6 +1812,23 @@ void MLIRContext::CopyDataImpl(const Value& source, Value& destination)
     }
 }
 
+void MLIRContext::StoreImpl(const Value& sourceValue, Value& destValue, const std::vector<int64_t>& indices)
+{
+    auto& builder = _impl->builder;
+    auto loc = builder.getUnknownLoc();
+
+    // TODO: validation
+    auto source = ToMLIRValue(builder, sourceValue);
+    auto dest = ToMLIRValue(builder, destValue);
+
+    llvm::SmallVector<mlir::Value, 4> indexValues;
+    std::transform(begin(indices), end(indices), std::back_inserter(indexValues), [&](int64_t i) -> mlir::Value {
+        return builder.create<mlir::arith::ConstantIndexOp>(loc, i);
+    });
+
+    (void)builder.create<ir::value::StoreOp>(loc, source, dest, indexValues);
+}
+
 Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offsetsValue, const MemoryShape& shape, const std::vector<int64_t>& stridesValue)
 {
     const MemoryLayout& currentLayout = sourceValue.GetLayout();
@@ -1741,7 +1854,7 @@ Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offset
 
     auto& builder = _impl->builder;
     auto loc = builder.getUnknownLoc();
-    auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType(), true);
+    auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType(), /*useDynamicOffset*/ true, /*pointerLevel=*/0);
 
     auto source = ToMLIRValue(builder, sourceValue);
     mlir::Value result = builder.create<ir::value::ViewOp>(loc, source, linalgRanges, resultMemRefType);
@@ -1766,7 +1879,7 @@ Value MLIRContext::SliceImpl(Value sourceValue, std::vector<int64_t> slicedDimen
         std::back_inserter(offsets),
         [&builder](Scalar s) { return ResolveMLIRIndex(builder, ResolveMLIRScalar(builder, ToMLIRValue(builder, s))); });
 
-    auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType(), true);
+    auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType(), /*useDynamicOffset=*/true, /*pointerLevel=*/0);
     auto source = ToMLIRValue(builder, sourceValue);
     mlir::Value result = builder.create<ir::value::SliceOp>(loc, source, slicedDimensions, offsets, resultMemRefType);
 
@@ -1784,7 +1897,7 @@ Value MLIRContext::MergeDimensionsImpl(Value sourceValue, int64_t dim1, int64_t 
     const MemoryLayout& currentLayout = sourceValue.GetLayout();
     ThrowIfNot(currentLayout.IsCanonicalOrder(), InputExceptionErrors::invalidArgument, "MergeDimension requires a canonically-ordered operand");
     auto destLayout = GetMergeDimLayout(currentLayout, dim1, dim2);
-    auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType(), false);
+    auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType());
     auto source = ToMLIRValue(builder, sourceValue);
     return Wrap(builder.create<ir::value::MergeDimOp>(loc, resultMemRefType, source, dim1, dim2));
 }
@@ -1797,7 +1910,7 @@ Value MLIRContext::SplitDimensionImpl(Value sourceValue, int64_t dim, int64_t si
     // TODO: assert there's no offset
     const MemoryLayout& currentLayout = sourceValue.GetLayout();
     auto destLayout = GetSplitDimLayout(currentLayout, dim, size);
-    auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType(), false);
+    auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType());
     auto source = ToMLIRValue(builder, sourceValue);
     return Wrap(builder.create<ir::value::SplitDimOp>(loc, resultMemRefType, source, dim, size));
 }
@@ -1807,7 +1920,7 @@ Value MLIRContext::ReshapeImpl(Value sourceValue, const MemoryLayout& destLayout
     auto& builder = _impl->builder;
     auto loc = builder.getUnknownLoc();
     // TODO: assert there's no offset
-    auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType(), false);
+    auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType());
     auto source = ToMLIRValue(builder, sourceValue);
     return Wrap(builder.create<ir::value::ReshapeOp>(loc, resultMemRefType, source));
 }
@@ -1981,15 +2094,15 @@ Value MLIRContext::MMALoadSyncImpl(const Matrix& source, const int64_t rowOffset
     const ir::value::MMAOperandType operandType{ static_cast<ir::value::MMAOperandType>(target.GetFragmentType()) };
     const auto isAcc = operandType == ir::value::MMAOperandType::Acc;
     auto elementType = (source.GetValue().IsFloat32() || isAcc) ? builder.getF32Type() : builder.getF16Type();
-    auto [warpSizeX, warpSizeY] = ir::util::ResolveWarpSize(ir::value::ExecutionRuntime::ROCM).value();
-    auto vecTy = mlir::MemRefType::get(mmaType.getOperandShape(operandType), elementType);
+    auto mmaTileShape = mmaType.getOperandShape(operandType);
+    auto vecTy = mlir::MemRefType::get(mmaTileShape, elementType);
 
-    mlir::Value result = builder.create<ir::value::MMALoadSyncOp>(loc, vecTy, matValue, mmaShape, operandType, /*TODO*/true, mlir::ValueRange{ rowOff, colOff });
+    mlir::Value result = builder.create<ir::value::MMAAllocSyncOp>(loc, vecTy, static_cast<uint32_t>(mmaType.getShapeType()), static_cast<uint8_t>(operandType), builder.getBoolAttr(/*TODO*/true));
+    builder.create<ir::value::MMALoadSyncOp>(loc, matValue, result, mmaShape, operandType, /*TODO*/true, mlir::ValueRange{ rowOff, colOff });
     EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { source.GetValue().GetBaseType(), 1 } });
     Emittable emittable{ &emittableInfo };
 
-    auto&& mmaMatShape = mmaType.getTileShape(warpSizeX, warpSizeY);
-    auto mmaMatLayout = MemoryLayout(mmaMatShape.first, mmaMatShape.second);
+    auto mmaMatLayout = MemoryLayout(mmaTileShape[0], mmaTileShape[1]);
     return Value(emittable, mmaMatLayout);
 }
 
@@ -2016,7 +2129,7 @@ Value MLIRContext::MMAComputeSyncImpl(const MatrixFragment& A, const MatrixFragm
     auto bValue = ToMLIRValue(builder, B);
     auto cValue = ToMLIRValue(builder, C);
 
-    mlir::Value result = builder.create<ir::value::MMAComputeSyncOp>(loc, cValue.getType(), aValue, bValue, cValue, uint32_t(A.GetFragmentShape()), cbsz, abid, blgp);
+    mlir::Value result = builder.create<ir::value::MMAComputeSyncOp>(loc, aValue, bValue, cValue, uint32_t(A.GetFragmentShape()), cbsz, abid, blgp).opC();
 
     EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { C.GetType(), 1 } });
     Emittable emittable{ &emittableInfo };
@@ -2028,91 +2141,23 @@ Scalar MLIRContext::CastImpl(Scalar value, ValueType type)
 {
     auto& builder = _impl->builder;
     mlir::Value mlirValue = ResolveMLIRScalar(builder, ToMLIRValue(builder, value));
-
     auto loc = mlirValue.getLoc();
-    auto fromType = mlirValue.getType();
-    auto toType = ToMLIRType(builder, type);
+    auto toType = ValueTypeToMLIRType(builder, type);
 
-    if (fromType == toType)
+    mlir::Value castVal = builder.create<ir::value::CastOp>(loc, mlirValue, toType);
+    return Scalar(Wrap(castVal));
+}
+
+bool MLIRContext::IsImplicitlyCastableImpl(ValueType source, ValueType target) const
+{
+    auto& builder = _impl->builder;
+    if (!HasMLIRTypeConversion(source) || !HasMLIRTypeConversion(target))
     {
-        return Wrap(mlirValue);
+        return false;
     }
-
-    auto doSignedCast = IsSignedType(type);
-
-    return mlir::TypeSwitch<mlir::Type, Scalar>(fromType)
-        .Case([&](mlir::IntegerType fromIntType) {
-            auto signlessMlirValue = accera::ir::util::ToSignlessMLIRValue(builder, mlirValue);
-
-            return mlir::TypeSwitch<mlir::Type, Scalar>(toType)
-                .Case([&](mlir::IntegerType toIntType) {
-                    auto toIntTypeSignless = accera::ir::util::ToSignlessMLIRType(builder, toIntType);
-
-                    mlir::Value casted;
-                    if (fromIntType.getWidth() == toIntType.getWidth())
-                    {
-                        // do nothing
-                    }
-                    else if (fromIntType.getWidth() > toIntType.getWidth())
-                    {
-
-                        signlessMlirValue = builder.create<mlir::arith::TruncIOp>(loc, signlessMlirValue, toIntTypeSignless);
-                    }
-                    else
-                    {
-                        if (doSignedCast)
-                        {
-                            signlessMlirValue = builder.create<mlir::arith::ExtSIOp>(loc, signlessMlirValue, toIntTypeSignless);
-                        }
-                        else
-                        {
-                            signlessMlirValue = builder.create<mlir::arith::ExtUIOp>(loc, signlessMlirValue, toIntTypeSignless);
-                        }
-                    }
-
-                    casted = builder.create<mlir::UnrealizedConversionCastOp>(signlessMlirValue.getLoc(), toType, signlessMlirValue)->getResult(0);
-                    return Wrap(casted);
-                })
-                .Case([&](mlir::IndexType) {
-                    return Wrap(builder.create<mlir::arith::IndexCastOp>(loc, signlessMlirValue, toType));
-                })
-                .Case([&](mlir::FloatType) {
-                    return fromIntType.isUnsigned() ? Wrap(builder.create<mlir::arith::UIToFPOp>(loc, signlessMlirValue, toType)) : Wrap(builder.create<mlir::arith::SIToFPOp>(loc, signlessMlirValue, toType));
-                })
-                .Default([&](mlir::Type) -> Scalar {
-                    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-                });
-        })
-        .Case([&](mlir::IndexType) {
-            return mlir::TypeSwitch<mlir::Type, Scalar>(toType)
-                .Case([&](mlir::IntegerType toIntType) {
-                    auto toIntTypeSignless = accera::ir::util::ToSignlessMLIRType(builder, toIntType);
-                    return Wrap(builder.create<mlir::arith::IndexCastOp>(loc, mlirValue, toIntTypeSignless));
-                })
-                .Case([&](mlir::FloatType) {
-                    auto int64Value = builder.create<mlir::arith::IndexCastOp>(loc, mlirValue, builder.getI64Type()); // index->int64
-                    return Wrap(builder.create<mlir::arith::SIToFPOp>(loc, int64Value, toType)); // int64->fp
-                })
-                .Default([&](mlir::Type) -> Scalar {
-                    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-                });
-        })
-        .Case([&](mlir::FloatType fromFloatType) {
-            return mlir::TypeSwitch<mlir::Type, Scalar>(toType)
-                .Case([&](mlir::IntegerType toIntType) {
-                    auto toIntTypeSignless = accera::ir::util::ToSignlessMLIRType(builder, toIntType);
-                    return toIntType.isUnsigned() ? Wrap(builder.create<mlir::arith::FPToUIOp>(loc, mlirValue, toIntTypeSignless)) : Wrap(builder.create<mlir::arith::FPToSIOp>(loc, mlirValue, toIntTypeSignless));
-                })
-                .Case([&](mlir::FloatType toFloatType) {
-                    return fromFloatType.getWidth() > toFloatType.getWidth() ? Wrap(builder.create<mlir::arith::TruncFOp>(loc, mlirValue, toType)) : Wrap(builder.create<mlir::arith::ExtFOp>(loc, mlirValue, toType));
-                })
-                .Default([&](mlir::Type) -> Scalar {
-                    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-                });
-        })
-        .Default([&](mlir::Type) -> Scalar {
-            throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
-        });
+    auto sourceMlirType = ValueTypeToMLIRType(builder, source);
+    auto targetMlirType = ValueTypeToMLIRType(builder, target);
+    return accera::ir::util::IsImplicitlyCastable(sourceMlirType, targetMlirType);
 }
 
 Scalar MLIRContext::BitcastImpl(Scalar value, ValueType type)
@@ -2122,7 +2167,7 @@ Scalar MLIRContext::BitcastImpl(Scalar value, ValueType type)
 
     auto loc = mlirValue.getLoc();
     auto fromType = mlirValue.getType();
-    auto toType = ToMLIRType(builder, type);
+    auto toType = ValueTypeToMLIRType(builder, type);
     if (fromType == toType)
     {
         return Wrap(mlirValue);
@@ -2285,7 +2330,7 @@ std::optional<Value> MLIRContext::EmitExternalCall(FunctionDeclaration func, std
 
     accera::ir::value::CallOp callResult = builder.create<ir::value::CallOp>(
         loc,
-        DeclareFn(func.GetFunctionName(), ToMLIRType(builder, func)),
+        DeclareFn(func.GetFunctionName(), ::ToMLIRType(builder, func)),
         mlir::ValueRange{ mlirValueCallArgs });
 
     if (callResult.getNumResults() > 0)

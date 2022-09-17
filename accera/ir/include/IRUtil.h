@@ -259,12 +259,12 @@ namespace util
 
     mlir::Type GetElementType(mlir::Type type);
 
-    int64_t GetUniqueId();
+    int64_t GetUniqueId(mlir::Operation* where);
 
     mlir::Operation* CloneRecursively(mlir::OpBuilder& builder, mlir::Operation* op, mlir::BlockAndValueMapping& mapping);
 
     std::optional<ir::value::ExecutionTarget> ResolveExecutionTarget(mlir::Operation* op, bool exact = false);
-    std::optional<ir::value::ExecutionRuntime> ResolveExecutionRuntime(mlir::Operation* op, bool exact = false);
+    ir::value::ExecutionRuntime ResolveExecutionRuntime(mlir::Operation* op, bool exact = false);
     std::optional<std::pair<int, int>> ResolveWarpSize(value::ExecutionRuntime runtime);
 
     mlir::Operation* CreateGPUControlBarrier(mlir::OpBuilder& builder, const std::string scope, std::optional<mlir::Location> loc = std::nullopt);
@@ -411,6 +411,9 @@ namespace util
 
     // Gets the flattened thread ID of the current GPU thread within the context of the current warp
     mlir::Value GetCurrentGPUWarpThreadID(mlir::OpBuilder& builder, mlir::Location loc);
+
+    bool ShapesMatch(mlir::ShapedType lhs, mlir::ShapedType rhs);
+    bool IsImplicitlyCastable(mlir::Type source, mlir::Type target);
 
 } // namespace util
 } // namespace accera::ir

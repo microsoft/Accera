@@ -348,7 +348,7 @@ struct NestOpLowering : OpRewritePattern<lnir::NestOp>
         }
 
         // Create the function that takes the arguments needed
-        auto fnName = "NestFunction_" + std::to_string(accera::ir::util::GetUniqueId());
+        auto fnName = "NestFunction_" + std::to_string(accera::ir::util::GetUniqueId(nestOp));
 
         auto scheduleOp = nestOp.getOrCreateSchedule();
         auto execPlanOp = scheduleOp.getOrCreateExecPlan();
@@ -370,10 +370,16 @@ struct NestOpLowering : OpRewritePattern<lnir::NestOp>
             nestFuncOp->setAttr(nestFuncOp.getGPULaunchAttrName(), launchAttr);
         }
 
-        auto vectorizationInfoIdentifier = rewriter.getStringAttr(xpir::VectorizationInfoAttr::getKeyName());
+        auto vectorizationInfoIdentifier = xpir::VectorizationInfoAttr::getKeyName();
         if (auto vectorizationInfoAttr = execPlanOp->getAttr(vectorizationInfoIdentifier))
         {
             nestFuncOp->setAttr(vectorizationInfoIdentifier, vectorizationInfoAttr);
+        }
+
+        auto tensorizationInfoIdentifier = xpir::TensorizationInfoAttr::getKeyName();
+        if (auto tensorizationInfoAttr = execPlanOp->getAttr(tensorizationInfoIdentifier))
+        {
+            nestFuncOp->setAttr(tensorizationInfoIdentifier, tensorizationInfoAttr);
         }
 
         rewriter.eraseOp(nestOp.getBody()->getTerminator());

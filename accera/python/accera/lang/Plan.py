@@ -18,6 +18,7 @@ from .NativeLoopNestContext import NativeLoopNestContext
 from ..Targets import GridUnits, Target
 from ..Platforms import LibraryDependency
 from ..Constants import AUTO
+from .._lang_python import ScalarType
 from .Dimension import Dimension
 
 from .._lang_python._lang import (
@@ -25,6 +26,7 @@ from .._lang_python._lang import (
     _MemorySpace,
     _MMASchedulingPolicy,
     _MMAShape,
+    _CacheStrategy,
 )
 from ..algorithms import *
 
@@ -262,8 +264,6 @@ class Plan:
         _use_rocWMMA,
         context: NativeLoopNestContext,
     ):
-        from .._lang_python import ScalarType
-
         if num_fused_passes is None:
             num_fused_passes = -1
         elif num_fused_passes <= 0:
@@ -364,6 +364,7 @@ class Plan:
         trigger_index: Union[LoopIndex, DelayedParameter] = None,
         layout: Union[Array.Layout, DelayedParameter] = None,
         max_elements: int = None,
+        element_type: Union[ScalarType, DelayedParameter] = None,
         thrifty: Union[bool, DelayedParameter] = None,
         location: _MemorySpace = _MemorySpace.NONE,
         level: Union[int, DelayedParameter] = None,
@@ -371,6 +372,7 @@ class Plan:
         double_buffer: Union[bool, DelayedParameter] = False,
         double_buffer_location: Union[object, _MemorySpace, DelayedParameter] = AUTO,
         vectorize: Union[bool, DelayedParameter, object] = AUTO,
+        strategy: _CacheStrategy = AUTO,
         _delayed_cache: DelayedCache = None,
     ):
         """Adds a cache for a view target
@@ -383,6 +385,8 @@ class Plan:
             level: The key-slice level to cache (the number of wildcard dimensions in a key-slice). Specify one and only one of `index`, `level`, `max_elements`.
             trigger_level: The key-slice level to fill the cache at. `trigger_level` can't be smaller than `level`, and will default to `level` if not specified. Specify at most one of `trigger_index` or `trigger_level`.
             max_elements: The maximum elements to include in the cached region. Specify one and only one of `index`, `level`, `max_elements`.
+            element_type: The element type to use in the cache. Defaults to the element type of the cached array.
+            strategy: The thread to data mapping pattern to use when collaboratively caching by multiple threads. Defaults to AUTO which will resolve to the strategy best suited for the current target environment.
             thrifty: Use thrifty caching (copy data into a cache only if the cached data differs from the original active block). This defaults to False as it slows down compilation speed so it is intended as an opt-in feature.
             double_buffer: Make this a double buffer cache by copying data one iteration ahead and using private memory on GPU for this procedure.
             vectorize: Whether to vectorize the cache operations. Defaults to AUTO, which will behave like `vectorize=True` if the loopnest has a vectorized loop or `vectorize=False` if the loopnest has no vectorized loops.
@@ -407,6 +411,7 @@ class Plan:
                         double_buffer_location,
                         vectorize,
                         layout,
+                        element_type
                     )
                 ]
             )
@@ -437,6 +442,7 @@ class Plan:
                 "double_buffer": double_buffer,
                 "double_buffer_location": double_buffer_location,
                 "vectorize": vectorize,
+                "element_type": element_type
             }
             return delayed_cache
 
@@ -467,6 +473,18 @@ class Plan:
 
         if self._target.category == Target.Category.GPU and location == _MemorySpace.GLOBAL:
             raise ValueError("Global memory caches are not yet supported on GPU targets.")
+
+        if self._target.category == Target.Category.CPU and strategy != AUTO:
+            raise ValueError("Only AUTO strategy is supported on the CPU")
+
+        if strategy == AUTO:
+            strategy = _CacheStrategy.STRIPED
+
+        if double_buffer and location == _MemorySpace.TENSOR:
+            raise ValueError("Double buffering is not supported with Tensor caching")
+
+        if self._target.category == Target.Category.GPU and self._target.runtime == Target.Runtime.ROCM and location == _MemorySpace.TENSOR:
+            location = _MemorySpace.PRIVATE # Tensor just resolves to Private in ROCM
 
         if double_buffer_location is AUTO:
             if double_buffer:
@@ -576,6 +594,8 @@ class Plan:
                     raise ValueError(
                         "Outer cache for a hierarchical cache must have a greater or equal cache level than the inner cache's trigger_level"
                     )
+        if element_type is None:
+            element_type = source.element_type
 
         cache = Cache(
             plan=self,
@@ -584,6 +604,7 @@ class Plan:
             trigger_index=trigger_index,
             level=level,
             trigger_level=trigger_level,
+            element_type=element_type,
             layout=layout,
             max_elements=max_elements,
             thrifty=thrifty,
@@ -591,6 +612,7 @@ class Plan:
             double_buffer=double_buffer,
             double_buffer_location=double_buffer_location,
             vectorize=vectorize,
+            strategy=strategy
         )
 
         if _delayed_cache:
@@ -631,41 +653,23 @@ class Plan:
         else:
             target = cache.target.native_cache
 
-        if (
-            isinstance(self._target, Target)
-            and self._target.category == Target.Category.GPU
-        ):
-            cache.native_cache = context.plan.add_cache(
-                target=target,
-                index=last_in_index,
-                trigger_index=trigger_index,
-                max_elements=cache.max_elements,
-                indexing=cache.indexing,
-                allocation=cache.allocation,
-                location=cache.location,
-                memory_map=cache.memory_map,
-                dim_order=cache.dimension_permutation,
-                thrifty=cache.thrifty,
-                double_buffer=cache.double_buffer,
-                double_buffer_location=cache.double_buffer_location,
-                vectorization_info=vectorization_info,
-            )
-        else:
-            cache.native_cache = context.plan.add_cache(
-                target=target,
-                index=last_in_index,
-                trigger_index=trigger_index,
-                max_elements=cache.max_elements,
-                indexing=cache.indexing,
-                allocation=cache.allocation,
-                location=cache.location,
-                memory_map=cache.memory_map,
-                dim_order=cache.dimension_permutation,
-                thrifty=cache.thrifty,
-                double_buffer=cache.double_buffer,
-                double_buffer_location=cache.double_buffer_location,
-                vectorization_info=vectorization_info,
-            )
+        cache.native_cache = context.plan.add_cache(
+            target=target,
+            index=last_in_index,
+            trigger_index=trigger_index,
+            max_elements=cache.max_elements,
+            indexing=cache.indexing,
+            allocation=cache.allocation,
+            location=cache.location,
+            memory_map=cache.memory_map,
+            dim_order=cache.dimension_permutation,
+            thrifty=cache.thrifty,
+            double_buffer=cache.double_buffer,
+            double_buffer_location=cache.double_buffer_location,
+            vectorization_info=vectorization_info,
+            element_type=cache.element_type,
+            strategy=cache.strategy
+        )
 
     def pack_and_embed_buffer(
         self,

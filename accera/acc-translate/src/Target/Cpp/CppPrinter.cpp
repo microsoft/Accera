@@ -473,9 +473,11 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult CppPrinter::printVectorType(VectorType type)
+    LogicalResult CppPrinter::printVectorType(Type elemType, const int64_t count)
     {
-        auto elemType = type.getElementType();
+        if (count == 1)
+            return printType(elemType);
+
         os << "v";
         if (elemType.isa<Float16Type>())
         {
@@ -493,10 +495,13 @@ namespace cpp_printer
         {
             RETURN_IF_FAILED(printType(elemType));
         }
-        os << "x";
-        os << type.getNumElements();
-        os << "_t";
+        os << "x" << count << "_t";
         return success();
+    }
+
+    LogicalResult CppPrinter::printVectorType(VectorType type)
+    {
+        return printVectorType(type.getElementType(), type.getNumElements());
     }
 
     LogicalResult CppPrinter::printType(Type type)
@@ -848,7 +853,6 @@ namespace cpp_printer
         }
 
         if (auto execRuntime = utilir::ResolveExecutionRuntime(funcOp, /* exact */ true);
-            execRuntime &&
             (execRuntime == vir::ExecutionRuntime::ROCM) &&
             utilir::ResolveExecutionTarget(funcOp, /* exact */ true) == vir::ExecutionTarget::CPU)
         {

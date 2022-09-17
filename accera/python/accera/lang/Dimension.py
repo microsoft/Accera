@@ -20,7 +20,7 @@ class Dimension:
         OUTPUT = auto()    #: An output dimension (mutable and updated by an Accera function).
 
     def __init__(
-        self, 
+        self,
         name: str = None,
         role: "accera.Dimension.Role"=Role.INPUT,
         value: Union["Dimension", int] = None
@@ -66,7 +66,8 @@ class Dimension:
 
     def _create_native_dim(self):
         if not self._native_dim:
-            self._native_dim = Scalar(Allocate(type=ScalarType.index, layout=_MemoryLayout()))
+            # TODO: use ScalarDimension once it is aliased to Scalar(type=ScalarType.index)
+            self._native_dim = Scalar(type=ScalarType.index)
 
 
 def create_dimensions():

@@ -27,7 +27,9 @@ vcpkg_from_github(
     0002-Merged-PR-2237-Improved-codegen-of-vpmaddwd-instruct.patch
     0003-Fix-bad-merge.patch
     0004-Lower-memref.copy-to-memcpy-when-layouts-canonicaliz.patch
-    0005-fix-vcpkg-install-paths.patch # cf. https://github.com/microsoft/vcpkg/blob/master/ports/llvm
+    0005-Fix-issue-where-passed-in-op-printing-flags-were-ign.patch
+    0006-Merged-PR-2822-Fix-lowering-of-MemrefCastOp-to-the-L.patch
+    0007-fix-vcpkg-install-paths.patch # cf. https://github.com/microsoft/vcpkg/blob/master/ports/llvm
 )
 
 vcpkg_find_acquire_program(PYTHON3)

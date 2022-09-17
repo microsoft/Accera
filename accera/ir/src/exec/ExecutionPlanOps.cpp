@@ -14,6 +14,7 @@
 #include "nest/LoopNestOps.h"
 #include "nest/TransformedDomain.h"
 #include "value/ValueEnums.h"
+#include "value/include/MLIREmitterContext.h"
 #include <utilities/include/MemoryLayout.h>
 
 #include <llvm/Support/ErrorHandling.h>
@@ -370,11 +371,15 @@ namespace executionPlan
         {
             return builder.getAffineConstantExpr(constantOp.value());
         }
+        // we expect value CastOps and/or IndexCastOps when the DSL code indexes into an array with a constant integer
+        // e.g. A[0,0] will produce an index cast from int64 to index for each 0
         else if (auto indexCast = mlir::dyn_cast_or_null<arith::IndexCastOp>(currentOp))
         {
-            // we expect IndexCastOps when the DSL code indexes into an array with a constant integer
-            // e.g. A[0,0] will produce an index cast from int64 to index for each 0
             return RecursiveBinOpToAffineExprHelper(indexCast.getIn(), orderedAccessIndices);
+        }
+        else if (auto valueCast = mlir::dyn_cast_or_null<accera::ir::value::CastOp>(currentOp); valueCast.result().getType().isIndex())
+        {
+            return RecursiveBinOpToAffineExprHelper(valueCast.source(), orderedAccessIndices);
         }
         llvm_unreachable("Unsupported op type used for indexing into a value that is being cached");
     }
@@ -883,6 +888,7 @@ namespace executionPlan
                                   mlir::Value input,
                                   CacheAllocation cacheAllocation,
                                   loopnest::ScheduleOp schedule,
+                                  const std::optional<accera::value::ValueType>& elementType,
                                   const std::optional<loopnest::Index>& keySliceIndex,
                                   const std::optional<loopnest::Index>& triggerIndex,
                                   const std::optional<int64_t>& maxElements,
@@ -928,6 +934,9 @@ namespace executionPlan
         case MemorySpace::Private:
             memoryLocation = (int)value::MemorySpace::Private;
             break;
+        case MemorySpace::Tensor:
+            memoryLocation = (int)value::MemorySpace::Tensor;
+            break;
         }
 
         // The cache shape isn't determined for active block caches until lowering the cache ops, so give it a dynamic shape for now to be replaced during lowering
@@ -936,9 +945,10 @@ namespace executionPlan
         assert(inputType.isa<MemRefType>());
         auto inputMemRefType = inputType.cast<MemRefType>();
         auto inputElementType = inputMemRefType.getElementType();
+        auto cacheElementType = elementType.has_value() ? accera::value::ValueTypeToMLIRType(builder, *elementType) : inputElementType;
 
         std::vector<int64_t> dynamicSizedMemrefShape(1, DynamicSizeSentinelValue);
-        cacheInfo.cacheType = MemRefType::get(dynamicSizedMemrefShape, inputElementType, {}, memoryLocation);
+        cacheInfo.cacheType = MemRefType::get(dynamicSizedMemrefShape, cacheElementType, {}, memoryLocation);
         cacheInfo.cacheAllocation = cacheAllocation;
         cacheInfo.accessMaps = accessMaps;
         cacheInfo.activeBlockCache = true;
@@ -1314,6 +1324,7 @@ namespace executionPlan
                                    bool activeBlockCache,
                                    bool dimReorderCache,
                                    bool thrifty,
+                                   value::CacheStrategy strategy,
                                    bool doubleBufferCache,
                                    accera::ir::value::MemorySpace doubleBufferMemorySpace,
                                    const VectorizationInfo& vecInfo)
@@ -1362,6 +1373,7 @@ namespace executionPlan
             result.addAttribute("doubleBufferCache", builder.getUnitAttr());
             result.addAttribute("doubleBufferMemorySpace", value::MemorySpaceAttr::get(builder.getContext(), doubleBufferMemorySpace));
         }
+        result.addAttribute("strategy", value::CacheStrategyAttr::get(builder.getContext(), strategy));
         result.addAttribute("vectorizationInfo", VectorizationInfoAttr::get(vecInfo, builder.getContext()));
         result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({ 1 /* fromValue */, 1 /* toValue */, 1 /* baseInput */, static_cast<int32_t>(cacheAccessContext.fullRelevantScheduleIndices.size()), static_cast<int32_t>(cacheAccessContext.externalRelevantScheduleIndices.size()) }));
     }
@@ -1434,6 +1446,7 @@ namespace executionPlan
                                              int64_t cacheHierarchyLevel,
                                              bool dimReorderCache,
                                              bool thrifty,
+                                             value::CacheStrategy strategy,
                                              bool doubleBufferCache,
                                              accera::ir::value::MemorySpace doubleBufferMemorySpace,
                                              const VectorizationInfo& vecInfo)
@@ -1460,6 +1473,7 @@ namespace executionPlan
             result.addAttribute("doubleBufferCache", builder.getUnitAttr());
             result.addAttribute("doubleBufferMemorySpace", value::MemorySpaceAttr::get(builder.getContext(), doubleBufferMemorySpace));
         }
+        result.addAttribute("strategy", value::CacheStrategyAttr::get(builder.getContext(), strategy));
         result.addAttribute("vectorizationInfo", VectorizationInfoAttr::get(vecInfo, builder.getContext()));
     }
 

@@ -835,8 +835,7 @@ namespace loopnest
 
     AffineConstraints TransformedDomain::GetConstraints() const
     {
-        std::vector<Index> indices(_indices.size());
-        std::transform(_indices.cbegin(), _indices.cend(), indices.begin(), [](auto entry) { return entry.first; });
+        auto indices = GetIndices();
 
         AffineConstraints constraints(indices);
 

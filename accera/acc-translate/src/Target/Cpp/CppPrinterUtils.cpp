@@ -94,7 +94,7 @@ namespace cpp_printer
         }
     }
 
-    LogicalResult printFragmentType(PrinterState& state, CppPrinter* printer, Type elementType, const vir::MMAOperandType opType, const std::tuple<int, int, int>& matrixShape, const bool rowMajor = {})
+    LogicalResult printFragmentType(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, const vir::MMAOperandType opType, const bool rowMajor = {})
     {
         const auto ns = getWmmaNamespace(state);
         auto m = std::get<0>(matrixShape);
@@ -121,20 +121,26 @@ namespace cpp_printer
         return success();
     }
 
+    LogicalResult printMMAMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value val, const vir::MMAOperandType operandType, const bool rowMajor)
+    {
+        auto fragName = state.nameState.getOrCreateName(val, SSANameState::SSANameKind::Variable, "mmaMatrix_");
+        RETURN_IF_FAILED(printFragmentType(state, printer, elementType, matrixShape, operandType, rowMajor));
+        auto&& os = printer->getOStream();
+        os << " " << fragName;
+        return success();
+    }
+
     LogicalResult printConstantMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value dest, Value value)
     {
-        auto fragName = state.nameState.getOrCreateName(dest, SSANameState::SSANameKind::Variable, "mmaMatrix_");
+        auto fragName = state.nameState.getName(dest);
         auto val = state.nameState.getOrCreateName(value, SSANameState::SSANameKind::Variable, "mmaFillValue_");
-        RETURN_IF_FAILED(printFragmentType(state, printer, elementType, vir::MMAOperandType::Acc, matrixShape));
         auto&& os = printer->getOStream();
-        os << " " << fragName << ";\n";
         os << getWmmaNamespace(state) << "::fill_fragment(" << fragName << ", " << val << ")";
         return success();
     }
 
-    LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value src, Value dest, vir::MMAOperandType operandType, std::pair<Value, Value> rowcol, const bool rowMajor)
+    LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value src, Value dest, const vir::MMAOperandType operandType, std::pair<Value, Value> rowcol, const bool rowMajor)
     {
-        const auto fragName = state.nameState.getOrCreateName(dest, SSANameState::SSANameKind::Variable, "mmaMatrix_");
         const auto rowIdx = state.nameState.getOrCreateName(rowcol.first, SSANameState::SSANameKind::Variable, "row_");
         const auto colIdx = state.nameState.getOrCreateName(rowcol.second, SSANameState::SSANameKind::Variable, "col_");
         const auto ns = getWmmaNamespace(state);
@@ -148,15 +154,15 @@ namespace cpp_printer
         const auto ld = rowMajor || sharedMem ? strides[0] : strides[1];
         assert(!sharedMem || memRefType.getRank() == 2); // sharedMem --> rank == 2
 
-        RETURN_IF_FAILED(printFragmentType(state, printer, elementType, operandType, matrixShape, rowMajor));
-        os << " " << fragName << ";\n";
-        os << ns << "::load_matrix_sync(" << fragName << ", ";
+        const auto resName = state.nameState.getName(dest);
+        os << ns << "::load_matrix_sync(" << resName << ", ";
         os << getMemrefAccessStr(sharedMem, state.nameState.getName(src).str(), rowIdx.str(), colIdx.str(), ld, rowMajor) << ", " << ld;
         if (operandType == vir::MMAOperandType::Acc)
         {
             os << ", " << getMmaLayout(ns, rowMajor);
         }
         os << ")";
+
         return success();
     }
 
@@ -165,10 +171,8 @@ namespace cpp_printer
         auto opA = state.nameState.getName(A);
         auto opB = state.nameState.getName(B);
         auto opC = state.nameState.getName(C);
-        auto fragName = state.nameState.getOrCreateName(D, SSANameState::SSANameKind::Variable, "mmaMatrix_");
-        RETURN_IF_FAILED(printFragmentType(state, printer, elementType, vir::MMAOperandType::Acc, resultShape));
+        auto fragName = state.nameState.getName(D);
         auto&& os = printer->getOStream();
-        os << " " << fragName << ";\n";
         os << getWmmaNamespace(state) << "::mma_sync(" << fragName << ", " << opA << ", " << opB << ", " << opC << ")";
         return success();
     }

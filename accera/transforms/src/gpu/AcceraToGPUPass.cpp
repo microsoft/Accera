@@ -278,7 +278,7 @@ struct ValueBarrierToGPUBarrierConversion final : public OpRewritePattern<vir::B
         switch (op.scope())
         {
         case vir::BarrierScope::Block:
-            if (utilir::ResolveExecutionRuntime(op).value() == vir::ExecutionRuntime::ROCM)
+            if (utilir::ResolveExecutionRuntime(op) == vir::ExecutionRuntime::ROCM)
             {
                 rewriter.replaceOpWithNewOp<ROCDL::BarrierOp>(op);
             }
@@ -299,7 +299,7 @@ struct ValueBarrierToGPUBarrierConversion final : public OpRewritePattern<vir::B
 };
 
 template <typename MFMALoadStoreOpTy, typename PostMFMAOp>
-void MFMALoadStoreAccumulator(MFMALoadStoreOpTy op, ConversionPatternRewriter& rewriter, const vir::MMAOp& mfmaMatrixType, const int64_t vecSize, PostMFMAOp&& doAfterFn, ValueRange iterArgs = llvm::None)
+void MFMALoadStoreAccumulator(MFMALoadStoreOpTy op, ConversionPatternRewriter& rewriter, const vir::MMAOp& mfmaMatrixType, const int64_t vecSize, PostMFMAOp&& doAfterFn)
 {
     auto loc = op->getLoc();
 
@@ -309,7 +309,7 @@ void MFMALoadStoreAccumulator(MFMALoadStoreOpTy op, ConversionPatternRewriter& r
 
     // Each thread in the MFMA has a disjoint set of elements it will contain the results for
     // Create the offsets for each of these sets
-    auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
+    auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op)).value();
     const auto warpSize = warpSizeX * warpSizeY;
     constexpr auto subGroupSize = 4; // How many elements are in each chunk - each chunk is a 4x1 region of output
     const auto numBlocks = mfmaMatrixType.getNumBlocks();
@@ -329,7 +329,7 @@ void MFMALoadStoreAccumulator(MFMALoadStoreOpTy op, ConversionPatternRewriter& r
 
     auto warpTidVal = utilir::GetCurrentGPUWarpThreadID(rewriter, loc);
 
-    auto loop = rewriter.replaceOpWithNewOp<mlir::AffineForOp>(op, 0, vecSize, 1, iterArgs);
+    auto loop = rewriter.replaceOpWithNewOp<mlir::AffineForOp>(op, 0, vecSize);
     mlir::OpBuilder loopBuilder = utilir::MakeBodyBuilder(loop); // using auto for the type here isn't compiling on gcc...?
     auto inductionVar = loop.getInductionVar();
 
@@ -402,8 +402,22 @@ void MFMALoadStoreAccumulator(MFMALoadStoreOpTy op, ConversionPatternRewriter& r
     doAfterFn(loc, loop, loopBuilder, accessPos);
 }
 
-Type GetCastedOutputType(ConversionPatternRewriter& rewriter, Type outputType)
+int64_t GetMFMARegSize(const vir::MMAShape mmaShape, const vir::MMAOperandType opType)
 {
+    auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(vir::ExecutionRuntime::ROCM).value();
+    const auto warpSize = warpSizeX * warpSizeY;
+    const vir::MMAOp mfmaOpType{ mmaShape };
+    if (opType == vir::MMAOperandType::Acc)
+        return mfmaOpType.getOutElementsPerThread(warpSize) / mfmaOpType.getNumBlocks();
+
+    return mfmaOpType.getInElementsPerThread(warpSize);
+}
+
+Type GetCastedOutputType(PatternRewriter& rewriter, const vir::MMAOperandType operandType, Type outputType)
+{
+    if (operandType != vir::MMAOperandType::Acc)
+        return outputType;
+
     // For FP16 or BF16 output, we need to load C in FP32 mode before passing to MFMA
     if (outputType.isF16() || outputType.isBF16())
         return rewriter.getF32Type();
@@ -422,42 +436,48 @@ LogicalResult MFMALoadAccumulator(vir::MMALoadSyncOp op,
     const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(op.mmaShapeType()) };
     auto memref = mmaLoadSyncOpAdaptor.memref();
 
-    auto loc = op.getLoc();
-    auto outputType = GetCastedOutputType(rewriter, op.result().getType().cast<MemRefType>().getElementType());
-
-    auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
-    const auto warpSize = warpSizeX * warpSizeY;
-    const auto vecSize = mfmaOpType.getOutElementsPerThread(warpSize) / mfmaOpType.getNumBlocks();
-    auto memRefType = mlir::MemRefType::get({ vecSize }, outputType);
-
-    // TODO : if we're loading from a private memory buffer, don't create a new buffer here
-    mlir::Value vec = rewriter.create<memref::AllocOp>(loc, memRefType);
+    auto resultMemrefType = op.dest().getType().cast<MemRefType>();
+    auto outputType = resultMemrefType.getElementType();
+    const auto vecSize = GetMFMARegSize(mfmaOpType.getShapeType(), vir::MMAOperandType::Acc);
 
     MFMALoadStoreAccumulator(
         op, rewriter, mfmaOpType, vecSize, [&](Location& loc, AffineForOp& loop, OpBuilder& loopBuilder, ValueRange mappedOperands) {
-            auto load = loopBuilder.create<memref::LoadOp>(loc, memref, mappedOperands);
-            auto destVec = loop.getRegionIterArgs()[0];
+            mlir::Value castedElem = loopBuilder.create<memref::LoadOp>(loc, memref, mappedOperands);
+            auto destVec = op.dest();
             auto inputType = op.memref().getType().cast<MemRefType>().getElementType();
             if (outputType.isF32() && (inputType.isF16() || inputType.isBF16()))
             {
-                auto castedElem = loopBuilder.create<mlir::arith::ExtFOp>(loc, load, rewriter.getF32Type());
-                loopBuilder.create<memref::StoreOp>(loc, castedElem, destVec, loop.getInductionVar());
+                castedElem = loopBuilder.create<mlir::arith::ExtFOp>(loc, castedElem, rewriter.getF32Type());
             }
             else if (outputType.isInteger(32) && (inputType.isInteger(16) || inputType.isInteger(8)))
             {
-                auto castedElem = loopBuilder.create<mlir::arith::ExtSIOp>(loc, load, rewriter.getI32Type());
-                loopBuilder.create<memref::StoreOp>(loc, castedElem, destVec, loop.getInductionVar());
+                castedElem = loopBuilder.create<mlir::arith::ExtSIOp>(loc, castedElem, rewriter.getI32Type());
             }
-            else
-            {
-                loopBuilder.create<memref::StoreOp>(loc, load, destVec, loop.getInductionVar());
-            }
-            loopBuilder.create<AffineYieldOp>(loc, destVec);
-        },
-        vec);
+
+            loopBuilder.create<memref::StoreOp>(loc, castedElem, destVec, loop.getInductionVar());
+        });
 
     return success();
 }
+
+struct ValueMMAAllocSyncOpToRocDLConversion final : public OpConversionPattern<vir::MMAAllocSyncOp>
+{
+    using OpConversionPattern<vir::MMAAllocSyncOp>::OpConversionPattern;
+
+    LogicalResult matchAndRewrite(vir::MMAAllocSyncOp op,
+                                  OpAdaptor mmaAllocSyncOpAdaptor,
+                                  ConversionPatternRewriter& rewriter) const final
+    {
+        const vir::MMAOperandType opType{ op.operandType() };
+        const auto vecSize = GetMFMARegSize(static_cast<vir::MMAShape>(op.mmaShapeType()), opType);
+        auto elementType = GetCastedOutputType(rewriter, opType, op.result().getType().cast<MemRefType>().getElementType());
+        auto memRefType = mlir::MemRefType::get({ vecSize }, elementType);
+        auto val = rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memRefType);
+        op.result().replaceAllUsesWith(val);
+
+        return success();
+    }
+};
 
 struct ValueMMALoadSyncOpToRocDLConversion final : public OpConversionPattern<vir::MMALoadSyncOp>
 {
@@ -476,12 +496,10 @@ struct ValueMMALoadSyncOpToRocDLConversion final : public OpConversionPattern<vi
         const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(op.mmaShapeType()) };
         auto memref = op.memref();
         auto loc = op->getLoc();
-        auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
+        auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op)).value();
         const auto warpSize = warpSizeX * warpSizeY;
-        auto elementType = op.result().getType().cast<MemRefType>().getElementType();
-        const auto vecSize = mfmaOpType.getInElementsPerThread(warpSize);
-        auto memRefType = mlir::MemRefType::get({ vecSize }, elementType);
-        mlir::Value vec = rewriter.create<memref::AllocOp>(loc, memRefType);
+        const auto vecSize = GetMFMARegSize(mfmaOpType.getShapeType(), operandType);
+        mlir::Value vec = op.dest();
 
         // Get the upper left corner of the tile that should be accessed
         auto upperLeftCornerPos = op.indices();
@@ -515,10 +533,9 @@ struct ValueMMALoadSyncOpToRocDLConversion final : public OpConversionPattern<vi
 
         auto warpTidVal = utilir::GetCurrentGPUWarpThreadID(rewriter, loc);
 
-        auto loop = rewriter.replaceOpWithNewOp<mlir::AffineForOp>(op, 0, vecSize, 1, vec);
+        auto loop = rewriter.replaceOpWithNewOp<mlir::AffineForOp>(op, 0, vecSize);
         auto loopBuilder = utilir::MakeBodyBuilder(loop);
         auto inductionVar = loop.getInductionVar();
-        auto destVec = loop.getRegionIterArgs()[0];
 
         // 1 dim for the induction var, 1 symbol for the warp thread ID
         auto warpTileOffsetMap = mlir::AffineMap::get(1, 1, { fullRowOffsetExpr, fullColOffsetExpr }, rewriter.getContext());
@@ -562,8 +579,7 @@ struct ValueMMALoadSyncOpToRocDLConversion final : public OpConversionPattern<vi
         auto accessPos = utilir::MultiDimAffineApply(loopBuilder, loc, fullMatrixAccessMap, accessOperands);
 
         auto load = loopBuilder.create<memref::LoadOp>(loc, memref, accessPos);
-        loopBuilder.create<memref::StoreOp>(loc, load, destVec, inductionVar);
-        loopBuilder.create<AffineYieldOp>(loc, destVec);
+        loopBuilder.create<memref::StoreOp>(loc, load, vec, inductionVar);
 
         return success();
     }
@@ -585,25 +601,21 @@ struct ValueMMAStoreSyncOpToRocDLConversion final : public OpConversionPattern<v
         auto srcMemRefShape = srcMemRefType.getShape();
         const auto vecSize = std::accumulate(srcMemRefShape.begin(), srcMemRefShape.end(), 1, std::multiplies<int64_t>());
         MFMALoadStoreAccumulator(op, rewriter, mfmaOpType, vecSize, [&](Location& loc, AffineForOp& loop, OpBuilder& loopBuilder, ValueRange mappedOperands) {
-            auto elem = loopBuilder.create<memref::LoadOp>(loc, src, loop.getInductionVar());
+            mlir::Value castedElem = loopBuilder.create<memref::LoadOp>(loc, src, loop.getInductionVar());
 
             // Check if we need to cast before storing back the result
             auto srcType = srcMemRefType.getElementType();
             auto dstType = memref.getType().cast<MemRefType>().getElementType();
             if (srcType.isF32() && (dstType.isF16() || dstType.isBF16()))
             {
-                auto castedElem = loopBuilder.create<mlir::arith::TruncFOp>(loc, elem, dstType);
-                loopBuilder.create<memref::StoreOp>(loc, castedElem, memref, mappedOperands);
+                castedElem = loopBuilder.create<mlir::arith::TruncFOp>(loc, castedElem, dstType);
             }
             else if (srcType.isInteger(32) && (dstType.isInteger(16) || dstType.isInteger(8)))
             {
-                auto castedElem = loopBuilder.create<mlir::arith::TruncIOp>(loc, elem, dstType);
-                loopBuilder.create<memref::StoreOp>(loc, castedElem, memref, mappedOperands);
+                castedElem = loopBuilder.create<mlir::arith::TruncIOp>(loc, castedElem, dstType);
             }
-            else
-            {
-                loopBuilder.create<memref::StoreOp>(loc, elem, memref, mappedOperands);
-            }
+
+            loopBuilder.create<memref::StoreOp>(loc, castedElem, memref, mappedOperands);
         });
 
         return success();
@@ -617,16 +629,13 @@ struct ValueMMAFillSyncOpToRocDLConversion final : public OpRewritePattern<vir::
     LogicalResult matchAndRewrite(vir::MMAFillSyncOp op, PatternRewriter& rewriter) const final
     {
         auto loc = op.getLoc();
-        auto memRefType = op.result().getType().cast<MemRefType>();
+        auto memRefType = op.dest().getType().cast<MemRefType>();
         auto memRefShape = memRefType.getShape();
         const auto vecSize = std::accumulate(memRefShape.begin(), memRefShape.end(), 1, std::multiplies<int64_t>());
-        mlir::Value vec = rewriter.create<memref::AllocOp>(loc, memRefType);
-        auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, vecSize, 1, vec);
+        auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, vecSize);
         auto loopBuilder = utilir::MakeBodyBuilder(loop);
         auto inductionVar = loop.getInductionVar();
-        auto destVec = loop.getRegionIterArgs()[0];
-        loopBuilder.create<memref::StoreOp>(loc, op.value(), destVec, inductionVar);
-        loopBuilder.create<AffineYieldOp>(loc, destVec);
+        loopBuilder.create<memref::StoreOp>(loc, op.value(), op.dest(), inductionVar);
 
         return success();
     }
@@ -669,11 +678,12 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
         vir::MMAShape mfmaShape{ static_cast<vir::MMAShape>(op.mmaShapeType()) };
         vir::MMAOp mfmaType{ mfmaShape };
 
-        auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op).value()).value();
+        auto [warpSizeX, warpSizeY] = utilir::ResolveWarpSize(utilir::ResolveExecutionRuntime(op)).value();
         const auto warpSize = warpSizeX * warpSizeY;
-        const auto outputSize = mfmaType.getOutElementsPerThread(warpSize) / mfmaType.getNumBlocks();
-        const auto outputType = GetCastedOutputType(rewriter, op.result().getType().cast<MemRefType>().getElementType());
-        const auto outputMemrefType = mlir::MemRefType::get({ outputSize }, outputType);
+        auto outputMemrefType = opC.getType().cast<MemRefType>();
+        assert(outputMemrefType.getShape().size() == 1);
+        const auto outputSize = outputMemrefType.getShape()[0];
+        const auto outputType = outputMemrefType.getElementType();
 
         // Copy C from memref to vector
         auto zero = rewriter.create<mlir::arith::ConstantOp>(loc, outputType, rewriter.getZeroAttr(outputType));
@@ -811,15 +821,12 @@ struct ValueMFMAComputeToRocDLConversion final : public OpConversionPattern<vir:
         }
 
         // Copy C back from vector to memref
-        mlir::Value result = rewriter.create<memref::AllocOp>(loc, outputMemrefType);
-        auto loopCopyC = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, outputSize, 1, result);
+        auto loopCopyC = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, outputSize);
         auto loopBuilderCopyC = utilir::MakeBodyBuilder(loopCopyC);
         auto inductionVarCopyC = loopCopyC.getInductionVar();
-        auto resultMemRef = loopCopyC.getRegionIterArgs()[0];
         laneIndex = loopBuilderCopyC.create<mlir::arith::IndexCastOp>(loc, inductionVarCopyC, i32Ty);
         auto item = loopBuilderCopyC.create<vector::ExtractElementOp>(loc, loop.results()[0], laneIndex);
-        loopBuilderCopyC.create<memref::StoreOp>(loc, item, resultMemRef, inductionVarCopyC);
-        loopBuilderCopyC.create<AffineYieldOp>(loc, resultMemRef);
+        loopBuilderCopyC.create<memref::StoreOp>(loc, item, opC, inductionVarCopyC);
 
         return success();
     }
@@ -1019,6 +1026,7 @@ struct AcceraToROCDLPass : public accera::transforms::ConvertAcceraToROCDLBase<A
         target.addLegalOp<ModuleOp>();
         target.addIllegalOp<
             vir::EarlyReturnOp,
+            vir::MMAAllocSyncOp,
             vir::MMAComputeSyncOp,
             vir::MMAFillSyncOp,
             vir::MMALoadSyncOp,
@@ -1182,6 +1190,7 @@ void populateAcceraToROCDLPatterns(mlir::RewritePatternSet& patterns)
         ResolveBlockDimPattern,
         EarlyReturnToGPUReturnPattern,
         ValueBarrierToGPUBarrierConversion,
+        ValueMMAAllocSyncOpToRocDLConversion,
         ValueMMALoadSyncOpToRocDLConversion,
         ValueMFMAComputeToRocDLConversion,
         ValueMMAStoreSyncOpToRocDLConversion,

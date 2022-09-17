@@ -190,7 +190,7 @@ namespace value
 
     void Nest::Set(std::function<void()> kernelFn)
     {
-        int64_t count = accera::ir::util::GetUniqueId();
+        int64_t count = accera::ir::util::GetUniqueId(_impl->GetOp());
         Kernel k("body_" + std::to_string(count), kernelFn);
         CreateSchedule().AddKernel(k);
     }

@@ -99,7 +99,7 @@ TEST_CASE("function_decl1")
         DeclareFunction("f1")
             .Define([] {});
     CHECK(f1);
-    // CHECK: accv.func nested @f2_{{[0-9]+}}(%arg0: i32) attributes {exec_target = 0 : i64} {
+    // CHECK: accv.func nested @f2_{{[0-9]+}}(%arg0: i32)
     // CHECK-NEXT: return
     // CHECK-NEXT: }
     auto f2 =
@@ -107,7 +107,7 @@ TEST_CASE("function_decl1")
             .Parameters(Value{ ValueType::Int32, ScalarLayout })
             .Define([](Scalar) {});
     CHECK(f2);
-    // CHECK: accv.func nested @f3_{{[0-9]+}}(%arg0: memref<10xf32>) attributes {exec_target = 0 : i64} {
+    // CHECK: accv.func nested @f3_{{[0-9]+}}(%arg0: memref<10xf32>)
     // CHECK-NEXT: return
     // CHECK-NEXT: }
     auto f3 =
@@ -115,8 +115,8 @@ TEST_CASE("function_decl1")
             .Parameters(Value{ ValueType::Float, MemoryLayout{ { 10 } } })
             .Define([](Value) {});
     CHECK(f3);
-    // CHECK: accv.func nested @f4_{{[0-9]+}}(%arg0: memref<3x4xf64, #map{{[0-9]*}}>) attributes {exec_target = 0 : i64} {
-    // COM: CHECK: accv.func @f4_{{[0-9]+}}(%arg0: memref<3x4xf64>) attributes {exec_target = 0 : i64, sym_visibility = "nested"} {
+    // CHECK: accv.func nested @f4_{{[0-9]+}}(%arg0: memref<3x4xf64, #map{{[0-9]*}}>)
+    // COM: CHECK: accv.func @f4_{{[0-9]+}}(%arg0: memref<3x4xf64>)
     // CHECK-NEXT: return
     // CHECK-NEXT: }
     auto f4 =
@@ -124,7 +124,7 @@ TEST_CASE("function_decl1")
             .Parameters(Value{ ValueType::Double, MemoryLayout{ { 3, 4 } } })
             .Define([](Value) {});
     CHECK(f4);
-    // CHECK: accv.func nested @f5_{{[0-9]+}}(%arg0: i32, %arg1: i64) attributes {exec_target = 0 : i64} {
+    // CHECK: accv.func nested @f5_{{[0-9]+}}(%arg0: i32, %arg1: i64)
     // CHECK-NEXT: return
     // CHECK-NEXT: }
     auto f5 =
@@ -134,7 +134,7 @@ TEST_CASE("function_decl1")
                 Value{ ValueType::Int64, ScalarLayout })
             .Define([](Value, Value) {});
     CHECK(f5);
-    // CHECK: accv.func nested @f6_{{[0-9]+}}(%arg0: index, %arg1: memref<?x16xf32, #map{{[0-9]*}}>) attributes {exec_target = 0 : i64} {
+    // CHECK: accv.func nested @f6_{{[0-9]+}}(%arg0: index, %arg1: memref<?x16xf32>)
     // CHECK-NEXT: return
     // CHECK-NEXT: }
     auto f6 =
@@ -143,7 +143,7 @@ TEST_CASE("function_decl1")
                 Value{ ValueType::Index, ScalarLayout },
                 Value{ ValueType::Float, MemoryLayout{ { mlir::ShapedType::kDynamicSize, 16 } } })
             .Define([](Value, Value) {});
-    // CHECK: accv.func nested @f7_{{[0-9]+}}(%arg0: index, %arg1: index, %arg2: memref<?x?xf32, #map{{[0-9]*}}>) attributes {exec_target = 0 : i64} {
+    // CHECK: accv.func nested @f7_{{[0-9]+}}(%arg0: index, %arg1: index, %arg2: memref<?x?xf32>)
     // CHECK-NEXT: return
     // CHECK-NEXT: }
     auto f7 =
@@ -152,6 +152,16 @@ TEST_CASE("function_decl1")
                 Value{ ValueType::Index, ScalarLayout },
                 Value{ ValueType::Index, ScalarLayout },
                 Value{ ValueType::Float, MemoryLayout{ { mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize } } })
+            .Define([](Value, Value, Value) {});
+    // CHECK: accv.func nested @f8_{{[0-9]+}}(%arg0: index, %arg1: memref<1xindex>, %arg2: memref<1xmemref<?x?xf32>>)
+    // CHECK-NEXT: return
+    // CHECK-NEXT: }
+    auto f8 =
+        DeclareFunction("f8")
+            .Parameters(
+                Value{ ValueType::Index, ScalarLayout },
+                Value{ ValueType::Index, ScalarLayout, /*pointerLevel=*/1 },
+                Value{ ValueType::Float, MemoryLayout{ { mlir::ShapedType::kDynamicSize, mlir::ShapedType::kDynamicSize } }, /*pointerLevel=*/2 })
             .Define([](Value, Value, Value) {});
     // CHECK-NEXT: }
 }
@@ -293,7 +303,7 @@ TEST_CASE("mlir_test2")
 // CHECK-NEXT: accv.module "mlir_test3" {
 TEST_CASE("mlir_test3")
 {
-    // CHECK-NEXT: accv.func nested @foo_{{[0-9]+}}(%arg0: i32) attributes {exec_target = 0 : i64}
+    // CHECK-NEXT: accv.func nested @foo_{{[0-9]+}}(%arg0: i32)
     auto fooFn =
         DeclareFunction("foo")
             .Parameters(Value({ ValueType::Int32, ScalarLayout }))
@@ -315,8 +325,8 @@ TEST_CASE("mlir_test3")
 
 // CHECK-LABEL: module @mlir_test4 {
 // CHECK-NEXT: accv.module "mlir_test4" {
-// CHECK-NEXT: accv.func nested @foo_{{[0-9]+}}(%arg0: memref<10x10xi32, [[MAP:#map[0-9]*]]>) attributes {exec_target = 0 : i64} {
-// COM: CHECK-NEXT: accv.func @foo_{{[0-9]+}}(%arg0: memref<10x10xi32>) attributes {exec_target = 0 : i64, sym_visibility = "nested"} {
+// CHECK-NEXT: accv.func nested @foo_{{[0-9]+}}(%arg0: memref<10x10xi32, [[MAP:#map[0-9]*]]>)
+// COM: CHECK-NEXT: accv.func @foo_{{[0-9]+}}(%arg0: memref<10x10xi32>) attributes {args_symbol = ["{{[a-z0-9_]+}}"], exec_target = 0 : i64, sym_visibility = "nested"} {
 // CHECK-NEXT: [[c0:%c[0-9]+]] = arith.constant 0 : index
 // CHECK-NEXT: [[c10_1:%c[0-9_]+]] = arith.constant 10 : index
 // CHECK-NEXT: [[c10_2:%c[0-9_]+]] = arith.constant 10 : index
@@ -355,7 +365,7 @@ TEST_CASE("mlir_test5")
     // CHECK-SAME: type = memref<4xi32>
     // CHECK-SAME: value = dense<[1, 2, 3, 4]>
 
-    // CHECK-NEXT: accv.func nested @[[BAR_FN:bar_[0-9]+]](%arg0: i32) attributes {exec_target = 0 : i64} {
+    // CHECK-NEXT: accv.func nested @[[BAR_FN:bar_[0-9]+]](%arg0: i32)
     auto barFn =
         DeclareFunction("bar")
             .Parameters(Value({ ValueType::Int32, ScalarLayout }))
@@ -457,7 +467,7 @@ TEST_CASE("mlir_test10")
 // CHECK-NEXT: accv.module "mlir_test11" {
 TEST_CASE("mlir_test11")
 {
-    // CHECK-NEXT:    accv.func nested @constant_scalar_test_{{[0-9]+}}() attributes  {exec_target = 0 : i64} {
+    // CHECK-NEXT:    accv.func nested @constant_scalar_test_{{[0-9]+}}()
     DeclareFunction("constant_scalar_test")
         .Define([] {
             // CHECK-NEXT:      [[c0_0:%c[0-9a-z_]+]] = arith.constant 0 : i32
@@ -484,7 +494,7 @@ TEST_CASE("mlir_test11")
 
 // CHECK-LABEL: module @mlir_test12 {
 // CHECK-NEXT: accv.module "mlir_test12" {
-// CHECK-NEXT:    accv.func nested @constant_scalar_test_{{[0-9]+}}() attributes {exec_target = 0 : i64} {
+// CHECK-NEXT:    accv.func nested @constant_scalar_test_{{[0-9]+}}()
 // CHECK:           scf.if
 // CHECK:           } else {
 // CHECK-NEXT:      scf.if

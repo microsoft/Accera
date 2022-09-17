@@ -35,11 +35,16 @@ namespace
             .value("AUTO", value::CacheAllocation::Automatic)
             .value("NONE", value::CacheAllocation::None);
 
+        py::enum_<value::CacheStrategy>(module, "_CacheStrategy", "An enumeration of cache strategy types")
+            .value("BLOCKED", value::CacheStrategy::Blocked)
+            .value("STRIPED", value::CacheStrategy::Striped);
+
         py::enum_<value::MemorySpace>(module, "_MemorySpace", "An enumeration of memory space types")
             .value("NONE", value::MemorySpace::None)
             .value("GLOBAL", value::MemorySpace::Global)
             .value("SHARED", value::MemorySpace::Shared)
-            .value("PRIVATE", value::MemorySpace::Private);
+            .value("PRIVATE", value::MemorySpace::Private)
+            .value("TENSOR", value::MemorySpace::Tensor);
 
         py::enum_<ir::value::Processor>(module, "Processor", "An enumeration of processors for loop index mapping")
             .value("BLOCK_X", ir::value::Processor::BlockX)
@@ -139,36 +144,38 @@ namespace
                    bool thrifty,
                    bool doubleBuffer,
                    value::MemorySpace doubleBufferMemorySpace,
-                   const std::optional<value::VectorizationInformation>& vectorizationInfo) {
+                   const std::optional<value::VectorizationInformation>& vectorizationInfo,
+                   const std::optional<value::ValueType>& elementType,
+                   value::CacheStrategy /*not hooked up*/) {
                     if (outermostIncludedSplitIndex.has_value())
                     {
                         value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
                         if (memoryMap.has_value())
                         {
-                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *memoryMap, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *memoryMap, elementType, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else if (dimOrder.has_value())
                         {
-                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, elementType, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else
                         {
-                            return plan.AddCache(target, *outermostIncludedSplitIndex, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *outermostIncludedSplitIndex, elementType, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                     }
                     else
                     {
                         if (memoryMap.has_value())
                         {
-                            return plan.AddCache(target, *maxElements, *memoryMap, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *maxElements, *memoryMap, elementType, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else if (dimOrder.has_value())
                         {
-                            return plan.AddCache(target, *maxElements, *dimOrder, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *maxElements, *dimOrder, elementType, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                         else
                         {
-                            return plan.AddCache(target, *maxElements, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                            return plan.AddCache(target, *maxElements, elementType, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                         }
                     }
                 },
@@ -184,7 +191,9 @@ namespace
                 "thrifty"_a,
                 "double_buffer"_a,
                 "double_buffer_location"_a,
-                "vectorization_info"_a)
+                "vectorization_info"_a,
+                "element_type"_a,
+                "strategy"_a)
             .def("emit_runtime_init_packing", py::overload_cast<value::ViewAdapter, const std::string&, const std::string&, value::CacheIndexing>(&value::Plan::EmitRuntimeInitPacking), "target"_a, "packing_func_name"_a, "packed_buf_size_func_name"_a, "indexing"_a = value::CacheIndexing::GlobalToPhysical)
             .def("pack_and_embed_buffer", py::overload_cast<value::ViewAdapter, value::ViewAdapter, const std::string&, const std::string&, value::CacheIndexing>(&value::Plan::PackAndEmbedBuffer), "target"_a, "constant_data_buffer"_a, "wrapper_fn_name"_a, "packed_buffer_name"_a, "indexing"_a = value::CacheIndexing::GlobalToPhysical)
             .def("vectorize", &value::Plan::Vectorize, "i"_a, "vectorization_info"_a)
@@ -210,16 +219,18 @@ namespace
                    bool thrifty,
                    bool doubleBuffer,
                    value::MemorySpace doubleBufferMemorySpace,
-                   const std::optional<value::VectorizationInformation>& vectorizationInfo) {
+                   const std::optional<value::VectorizationInformation>& vectorizationInfo,
+                   const std::optional<value::ValueType>& elementType,
+                   value::CacheStrategy strategy) {
                     value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
                     if (outermostIncludedSplitIndex.has_value())
                     {
-                        return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, thrifty, doubleBuffer, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                        return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, elementType, thrifty, doubleBuffer, strategy, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
                     }
                     else if (maxElements.has_value())
                     {
                         // TODO : convert all GPUPlan::AddCache() impls to use manual caching rather than automatic, then plumb remaining arguments
-                        return plan.AddCache(std::get<value::ViewAdapter>(target), *maxElements, memorySpace);
+                        return plan.AddCache(std::get<value::ViewAdapter>(target), *maxElements, strategy, memorySpace);
                     }
                     else
                     {
@@ -239,7 +250,9 @@ namespace
                 "thrifty"_a,
                 "double_buffer"_a,
                 "double_buffer_location"_a,
-                "vectorization_info"_a)
+                "vectorization_info"_a,
+                "element_type"_a,
+                "strategy"_a)
             .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a, "numTotalPasses"_a, "useStaticOffsets"_a, "numFusedPasses"_a, "schedulingPolicy"_a, "_useRocWMMA"_a)
             .def("_map_index_to_processor", &value::GPUPlan::MapIndicesToProcessor, "indices"_a, "proc"_a);
     }

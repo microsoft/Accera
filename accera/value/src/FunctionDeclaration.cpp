@@ -59,6 +59,12 @@ namespace value
             std::fill_n(std::back_inserter(_paramUsages), paramTypes.size(), FunctionParameterUsage::inputOutput);
         }
         _paramTypes.assign(paramTypes.begin(), paramTypes.end());
+        
+        // TODO: we might want to change the symbol name to a unique name, e.g. function name
+        for (unsigned idx = 0; idx < paramTypes.size(); idx++)
+        {
+            _argumentsSymbol.push_back(ir::value::ValueFuncOp::getArgumentsSymbolName().str() + "_" + std::to_string(idx));
+        }
 
         return *this;
     }

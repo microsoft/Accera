@@ -94,15 +94,16 @@ namespace value
                 execTarget);
         }
 
-        Cache AddAutomaticCache(ViewAdapter target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace)
+        Cache AddAutomaticCache(ViewAdapter target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, CacheStrategy strategy)
         {
-            return { _scheduleOp, target, keySliceIndex, maxElements, mapping, allocation, memorySpace, _execTarget };
+            return { _scheduleOp, target, keySliceIndex, maxElements, strategy, mapping, allocation, memorySpace, _execTarget };
         }
 
         Cache AddManualCache(std::variant<ViewAdapter, Cache*> target,
                              const std::optional<ScalarIndex>& keySliceIndex,
                              const std::optional<ScalarIndex>& triggerIndex,
                              const std::optional<int64_t>& maxElements,
+                             const std::optional<value::ValueType>& elementType,
                              bool thrifty,
                              bool doubleBuffer,
                              const std::optional<VectorizationInformation>& vectorizationInfo,
@@ -110,7 +111,8 @@ namespace value
                              CacheAllocation allocation,
                              MemorySpace memorySpace,
                              MemorySpace doubleBufferMemorySpace,
-                             const MemoryAffineCoefficients& memoryMap)
+                             const MemoryAffineCoefficients& memoryMap,
+                             CacheStrategy strategy = CacheStrategy::Striped)
         {
             return { _scheduleOp,
                      target,
@@ -118,7 +120,9 @@ namespace value
                      triggerIndex,
                      maxElements,
                      memoryMap,
+                     elementType,
                      thrifty,
+                     strategy,
                      doubleBuffer,
                      vectorizationInfo,
                      mapping,
@@ -132,6 +136,7 @@ namespace value
                              const std::optional<ScalarIndex>& keySliceIndex,
                              const std::optional<ScalarIndex>& triggerIndex,
                              const std::optional<int64_t>& maxElements,
+                             const std::optional<value::ValueType>& elementType,
                              bool thrifty,
                              bool doubleBuffer,
                              const std::optional<VectorizationInformation>& vectorizationInfo,
@@ -139,7 +144,8 @@ namespace value
                              CacheAllocation allocation,
                              MemorySpace memorySpace,
                              MemorySpace doubleBufferMemorySpace,
-                             const DimensionOrder& dimOrder)
+                             const DimensionOrder& dimOrder,
+                             CacheStrategy strategy = CacheStrategy::Striped)
         {
             return { _scheduleOp,
                      target,
@@ -147,7 +153,9 @@ namespace value
                      triggerIndex,
                      maxElements,
                      dimOrder,
+                     elementType,
                      thrifty,
+                     strategy,
                      doubleBuffer,
                      vectorizationInfo,
                      mapping,
@@ -217,6 +225,10 @@ namespace value
                 auto index = symbolicIndexOp.getValue();
                 _scheduleOp.addLoopAttribute(index, tensorizationInfoIdentifier, tensorizationInfoAttr);
             }
+
+            // tag the ExecPlanOp with this tensorization info so that other cache ops
+            // can extract this info from the loopnest graph later
+            _execPlanOp->setAttr(tensorizationInfoIdentifier, tensorizationInfoAttr);
         }
 
         void MapIndicesToProcessor(std::vector<ScalarIndex>& scalarIndices, Processor proc)
@@ -317,27 +329,27 @@ namespace value
 
     Plan::~Plan() = default;
 
-    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const MemoryAffineCoefficients& memoryMap, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const MemoryAffineCoefficients& memoryMap, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
     {
-        return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, memoryMap);
+        return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, elementType, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, memoryMap);
     }
 
-    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
     {
-        return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder);
+        return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, elementType, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder);
     }
 
-    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const MemoryAffineCoefficients& memoryMap, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const MemoryAffineCoefficients& memoryMap, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
     {
-        return _impl->AddManualCache(target, std::nullopt, std::nullopt, maxElements, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, memoryMap);
+        return _impl->AddManualCache(target, std::nullopt, std::nullopt, maxElements, elementType, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, memoryMap);
     }
 
-    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const DimensionOrder& dimOrder, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
     {
-        return _impl->AddManualCache(target, std::nullopt, std::nullopt, maxElements, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder);
+        return _impl->AddManualCache(target, std::nullopt, std::nullopt, maxElements, elementType, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder);
     }
 
-    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
     {
         Value baseValue;
         if (std::holds_alternative<Cache*>(target))
@@ -352,10 +364,10 @@ namespace value
         }
         int64_t rank = baseValue.GetLayout().NumDimensions();
         DimensionOrder dimOrder(rank);
-        return _impl->AddManualCache(target, outermostIncludedSplitIndex, outermostIncludedSplitIndex, std::nullopt, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder);
+        return _impl->AddManualCache(target, outermostIncludedSplitIndex, outermostIncludedSplitIndex, std::nullopt, elementType, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder);
     }
 
-    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
+    Cache Plan::AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
     {
         Value baseValue;
         if (std::holds_alternative<Cache*>(target))
@@ -371,7 +383,7 @@ namespace value
         int64_t rank = baseValue.GetLayout().NumDimensions();
         DimensionOrder dimOrder(rank);
         auto viewAdapter = std::get<ViewAdapter>(target);
-        return _impl->AddManualCache(target, std::nullopt, std::nullopt, maxElements, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder);
+        return _impl->AddManualCache(target, std::nullopt, std::nullopt, maxElements, elementType, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder);
     }
 
     Cache Plan::EmitRuntimeInitPacking(ViewAdapter target, const std::string& packingFnName, const std::string& packedBufferSizeFnName, CacheIndexing indexing)
@@ -418,14 +430,14 @@ namespace value
     {
     }
 
-    Cache GPUPlan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
+    Cache GPUPlan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, CacheStrategy strategy, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
     {
-        return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder);
+        return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, elementType, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder, strategy);
     }
 
-    Cache GPUPlan::AddCache(ViewAdapter target, int64_t maxElements, MemorySpace memorySpace)
+    Cache GPUPlan::AddCache(ViewAdapter target, int64_t maxElements, CacheStrategy strategy, MemorySpace memorySpace)
     {
-        return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace);
+        return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace, strategy);
     }
 
     void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy, bool _useRocWMMA)

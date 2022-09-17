@@ -34,8 +34,10 @@ def add_check_allclose(package: Package, array: Array, atol: float = 1e-5, targe
     shape = array.shape
     element_type = array.element_type
     layout = array._requested_layout
-    resolved_shape = [-1 if isinstance(s, Dimension) else s for s in shape]
+    resolved_shape = [0 if isinstance(s, Dimension) else s for s in shape]
     shape_str = '_'.join(map(str, resolved_shape))
+
+    shape = [Dimension(role=Dimension.Role.OUTPUT, value=x) if isinstance(x, Dimension) else x for x in shape]
 
     # placeholders
     actual = Array(role=Array.Role.INPUT, element_type=element_type, shape=shape, layout=layout)
@@ -45,11 +47,11 @@ def add_check_allclose(package: Package, array: Array, atol: float = 1e-5, targe
     dims = [x for x in shape if isinstance(x, Dimension)]
 
     # so that we can unwrap the native arrays
-    nest = Nest(shape if len(runtime_sizes) > 0 else (1, )) 
+    nest = Nest((1, )) 
 
     @nest.iteration_logic
     def _():
-        CheckAllClose(actual, desired, atol, runtime_sizes)
+        CheckAllClose(actual, desired, atol, dims)
 
     plan = nest.create_plan(target)
     args = dims + [actual, desired]

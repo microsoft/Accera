@@ -59,6 +59,8 @@ public:
 
     static StringRef getExecTargetAttrName() { return "exec_target"; }
     static StringRef getGPULaunchAttrName() { return "gpu_launch"; }
+    static StringRef getArgumentsSymbolAttrName() { return "args_symbol"; }
+    static StringRef getArgumentsSymbolName() { return "args_symbol_name"; }
 
     mlir::StringAttr sym_nameAttr()
     {

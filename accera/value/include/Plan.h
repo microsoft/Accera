@@ -35,6 +35,7 @@ namespace value
 
     using accera::ir::executionPlan::CacheAllocation;
     using accera::ir::executionPlan::CacheIndexing;
+    using accera::ir::value::CacheStrategy;
 
     using loopnests::Index;
     using loopnests::IterationDomain;
@@ -66,6 +67,7 @@ namespace value
         /// <param name="outermostIncludedSplitIndex"> The outermost index in one of the cached dimensions to include in the cache </param>
         /// <param name="triggerIndex"> The index to fill the cache at, must be the same as outermostIncludedSplitIndex or precede it in the schedule order </param>
         /// <param name="memoryMap"> The affine coefficients to use to map from active block position to cache position in the cache buffer </param>
+        /// <param name="elementType"> The element type to use in the cache </param>
         /// <param name="thrifty"> Whether to make this a thrifty cache </param>
         /// <param name="doubleBuffer"> Whether or not to use double-buffering to fill this cache </param>
         /// <param name="vectorizationInfo"> Optional vectorization configuration for the cache ops </param>
@@ -74,13 +76,14 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="doubleBufferMemorySpace"> The memory space to put the double buffer temporary buffer in </param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const MemoryAffineCoefficients& memoryMap, bool thrifty, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const MemoryAffineCoefficients& memoryMap, const std::optional<value::ValueType>& elementType = std::nullopt, bool thrifty = false, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
 
         /// <summary> Adds a manual active block cache for a view target or different cache </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="outermostIncludedSplitIndex"> The outermost index in one of the cached dimensions to include in the cache </param>
         /// <param name="triggerIndex"> The index to fill the cache at, must be the same as outermostIncludedSplitIndex or precede it in the schedule order </param>
         /// <param name="dimOrder"> The dimension order permutation to use to map from active block position to cache position in the cache buffer </param>
+        /// <param name="elementType"> The element type to use in the cache </param>
         /// <param name="thrifty"> Whether to make this a thrifty cache </param>
         /// <param name="doubleBuffer"> Whether or not to use double-buffering to fill this cache </param>
         /// <param name="vectorizationInfo"> Optional vectorization configuration for the cache ops </param>
@@ -89,11 +92,12 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="doubleBufferMemorySpace"> The memory space to put the double buffer temporary buffer in </param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, bool thrifty, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType = std::nullopt, bool thrifty = false, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
 
         /// <summary> Adds a manual active block cache for a view target or different cache with an identity dimension ordering </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="outermostIncludedSplitIndex"> The outermost index in one of the cached dimensions to include in the cache </param>
+        /// <param name="elementType"> The element type to use in the cache </param>
         /// <param name="thrifty"> Whether to make this a thrifty cache </param>
         /// <param name="doubleBuffer"> Whether or not to use double-buffering to fill this cache </param>
         /// <param name="vectorizationInfo"> Optional vectorization configuration for the cache ops </param>
@@ -102,12 +106,13 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="doubleBufferMemorySpace"> The memory space to put the double buffer temporary buffer in </param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, bool thrifty = false, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const std::optional<value::ValueType>& elementType = std::nullopt, bool thrifty = false, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
 
         /// <summary> Adds a manual active block cache for a view target or different cache </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="maxElements"> A cutoff budget that will be used to select the outermost index in one of the cached dimensions to include in the cache (in order not to exceed the budget) </param>
         /// <param name="memoryMap"> The affine coefficients to use to map from active block position to cache position in the cache buffer </param>
+        /// <param name="elementType"> The element type to use in the cache </param>
         /// <param name="thrifty"> Whether to make this a thrifty cache </param>
         /// <param name="doubleBuffer"> Whether or not to use double-buffering to fill this cache </param>
         /// <param name="vectorizationInfo"> Optional vectorization configuration for the cache ops </param>
@@ -116,12 +121,13 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="doubleBufferMemorySpace"> The memory space to put the double buffer temporary buffer in </param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const utilities::MemoryAffineCoefficients& memoryMap, bool thrifty, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const utilities::MemoryAffineCoefficients& memoryMap, const std::optional<value::ValueType>& elementType = std::nullopt, bool thrifty = false, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
 
         /// <summary> Adds a manual active block cache for a view target or different cache </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="maxElements"> A cutoff budget that will be used to select the outermost index in one of the cached dimensions to include in the cache (in order not to exceed the budget) </param>
         /// <param name="dimOrder"> The dimension order permutation to use to map from active block position to cache position in the cache buffer </param>
+        /// <param name="elementType"> The element type to use in the cache </param>
         /// <param name="thrifty"> Whether to make this a thrifty cache </param>
         /// <param name="doubleBuffer"> Whether or not to use double-buffering to fill this cache </param>
         /// <param name="vectorizationInfo"> Optional vectorization configuration for the cache ops </param>
@@ -130,7 +136,7 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="doubleBufferMemorySpace"> The memory space to put the double buffer temporary buffer in </param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const DimensionOrder& dimOrder, bool thrifty, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType = std::nullopt, bool thrifty = false, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
 
         /// <summary> Adds a manual active element cache for a view target or different cache with an identity dimension ordering </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
@@ -143,7 +149,7 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="doubleBufferMemorySpace"> The memory space to put the double buffer temporary buffer in </param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, bool thrifty = false, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, int64_t maxElements, const std::optional<value::ValueType>& elementType = std::nullopt, bool thrifty = false, bool doubleBuffer = false, const std::optional<VectorizationInformation>& vectorizationInfo = std::nullopt, CacheIndexing indexing = CacheIndexing::GlobalToPhysical, CacheAllocation allocation = CacheAllocation::Automatic, MemorySpace memorySpace = MemorySpace::None, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
 
         /// <summary> Emits an offline packing function for the given target and changes its usage in the function to assume a packed representation </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
@@ -194,6 +200,7 @@ namespace value
         /// <param name="outermostIncludedSplitIndex"> The outermost index in one of the cached dimensions to include in the cache </param>
         /// <param name="triggerIndex"> The index to fill the cache at, must be the same as outermostIncludedSplitIndex or precede it in the schedule order </param>
         /// <param name="dimOrder"> The dimension order permutation to use to map from active block position to cache position in the cache buffer </param>
+        /// <param name="elementType"> The element type to use in the cache </param>
         /// <param name="thrifty"> Whether to make this a thrifty cache </param>
         /// <param name="doubleBuffer"> Whether or not to use double-buffering to fill this cache </param>
         /// <param name="vectorizationInfo"> Optional vectorization configuration for the cache ops </param>
@@ -202,14 +209,14 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="doubleBufferMemorySpace"> The memory space to put the double buffer temporary buffer in </param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, bool thrifty, bool doubleBuffer, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, CacheStrategy strategy, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
 
         /// <summary> Adds a cache for a view target </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="maxElements"> A cutoff budget that can be used to infer the outermost index to include the cache </param>
         /// <param name="memorySpace"> The memory space</param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(ViewAdapter target, int64_t maxElements, MemorySpace memorySpace = MemorySpace::Shared);
+        Cache AddCache(ViewAdapter target, int64_t maxElements, CacheStrategy strategy, MemorySpace memorySpace = MemorySpace::Shared);
 
         /// <summary> Assigns an ordered sequence of loop indices to a GPU processor </summary>
         /// <param name="indices"> The loop indices </param>

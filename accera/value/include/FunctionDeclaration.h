@@ -37,7 +37,8 @@ namespace value
     enum class FunctionParameterUsage
     {
         inputOutput, // the default value
-        input
+        input,
+        output
     };
 
     /// <summary> Describes a function that can be acted upon by an EmitterContext instance </summary>
@@ -202,6 +203,8 @@ namespace value
 
         [[nodiscard]] std::vector<std::string> GetOutputVerifiers() const { return _outputVerifiers; }
 
+        [[nodiscard]] std::vector<std::string> GetArgumentsSymbol() const { return _argumentsSymbol; }
+
         static std::string GetTemporaryFunctionPointerPrefix() { return "__ACCERA_TEMPORARY__"; }
 
     private:
@@ -243,6 +246,7 @@ namespace value
         std::vector<std::string> _tags;
         std::string _baseName;
         std::vector<std::string> _outputVerifiers;
+        std::vector<std::string> _argumentsSymbol;
     };
 
     [[nodiscard]] FunctionDeclaration DeclareFunction(std::string name);

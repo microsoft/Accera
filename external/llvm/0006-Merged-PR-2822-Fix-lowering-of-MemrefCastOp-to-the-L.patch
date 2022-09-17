@@ -1,0 +1,29 @@
+From 1abc4a981067ef1fd9bf717d7fabc4f6d75520d1 Mon Sep 17 00:00:00 2001
+From: Chuck Jacobs <cjacobs@microsoft.com>
+Date: Wed, 24 Aug 2022 04:14:51 +0000
+Subject: [PATCH] Merged PR 2822: Fix lowering of `MemrefCastOp` to the LLVM
+ dialect
+
+This PR should fix an issue where the memref->LLVM pass was inconsistently using 32- and 64-bit ints when lowering `MemrefCastOp` to a 32-bit target.
+---
+ mlir/lib/Conversion/MemRefToLLVM/MemRefToLLVM.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/mlir/lib/Conversion/MemRefToLLVM/MemRefToLLVM.cpp b/mlir/lib/Conversion/MemRefToLLVM/MemRefToLLVM.cpp
+index bec7513f7986..da8193abe409 100644
+--- a/mlir/lib/Conversion/MemRefToLLVM/MemRefToLLVM.cpp
++++ b/mlir/lib/Conversion/MemRefToLLVM/MemRefToLLVM.cpp
+@@ -793,8 +793,8 @@ struct MemRefCastOpLowering : public ConvertOpToLLVMPattern<memref::CastOp> {
+               .getResult();
+       // rank = ConstantOp srcRank
+       auto rankVal = rewriter.create<LLVM::ConstantOp>(
+-          loc, typeConverter->convertType(rewriter.getIntegerType(64)),
+-          rewriter.getI64IntegerAttr(rank));
++          loc, typeConverter->convertType(rewriter.getIndexType()),
++          rewriter.getIntegerAttr(rewriter.getIndexType(), rank));
+       // undef = UndefOp
+       UnrankedMemRefDescriptor memRefDesc =
+           UnrankedMemRefDescriptor::undef(rewriter, loc, targetStructType);
+-- 
+2.32.1 (Apple Git-133)
+

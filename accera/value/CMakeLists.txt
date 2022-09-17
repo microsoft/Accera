@@ -6,6 +6,7 @@
 set(library_name value)
 
 set(src
+    src/AcceraParameters.cpp
     src/Array.cpp
     src/ArrayOperations.cpp
     src/Cache.cpp
@@ -24,7 +25,7 @@ set(src
     src/MLOperations.cpp
     src/Nest.cpp
     src/Plan.cpp
-    src/AcceraParameters.cpp
+    src/Pointer.cpp
     src/Profiling.cpp
     src/Scalar.cpp
     src/ScalarOperations.cpp
@@ -39,6 +40,7 @@ set(src
 )
 
 set(include
+    include/AcceraParameters.h
     include/Array.h
     include/ArrayOperations.h
     include/Cache.h
@@ -64,9 +66,9 @@ set(include
     include/MLOperations.h
     include/Nest.h
     include/Plan.h
+    include/Pointer.h
     include/Profiling.h
     include/Range.h
-    include/AcceraParameters.h
     include/Scalar.h
     include/ScalarDimension.h
     include/ScalarIndex.h

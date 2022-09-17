@@ -209,12 +209,68 @@ TEST_CASE("UnrankedMemRefTest")
 
     SECTION("Parsing")
     {
-        REQUIRE(VerifyParse(context));
+        REQUIRE(VerifyParse(context, true, "UnrankedMemRefTest.mlir"));
     }
 
     SECTION("Lowering")
     {
         REQUIRE(VerifyLowerToStd(context));
+    }
+}
+
+TEST_CASE("MemRefInMemRefTest")
+{
+    TestContext context(
+        "MemRefInMemRefTest",
+        [&]() -> std::vector<mlir::Type> {
+            auto& builder = GetTestBuilder();
+            auto int32Type = builder.getIntegerType(32);
+            auto indexType = builder.getIndexType();
+
+            auto memrefType = mlir::MemRefType::get({ mlir::ShapedType::kDynamicSize }, int32Type); // memref<?xi32>
+            auto memrefDimType = mlir::MemRefType::get({ 1 }, indexType); // memref<1xindex>
+            auto memrefInMemrefType = mlir::MemRefType::get({ 1 }, memrefType); // memref<memref<?xi32>>
+
+            return { memrefDimType, memrefInMemrefType }; },
+        [&](std::vector<mlir::Value> args) {
+            auto& builder = GetTestBuilder();
+            auto loc = builder.getUnknownLoc();
+
+            auto int32Type = builder.getIntegerType(32);
+            auto memrefType = mlir::MemRefType::get({ mlir::ShapedType::kDynamicSize }, int32Type); // memref<?xi32>
+
+            auto outputDimPtr = args[0];
+            auto outputArrayPtr = args[1];
+
+            auto index0 = builder.create<arith::ConstantIndexOp>(builder.getUnknownLoc(), 0);
+            auto index10 = builder.create<arith::ConstantIndexOp>(builder.getUnknownLoc(), 10);
+
+            // *outputDimPtr = index10
+            (void)builder.create<mlir::memref::StoreOp>(loc, index10, outputDimPtr, Value{ index0 });
+
+            // *outputArrayPtr = alloca(), memref<10xi32>
+            auto outputArray = Alloca(builder, memrefType, Value{ index10 });
+            (void)builder.create<mlir::memref::StoreOp>(loc, outputArray, outputArrayPtr, Value{ index0 });
+        });
+
+    SECTION("Parsing")
+    {
+        REQUIRE(VerifyParse(context, true, "MemRefInMemRefTest.mlir"));
+    }
+
+    SECTION("Std")
+    {
+        REQUIRE(VerifyLowerToStd(context, true, "MemRefInMemRefTest_std.mlir"));
+    }
+
+    SECTION("LLVM")
+    {
+        REQUIRE(VerifyLowerToLLVM(context, true, "MemRefInMemRefTest_llvm.mlir"));
+    }
+
+    SECTION("LLVM IR")
+    {
+        REQUIRE(VerifyTranslateToLLVMIR(context, true, true, "MemRefInMemRefTest.ll"));
     }
 }
 

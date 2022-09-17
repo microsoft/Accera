@@ -10,6 +10,7 @@
 #include "Scalar.h"
 #include "Value.h"
 #include "ValueType.h"
+#include "ScalarDimension.h"
 
 #include <value/include/CompilerOptions.h>
 
@@ -99,21 +100,22 @@ namespace value
 
         virtual ~EmitterContext();
 
-        /// <summary> Allocates data with the specified type and size </summary>
+        /// <summary> Allocates data with the specified type and compile-time size </summary>
         /// <param name="type"> The type of the data to allocate </param>
         /// <param name="size"> The size of the allocation, in number of elements </param>
         /// <param name="alignment"> The byte alignment to use for the allocated value. </summary>
         /// <param name="flags"> Any additional flags. Not all contexts may support all flags. </summary>
         /// <returns> An instance of Value that contains a reference to the allocated memory </returns>
-        Value Allocate(ValueType type, size_t size, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None);
+        Value Allocate(ValueType type, size_t size, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None, const std::vector<ScalarDimension>& runtimeSizes = {});
 
-        /// <summary> Allocates data with the specified type and size </summary>
+        /// <summary> Allocates data with the specified type and size. The size can be determined at compile-time or at runtime. </summary>
         /// <param name="type"> The type of the data to allocate </param>
         /// <param name="layout"> The memory layout of the allocation, in number of elements </param>
         /// <param name="alignment"> The byte alignment to use for the allocated value. </summary>
         /// <param name="flags"> Any additional flags. Not all contexts may support all flags. </summary>
+        /// <param name="runtimeSizes"> For variable-sized layout, contains the list of Values that determine the runtime sizes. Number of elements should match the rank of layout. </summary>
         /// <returns> An instance of Value that contains a reference to the allocated memory </returns>
-        Value Allocate(ValueType type, MemoryLayout layout, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None);
+        Value Allocate(ValueType type, MemoryLayout layout, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None, const std::vector<ScalarDimension>& runtimeSizes = {});
 
         /// <summary> Allocates function static data </summary>
         /// <param name="name"> The name of the variable </param>
@@ -256,6 +258,13 @@ namespace value
         /// <remarks> The source and destination instances must be constrained and have matching MemoryLayouts </remarks>
         void CopyData(const Value& source, Value& destination);
 
+        /// <summary> Stores a single value at the destination memory buffer </summary>
+        /// <param name="source"> The source Value to be stored </param>
+        /// <param name="destination"> The destination to receive the value </param>
+        /// <param name="indices"> The indices indicating the location to store the value. </param>
+        /// <remarks> The arity of indices must match the rank of the destination. The source must match the MemoryLayout of destination, and destination's pointer level must exceed source by 1 </remarks>
+        void Store(const Value& source, Value& destination, const std::vector<int64_t>& indices);
+
         /// <summary> Returns a view of a portion of a memory buffer </summary>
         /// <param name="source"> The source location </param>
         /// <param name="offsets"> The origin of the view --- the indices of the first entry in the subarray </param>
@@ -352,6 +361,8 @@ namespace value
 
         Scalar Cast(Scalar value, ValueType type);
 
+        bool IsImplicitlyCastable(ValueType source, ValueType target) const;
+
         Scalar Bitcast(Scalar value, ValueType type);
 
         IfContext If(Scalar test, std::function<void()> fn);
@@ -432,7 +443,7 @@ namespace value
 
     private:
         virtual void SetLayoutImpl(Value&, const MemoryLayout&) {}
-        virtual Value AllocateImpl(ValueType, MemoryLayout, size_t alignment, AllocateFlags flags) = 0;
+        virtual Value AllocateImpl(ValueType, MemoryLayout, size_t alignment, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes = {}) = 0;
 
         virtual std::optional<Value> GetGlobalValue(GlobalAllocationScope scope, std::string name) = 0;
         virtual Value GlobalAllocateImpl(GlobalAllocationScope scope, std::string name, ConstantData data, MemoryLayout layout, AllocateFlags flags) = 0;
@@ -454,6 +465,8 @@ namespace value
         virtual void MoveDataImpl(Value& source, Value& destination) = 0;
 
         virtual void CopyDataImpl(const Value& source, Value& destination) = 0;
+
+        virtual void StoreImpl(const Value& source, Value& destination, const std::vector<int64_t>& indices) = 0;
 
         virtual Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape, const std::vector<int64_t>& strides) = 0;
 
@@ -482,6 +495,8 @@ namespace value
         virtual Scalar SumImpl(Vector input) = 0;
 
         virtual Scalar CastImpl(Scalar value, ValueType type) = 0;
+
+        virtual bool IsImplicitlyCastableImpl(ValueType source, ValueType target) const = 0;
 
         virtual Scalar BitcastImpl(Scalar value, ValueType type) = 0;
 
@@ -606,11 +621,11 @@ namespace value
     /// <param name="alignment"> The byte alignment to use for the allocated value. </summary>
     /// <param name="flags"> Any additional flags. Not all contexts may support all flags. </summary>
     /// <returns> An instance of Value that contains a reference to the allocated memory </returns>
-    Value Allocate(ValueType type, size_t size, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None);
+    Value Allocate(ValueType type, size_t size, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None, const std::vector<ScalarDimension>& runtimeSizes = {});
 
-    inline Value Allocate(ValueType type, size_t size, AllocateFlags flags)
+    inline Value Allocate(ValueType type, size_t size, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes = {})
     {
-        return Allocate(type, size, 0, flags);
+        return Allocate(type, size, 0, flags, runtimeSizes);
     }
 
     /// <summary> Allocates data with the specified type and size </summary>
@@ -619,16 +634,16 @@ namespace value
     /// <param name="alignment"> The byte alignment to use for the allocated value. </summary>
     /// <param name="flags"> Any additional flags. Not all contexts may support all flags. </summary>
     /// <returns> An instance of Value that contains a reference to the allocated memory </returns>
-    Value Allocate(ValueType type, utilities::MemoryLayout layout, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None);
+    Value Allocate(ValueType type, utilities::MemoryLayout layout, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None, const std::vector<ScalarDimension>& runtimeSizes = {});
 
     /// <summary> Allocates data with the specified type and size </summary>
     /// <param name="type"> The type of the data to allocate </param>
     /// <param name="layout"> The memory layout of the allocation, in number of elements </param>
     /// <param name="flags"> Any additional flags. Not all contexts may support all flags. </summary>
     /// <returns> An instance of Value that contains a reference to the allocated memory </returns>
-    inline Value Allocate(ValueType type, utilities::MemoryLayout layout, AllocateFlags flags)
+    inline Value Allocate(ValueType type, utilities::MemoryLayout layout, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes = {})
     {
-        return Allocate(type, layout, 0, flags);
+        return Allocate(type, layout, 0, flags, runtimeSizes);
     }
 
     /// <summary> Allocates data with the specified type and size </summary>
@@ -638,9 +653,9 @@ namespace value
     /// <param name="flags"> Any additional flags. Not all contexts may support all flags. </summary>
     /// <returns> An instance of Value that contains a reference to the allocated memory </returns>
     template <typename T>
-    Value Allocate(size_t size, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None)
+    Value Allocate(size_t size, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None, const std::vector<ScalarDimension>& runtimeSizes = {})
     {
-        return Allocate(GetValueType<T>(), size, alignment, flags);
+        return Allocate(GetValueType<T>(), size, alignment, flags, runtimeSizes);
     }
 
     /// <summary> Allocates data with the specified type and size </summary>
@@ -649,9 +664,9 @@ namespace value
     /// <param name="flags"> Any additional flags. Not all contexts may support all flags. </summary>
     /// <returns> An instance of Value that contains a reference to the allocated memory </returns>
     template <typename T>
-    Value Allocate(size_t size, AllocateFlags flags)
+    Value Allocate(size_t size, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes = {})
     {
-        return Allocate<T>(size, 0, flags);
+        return Allocate<T>(size, 0, flags, runtimeSizes);
     }
 
     /// <summary> Allocates data with the specified type and size </summary>
@@ -661,9 +676,9 @@ namespace value
     /// <param name="flags"> Any additional flags. Not all contexts may support all flags. </summary>
     /// <returns> An instance of Value that contains a reference to the allocated memory </returns>
     template <typename T>
-    Value Allocate(utilities::MemoryLayout layout, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None)
+    Value Allocate(utilities::MemoryLayout layout, size_t alignment = 0, AllocateFlags flags = AllocateFlags::None, const std::vector<ScalarDimension>& runtimeSizes = {})
     {
-        return Allocate(GetValueType<T>(), layout, alignment, flags);
+        return Allocate(GetValueType<T>(), layout, alignment, flags, runtimeSizes);
     }
 
     /// <summary> Allocates data with the specified type and size </summary>
@@ -671,9 +686,9 @@ namespace value
     /// <param name="layout"> The memory layout of the allocation, in number of elements </param>
     /// <param name="flags"> Any additional flags. Not all contexts may support all flags. </summary>
     template <typename T>
-    Value Allocate(utilities::MemoryLayout layout, AllocateFlags flags)
+    Value Allocate(utilities::MemoryLayout layout, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes = {})
     {
-        return Allocate<T>(layout, 0, flags);
+        return Allocate<T>(layout, 0, flags, runtimeSizes);
     }
 
     /// <summary> Allocates function static data </summary>

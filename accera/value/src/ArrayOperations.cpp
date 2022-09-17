@@ -297,9 +297,9 @@ namespace value
         [[maybe_unused]] auto bColumnStride = B.GetLayout().GetIncrement(0);
         if (((N * K) > (128 * 128)) || (B.GetLayout().GetIncrement(0) < B.GetLayout().GetIncrement(1)))
         {
-            plan.AddCache(B, jKernelOuter2, false /* thrifty */, false /* doubleBuffer */, std::nullopt /* vectorizationInfo */, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared);
+            plan.AddCache(B, jKernelOuter2, std::nullopt /* elementType */, false /* thrifty */, false /* doubleBuffer */, std::nullopt /* vectorizationInfo */, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared);
         }
-        plan.AddCache(C, iInner, false /* thrifty */, false /* doubleBuffer */, std::nullopt /* vectorizationInfo */, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared);
+        plan.AddCache(C, iInner, std::nullopt /* elementType */, false /* thrifty */, false /* doubleBuffer */, std::nullopt /* vectorizationInfo */, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared);
 
         // Set unrolling
         schedule.Unroll(jKernelOuter);

@@ -73,14 +73,14 @@ namespace value
 
     EmitterContext::~EmitterContext() = default;
 
-    Value EmitterContext::Allocate(ValueType type, size_t size, size_t align, AllocateFlags flags)
+    Value EmitterContext::Allocate(ValueType type, size_t size, size_t align, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes)
     {
-        return Allocate(type, MemoryLayout(MemoryShape{ (int)size }), align, flags);
+        return Allocate(type, MemoryLayout(MemoryShape{ (int)size }), align, flags, /*runtimeSizes=*/{});
     }
 
-    Value EmitterContext::Allocate(ValueType type, MemoryLayout layout, size_t align, AllocateFlags flags)
+    Value EmitterContext::Allocate(ValueType type, MemoryLayout layout, size_t align, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes)
     {
-        return AllocateImpl(type, layout, align, flags);
+        return AllocateImpl(type, layout, align, flags, runtimeSizes);
     }
 
     Value EmitterContext::StaticAllocate(std::string name, ValueType type, utilities::MemoryLayout layout, AllocateFlags flags)
@@ -179,6 +179,11 @@ namespace value
 
     void EmitterContext::CopyData(const Value& source, Value& destination) { return CopyDataImpl(source, destination); }
 
+    void EmitterContext::Store(const Value& source, Value& destination, const std::vector<int64_t>& indices)
+    {
+        return StoreImpl(source, destination, indices);
+    }
+
     Value EmitterContext::View(Value source, const std::vector<Scalar>& offsets, const MemoryShape& newShape, const std::vector<int64_t>& strides)
     {
         return ViewImpl(source, offsets, newShape, strides);
@@ -258,6 +263,11 @@ namespace value
     Scalar EmitterContext::Cast(Scalar value, ValueType type)
     {
         return CastImpl(value, type);
+    }
+
+    bool EmitterContext::IsImplicitlyCastable(ValueType source, ValueType target) const
+    {
+        return IsImplicitlyCastableImpl(source, target);
     }
 
     Scalar EmitterContext::Bitcast(Scalar value, ValueType type)
@@ -410,14 +420,14 @@ namespace value
 
     ContextGuard<>::~ContextGuard() { _oldContext ? SetContext(*_oldContext) : ClearContext(); }
 
-    Value Allocate(ValueType type, size_t size, size_t align, AllocateFlags flags)
+    Value Allocate(ValueType type, size_t size, size_t align, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes)
     {
-        return GetContext().Allocate(type, size, align, flags);
+        return GetContext().Allocate(type, size, align, flags, runtimeSizes);
     }
 
-    Value Allocate(ValueType type, MemoryLayout layout, size_t align, AllocateFlags flags)
+    Value Allocate(ValueType type, MemoryLayout layout, size_t align, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes)
     {
-        return GetContext().Allocate(type, layout, align, flags);
+        return GetContext().Allocate(type, layout, align, flags, runtimeSizes);
     }
 
     Value StaticAllocate(std::string name, ValueType type, utilities::MemoryLayout layout, AllocateFlags flags)

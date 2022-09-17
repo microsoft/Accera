@@ -46,6 +46,7 @@ from accera import Package, ScalarType, Nest, Array, Constants, Scalar, fuse, cr
 from accera._lang_python._lang import _MemorySpace, _MMASchedulingPolicy, _MMAShape
 from accera.samples import MatrixMultiplication
 from accera.test import verifiers
+from accera.test.test_utils import expectedFailure, FailedReason
 from accera.Targets import GridUnits
 
 TEST_PACKAGE_DIR = "test_acccgen"
@@ -54,32 +55,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
 # TODO: Remove all @expectedFailure decorators as implementation converges with spec
-
-
-class FailedReason(Enum):
-    NOT_IN_CORE = "Not yet implemented (core)"
-    NOT_IN_PY = "Not yet implemented (python)"
-    UNKNOWN = "Unknown failure"
-    BUG = "Bug"
-    INVALID = "Invalid"
-
-
-def expectedFailure(reason: FailedReason, msg: str, condition: bool = True) -> Callable:
-    "Extends the unittest.expectedFailure decorator to print failure details and takes an optional condition"
-
-    def _decorator(func):
-        @unittest.expectedFailure
-        def _wrapper(x):
-            print(f"\n{reason.value}: {msg}")
-            try:
-                return func(x)
-            except Exception as e:
-                print(f"\t{e}\n")
-                raise (e)
-
-        return _wrapper if condition else func
-
-    return _decorator
 
 
 class SmokeTest(unittest.TestCase):
@@ -2779,6 +2754,166 @@ class SmokeTest(unittest.TestCase):
 
         self._verify_matrix_multiplication_function(function, package, test_name)
 
+    def _matmul_cache_element_type_common(self, test_name, array_element_types, cache_element_types, check_correctness=True) -> None:
+        M = 256
+        N = 256
+        K = 256
+
+        A = Array(role=Array.Role.INPUT, element_type=array_element_types[0], shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+
+        ii = schedule.split(i, 16)
+        jj = schedule.split(j, 32)
+        kk = schedule.split(k, 64)
+
+        order = [i, j, k, ii, jj, kk]
+        schedule.reorder(order)
+
+        plan = schedule.create_plan()
+
+        plan.cache(A, index=ii, element_type=cache_element_types[0])
+        plan.cache(B, index=ii, element_type=cache_element_types[1])
+        plan.cache(C, index=ii, element_type=cache_element_types[2])
+
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        self._verify_matrix_multiplication_function(function, package, test_name, check_correctness=check_correctness)
+
+
+    # Cache widening the type
+    def test_matmul_input_cache_element_type_widen(self) -> None:
+        test_name = "test_matmul_input_cache_element_type_widen"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16),
+                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int16))
+
+    def test_matmul_output_cache_element_type_widen(self) -> None:
+        test_name = "test_matmul_output_cache_element_type_widen"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16),
+                                               cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int32))
+
+    def test_matmul_input_output_cache_element_type_widen(self) -> None:
+        test_name = "test_matmul_input_output_cache_element_type_widen"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16),
+                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32))
+
+
+    # Cache narrowing the type
+    def test_matmul_input_cache_element_type_narrow(self) -> None:
+        test_name = "test_matmul_input_cache_element_type_narrow"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+                                               cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int32))
+
+    def test_matmul_output_cache_element_type_narrow(self) -> None:
+        test_name = "test_matmul_output_cache_element_type_narrow"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int16))
+
+    def test_matmul_input_output_cache_element_type_narrow(self) -> None:
+        test_name = "test_matmul_input_output_cache_element_type_narrow"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+                                               cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16))
+
+
+    # Cache converting the type from int to float
+    def test_matmul_input_cache_element_type_int_to_float(self) -> None:
+        test_name = "test_matmul_input_cache_element_type_int_to_float"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+                                               cache_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.int32))
+
+    def test_matmul_output_cache_element_type_int_to_float(self) -> None:
+        test_name = "test_matmul_output_cache_element_type_int_to_float"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.float32))
+
+    def test_matmul_input_output_cache_element_type_int_to_float(self) -> None:
+        test_name = "test_matmul_input_output_cache_element_type_int_to_float"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+                                               cache_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32))
+
+
+    # Cache converting the type from float to int
+    def test_matmul_input_cache_element_type_float_to_int(self) -> None:
+        test_name = "test_matmul_input_cache_element_type_float_to_int"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32),
+                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.float32),
+                                               check_correctness=False) # float to int results in so much rounding that correctness checks are not useful
+
+    def test_matmul_output_cache_element_type_float_to_int(self) -> None:
+        test_name = "test_matmul_output_cache_element_type_float_to_int"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32),
+                                               cache_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.int32),
+                                               check_correctness=False) # float to int results in so much rounding that correctness checks are not useful
+
+    def test_matmul_input_output_cache_element_type_float_to_int(self) -> None:
+        test_name = "test_matmul_input_output_cache_element_type_float_to_int"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32),
+                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+                                               check_correctness=False) # float to int results in so much rounding that correctness checks are not useful
+
+
+    # Cache converting the type from int to uint
+    def test_matmul_input_cache_element_type_int_to_uint(self) -> None:
+        test_name = "test_matmul_input_cache_element_type_int_to_uint"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+                                               cache_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.int32))
+
+    def test_matmul_output_cache_element_type_int_to_uint(self) -> None:
+        test_name = "test_matmul_output_cache_element_type_int_to_uint"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.uint32))
+
+    def test_matmul_input_output_cache_element_type_int_to_uint(self) -> None:
+        test_name = "test_matmul_input_output_cache_element_type_int_to_uint"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+                                               cache_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32))
+
+
+    # Cache converting the type from uint to int
+    def test_matmul_input_cache_element_type_uint_to_int(self) -> None:
+        test_name = "test_matmul_input_cache_element_type_uint_to_int"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32),
+                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.uint32))
+
+    def test_matmul_output_cache_element_type_uint_to_int(self) -> None:
+        test_name = "test_matmul_output_cache_element_type_uint_to_int"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32),
+                                               cache_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.int32))
+
+    def test_matmul_input_output_cache_element_type_uint_to_int(self) -> None:
+        test_name = "test_matmul_input_output_cache_element_type_uint_to_int"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32),
+                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32))
+
+
     def test_gpu_barrier_opt(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
         from accera._lang_python._lang import Allocate, _MemorySpace, Array as NativeArray
@@ -3909,6 +4044,7 @@ class SmokeTest(unittest.TestCase):
         M = 2560
         N = 1536
         K = 2048
+        S = 4
         block_x = 16
         block_y = block_x
         k_outer_tile_size = 512
@@ -3917,21 +4053,21 @@ class SmokeTest(unittest.TestCase):
         m_tile_size = block_x
         n_tile_size = block_y
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(S, M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(S, K, N), layout=Array.Layout.LAST_MAJOR)
         C = Array(
             role=Array.Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
-            shape=(M, N),
+            shape=(S, M, N),
             layout=Array.Layout.FIRST_MAJOR
         )
 
-        nest = Nest(shape=(M, N, K))
-        i, j, k = nest.get_indices()
+        nest = Nest(shape=(S, M, N, K))
+        b, i, j, k = nest.get_indices()
 
         @nest.iteration_logic
         def _():
-            C[i, j] += A[i, k] * B[k, j]
+            C[b, i, j] += A[b, i, k] * B[b, k, j]
 
         schedule = nest.create_schedule()
 
@@ -3942,7 +4078,7 @@ class SmokeTest(unittest.TestCase):
         })
 
         kkk = schedule.split(kk, k_inner_tile_size)
-        schedule.reorder(i, j, k, kk, ii, jj, kkk)
+        schedule.reorder(b, i, j, k, kk, ii, jj, kkk)
 
         target = Target(category=Target.Category.GPU, runtime=Target.Runtime.CUDA)
         plan = schedule.create_plan(target=target)
@@ -3970,13 +4106,13 @@ class SmokeTest(unittest.TestCase):
             # Function decl
             checker.check_label('accv.func nested @test_gpu_cache_different_input_layouts_')
             checker.check_same(
-                '%[[Array_A:[a-z0-9_]+]]: memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>'
+                '%[[Array_A:[a-z0-9_]+]]: memref<4x2560x2048xf32, affine_map<(d0, d1, d2) -> (d0 * 5242880 + d1 * 2048 + d2)>>'
             )
             checker.check_same(
-                '%[[Array_B:[a-z0-9_]+]]: memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>'
+                '%[[Array_B:[a-z0-9_]+]]: memref<4x2048x1536xf32, affine_map<(d0, d1, d2) -> (d0 + d1 * 4 + d2 * 8192)>>'
             )
             checker.check_same(
-                '%[[Array_C:[a-z0-9_]+]]: memref<2560x1536xf32, affine_map<(d0, d1) -> (d0 * 1536 + d1)>>'
+                '%[[Array_C:[a-z0-9_]+]]: memref<4x2560x1536xf32, affine_map<(d0, d1, d2) -> (d0 * 3932160 + d1 * 1536 + d2)>>'
             )
 
             # Block X/Y
@@ -3984,10 +4120,11 @@ class SmokeTest(unittest.TestCase):
             checker.check('%[[Block_X:[0-9_]+]] = gpu.block_id x')
 
             # Cache allocations
-            checker.check('%[[Cache_A:[0-9_]+]] = "accv.alloc"() : () -> memref<16x32xf32, 3>')
-            checker.check('%[[Cache_B:[0-9_]+]] = "accv.alloc"() : () -> memref<32x16xf32, 3>')
+            checker.check('%[[Cache_A:[0-9_]+]] = "accv.alloc"() : () -> memref<1x16x32xf32, 3>')
+            checker.check('%[[Cache_B:[0-9_]+]] = "accv.alloc"() : () -> memref<1x32x16xf32, 3>')
 
             # Loops outside of cache regions
+            checker.check('affine.for %[[b_iv:[a-z0-9_]+]] = 0 to 4 {')
             checker.check('affine.for %[[Block_X_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[Block_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[k_iv:[a-z0-9_]+]] = 0 to 2048 step 512 {')
@@ -4001,10 +4138,10 @@ class SmokeTest(unittest.TestCase):
             checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check(
-                '%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][symbol(%[[Block_X]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Block_X]]) floordiv 160) * 2560, %[[lpt_iv]] * 16 + %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]])] : memref<2560x2048xf32, affine_map<(d0, d1) -> (d0 * 2048 + d1)>>'
+                '%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][%[[b_iv]], symbol(%[[Block_X]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Block_X]]) floordiv 160) * 2560, %[[lpt_iv]] * 16 + %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]])] : memref<4x2560x2048xf32, affine_map<(d0, d1, d2) -> (d0 * 5242880 + d1 * 2048 + d2)>>'
             )
             checker.check(
-                'affine.store %[[Loaded_A_Val]], %[[Cache_A]][symbol(%[[Thread_X]]), %[[lpt_iv]] * 16 + symbol(%[[Thread_Y]])] : memref<16x32xf32, 3>'
+                'affine.store %[[Loaded_A_Val]], %[[Cache_A]][0, symbol(%[[Thread_X]]), %[[lpt_iv]] * 16 + symbol(%[[Thread_Y]])] : memref<1x16x32xf32, 3>'
             )
 
             # check the B matrix load / store
@@ -4015,10 +4152,10 @@ class SmokeTest(unittest.TestCase):
             checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check(
-                '%[[Loaded_B_Val:[0-9_]+]] = affine.load %[[Array_B]][%[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, %[[lpt_iv]] * 8 + symbol(%[[Block_Y]]) * 16 - (symbol(%[[Block_Y]]) floordiv 96) * 1536 + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16] : memref<2048x1536xf32, affine_map<(d0, d1) -> (d0 + d1 * 2048)>>'
+                '%[[Loaded_B_Val:[0-9_]+]] = affine.load %[[Array_B]][%[[b_iv]], %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, %[[lpt_iv]] * 8 + symbol(%[[Block_Y]]) * 16 - (symbol(%[[Block_Y]]) floordiv 96) * 1536 + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16] : memref<4x2048x1536xf32, affine_map<(d0, d1, d2) -> (d0 + d1 * 4 + d2 * 8192)>>'
             )
             checker.check(
-                'affine.store %[[Loaded_B_Val]], %[[Cache_B]][symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, (%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) mod 16] : memref<32x16xf32, 3>'
+                'affine.store %[[Loaded_B_Val]], %[[Cache_B]][0, symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, (%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) mod 16] : memref<1x32x16xf32, 3>'
             )
 
             checker.run()
@@ -4422,7 +4559,7 @@ class SmokeTest(unittest.TestCase):
             double_buffer_location=target.MemorySpace.PRIVATE,
             layout=Array.Layout.FIRST_MAJOR
         )
-        plan.cache(C, index=iii, location=target.MemorySpace.PRIVATE, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(C, index=iii, location=target.MemorySpace.TENSOR, layout=Array.Layout.FIRST_MAJOR)
 
         test_name = "test_rocm_cache_double_buffering__with_c_cache_tensorize"
         package = Package()
@@ -4573,7 +4710,7 @@ class SmokeTest(unittest.TestCase):
                 jj: target.GridUnit.THREAD_Y
             }
         )
-        plan.cache(C, index=iii, location=target.MemorySpace.PRIVATE, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(C, index=iii, location=target.MemorySpace.TENSOR, layout=Array.Layout.FIRST_MAJOR)
 
         test_name = "test_rocm_c_cache_private"
         package = Package()

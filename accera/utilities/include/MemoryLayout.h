@@ -251,12 +251,14 @@ namespace utilities
     };
 
     // TODO: dedupe with the definition in ir/include/value/ValueEnums.h
+    // This enum maintains parity with NVGPUMemorySpace
     enum class MemorySpace : uint64_t
     {
         None = 0,
         Global = 1,
         Shared = 3,
         Private = 5,
+        Tensor = 7,
     };
 
     /// <summary> A class representing layout of a block of data in memory where the block can also
@@ -280,11 +282,11 @@ namespace utilities
 
         /// <summary> Constructor from size only (no padding). </summary>
         ///
-        /// <param name="space"> The memory space for this layout </param>
         /// <param name="size"> The shape of the active area of the memory region, using the canonical memory order
         ///   (the first element is the size of the slowest-changing dimension, and the last element is the size of the
         ///   fastest-changing dimension). </param>
-        MemoryLayout(MemorySpace space, const MemoryShape& size);
+        /// <param name="space"> The memory space for this layout </param>
+        MemoryLayout(const MemoryShape& size, MemorySpace space);
 
         /// <summary> Constructor from a parameter pack of ints specifying the size only (no padding). </summary>
         ///

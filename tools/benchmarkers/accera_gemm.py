@@ -7,6 +7,7 @@ import multiprocessing
 import os
 import psutil
 from copy import deepcopy
+from functools import reduce
 import progressbar
 from termcolor import colored
 from dataclasses import dataclass, InitVar
@@ -16,8 +17,8 @@ from itertools import combinations_with_replacement, product
 from typing import Any, Dict, List, Tuple
 import numpy as np
 import hatlib
-from accera import Array, Nest, Constants, ScalarType, Target, Package, Schedule, Plan
-from accera._lang_python._lang import _MMASchedulingPolicy, _MMAShape
+from accera import Array, Nest, Constants, ScalarType, Target, Package
+from accera._lang_python._lang import _MMASchedulingPolicy, _MMAShape, _CacheStrategy
 import cosmosdb
 from gemm_opts import GemmOpts
 
@@ -44,6 +45,8 @@ class BenchmarkResult:
     use_static_offsets: bool=False
     cache_layout_A: str = ''
     cache_layout_B: str = ''
+    cache_strategy_A: str = ''
+    cache_strategy_B: str = ''
     cache_C: bool=False
     block_tile: Tuple[int, int]=(0, 0)
     k_split: int=-1
@@ -102,6 +105,8 @@ class BenchmarkResult:
             'so' : self.use_static_offsets,
             'ca' : self.cache_layout_A,
             'cb' : self.cache_layout_B,
+            'sa' : self.cache_strategy_A,
+            'sb' : self.cache_strategy_B,
             'cc' : self.cache_C,
             'bt0' : self.block_tile[0],
             'bt1' : self.block_tile[1],
@@ -170,8 +175,8 @@ def create_gemm_nest_args(M: int, N: int, K: int, transA: bool, transB: bool, dt
 
 def benchmark_kernel(
     target: Target, M: int, N: int, K: int, transA: bool, transB: bool, dtype, outer_tile_x: int, outer_tile_y: int,
-    outer_tile_k: int, cacheALayout, cacheBLayout, mfma_tile, use_static_offsets, double_buffering, vectorize,
-    num_total_passes, num_fused_passes, scheduling_policy):
+    outer_tile_k: int, cacheA_layout, cacheB_layout, cache_C: bool, cacheA_strategy: _CacheStrategy, cacheB_strategy: _CacheStrategy,
+    mfma_tile, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy):
     nest, (A, B, C) = create_gemm_nest_args(M, N, K, transA, transB, dtype)
     schedule = nest.create_schedule()
 
@@ -204,7 +209,8 @@ def benchmark_kernel(
         double_buffer_location=Constants.AUTO,
         vectorize=vectorize,
         location=target.MemorySpace.SHARED,
-        layout=cacheALayout
+        layout=cacheA_layout,
+        strategy=cacheA_strategy
     )
     plan.cache(
         B,
@@ -213,16 +219,17 @@ def benchmark_kernel(
         double_buffer_location=Constants.AUTO,
         vectorize=vectorize,
         location=target.MemorySpace.SHARED,
-        layout=cacheBLayout
+        layout=cacheB_layout,
+        strategy=cacheB_strategy
     )
 
-    if target.runtime == Target.Runtime.ROCM and (mfma_tile == _MMAShape.M16xN16xK4_B1 or mfma_tile == _MMAShape.M16xN16xK16_B1):
-        # Output caching is only supported for 16x16 output tiles currently
+    if cache_C:
+        # Output caching is only supported for 16x16 output tiles currently on ROCM
         plan.cache(
             C,
             index=k,
             vectorize=vectorize,
-            location=target.MemorySpace.PRIVATE
+            location=target.MemorySpace.TENSOR
             # Don't specify layout so it defaults to the C array's layout
         )
 
@@ -273,8 +280,10 @@ def get_variants(opts: GemmOpts, dtype, target):
     use_static_offsets = [False]
     vectorize = [True]
     double_buffering = [True]
-    cacheALayout = [Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR]
-    cacheBLayout = [Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR]
+    cacheA_layout = [Array.Layout.LAST_MAJOR]
+    cacheB_layout = [Array.Layout.FIRST_MAJOR]
+    cacheA_strategy = [_CacheStrategy.BLOCKED, _CacheStrategy.STRIPED]
+    cacheB_strategy = [_CacheStrategy.BLOCKED, _CacheStrategy.STRIPED]
 
     def valid_variant(outer_t, outer_k, mfma_t, total_passes, fuse_factor):
         leading_dim = get_leading_dim(target, mfma_t)
@@ -282,14 +291,14 @@ def get_variants(opts: GemmOpts, dtype, target):
         cache_size_b = outer_t[1] * outer_k
         pass_width = total_passes * get_k(target, mfma_t)
 
-        return total_passes % fuse_factor == 0 and (opts.m % leading_dim == 0) and (opts.n % leading_dim == 0) and \
+        return total_passes % fuse_factor == 0 and (opts.m % outer_t[0] == 0) and (opts.n % outer_t[1] == 0) and (opts.k % outer_k == 0) and \
                 (outer_t[0] % leading_dim == 0) and (outer_t[1] % leading_dim == 0) and outer_k % pass_width == 0 and \
                 ((cache_size_a + cache_size_b) * ELEM_SIZE_BYTES <= target.max_shared_memory_per_block) and \
                 target.tensor_core_info.supports(datatype, datatype, mfma_t, total_passes, total_passes // fuse_factor)
 
-    return list(filter(lambda v: valid_variant(v[0], v[1], v[2], v[8], v[9]), product(combinations_with_replacement(outer_tiles, 2), k_split_reduced, mfma_tiles,
-                                                                                    use_static_offsets, double_buffering, vectorize, cacheALayout,
-                                                                                    cacheBLayout, num_total_passes_reduced, fuse_factor, scheduling_policy)))
+    return list(filter(lambda v: valid_variant(v[0], v[1], v[2], v[10], v[11]), product(combinations_with_replacement(outer_tiles, 2), k_split_reduced, mfma_tiles,
+                                                                                    use_static_offsets, double_buffering, vectorize, cacheA_layout, cacheB_layout,
+                                                                                    cacheA_strategy, cacheB_strategy, num_total_passes_reduced, fuse_factor, scheduling_policy)))
 
 
 def benchmark_gemm(opts: GemmOpts, dtype, batch_size: int, output_prefix: str, available_gpus, container_name, verbose_logs, compiler_ver, commit_id, commit_datetime: str, commit_branch, target_name, check_result, dev_props):
@@ -464,14 +473,16 @@ def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, c
     try:
         assert float(opts.alpha) == 1., "alpha must be 1"
 
-        (outer_tile_x, outer_tile_y), k_split, mfma_tile, use_static_offsets, double_buffering, vectorize, cacheALayout, cacheBLayout, num_total_passes, fuse_factor, scheduling_policy = variant
+        (outer_tile_x, outer_tile_y), k_split, mfma_tile, use_static_offsets, double_buffering, vectorize, cacheA_layout, cacheB_layout, cacheA_strategy, cacheB_strategy, num_total_passes, fuse_factor, scheduling_policy = variant
         result = BenchmarkResult(opts=opts, dtype=dtype, gpu_id=gpu_id, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=dev_props)
         result.mma_shape = mfma_tile.name
         result.use_static_offsets = use_static_offsets
         result.double_buffering = double_buffering
         result.vectorize = vectorize
-        result.cache_layout_A = "F" if cacheALayout == Array.Layout.FIRST_MAJOR else "L"
-        result.cache_layout_B = "F" if cacheBLayout == Array.Layout.FIRST_MAJOR else "L"
+        result.cache_layout_A = "F" if cacheA_layout == Array.Layout.FIRST_MAJOR else "L"
+        result.cache_layout_B = "F" if cacheB_layout == Array.Layout.FIRST_MAJOR else "L"
+        result.cache_strategy_A = "B" if cacheA_strategy == _CacheStrategy.BLOCKED else "S"
+        result.cache_strategy_B = "B" if cacheB_strategy == _CacheStrategy.BLOCKED else "S"
         result.num_total_passes = num_total_passes
         result.num_fused_passes = num_fused_passes = num_total_passes // fuse_factor
         result.scheduling_policy = 0 if scheduling_policy == _MMASchedulingPolicy.PASS_ORDER else 1
@@ -479,18 +490,24 @@ def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, c
         result.k_split = k_split
         result.compiler_version = compiler_ver
         result.check = check_result
+        result.cache_C = target.runtime == Target.Runtime.CUDA or (mfma_tile == _MMAShape.M16xN16xK4_B1 or mfma_tile == _MMAShape.M16xN16xK16_B1)
         if target.runtime == Target.Runtime.ROCM:
             result.target_rt = 'ROCM'
-            result.cache_C = (mfma_tile == _MMAShape.M16xN16xK4_B1 or mfma_tile == _MMAShape.M16xN16xK16_B1)
         elif target.runtime == Target.Runtime.CUDA:
             result.target_rt = 'CUDA'
 
-        plan, A, B, C = benchmark_kernel(target, opts.m, opts.n, opts.k, opts.transA, opts.transB, dtype, outer_tile_x, outer_tile_y, k_split,
-                                    cacheALayout, cacheBLayout, mfma_tile, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy)
+        plan, A, B, C = benchmark_kernel(target, opts.m, opts.n, opts.k, opts.transA, opts.transB, dtype, outer_tile_x, outer_tile_y, k_split, cacheA_layout, cacheB_layout, result.cache_C,
+                                        cacheA_strategy, cacheB_strategy, mfma_tile, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy)
         fn_name = f"{result.target_rt}_GEMM_{result.get_partition_key().replace('.', '_')}_{result.get_id().replace('.', '_')}"
         block_dims, grid_dims = plan._calc_block_grid_dim()
         is_valid_plan = plan._is_valid_block_dim(block_dims) and plan._is_valid_block_size(block_dims)
-        if is_valid_plan:
+        block_size = reduce(lambda a, b: a * b, block_dims)
+        tile_size_a = outer_tile_x * k_split
+        tile_size_b = k_split * outer_tile_y
+        wpt_a = tile_size_a // block_size
+        wpt_b = tile_size_b // block_size
+        submit_package = is_valid_plan and wpt_a >= 1 and wpt_b >= 1 and tile_size_a % block_size == 0 and tile_size_b % block_size == 0
+        if submit_package:
             package_name = f"gemm_benchmarks_{fn_name}"
             package = Package()
             function = package.add(plan, args=(A, B, C), base_name=fn_name)
@@ -511,7 +528,7 @@ def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, c
         print_log(verbose_logs, error, 'red')
 
     finally:
-        if is_valid_plan:
+        if submit_package:
             device_q.put((package_name, opts, fn_name, result))
             print_log(verbose_logs, f"Submitted package: {package_name} on gpu {gpu_id}.", 'yellow')
 

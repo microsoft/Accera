@@ -9,6 +9,9 @@
 #include <iostream>
 #include <vector>
 
+#include <ir/include/DialectRegistry.h>
+#include <ir/include/InitializeAccera.h>
+
 #include <ir/include/nest/AffineExpression.h>
 #include <ir/include/nest/Index.h>
 #include <ir/include/nest/IndexRange.h>
@@ -17,11 +20,23 @@
 #include <ir/include/nest/Range.h>
 #include <ir/include/nest/TransformedDomain.h>
 
-#include "LoopNestTestVerification.h"
-
 #include <mlir/IR/Builders.h>
 
 using namespace accera::ir::loopnest;
+
+mlir::MLIRContext* GetContext()
+{
+    static mlir::MLIRContext ownedContext;
+    static bool initialized = false;
+    if (!initialized)
+    {
+        initialized = true;
+        accera::ir::InitializeAccera();
+        ownedContext.appendDialectRegistry(accera::ir::GetDialectRegistry());
+        ownedContext.loadAllAvailableDialects();
+    }
+    return &ownedContext;
+}
 
 TEST_CASE("Index tests")
 {
@@ -118,8 +133,7 @@ TEST_CASE("IndexRange tests")
 
 TEST_CASE("Domain tests")
 {
-    auto& b = GetTestBuilder();
-    auto context = b.getContext();
+    auto context = GetContext();
 
     const int64_t M = 20, N = 10;
     Index i("i"), j("j"), k("");
@@ -196,7 +210,7 @@ TEST_CASE("Domain tests")
 
 TEST_CASE("Domain skew tests")
 {
-    auto context = GetTestBuilder().getContext();
+    auto context = GetContext();
 
     const int64_t M = 20, N = 10;
     Index i("i"), j("j"), k("");
@@ -316,7 +330,7 @@ TEST_CASE("Domain skew tests")
 
 TEST_CASE("Domain pad tests")
 {
-    auto context = GetTestBuilder().getContext();
+    auto context = GetContext();
 
     const int64_t M = 21, N = 10;
     Index i("i"), j("j"), k("");
@@ -413,7 +427,7 @@ TEST_CASE("Domain pad tests")
 
 TEST_CASE("Domain padded fusion tests")
 {
-    auto context = GetTestBuilder().getContext();
+    auto context = GetContext();
 
     const int64_t M = 21, N0 = 10, N1 = 8, K = 16;
     const int64_t splitSize = 3;

@@ -40,14 +40,17 @@ public:
         _sourceMgrHandler(_sourceMgr, _context),
         _builder(_context)
     {
+        SetTestBuilder(&_builder);
+        _builder.setInsertionPoint(_module.getBody(), _module.getBody()->begin());
         _fnOp = CreateFunction(_builder, name, {}, {});
         auto entryBlock = _fnOp.addEntryBlock();
 
-        mlir::OpBuilder bodyBuilder(entryBlock->getParent());
-        mlir::OpBuilder::InsertionGuard guard(bodyBuilder);
-        bodyBuilder.setInsertionPoint(entryBlock, std::prev(entryBlock->end()));
+        mlir::OpBuilder::InsertionGuard guard(_builder);
+        _builder.setInsertionPoint(entryBlock, std::prev(entryBlock->end()));
+        
         setup();
-        (void)bodyBuilder.create<mlir::ReturnOp>(bodyBuilder.getUnknownLoc());
+        
+        (void)_builder.create<mlir::ReturnOp>(_builder.getUnknownLoc());
     }
 
     TestContext(std::function<std::vector<mlir::Type>()> getArgTypes, std::function<void(std::vector<mlir::Value>)> body) :
@@ -62,12 +65,13 @@ public:
         _sourceMgrHandler(_sourceMgr, _context),
         _builder(_context)
     {
+        SetTestBuilder(&_builder);
+        _builder.setInsertionPoint(_module.getBody(), _module.getBody()->begin());
         auto argTypes = getArgTypes();
         _fnOp = CreateFunction(_builder, name, argTypes, {});
         auto entryBlock = _fnOp.addEntryBlock();
-        mlir::OpBuilder bodyBuilder(entryBlock->getParent());
-        mlir::OpBuilder::InsertionGuard guard(bodyBuilder);
-        bodyBuilder.setInsertionPoint(entryBlock, std::prev(entryBlock->end()));
+        mlir::OpBuilder::InsertionGuard guard(_builder);
+        _builder.setInsertionPoint(entryBlock, std::prev(entryBlock->end()));
 
         std::vector<mlir::Value> args;
         for (auto arg : _fnOp.getArguments())
@@ -75,7 +79,7 @@ public:
             args.push_back(arg);
         }
         body(args);
-        (void)bodyBuilder.create<mlir::ReturnOp>(bodyBuilder.getUnknownLoc());
+        (void)_builder.create<mlir::ReturnOp>(_builder.getUnknownLoc());
     }
 
     mlir::OwningOpRef<mlir::ModuleOp>& Module() { return _ownedModule; }
@@ -117,17 +121,14 @@ private:
         }
 
         return guard;
-
-        // if (insertionPoint.isSet())
-        // {
-        //     return mlir::edsc::ScopedContext(builder, insertionPoint, builder.getUnknownLoc());
-        // }
-        // else
-        // {
-        //     return mlir::edsc::ScopedContext(builder, builder.getUnknownLoc());
-        // }
     }
 };
+
+inline bool VerifyGenerate(TestContext& context, bool verbose = false, std::string outputFile = "")
+{
+    accera::utilities::logging::LogGuard guard(verbose);
+    return VerifyGenerate(context.Module(), context.Func(), outputFile);
+}
 
 inline bool VerifyParse(TestContext& context, bool verbose = false, std::string outputFile = "")
 {

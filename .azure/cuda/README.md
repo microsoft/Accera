@@ -27,18 +27,16 @@ After building, you can manually push the container to a Docker repository if ne
 On a Linux machine with a CUDA GPU:
 
 ```shell
-export AZP_URL=<ADO org-level server url>
-export AZP_TOKEN=<ADO server PAT>
-export ACR_USER=<ACR client id>
-export ACR_SECRET=<ACR client secret>
+export AZP_URL=<ADO_URL>
+export AZP_TOKEN=<ADO_PAT>
+export ACR_REPO=<ACR_REPO>
 bash run_agent.sh
 ```
 
 Where:
-- <PAT> - Personal access token with "Agent Pools (read, manage)" scope.
+- <ADO_PAT> - Personal access token with "Agent Pools (read, manage)" scope.
 - <ADO_URL> - Server URL for the Azure DevOps instance. Note that this is the organization-level URL, *not* the project-level URL. This is likely because ADO agents and pools can be organization-scoped.
-- <ACR_USER> - Client id for the service principal allowing pull access to the Azure container registry
-- <ACR_SECRET> - Client secret for the service principal allowing pull access to the Azure container registry
+- <ACR_REPO> - Azure Container Registry repository
 
 ## Debugging
 

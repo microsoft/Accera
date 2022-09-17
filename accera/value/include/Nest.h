@@ -9,7 +9,7 @@
 #include <cassert>
 #include <functional>
 #include <memory>
-#include <vector>
+ 
 
 #include "Index.h"
 #include "IterationDomain.h"

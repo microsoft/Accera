@@ -153,7 +153,10 @@ namespace value
 
     utilities::MemoryLayout Array::GetLayout() const { return _value.GetLayout(); }
 
-    int64_t Array::Size() const { return static_cast<int64_t>(_value.GetLayout().NumElements()); }
+    int64_t Array::Size() const 
+    { 
+        return static_cast<int64_t>(_value.GetLayout().NumElements()); 
+    }
 
     int64_t Array::Rank() const { return static_cast<int64_t>(_value.GetLayout().NumDimensions()); }
 
@@ -162,6 +165,11 @@ namespace value
     void Array::SetName(const std::string& name) { _value.SetName(name); }
 
     std::string Array::GetName() const { return _value.GetName(); }
+
+    bool Array::IsVariableSized() const
+    {
+        return _value.GetLayout().IsVariableSized();
+    }
 
     void For(Array array, std::function<void(const std::vector<Scalar>&)> fn)
     {

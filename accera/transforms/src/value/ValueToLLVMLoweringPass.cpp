@@ -26,6 +26,7 @@
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
 #include <mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h>
+#include <mlir/Conversion/MemRefToLLVM/AllocLikeConversion.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
@@ -353,6 +354,116 @@ struct RangeOpLowering : public ValueLLVMOpConversionPattern<RangeOp>
         RangeOp op,
         OpAdaptor adaptor,
         ConversionPatternRewriter& rewriter) const override;
+};
+
+// Use a custom lowering pattern instead of using mlir's existing memref::alloc patterns, 
+// which allows us to add custom allocators in future, 
+// please keep this class updated with mlir/lib/Conversion/MemRefToLLVM/AllocLikeConversion.cpp.
+struct MemrefAllocOpLowering : public ConvertOpToLLVMPattern<memref::AllocOp> {
+    using ConvertToLLVMPattern::createIndexConstant;
+    using ConvertToLLVMPattern::getIndexType;
+    using ConvertToLLVMPattern::getVoidPtrType;
+
+    MemrefAllocOpLowering(LLVMTypeConverter &converter, mlir::MLIRContext* context)
+        : ConvertOpToLLVMPattern(converter) 
+    {}
+
+    static Value createAligned(ConversionPatternRewriter &rewriter, Location loc, Value input, Value alignment)
+    {
+        Value one = createIndexAttrConstant(rewriter, loc, alignment.getType(), 1);
+        Value bump = rewriter.create<LLVM::SubOp>(loc, alignment, one);
+        Value bumped = rewriter.create<LLVM::AddOp>(loc, input, bump);
+        Value mod = rewriter.create<LLVM::URemOp>(loc, bumped, alignment);
+        return rewriter.create<LLVM::SubOp>(loc, bumped, mod);
+    }
+
+    std::tuple<Value, Value> allocateBuffer(ConversionPatternRewriter &rewriter, Location loc, Value sizeBytes, Operation *op) const 
+    {
+        // Heap allocations.
+        memref::AllocOp allocOp = cast<memref::AllocOp>(op);
+        MemRefType memRefType = allocOp.getType();
+
+        Value alignment;
+        if (auto alignmentAttr = allocOp.alignment()) {
+            alignment = createIndexConstant(rewriter, loc, *alignmentAttr);
+        } 
+        else if (!memRefType.getElementType().isSignlessIntOrIndexOrFloat()) {
+            alignment = getSizeInBytes(loc, memRefType.getElementType(), rewriter);
+        }
+
+        if (alignment) {
+            // Adjust the allocation size to consider alignment.
+            sizeBytes = rewriter.create<LLVM::AddOp>(loc, sizeBytes, alignment);
+        }
+
+        // Allocate the underlying buffer and store a pointer to it in the MemRef descriptor.
+        Type elementPtrType = this->getElementPtrType(memRefType);
+        auto allocFuncOp = LLVM::lookupOrCreateMallocFn(
+            allocOp->getParentOfType<ModuleOp>(), getIndexType());
+        auto results = createLLVMCall(rewriter, loc, allocFuncOp, {sizeBytes},
+                                    getVoidPtrType());
+        Value allocatedPtr = rewriter.create<LLVM::BitcastOp>(loc, elementPtrType, results[0]);
+
+        Value alignedPtr = allocatedPtr;
+        if (alignment) {
+            // Compute the aligned type pointer.
+            Value allocatedInt = rewriter.create<LLVM::PtrToIntOp>(loc, getIndexType(), allocatedPtr);
+            Value alignmentInt = createAligned(rewriter, loc, allocatedInt, alignment);
+            alignedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, elementPtrType, alignmentInt);
+        }
+
+        return std::make_tuple(allocatedPtr, alignedPtr);
+    }
+
+
+    LogicalResult match(memref::AllocOp op) const 
+    {
+        if (!op)
+            return failure();
+
+        if (auto target = util::ResolveExecutionTarget(op); !target || *target != ExecutionTarget::CPU)
+        {
+            return failure();
+        }
+
+        // TODO: do we need this check?
+        MemRefType memRefType = op.getResult().getType().cast<MemRefType>();
+        if (!isConvertibleAndHasIdentityMaps(memRefType))
+            return failure();
+
+        return success();
+    }
+
+    void rewrite(memref::AllocOp allocop, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const 
+    {
+        std::vector<Value> operandsVector;
+        mlir::ValueRange operandsRange = adaptor.getOperands(); 
+        for (unsigned i = 0; i < operandsRange.size(); i++)
+            operandsVector.push_back(operandsRange[i]);
+        ArrayRef<Value> operands(operandsVector);
+        Operation *op = allocop.getOperation();
+
+        auto loc = op->getLoc();
+
+        SmallVector<Value, 4> sizes;
+        SmallVector<Value, 4> strides;
+        Value sizeBytes;
+        MemRefType memRefType = allocop.getResult().getType().cast<MemRefType>();
+        this->getMemRefDescriptorSizes(loc, memRefType, operands, rewriter, sizes,
+                                        strides, sizeBytes);
+
+        // Allocate the underlying buffer.
+        Value allocatedPtr;
+        Value alignedPtr;
+        std::tie(allocatedPtr, alignedPtr) = this->allocateBuffer(rewriter, loc, sizeBytes, op);
+
+        // Create the MemRef descriptor.
+        auto memRefDescriptor = this->createMemRefDescriptor(
+            loc, memRefType, allocatedPtr, alignedPtr, sizes, strides, rewriter);
+
+        // Return the final value of the descriptor.
+        rewriter.replaceOp(op, {memRefDescriptor});
+    }
 };
 
 struct ValueToLLVMLoweringPass : public ConvertValueToLLVMBase<ValueToLLVMLoweringPass>
@@ -1147,7 +1258,8 @@ void populateLocalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, ml
         CallOpLowering,
         PrintFOpLowering,
         GetTimeOpLowering,
-        RangeOpLowering>(typeConverter, context);
+        RangeOpLowering,
+        MemrefAllocOpLowering>(typeConverter, context);
 }
 
 void populateValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)

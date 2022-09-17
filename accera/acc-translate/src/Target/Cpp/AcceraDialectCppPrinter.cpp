@@ -5,6 +5,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "AcceraDialectCppPrinter.h"
+#include "AffineDialectCppPrinter.h"
 #include "CppPrinterUtils.h"
 
 #include "AMDGPU.h"
@@ -67,6 +68,21 @@ namespace cpp_printer
         return success();
     }
 
+    LogicalResult AcceraDialectCppPrinter::printOp(accera::ir::value::MMAAllocSyncOp allocMatrixOp)
+    {
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            return allocMatrixOp.emitError("non-cuda version is not supported.");
+        }
+
+        auto memRefType = allocMatrixOp.result().getType().cast<MemRefType>();
+        const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(allocMatrixOp.mmaShapeType()) };
+        const auto shape = std::make_tuple(mfmaOpType.getM(), mfmaOpType.getN(), mfmaOpType.getK());
+        const vir::MMAOperandType opType{ allocMatrixOp.operandType() };
+        const auto rowMajor = allocMatrixOp.rowMajor().getValueOr(true);
+        return printMMAMatrixOp(state, printer, memRefType.getElementType(), shape, allocMatrixOp.result(), opType, rowMajor);
+    }
+
     LogicalResult AcceraDialectCppPrinter::printOp(vir::MMAFillSyncOp constantMatrixOp)
     {
         if (!state.hasRuntime(Runtime::CUDA))
@@ -74,10 +90,10 @@ namespace cpp_printer
             return constantMatrixOp.emitError("non-cuda version is not supported.");
         }
 
-        auto memRefType = constantMatrixOp.result().getType().cast<MemRefType>();
+        auto memRefType = constantMatrixOp.dest().getType().cast<MemRefType>();
         const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(constantMatrixOp.mmaShapeType()) };
         const auto cShape = std::make_tuple(mfmaOpType.getM(), mfmaOpType.getN(), mfmaOpType.getK());
-        return printConstantMatrixOp(state, printer, memRefType.getElementType(), cShape, constantMatrixOp.result(), constantMatrixOp.value());
+        return printConstantMatrixOp(state, printer, memRefType.getElementType(), cShape, constantMatrixOp.dest(), constantMatrixOp.value());
     }
 
     LogicalResult AcceraDialectCppPrinter::printOp(vir::MMALoadSyncOp loadMatrixOp)
@@ -87,13 +103,13 @@ namespace cpp_printer
             return loadMatrixOp.emitError("non-cuda version is not supported.");
         }
 
-        auto memRefType = loadMatrixOp.result().getType().cast<MemRefType>();
+        auto memRefType = loadMatrixOp.dest().getType().cast<MemRefType>();
         const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(loadMatrixOp.mmaShapeType()) };
         const auto rowcolIndices = std::make_pair(loadMatrixOp.indices()[0], loadMatrixOp.indices()[1]);
         const auto operandType = static_cast<vir::MMAOperandType>(loadMatrixOp.operandType());
         const auto memrefShape = std::make_tuple(mfmaOpType.getM(), mfmaOpType.getN(), mfmaOpType.getK());
 
-        return printLoadMatrixOp(state, printer, memRefType.getElementType(), memrefShape, loadMatrixOp.memref(), loadMatrixOp.result(), operandType, rowcolIndices, loadMatrixOp.rowMajor());
+        return printLoadMatrixOp(state, printer, memRefType.getElementType(), memrefShape, loadMatrixOp.memref(), loadMatrixOp.dest(), operandType, rowcolIndices, loadMatrixOp.rowMajor());
     }
 
     LogicalResult AcceraDialectCppPrinter::printOp(vir::MMAComputeSyncOp computeMatrixOp)
@@ -103,10 +119,10 @@ namespace cpp_printer
             return computeMatrixOp.emitError("non-cuda version is not supported.");
         }
 
-        const auto outputMemrefType = computeMatrixOp.result().getType().cast<MemRefType>();
+        const auto outputMemrefType = computeMatrixOp.opC().getType().cast<MemRefType>();
         const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(computeMatrixOp.mmaShapeType()) };
         const auto cShape = std::make_tuple(mfmaOpType.getM(), mfmaOpType.getN(), mfmaOpType.getK());
-        return printComputeMatrixOp(state, printer, outputMemrefType.getElementType(), cShape, computeMatrixOp.opA(), computeMatrixOp.opB(), computeMatrixOp.opC(), computeMatrixOp.result());
+        return printComputeMatrixOp(state, printer, outputMemrefType.getElementType(), cShape, computeMatrixOp.opA(), computeMatrixOp.opB(), computeMatrixOp.opC(), computeMatrixOp.opC());
     }
 
     LogicalResult AcceraDialectCppPrinter::printOp(vir::MMAStoreSyncOp storeMatrixOp)
@@ -120,6 +136,76 @@ namespace cpp_printer
         return printStoreMatrixOp(state, printer, storeMatrixOp.src(), storeMatrixOp.memref(), rowcolIndices);
     }
 
+    LogicalResult AcceraDialectCppPrinter::printVectorType(mlir::Type elementType, const uint32_t stride) const
+    {
+        if (state.hasRuntime(Runtime::ROCM))
+        {
+            RETURN_IF_FAILED(printer->printVectorType(elementType, stride));
+        }
+        else
+        {
+            std::string res;
+            if (elementType.isF32())
+                res = "float";
+            else if (elementType.isF16())
+                res = "half";
+
+            res += stride == 1 ? "" : std::to_string(stride);
+            os << res;
+        }
+
+        return success();
+    }
+
+    std::string getMemSpaceEnum(const uint64_t memSpace)
+    {
+        return "MemSpace::" + stringifyMemorySpace(*vir::symbolizeMemorySpace(memSpace)).str();
+    }
+
+    LogicalResult AcceraDialectCppPrinter::printOp(vir::GPUBlockCacheOp blockLoadOp)
+    {
+        if (!state.hasRuntime(Runtime::CUDA))
+        {
+            return blockLoadOp.emitError("non-cuda version is not supported.");
+        }
+
+        auto srcMemref = blockLoadOp.memref();
+        auto srcMemrefType = srcMemref.getType().cast<MemRefType>();
+        const auto srcMemSpace = srcMemrefType.getMemorySpaceAsInt();
+        auto elementType = srcMemrefType.getElementType();
+        AffineDialectCppPrinter* affineDialectPrinter = dynamic_cast<AffineDialectCppPrinter*>(printer->getDialectPrinter("Affine"));
+        auto srcMap = srcMemrefType.getLayout().getAffineMap();
+        const auto srcRowMajor = mlir::canonicalizeStridedLayout(srcMemrefType).getLayout().isIdentity();
+
+        auto dstMemrefType = blockLoadOp.dest().getType().cast<MemRefType>();
+        const auto destMemSpace = dstMemrefType.getMemorySpaceAsInt();
+
+        const auto tileShape = accera::ir::util::ConvertArrayAttrToIntVector(blockLoadOp.tileShape());
+        const auto var = SSANameState::SSANameKind::Variable;
+        const auto accessMapName = srcMap.getNumResults() == 1 ? affineDialectPrinter->makeAffineIdxFuncName(affineDialectPrinter->getFuncBaseName(srcMap), 0) : "[](int, int)->int {/*unused*/}";
+        const auto src = state.nameState.getOrCreateName(srcMemref, var, "src_");
+        const auto dst = state.nameState.getOrCreateName(blockLoadOp.dest(), var, "dst_");
+        const auto srcOffsetRows = state.nameState.getOrCreateName(blockLoadOp.srcOffsetRows(), var, "src_off_r_");
+        const auto srcOffsetCols = state.nameState.getOrCreateName(blockLoadOp.srcOffsetCols(), var, "src_off_c_");
+        const auto blockThreadId = state.nameState.getOrCreateName(blockLoadOp.blockThreadId(), var, "tid_");
+        const auto wpt = blockLoadOp.workPerThread();
+        const auto vecWidth = blockLoadOp.vecWidth();
+        const auto stride = std::min(wpt, vecWidth);
+        const auto strategy = stringifyCacheStrategy(blockLoadOp.strategy());
+
+        os << "block_copy<CopyMode::" << strategy << ", " << srcRowMajor << ", /*DST_ROW_MAJOR*/ " << blockLoadOp.dstRowMajor() << ", /*STRIDE*/ " << stride << ", /*WPT*/ " << wpt;
+        os << ", /*TILE_R,C*/" << tileShape[0] << ", " << tileShape[1] << ", /*BLOCK_DIM_X,Y,Z*/ " << blockLoadOp.blockDimX() << ", " << blockLoadOp.blockDimY();
+        os << ", " << blockLoadOp.blockDimZ() << ", " << getMemSpaceEnum(srcMemSpace) << ", " << getMemSpaceEnum(destMemSpace) << ", ";
+        RETURN_IF_FAILED(printVectorType(elementType, stride));
+        os << ">(\n" << blockThreadId << ", (";
+        RETURN_IF_FAILED(printer->printType(elementType));
+        os << "*)" << src << ", " << srcOffsetRows << ", " << srcOffsetCols << ", " << accessMapName << ", (";
+        RETURN_IF_FAILED(printer->printType(elementType));
+        os << "*)" << dst << ")";
+
+        return success();
+    }
+
     LogicalResult AcceraDialectCppPrinter::printDialectOperation(
         Operation* op,
         bool* /*skipped*/,
@@ -131,10 +217,12 @@ namespace cpp_printer
         };
 
         TypeSwitch<Operation*>(op)
+            .Case<vir::MMAAllocSyncOp>(handler)
             .Case<vir::MMAFillSyncOp>(handler)
             .Case<vir::MMALoadSyncOp>(handler)
             .Case<vir::MMAComputeSyncOp>(handler)
             .Case<vir::MMAStoreSyncOp>(handler)
+            .Case<vir::GPUBlockCacheOp>(handler)
             .Case<vir::CallOp>(handler)
             .Case<vir::ReturnOp>(handler)
             .Default([&](Operation*) { *consumed = false; });

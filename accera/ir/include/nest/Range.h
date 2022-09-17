@@ -12,6 +12,7 @@
 
 #include <iosfwd>
 #include <variant>
+#include <string>
 
 namespace accera::ir
 {
@@ -31,6 +32,7 @@ namespace loopnest
         Range(int64_t begin, Index endIndex, int64_t increment = 1);
         Range(int64_t begin, mlir::Value end, int64_t increment = 1);
         Range(int64_t begin, OperandIndex end, int64_t increment = 1);
+        Range(int64_t begin, std::string endSymbol, int64_t increment = 1);
 
         int64_t Begin() const;
         int64_t End() const;
@@ -39,8 +41,10 @@ namespace loopnest
         bool HasVariableEnd() const;
         bool HasIndexEnd() const;
         bool HasOperandIndexEnd() const;
+        bool HasSymbolNameEnd() const;
         Index EndIndex() const;
         OperandIndex EndOperandIndex() const;
+        std::string SymbolNameEnd() const;
         int64_t Size() const;
         int64_t Increment() const;
         int64_t NumIterations() const;
@@ -48,7 +52,7 @@ namespace loopnest
 
     private:
         int64_t _begin;
-        std::variant<int64_t, Index, OperandIndex, mlir::Value> _end;
+        std::variant<int64_t, Index, OperandIndex, mlir::Value, std::string> _end;
         int64_t _increment;
     };
 

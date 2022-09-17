@@ -6,6 +6,7 @@
 
 #include "AcceraPasses.h"
 
+#include <ir/include/IRUtil.h>
 #include <ir/include/value/ValueDialect.h>
 
 #include <mlir/Conversion/AffineToStandard/AffineToStandard.h>
@@ -43,6 +44,26 @@ using namespace scf;
 using namespace accera::ir;
 using namespace accera::transforms;
 using namespace accera::ir::value;
+
+using ValueCastOp = accera::ir::value::CastOp;
+using ValueBinOp = accera::ir::value::BinOp;
+struct BinOpCastOpExpandingPattern : public OpRewritePattern<ValueBinOp>
+{
+    using OpRewritePattern<ValueBinOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(
+        ValueBinOp op,
+        PatternRewriter& rewriter) const override;
+};
+
+struct SequentialCastOpFoldingPattern : public OpRewritePattern<ValueCastOp>
+{
+    using OpRewritePattern<ValueCastOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(
+        ValueCastOp op,
+        PatternRewriter& rewriter) const override;
+};
 
 using ValueCopyOp = accera::ir::value::CopyOp;
 struct CopyOpLowering : public OpRewritePattern<ValueCopyOp>
@@ -121,6 +142,100 @@ struct ValueSimplifyPass : public ConvertValueSimplifyBase<ValueSimplifyPass>
     void runOnOperation() final;
 };
 
+LogicalResult BinOpCastOpExpandingPattern::matchAndRewrite(
+    ValueBinOp op,
+    PatternRewriter& rewriter) const
+{
+    auto lhs = op.lhs();
+    auto rhs = op.rhs();
+    auto result = op.result();
+
+    auto lhsType = util::GetElementType(lhs.getType());
+    auto rhsType = util::GetElementType(rhs.getType());
+    auto resultType = util::GetElementType(result.getType());
+
+    if (lhsType != rhsType || lhsType != resultType || rhsType != resultType)
+    {
+        // Cast lhs, rhs, and result type to the implicitly castable common denominator amongst the three of them
+        bool lhsCommon = util::IsImplicitlyCastable(rhsType, lhsType) && util::IsImplicitlyCastable(resultType, lhsType);
+        bool rhsCommon = util::IsImplicitlyCastable(lhsType, rhsType) && util::IsImplicitlyCastable(resultType, rhsType);
+        bool resultCommon = util::IsImplicitlyCastable(lhsType, resultType) && util::IsImplicitlyCastable(rhsType, resultType);
+
+        if (lhsCommon)
+        {
+            rhs = rewriter.create<ValueCastOp>(op.getLoc(), rhs, lhsType, true /* internal */);
+            auto newBinOp = rewriter.create<ValueBinOp>(op.getLoc(), lhsType, op.predicate(), lhs, rhs);
+            rewriter.replaceOpWithNewOp<ValueCastOp>(op, newBinOp, resultType, true /* internal */);
+            return success();
+        }
+        else if (rhsCommon)
+        {
+            lhs = rewriter.create<ValueCastOp>(op.getLoc(), lhs, rhsType, true /* internal */);
+            auto newBinOp = rewriter.create<ValueBinOp>(op.getLoc(), rhsType, op.predicate(), lhs, rhs);
+            rewriter.replaceOpWithNewOp<ValueCastOp>(op, newBinOp, resultType, true /* internal */);
+            return success();
+        }
+        else if (resultCommon)
+        {
+            lhs = rewriter.create<ValueCastOp>(op.getLoc(), lhs, resultType, true /* internal */);
+            rhs = rewriter.create<ValueCastOp>(op.getLoc(), rhs, resultType, true /* internal */);
+            rewriter.replaceOpWithNewOp<ValueBinOp>(op, resultType, op.predicate(), lhs, rhs);
+            return success();
+        }
+    }
+
+    return failure();
+}
+
+LogicalResult SequentialCastOpFoldingPattern::matchAndRewrite(
+    ValueCastOp op,
+    PatternRewriter& rewriter) const
+{
+    // Match a pattern like:
+    // %1 = "accv.cast"(%0) : (TypeA) -> TypeB
+    // ...
+    // %2 = "accv.cast"(%1) : (TypeB) -> TypeC
+    // Where TypeA -> TypeB is implicitly castable
+    // and TypeB -> TypeC is implicitly castable
+
+    // and replace it with
+    // %1 = "accv.cast"(%0) : (TypeA) -> TypeB
+    // ...
+    // %2 = "accv.cast"(%0) : (TypeA) -> TypeC
+    // leaving the first cast alone in case the result is used by other ops
+
+    // Alternatively, if both casts are internally-generated casts, then they can always be folded
+    // E.g.
+    //   %1 = "accv.cast"(%0) {internal} : (i16) -> f32
+    //   %2 = "accv.cast"(%1) {internal} : (f32) -> i32
+    // Can occur in int->float matmul with an int32 output cache
+    // Since these are internal casts replace this sequence with
+    //   %1 = "accv.cast"(%0) {internal} : (i16) -> f32
+    //   %2 = "accv.cast"(%0) {internal} : (i16) -> i32
+    // Which may simplify to
+    //   %2 = "accv.cast"(%0) {internal} : (i16) -> i32
+    // if %1 had no other uses
+
+    if (auto srcCastOp = mlir::dyn_cast_or_null<ValueCastOp>(op.source().getDefiningOp()))
+    {
+        auto initSrcType = srcCastOp.source().getType();
+        auto intermediateType = op.source().getType();
+        auto finalDstType = op.result().getType();
+        bool bothInternal = op.internal() && srcCastOp.internal();
+        // Internal cast ops can always be folded
+        // Non-internal cast ops can only be folded if they are implicitly castable
+        if (bothInternal ||
+            (util::IsImplicitlyCastable(initSrcType, intermediateType) &&
+             util::IsImplicitlyCastable(intermediateType, finalDstType) &&
+             util::IsImplicitlyCastable(initSrcType, finalDstType)))
+        {
+            rewriter.replaceOpWithNewOp<ValueCastOp>(op, srcCastOp.source(), finalDstType, bothInternal);
+            return success();
+        }
+    }
+    return failure();
+}
+
 LogicalResult CopyOpLowering::matchAndRewrite(
     ValueCopyOp op,
     PatternRewriter& rewriter) const
@@ -180,7 +295,6 @@ LogicalResult CopyOpLowering::matchAndRewrite(
     return success();
 }
 
-using ValueBinOp = accera::ir::value::BinOp;
 struct IndexCombinationBinOpLowering : public OpRewritePattern<ValueBinOp>
 {
     // Convert value BinOps that are just combinations of index types into affine apply ops
@@ -303,8 +417,9 @@ struct IndexCombinationBinOpLowering : public OpRewritePattern<ValueBinOp>
             }
             auto map = mlir::AffineMap::get(nextDimIdx, 0, combinationExpr);
             rewriter.replaceOpWithNewOp<mlir::AffineApplyOp>(op, map, exprInputs);
+            return success();
         }
-        return success();
+        return failure();
     }
 };
 
@@ -323,7 +438,11 @@ void populateValueSimplifyPatterns(mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     populateWithGenerated(patterns);
-    patterns.insert<CopyOpLowering, ValueSliceSimplifyPattern, IndexCombinationBinOpLowering>(context);
+    patterns.insert<CopyOpLowering,
+                    ValueSliceSimplifyPattern,
+                    IndexCombinationBinOpLowering,
+                    BinOpCastOpExpandingPattern,
+                    SequentialCastOpFoldingPattern>(context);
 }
 
 std::unique_ptr<mlir::Pass> createValueSimplifyPass()

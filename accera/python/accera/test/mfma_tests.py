@@ -42,38 +42,16 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-from accera._lang_python._lang import _MMAShape, _MMASchedulingPolicy, _MemorySpace
+from accera._lang_python._lang import _MMAShape, _MMASchedulingPolicy, _MemorySpace, _CacheStrategy
 from accera.test import verifiers
+from accera.test.test_utils import expectedFailure, FailedReason, get_type_str
 from accera import Array, Nest, Package, ScalarType, Target, Constants
 from accera.Targets import GridUnits
-from smoke_tests import expectedFailure, FailedReason
 
 TEST_PACKAGE_DIR = "test_mfma"
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
-
-
-def _get_type_str(datatype: ScalarType):
-    if datatype == ScalarType.float32:
-        return "fp32"
-
-    if datatype == ScalarType.float16:
-        return "fp16"
-
-    if datatype == ScalarType.bfloat16:
-        return "bfp16"
-
-    if datatype == ScalarType.int8:
-        return "i8"
-
-    if datatype == ScalarType.uint8:
-        return "ui8"
-
-    if datatype == ScalarType.int32:
-        return "i32"
-
-    return ""
 
 
 class TensorizeTest(unittest.TestCase):
@@ -249,15 +227,16 @@ class TensorizeTest(unittest.TestCase):
 
         if cache[0]:
             plan.cache(
-                A, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[0]
+                A, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[0], strategy=_CacheStrategy.BLOCKED
             )
         if cache[1]:
             plan.cache(
-                B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1]
+                B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1], strategy=_CacheStrategy.STRIPED
             )
         if cache[2]:
+            acc_loc = target.MemorySpace.TENSOR if tensorize else target.MemorySpace.PRIVATE
             plan.cache(
-                C, index=k, vectorize=vectorize, location=target.MemorySpace.PRIVATE, layout=cache_layouts[2]
+                C, index=k, vectorize=vectorize, location=acc_loc, layout=cache_layouts[2]
             )
 
         package = Package()
@@ -372,8 +351,9 @@ class TensorizeTest(unittest.TestCase):
                 B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1]
             )
         if cache[2]:
+            acc_loc = target.MemorySpace.TENSOR if tensorize else target.MemorySpace.PRIVATE
             plan.cache(
-                C, index=k, vectorize=vectorize, location=target.MemorySpace.PRIVATE, layout=cache_layouts[2]
+                C, index=k, vectorize=vectorize, location=acc_loc, layout=cache_layouts[2]
             )
 
         package = Package()
@@ -1458,8 +1438,8 @@ class TensorizeTest(unittest.TestCase):
         package = Package()
         test_name = "test_cuda_tensorize"
         test_name += f"_{M}x{N}x{K}"
-        test_name += f"_{_get_type_str(intype)}"
-        test_name += f"_{_get_type_str(outtype)}"
+        test_name += f"_{get_type_str(intype)}"
+        test_name += f"_{get_type_str(outtype)}"
         function = package.add(plan, args=(A, B, C), base_name=test_name)
 
         self._verify_matrix_multiplication_function(
@@ -1660,10 +1640,15 @@ class TensorizeTest(unittest.TestCase):
 
         if cache:
             plan.cache(
-                A, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[0]
+                A, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[0], strategy=_CacheStrategy.BLOCKED
             )
             plan.cache(
-                B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1]
+                B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1], strategy=_CacheStrategy.STRIPED
+            )
+
+            acc_loc = target.MemorySpace.TENSOR if tensorize else target.MemorySpace.PRIVATE
+            plan.cache(
+                C, index=k, vectorize=vectorize, location=acc_loc, layout=Array.Layout.FIRST_MAJOR
             )
 
         package = Package()
@@ -1829,8 +1814,8 @@ class TensorizeTest(unittest.TestCase):
         if test_name is None:
             test_name = "test_rocm_tensorize"
             test_name += f"_{M}x{N}x{K}"
-            test_name += "_" + _get_type_str(intype)
-            test_name += "_" + _get_type_str(outtype)
+            test_name += "_" + get_type_str(intype)
+            test_name += "_" + get_type_str(outtype)
             test_name += "_" + "x".join([str(dim) for dim in tensor_splits])
             test_name += "_" + mma_shape.name
             if use_static_offsets:
@@ -2318,11 +2303,6 @@ class TensorizeTest(unittest.TestCase):
         self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(64, 64), outer_tile_k=64,
                                     test_name="test_rocm_vectorized_cache_double_buffering_tensorize_non_square_tensormap",
                                     double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, use_static_offsets=True)
-
-    @expectedFailure(FailedReason.INVALID, "Invalid block size 4096. Max threads per block: 1024.")
-    def test_rocm_invalid_block_size(self) -> None:
-        self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(64, 64), outer_tile_k=128,
-                                   test_name="test_rocm_invalid_block_size", tensorize=False, tensor_splits=None, vectorize=False)
 
     def test_rocm_batchgemm_vectorized_cache_non_square_transpose(self) -> None:
         self._rocm_batch_matmul(batch_count=3, M=1280, N=768, K=1024, block_tile=(32, 32), outer_tile_k=64,

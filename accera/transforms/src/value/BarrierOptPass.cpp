@@ -803,6 +803,20 @@ private:
             return llvm::None;
         };
 
+        auto getBlockLoadAccessInfo = [](GPUBlockCacheOp op, MemoryAccessType accessType) -> llvm::Optional<MemoryAccessInfo> {
+            auto memRefType = op.dest().getType().cast<MemRefType>();
+            auto memSpace = memRefType.getMemorySpaceAsInt();
+            if (memSpace == gpu::GPUDialect::getWorkgroupAddressSpace())
+            {
+                MemoryAccessInfo info;
+                info.op = op.getOperation();
+                info.baseMemRef = GetBaseMemRef(op.dest());
+                info.accessType = accessType;
+                return info;
+            }
+            return llvm::None;
+        };
+
         return mlir::TypeSwitch<Operation*, llvm::Optional<MemoryAccessInfo>>(op)
             .Case<mlir::AffineReadOpInterface>([&](mlir::AffineReadOpInterface affineLoadOp) {
                 return getAffineAccessInfo(affineLoadOp, MemoryAccessType::Read);
@@ -821,6 +835,9 @@ private:
             })
             .Case<mlir::vector::StoreOp>([&](mlir::vector::StoreOp storeOp) {
                 return getVectorAccessInfo(storeOp, MemoryAccessType::Write);
+            })
+            .Case<GPUBlockCacheOp>([&](GPUBlockCacheOp storeOp) {
+                return getBlockLoadAccessInfo(storeOp, MemoryAccessType::Write);
             })
             .Default([](Operation*) { return llvm::None; });
 
@@ -986,7 +1003,7 @@ void BarrierOptPass::runOnOperation()
     if (auto launchAttr = op->getAttrOfType<mlir::ArrayAttr>(ValueFuncOp::getGPULaunchAttrName()))
     {
         auto gpuParams = accera::ir::targets::GPU::FromArrayAttr(launchAttr);
-        if (const auto threadsPerWarp = util::ResolveWarpSize(util::ResolveExecutionRuntime(op).value()))
+        if (const auto threadsPerWarp = util::ResolveWarpSize(util::ResolveExecutionRuntime(op)))
         {
             auto threadsPerBlock = gpuParams.block.x * gpuParams.block.y * gpuParams.block.z;
             if (threadsPerBlock <= (threadsPerWarp->first * threadsPerWarp->second))

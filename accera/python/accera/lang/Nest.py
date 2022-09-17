@@ -176,9 +176,8 @@ class Nest:
                     it = iter(v)
                 except TypeError:
                     continue
-                else:
-                    from .._lang_python._lang import Scalar
-                    
+                else:          
+                    from .._lang_python._lang import Scalar   
                     replaced_values = []
                     is_scalar = False
                     for elem in it:
@@ -194,25 +193,29 @@ class Nest:
         return captures_to_replace
 
     def _build_native_context(self, context: NativeLoopNestContext):
-        from .._lang_python._lang import _Nest
+        from .._lang_python._lang import _Nest, Scalar
         from .._lang_python._lang import Array as NativeArray
-
-        context.nest = _Nest(
-            shape=[k_dynamic_size if isinstance(x, Dimension) else x for x, _ in self._shape], 
-            runtime_sizes=[x._native_dim for x, _ in self._shape if isinstance(x, Dimension)]
-        )
 
         try:
             args_iter = iter(*context.runtime_args)
         except TypeError:
             args_iter = iter(context.runtime_args)
 
-        logic_args = dict(
-            [
-                (id(x), NativeArray(y) if isinstance(x, Array) else y)
-                for x, y in zip(context.function_args, args_iter)
-            ]
+        logic_args = {}
+        for x, y in zip(context.function_args, args_iter):
+            if isinstance(x, Array):
+                logic_args[id(x)] = NativeArray(y)
+            elif isinstance(x, Dimension):
+                x._native_dim = Scalar(y)
+                logic_args[id(x)] = x._native_dim
+            else:
+                logic_args[id(x)] = y              
+        
+        context.nest = _Nest(
+            shape=[k_dynamic_size if isinstance(x, Dimension) else x for x, _ in self._shape], 
+            runtime_sizes=[x._native_dim for x, _ in self._shape if isinstance(x, Dimension)]
         )
+
         native_indices = context.nest.get_indices()
 
         # fake index => native index

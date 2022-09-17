@@ -22,6 +22,7 @@ namespace cpp_printer
     // 8, 16, 32, and 64
     int getIntTypeBitCount(int width);
 
+    LogicalResult printMMAMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value dest, const vir::MMAOperandType operandType = vir::MMAOperandType::Acc, const bool rowMajor = {});
     LogicalResult printConstantMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value dest, Value value);
     LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value src, Value dest, vir::MMAOperandType operandType, std::pair<Value, Value> rowcol, bool rowMajor);
     LogicalResult printComputeMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value A, Value B, Value C, Value D);

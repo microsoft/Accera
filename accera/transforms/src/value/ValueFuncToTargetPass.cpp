@@ -8,6 +8,8 @@
 
 #include <ir/include/IRUtil.h>
 #include <ir/include/value/ValueDialect.h>
+#include <ir/include/nest/Range.h>
+#include <ir/include/nest/LoopNestAttributes.h>
 #include <mlir/IR/Location.h>
 #include <value/include/MLIREmitterContext.h>
 
@@ -67,6 +69,27 @@ void HoistGPUBlockThreadIds(vir::ValueModuleOp vModule)
     });
     vModule.walk([](mlir::gpu::BlockIdOp op) {
         HoistOpToParentAffineScope(op.getOperation());
+    });
+}
+
+template <typename OpT>
+void mapValueTypeAttr(OpT& op, mlir::BlockAndValueMapping& mapping)
+{    
+    op.walk([&](mlir::AffineForOp affineForOp) {
+        if (auto attr = affineForOp.getOperation()->getAttrOfType<ir::loopnest::TransformedDomainAttr>("domain")) {
+            auto domain = attr.getValue();
+            domain.ResolveRangeValues([&](ir::loopnest::Range& range) {
+                if (range.HasVariableEnd()) {
+                    auto endValue = range.VariableEnd();
+                    if (endValue.isa<mlir::BlockArgument>() && mapping.contains(endValue)) {
+                        range = ir::loopnest::Range(range.Begin(), mapping.lookup(endValue), range.Increment());
+                    }
+                }
+            });
+
+            auto domainAttr = ir::loopnest::TransformedDomainAttr::get(domain, affineForOp.getContext());
+            affineForOp.getOperation()->setAttr("domain", domainAttr);
+        }
     });
 }
 
@@ -160,12 +183,20 @@ struct ValueFuncToTargetPattern : OpRewritePattern<vir::ValueFuncOp>
             rewriter.inlineRegionBefore(funcOp.getBody(), newBody, newBody.begin());
         }
 
+        mlir::BlockAndValueMapping mapping;
+        for (auto [src, dst] : llvm::zip(funcOp.getOperation()->getOperands(), newFuncOp.getArguments()))
+        {
+            mapping.map(src, dst);
+        }
+
         // Carry forward attributes
         newFuncOp->setAttrs(funcOp->getAttrs());
         if (funcOp->getAttr(accera::ir::NoInlineAttrName))
         {
             newFuncOp->setAttr("passthrough", rewriter.getArrayAttr({ rewriter.getStringAttr("noinline") }));
         }
+
+        mapValueTypeAttr<mlir::FuncOp>(newFuncOp, mapping);
 
         rewriter.eraseOp(funcOp);
         return success();
@@ -234,12 +265,12 @@ struct ValueLambdaRewritePattern : mlir::OpRewritePattern<vir::ValueLambdaOp>
             return vFuncOp;
         }();
 
+        BlockAndValueMapping valueMapper;
         auto& bodyBlock = vFuncOp.front();
         auto funcArgs = ValueRange{ vFuncOp.getArguments() };
         {
             OpBuilder::InsertionGuard guard(rewriter);
             rewriter.setInsertionPoint(&bodyBlock, bodyBlock.end());
-            BlockAndValueMapping valueMapper;
 
             for (auto [fromValue, toValue] : llvm::zip(op.args(), funcArgs.take_front(op.args().size())))
             {
@@ -272,6 +303,8 @@ struct ValueLambdaRewritePattern : mlir::OpRewritePattern<vir::ValueLambdaOp>
             launchFuncOp->setAttr(vir::ValueFuncOp::getGPULaunchAttrName(), launchAttr);
             vFuncOp->setAttr(vir::ValueFuncOp::getGPULaunchAttrName(), launchAttr);
         }
+
+        mapValueTypeAttr<vir::ValueFuncOp>(vFuncOp, valueMapper);
 
         rewriter.eraseOp(op);
     }
@@ -320,7 +353,8 @@ struct ValueLaunchFuncOpInlinerPattern : OpRewritePattern<vir::LaunchFuncOp>
             }
             for (auto& bodyOp : body.front().without_terminator())
             {
-                rewriter.clone(bodyOp, mapping);
+                auto clonedOpPtr = rewriter.clone(bodyOp, mapping);
+                mapValueTypeAttr<Operation>(*clonedOpPtr, mapping);
             }
 
             rewriter.eraseOp(op);

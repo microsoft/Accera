@@ -1,6 +1,6 @@
 {
   "name": "accera-llvm",
-  "version-string": "14.0.6",
+  "version-string": "14.0.6-1",
   "description": "LLVM Compiler Infrastructure for Accera.",
   "homepage": "https://llvm.org",
   "supports": "!uwp"

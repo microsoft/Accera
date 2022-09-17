@@ -13,7 +13,7 @@ def generate_rank_2(axis: int):
     DataDim0, DataDim1, IndicesDim0, IndicesDim1 = acc.create_dimensions()
 
     # rank(Output) = rank(Data) + rank(Indices) - 1 = 2 + 2 - 1 = 3
-    OutputDim0, OutputDim1, OutputDim2 = acc.create_dimensions(role=acc.Dimension.Rolee.OUTPUT)
+    OutputDim0, OutputDim1, OutputDim2 = acc.create_dimensions(role=acc.Dimension.Role.OUTPUT)
 
     Data = acc.Array(shape=(DataDim0, DataDim1), role=acc.Array.Role.INPUT)
     Indices = acc.Array(shape=(IndicesDim0, IndicesDim1), role=acc.Array.Role.INPUT, type=acc.ScalarType.index)

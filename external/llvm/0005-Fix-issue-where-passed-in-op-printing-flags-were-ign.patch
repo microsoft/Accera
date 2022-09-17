@@ -1,0 +1,25 @@
+From 39f0a4c97f5c89d7fa815118a3230091172bc795 Mon Sep 17 00:00:00 2001
+From: Charles Jacobs <cjacobs@microsoft.com>
+Date: Mon, 15 Aug 2022 16:00:43 -0700
+Subject: [PATCH] Fix issue where passed-in op-printing flags were ignored
+
+---
+ mlir/lib/Transforms/LocationSnapshot.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/mlir/lib/Transforms/LocationSnapshot.cpp b/mlir/lib/Transforms/LocationSnapshot.cpp
+index f23a3eee1511..c3c323284b18 100644
+--- a/mlir/lib/Transforms/LocationSnapshot.cpp
++++ b/mlir/lib/Transforms/LocationSnapshot.cpp
+@@ -133,7 +133,7 @@ struct LocationSnapshotPass
+ 
+   void runOnOperation() override {
+     Operation *op = getOperation();
+-    if (failed(generateLocationsFromIR(fileName, op, OpPrintingFlags(), tag)))
++    if (failed(generateLocationsFromIR(fileName, op, flags, tag)))
+       return signalPassFailure();
+   }
+ 
+-- 
+2.32.1 (Apple Git-133)
+

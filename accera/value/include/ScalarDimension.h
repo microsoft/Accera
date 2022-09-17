@@ -11,6 +11,7 @@ namespace accera
 {
 namespace value
 {
+    // BUGBUG: this should actually be a Scalar of ValueType::Index
     using ScalarDimension = Scalar;
 } // namespace value
 } // namespace accera

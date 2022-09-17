@@ -19,7 +19,8 @@ namespace
     {
         py::enum_<value::FunctionParameterUsage>(module, "_FunctionParameterUsage", "An enumeration of function parameter usages")
             .value("INPUT_OUTPUT", value::FunctionParameterUsage::inputOutput)
-            .value("INPUT", value::FunctionParameterUsage::input);
+            .value("INPUT", value::FunctionParameterUsage::input)
+            .value("OUTPUT", value::FunctionParameterUsage::output);
     }
 
     void DefinePackagingStructs(py::module& module)

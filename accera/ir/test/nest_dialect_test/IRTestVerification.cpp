@@ -28,7 +28,10 @@
 #include <utilities/include/MemoryLayout.h>
 #include <utilities/include/TypeTraits.h>
 
+#include <mlir/Conversion/Passes.h>
+#include <mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arithmetic/Transforms/Passes.h>
 #include <mlir/Dialect/Linalg/IR/Linalg.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
@@ -84,38 +87,21 @@ using namespace mlir;
 
 namespace
 {
-std::pair<mlir::ModuleOp, bool> LowerToValue(mlir::ModuleOp module)
-{
-    auto moduleCopy = module.clone();
-
-    mlir::PassManager pm(moduleCopy.getContext());
-
-    // Apply any generic pass manager command line options and run the pipeline.
-    mlir::applyPassManagerCLOptions(pm);
-
-    // Add a run of the canonicalizer to optimize the mlir module.
-    pm.addPass(mlir::createCanonicalizerPass());
-
-    // Add the lowering to std/affine/whatever pass
-    addLoopNestLoweringPasses(pm);
-
-    // Add another canonicalizer pass (because that's what the Toy example does)
-    pm.addPass(mlir::createCanonicalizerPass());
-
-    // Turn off multithreading
-    // pm.disableMultithreading();
-
-    // Run the passes
-    bool ok = true;
-    if (mlir::failed(pm.run(moduleCopy)))
-    {
-        std::cerr << "Error running lowering and optimization passes" << std::endl;
-        ok = false;
-        // throw std::runtime_error("Error running lowering and optimization passes");
-    }
-
-    return { moduleCopy, ok };
+mlir::OpBuilder* s_builder;
 }
+
+void SetTestBuilder(mlir::OpBuilder* builder)
+{
+    s_builder = builder;
+}
+
+mlir::OpBuilder& GetTestBuilder()
+{
+    return *s_builder;
+}
+
+namespace
+{
 
 std::pair<mlir::ModuleOp, bool> LowerToStd(mlir::ModuleOp module)
 {
@@ -338,37 +324,6 @@ bool VerifyParse(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, 
     return true;
 }
 
-bool VerifyLowerToValue(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, std::string outputFile)
-{
-    llvm::raw_os_ostream out(Log());
-
-    if (ShouldLog() && false)
-    {
-        out << "Before lowering:\n";
-        module->print(out);
-        out << "\n\n";
-        out.flush();
-    }
-
-    if (failed(mlir::verify(*module)))
-    {
-        module->emitError("module verification error");
-        return false;
-    }
-
-    auto [newModule, ok] = LowerToValue(*module);
-
-    if (ShouldLog())
-    {
-        OpPrintingFlags flags;
-        if (!ok)
-            flags.printGenericOpForm();
-        newModule.print(out, flags);
-        out.flush();
-    }
-    return ok;
-}
-
 bool VerifyLowerToStd(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, std::string outputFile)
 {
     llvm::raw_os_ostream out(Log());
@@ -416,7 +371,16 @@ bool VerifyLowerToLLVM(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& 
         [](mlir::PassManager& pm) {
         },
         [](mlir::PassManager& pm) {
-            pm.addPass(createValueToLLVMPass());
+
+            auto funcPm = pm.nest<mlir::FuncOp>();
+
+            funcPm.addPass(mlir::arith::createArithmeticExpandOpsPass()); //  --arith-expand 
+            pm.addPass(mlir::createLowerAffinePass());  //  --lower-affine 
+            pm.addPass(mlir::createLowerToCFGPass());  //  --convert-scf-to-std 
+            pm.addPass(mlir::createMemRefToLLVMPass());  //  --convert-memref-to-llvm 
+            pm.addPass(mlir::createLowerToLLVMPass());  //  --convert-std-to-llvm="use-bare-ptr-memref-call-conv" 
+            pm.addPass(mlir::createConvertVectorToLLVMPass());  //  --convert-vector-to-llvm
+            pm.addPass(mlir::createReconcileUnrealizedCastsPass());  //   --reconcile-unrealized-casts
 
             // Add another canonicalizer pass (because that's what the Toy example does)
             pm.addPass(mlir::createCanonicalizerPass());
@@ -467,14 +431,17 @@ bool VerifyTranslateToLLVMIR(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::Fu
             // Add a run of the canonicalizer to optimize the mlir module.
             pm.addPass(mlir::createCanonicalizerPass());
 
-            // Add the lowering from loopnest dialect pass
-            addLoopNestLoweringPasses(pm);
-
-            // Add the lowering from value to llvm pass
-            pm.addPass(createValueToStdPass());
         },
         [](mlir::PassManager& pm) {
-            pm.addPass(createValueToLLVMPass());
+            auto funcPm = pm.nest<mlir::FuncOp>();
+
+            funcPm.addPass(mlir::arith::createArithmeticExpandOpsPass()); //  --arith-expand 
+            pm.addPass(mlir::createLowerAffinePass());  // --lower-affine 
+            pm.addPass(mlir::createLowerToCFGPass());  //   --convert-scf-to-std 
+            pm.addPass(mlir::createMemRefToLLVMPass());  //   --convert-memref-to-llvm 
+            pm.addPass(mlir::createLowerToLLVMPass());  //   --convert-std-to-llvm="use-bare-ptr-memref-call-conv" 
+            pm.addPass(mlir::createConvertVectorToLLVMPass());  //  --convert-vector-to-llvm
+            pm.addPass(mlir::createReconcileUnrealizedCastsPass());  //   --reconcile-unrealized-casts
 
             // Add another canonicalizer pass (because that's what the Toy example does)
             pm.addPass(mlir::createCanonicalizerPass());
@@ -529,51 +496,3 @@ bool VerifyTranslateToLLVMIR(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::Fu
 
     return true;
 }
-
-#if 0
-bool VerifyJIT(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& fnOp, bool optimize)
-{
-    llvm::raw_os_ostream out(Log());
-
-    auto newModule = ConvertToLLVM(
-        *module,
-        [](mlir::PassManager& pm) {
-            // Add a run of the canonicalizer to optimize the mlir module.
-            pm.addPass(mlir::createCanonicalizerPass());
-
-            // Add the lowering from loopnest dialect pass
-            addLoopNestLoweringPasses(pm);
-
-            // Add the lowering from value to llvm pass
-            pm.addPass(createValueToStdPass());
-            //    pm.addPass(mlir::createCanonicalizerPass());
-        },
-        [](mlir::PassManager& pm) {
-            pm.addPass(createValueToLLVMPass());
-            pm.addPass(mlir::createCanonicalizerPass());
-        });
-
-    if (failed(mlir::verify(newModule)))
-    {
-        newModule.emitError("Failed to lower to LLVM dialect");
-        return false;
-    }
-
-    auto functionName = std::string(mlir::SymbolTable::getSymbolName(fnOp.getOperation()));
-
-    if (ShouldLog())
-    {
-        Log() << "Jitting function " << functionName << std::endl;
-    }
-
-    MLIRExecutionEngine engine(newModule);
-    engine.RunFunction(functionName);
-
-    if (ShouldLog())
-    {
-        Log() << "..Done jitting function " << functionName << std::endl;
-    }
-
-    return true;
-}
-#endif

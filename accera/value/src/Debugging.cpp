@@ -53,7 +53,7 @@ namespace value
 
         ThrowIfNot(actual.Shape() == desired.Shape());
         auto atol = Scalar(tolerance);
-        auto diff = MakeArray(actual.Shape(), ValueType::Float, "diff");
+        auto diff = MakeArray(actual.Shape(), ValueType::Float, "diff", AllocateFlags::None, runtimeSizes);
 
         // BUGBUG: Scalar binary ops pointer deferencing error, using Arrays as a workaround
         auto maxAbsoluteDiff = MakeArray(MemoryShape{ 1 }, diff.GetType(), "maxAbsoluteDiff");
@@ -64,6 +64,14 @@ namespace value
         auto zeroCount = Cast(Scalar(0), count.GetType());
         auto oneCount = Cast(Scalar(1), count.GetType());
         auto total = Cast(Scalar(actual.Size()), count.GetType());
+        if (actual.IsVariableSized())
+        {
+            for (unsigned i = 0; i < runtimeSizes.size(); i++)
+            {
+                total *= Cast(runtimeSizes[i], count.GetType());
+            }
+            total = total * Scalar(actual.Size());
+        }
 
         Nest nest(actual.Shape(), runtimeSizes);
         auto indices = nest.GetIndices();

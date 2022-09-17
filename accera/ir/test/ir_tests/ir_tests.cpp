@@ -20,6 +20,7 @@
 #include <value/include/MatrixFragment.h>
 #include <value/include/Nest.h>
 #include <value/include/Plan.h>
+#include <value/include/Pointer.h>
 #include <value/include/Schedule.h>
 
 #include <transforms/include/AcceraPasses.h>
@@ -2937,9 +2938,6 @@ TEST_CASE_METHOD(Fixture, "test_rocm_cache", "[gpu][nest][cache][main]")
                 Scalar j = indices[1];
 
                 matmul.Set([&]() {
-                    Scalar tidX = GPU::ThreadId().X();
-                    Scalar tidY = GPU::ThreadId().Y();
-
                     MatrixFragment mfmaAMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::A);
                     MatrixFragment mfmaBMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::B);
                     MatrixFragment mfmaCMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::Acc);
@@ -3026,8 +3024,8 @@ TEST_CASE_METHOD(Fixture, "test_rocm_cache_double_buffer", "[gpu][nest][cache][m
                 plan.MapIndexToProcessor(ii, Processor::ThreadY);
                 plan.MapIndexToProcessor(jj, Processor::ThreadX);
 
-                plan.AddCache(A, ii, ii, accera::utilities::DimensionOrder(2), false, true, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::Private);
-                plan.AddCache(B, ii, ii, accera::utilities::DimensionOrder(2), false, true, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::Private);
+                plan.AddCache(A, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, true, CacheStrategy::Striped, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::Private);
+                plan.AddCache(B, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, true, CacheStrategy::Blocked, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::Private);
             });
 
     accera::transforms::AcceraPassPipelineOptions opts{};
@@ -3097,8 +3095,8 @@ TEST_CASE_METHOD(Fixture, "test_rocm_cache_tensorize", "[gpu][nest][cache][tenso
                 plan.MapIndexToProcessor(jj, Processor::ThreadX);
 
                 plan.Tensorize({ iii, jjj, kkk }, v::MMAShape::M16xN16xK4_B1, 4);
-                plan.AddCache(A, ii, ii, accera::utilities::DimensionOrder(2), false, false, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::None);
-                plan.AddCache(B, ii, ii, accera::utilities::DimensionOrder(2), false, false, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::None);
+                plan.AddCache(A, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, false, CacheStrategy::Striped, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::None);
+                plan.AddCache(B, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, false, CacheStrategy::Blocked, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::None);
             });
 
     accera::transforms::AcceraPassPipelineOptions opts{};
@@ -3152,28 +3150,6 @@ TEST_CASE_METHOD(Fixture, "runtime_sizes_K", "[cpu][runtime_sizes]")
     // opts.dumpIntraPassIR = true;
 
     RunConversionPasses(target, "runtime_sizes_K_" + stringify(target), opts);
-
-    /* Resulting affine.for loops:
-    accv.func @NestMatMul(%arg0: index, %arg1: memref<1024x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>, %arg2: memref<?x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>, %arg3: memref<1024x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>) attributes {exec_target = 0 : i64} {
-      "accv.lambda"() ( {
-        affine.for %arg4 = 0 to 1024 {
-          affine.for %arg5 = 0 to 512 {
-            affine.for %arg6 = 0 to %arg0 {
-              %0 = affine.load %arg1[%arg4, %arg6] : memref<1024x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>
-              %1 = affine.load %arg2[%arg6, %arg5] : memref<?x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>
-              %2 = "accv.bin_op"(%0, %1) {predicate = 2 : i64} : (f32, f32) -> f32
-              %3 = affine.load %arg3[%arg4, %arg5] : memref<1024x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>
-              %4 = "accv.bin_op"(%3, %2) {predicate = 0 : i64} : (f32, f32) -> f32
-              affine.store %4, %arg3[%arg4, %arg5] : memref<1024x512xf32, affine_map<(d0, d1) -> (d0 * 512 + d1)>>
-            } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,4}, {j,5}, {k,7}}, indices: {{{k,7} : {0:<block argument> of type 'index' at index: 0:1}}, {{j,5} : {0:512:1}}, {{i,4} : {0:1024:1}}}}">, end = -1 : i64, index = #accln<"index{k,7}">, kernels = ["body_1"], subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">, #accln<"index{k,7}">], subdomainSize = [1, 1, -1]}
-          } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,4}, {j,5}, {k,7}}, indices: {{{k,7} : {0:<block argument> of type 'index' at index: 0:1}}, {{j,5} : {0:512:1}}, {{i,4} : {0:1024:1}}}}">, end = 512 : i64, index = #accln<"index{j,5}">, subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">, #accln<"index{k,7}">], subdomainSize = [1, 1, -1]}
-        } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,4}, {j,5}, {k,7}}, indices: {{{k,7} : {0:<block argument> of type 'index' at index: 0:1}}, {{j,5} : {0:512:1}}, {{i,4} : {0:1024:1}}}}">, end = 1024 : i64, index = #accln<"index{i,4}">, subdomainIndexOrder = [#accln<"index{i,4}">, #accln<"index{j,5}">, #accln<"index{k,7}">], subdomainSize = [1, 512, -1]}
-        accv.return
-      }) {exec_target = 0 : i64, sym_name = "NestFunction_2", type = () -> ()} : () -> ()
-      accv.return
-    }
-    */
-
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
 }
@@ -3219,28 +3195,6 @@ TEST_CASE_METHOD(Fixture, "runtime_sizes_M_N", "[cpu][runtime_sizes]")
     // opts.dumpIntraPassIR = true;
 
     RunConversionPasses(target, "runtime_sizes_M_N_" + stringify(target), opts);
-
-    /* Resulting affine.for loops:
-    accv.func @NestMatMul(%arg0: index, %arg1: index, %arg2: memref<?x1024xf32, affine_map<(d0, d1) -> (d0 * 1024 + d1)>>, %arg3: memref<1024x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>, %arg4: memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>) attributes {exec_target = 0 : i64} {
-      "accv.lambda"() ( {
-        affine.for %arg5 = 0 to %arg0 {
-          affine.for %arg6 = 0 to %arg1 {
-            affine.for %arg7 = 0 to 1024 {
-              %0 = affine.load %arg2[%arg5, %arg7] : memref<?x1024xf32, affine_map<(d0, d1) -> (d0 * 1024 + d1)>>
-              %1 = affine.load %arg3[%arg7, %arg6] : memref<1024x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>
-              %2 = "accv.bin_op"(%0, %1) {predicate = 2 : i64} : (f32, f32) -> f32
-              %3 = affine.load %arg4[%arg5, %arg6] : memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>
-              %4 = "accv.bin_op"(%3, %2) {predicate = 0 : i64} : (f32, f32) -> f32
-              affine.store %4, %arg4[%arg5, %arg6] : memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>
-            } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,13}, {j,14}, {k,12}}, indices: {{{k,12} : {0:1024:1}}, {{j,14} : {0:<block argument> of type 'index' at index: 1:1}}, {{i,13} : {0:<block argument> of type 'index' at index: 0:1}}}}">, end = 1024 : i64, index = #accln<"index{k,12}">, kernels = ["body_3"], subdomainIndexOrder = [#accln<"index{i,13}">, #accln<"index{j,14}">, #accln<"index{k,12}">], subdomainSize = [-1, -1, 1]}
-          } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,13}, {j,14}, {k,12}}, indices: {{{k,12} : {0:1024:1}}, {{j,14} : {0:<block argument> of type 'index' at index: 1:1}}, {{i,13} : {0:<block argument> of type 'index' at index: 0:1}}}}">, end = -1 : i64, index = #accln<"index{j,14}">, subdomainIndexOrder = [#accln<"index{i,13}">, #accln<"index{j,14}">, #accln<"index{k,12}">], subdomainSize = [-1, -1, 1024]}
-        } {begin = 0 : i64, domain = #accln<"xfdomain{dims: {{i,13}, {j,14}, {k,12}}, indices: {{{k,12} : {0:1024:1}}, {{j,14} : {0:<block argument> of type 'index' at index: 1:1}}, {{i,13} : {0:<block argument> of type 'index' at index: 0:1}}}}">, end = -1 : i64, index = #accln<"index{i,13}">, subdomainIndexOrder = [#accln<"index{i,13}">, #accln<"index{j,14}">, #accln<"index{k,12}">], subdomainSize = [-1, -1, 1024]}
-        accv.return
-      }) {exec_target = 0 : i64, sym_name = "NestFunction_4", type = () -> ()} : () -> ()
-      accv.return
-    }
-    */
-
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));
 }
@@ -3287,6 +3241,61 @@ TEST_CASE_METHOD(Fixture, "runtime_sizes_all", "[cpu][runtime_sizes]")
     // opts.dumpIntraPassIR = true;
 
     RunConversionPasses(target, "runtime_sizes_all_" + stringify(target), opts);
+
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "runtime_sizes_output", "[cpu][runtime_sizes]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    const int64_t M = mlir::ShapedType::kDynamicSize;
+
+    DeclareFunction("Range")
+        .Decorated(false)
+        .Public(true)
+        .Parameters({ Value({ ValueType::Int32, ScalarLayout }),
+                      Value({ ValueType::Int32, ScalarLayout }),
+                      Value({ ValueType::Int32, ScalarLayout }),
+                      // allocation requires memory space to be specified
+                      Value({ ValueType::Int32, MemoryLayout(MemoryShape{ M }, MemorySpace::Shared), /*pointerLevel=*/2 }),
+                      Value({ ValueType::Index, ScalarLayout, /*pointerLevel=*/1 }) },
+                    std::vector<FunctionParameterUsage>{
+                        FunctionParameterUsage::input,
+                        FunctionParameterUsage::input,
+                        FunctionParameterUsage::input,
+                        FunctionParameterUsage::output,
+                        FunctionParameterUsage::output,
+                    })
+        .Define([=](Scalar start, Scalar delta, Scalar limit, Pointer outputPtr, Pointer outputDimPtr) {
+            ScalarDimension outputDim = Cast((limit - start) / delta, ValueType::Index);
+            outputDimPtr.Store(outputDim);
+
+            // TODO: replace with custom allocator
+            Array Output = MakeArray(outputPtr.GetDataLayout(), outputPtr.GetDataType(), "output", AllocateFlags::None, std::vector{ outputDim });
+            outputPtr.Store(Output);
+
+            Nest nest(MemoryShape{ M }, std::vector{ outputDim });
+
+            auto indices = nest.GetIndices();
+            Scalar i_ = indices[0];
+
+            nest.Set([&]() { Output(i_) = start + (Cast(i_, delta.GetType()) * delta); });
+
+            auto sched = nest.CreateSchedule();
+        });
+
+    accera::transforms::AcceraPassPipelineOptions opts;
+    // opts.printLoops = true;
+    // opts.dumpPasses = true;
+    // opts.dumpIntraPassIR = true;
+
+    RunConversionPasses(target, "runtime_sizes_output_" + stringify(target), opts);
 
     SUCCEED("targeting " << stringify(target) << ":\n\n"
                          << debugString(module));

@@ -21,6 +21,8 @@ def Value_Dialect : Dialect {
             return "accv.accera_metadata";
         }
     }];
+
+    let hasConstantMaterializer = 1;
 }
 
 // Base class for value dialect operations. This operation inherits from the base

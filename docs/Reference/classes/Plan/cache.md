@@ -1,9 +1,9 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.8)
+[//]: # (Version: v1.2.9)
 
-# Accera v1.2.8 Reference
+# Accera v1.2.9 Reference
 
-## `accera.Plan.cache(source[, index, trigger_index, layout, level, trigger_level, max_elements, thrifty, location, double_buffer])`
+## `accera.Plan.cache(source[, index, trigger_index, layout, level, trigger_level, max_elements, element_type, strategy, thrifty, location, double_buffer, double_buffer_location, vectorize])`
 Adds a caching strategy to a plan.
 
 ## Arguments
@@ -17,6 +17,8 @@ argument | description | type
 `level` | The key-slice level to cache (the number of wildcard dimensions in a key-slice). Specify one and only one of `index`, `level`, `max_elements`. | positive integer.
 `trigger_level` | The key-slice level to fill the cache at. `trigger_level` can't be smaller than `level`, and will default to `level` if not specified. Specify at most one of `trigger_index` or `trigger_level`. | positive integer
 `max_elements` | The maximum elements to include in the cached region. Specify one and only one of `index`, `level`, `max_elements`. | positive integer
+`element_type` | The element type to use in the cache. Defaults to the element type of the cached array | `ScalarType`
+`strategy` | The thread to data mapping pattern to use when collaboratively caching by multiple threads. Defaults to AUTO which will resolve to the strategy best suited for the current target environment. | `CacheStrategy`
 `thrifty` | Use thrifty caching (copy data into a cache only if the cached data differs from the original active block).  | `bool`
 `location` | The type of memory used to store the cache. | `MemorySpace`
 `double_buffer` | Whether to make this cache a double-buffering cache. Only valid on INPUT and CONST arrays. | `bool`

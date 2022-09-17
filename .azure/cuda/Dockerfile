@@ -5,7 +5,7 @@
 #  docker build -f .azure/cuda/Dockerfile . -t registry_name/cuda-linuxagent:latest
 ####################################################################################################
 
-ARG CUDAVER=11.6.2-devel-ubuntu20.04
+ARG CUDAVER=11.7.0-devel-ubuntu20.04
 
 # cf: nvidia/cuda:${CUDAVER}
 FROM acceracontainers.azurecr.io/nvidia/cuda:${CUDAVER}

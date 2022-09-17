@@ -185,7 +185,17 @@ namespace value
         /// <param name="type"> The type to be the basis of this instance </param>
         /// <param name="layout"> An optional MemoryLayout instance that describes the memory structure of the eventual data to be stored. If
         /// MemoryLayout is not provided, the Value instance is considered unconstrained </param>
-        Value(ValueType type, std::optional<MemoryLayout> layout = {});
+        /// <param name="pointerLevel"> Number of pointer indirections. See remarks for details. </param>
+        /// <remarks>
+        ///  Pointer levels correspond to:
+        ///  | Layout                | Example                                                   | Pointer level | Example C-types                  |
+        ///  | --------------------- | --------------------------------------------------------- | ------------- | -------------------------------- |
+        ///  | scalar                | int16, float32, index, ...                                | 0             | int16_t, float32_t, int64_t, ... |
+        ///  | single-level memref   | memref<1xindex>, memref<3x2xi32>, memref<10x16x11x?xf32>  | 1             | int64_t*, int32_t*, float32_t*   |
+        ///  | memref-in-memref      | memref<1xmemref<?x?x?f32>>, memref<1xmemref<?xui16>>      | 2             | float32_t**, uint16_t**          |
+        ///  Pointer levels > 2 are currently unsupported
+        /// </remarks>
+        Value(ValueType type, std::optional<MemoryLayout> layout = {}, int pointerLevel = 0);
 
         /// <summary> Constructor that creates an instance that wraps an Emittable instance </summary>
         /// <param name="emittable"> Context-specific data that is to be wrapped </param>
@@ -504,6 +514,7 @@ namespace value
         return Cast(value, GetValueType<T>());
     }
 
+    bool IsImplicitlyCastable(ValueType source, ValueType target);
     bool IsImplicitlyCastable(ViewAdapter v1, ViewAdapter v2);
 
 } // namespace value

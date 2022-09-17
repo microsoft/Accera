@@ -17,6 +17,7 @@
 #include "ir/include/nest/LoopNestOps.h"
 #include "ir/include/value/ValueEnums.h"
 #include <utilities/include/MemoryLayout.h>
+#include <value/include/ValueType.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/Affine/IR/AffineValueMap.h>
@@ -159,6 +160,7 @@ CacheInfo MakeManualCacheInfo(
     mlir::Value input,
     CacheAllocation cacheAllocation,
     loopnest::ScheduleOp schedule,
+    const std::optional<accera::value::ValueType>& elementType,
     const std::optional<loopnest::Index>& keySliceIndex,
     const std::optional<loopnest::Index>& triggerIndex,
     const std::optional<int64_t>& maxElements,

@@ -5,11 +5,14 @@
 
 #include "IRUtil.h"
 
+#include "nest/AffineConstraints.h"
 #include "nest/LoopNestAttributes.h"
 #include "nest/LoopNestOps.h"
 #include "nest/LoopNestTypes.h"
+#include "nest/TransformedDomain.h"
 #include "nest/Util.h"
 #include <ir/include/value/ValueDialect.h>
+#include <ir/include/value/ValueFuncOp.h>
 #include <utilities/include/MathUtil.h>
 
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
@@ -26,6 +29,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/RegionUtils.h>
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SetVector.h>
 #include <llvm/ADT/SmallSet.h>
 #include <llvm/Support/raw_os_ostream.h>
@@ -33,6 +37,7 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <numeric>
 #include <set>
@@ -539,10 +544,10 @@ namespace loopnest
 
     bool ScheduleOp::isSaturated(Index index)
     {
-        auto unrolledIndices = (*this)->getAttrOfType<ArrayAttr>(getSaturatedFlagIndicesAttrName());
-        if (!unrolledIndices)
+        auto saturatedIndices = (*this)->getAttrOfType<ArrayAttr>(getSaturatedFlagIndicesAttrName());
+        if (!saturatedIndices)
             return false;
-        return IsIndexIdPresent(unrolledIndices, index.GetId());
+        return IsIndexIdPresent(saturatedIndices, index.GetId());
     }
 
     void ScheduleOp::setSaturatedFlag(Index index, bool saturated)
@@ -1017,6 +1022,54 @@ namespace loopnest
         return mlir::success();
     }
 
+    // [kerha] Currently, padded indices are skipped over. I'm not sure if this is the right logic, but there aren't any cases yet that fail.
+    std::vector<Index> GetDomainUnfusedIndices(const TransformedDomain& domain, const std::vector<Index>& fusedIndices)
+    {
+        const auto& domainIndices = domain.GetIndices();
+        std::vector<Index> unfusedIndices;
+
+        for (const Index& domainIndex : domainIndices)
+        {
+            if (domain.IsPaddedIndex(domainIndex))
+                continue;
+
+            bool skip = false;
+            for (const auto& domainFusedIndex : fusedIndices)
+            {
+                if (domainIndex == domainFusedIndex || domain.DependsOn(domainIndex, domainFusedIndex))
+                {
+                    skip = true;
+                    break;
+                }
+            }
+            if (skip) continue;
+
+            unfusedIndices.push_back(domainIndex);
+        }
+
+        return unfusedIndices;
+    }
+
+    std::vector<Index> GetUnfusedIndicesForDomains(
+        std::vector<TransformedDomain>::const_iterator domainBegin,
+        std::vector<TransformedDomain>::const_iterator domainEnd,
+        std::vector<std::vector<Index>>::const_iterator fusedIndicesBegin,
+        std::vector<std::vector<Index>>::const_iterator fusedIndicesdEnd)
+    {
+        assert(std::distance(domainEnd, domainBegin) == std::distance(fusedIndicesdEnd, fusedIndicesBegin));
+
+        std::vector<Index> allUnfusedIndices;
+        while (domainBegin != domainEnd)
+        {
+            auto unfusedIndices = GetDomainUnfusedIndices(*domainBegin, *fusedIndicesBegin);
+            allUnfusedIndices.insert(allUnfusedIndices.end(), unfusedIndices.begin(), unfusedIndices.end());
+            ++domainBegin;
+            ++fusedIndicesBegin;
+        }
+
+        return allUnfusedIndices;
+    }
+
     std::tuple<ScheduleOp, Index> Fuse(mlir::OpBuilder& builder, ScheduleOp schedule1, ScheduleOp schedule2)
     {
         auto domain1 = schedule1.getDomain().getValue();
@@ -1114,7 +1167,7 @@ namespace loopnest
         auto fusedSchedule = fusedNest.getOrCreateSchedule();
 
         // First add "fusing" index (as outermost index)
-        Index fusingIndex(std::string{ "f" } + std::to_string(ir::util::GetUniqueId()));
+        Index fusingIndex(std::string{ "f" } + std::to_string(ir::util::GetUniqueId(fusedSchedule)));
         std::vector<Index> fusedScheduleOrder;
         fusedScheduleOrder.emplace_back(fusingIndex);
         [[maybe_unused]] auto fusingIndexOp = fusedNest.getOrCreateSymbolicIndex(nestBuilder, fusingIndex);
@@ -1222,25 +1275,41 @@ namespace loopnest
             });
         }
 
+        std::vector<AffineConstraints> domainConstraints;
+        domainConstraints.reserve(domains.size());
+        std::transform(domains.begin(), domains.end(), std::back_inserter(domainConstraints), [](const TransformedDomain& domain) { return domain.GetConstraints(); });
+
         // Create the predicates that guarantee correctness
         std::vector<KernelPredicateOpInterface> predicates;
         predicates.reserve(numSchedules);
+
+        std::vector<Index> primaryFusedIndices;
+        primaryFusedIndices.reserve(indexCorrespondences.size());
+        std::vector<std::vector<Index>> domainSpecificFusedIndices(domains.size());
+        for (size_t domainIdx = 0; domainIdx < domains.size(); ++domainIdx)
+        {
+            for (const std::vector<Index>& indexCorrespondences : indexCorrespondences)
+            {
+                primaryFusedIndices.push_back(indexCorrespondences[0]);
+                domainSpecificFusedIndices[domainIdx].push_back(indexCorrespondences[domainIdx]);
+            }
+        }
 
         for (size_t idx = 0; idx < numSchedules; ++idx)
         {
             // First predicate is on the fusing index to ensure schedule ordering.
             auto predicate = IndexAt(nestBuilder, fusingIndex, static_cast<int64_t>(idx));
-            auto constraints = domains[idx].GetConstraints();
+            const auto& constraints = domainConstraints[idx];
 
             // Next predicate is on the fused index, to ensure that each schedule conforms to the
             // the bounds of its active (unpadded) iteration space.
-            for (const auto& correspondence : indexCorrespondences)
+            for (auto en : llvm::enumerate(domainSpecificFusedIndices[idx]))
             {
                 // Derive the active range from the correspondence index's constraints
-                auto [begin, end] = constraints.GetEffectiveRangeBounds(correspondence[idx]);
+                auto [begin, end] = constraints.GetEffectiveRangeBounds(en.value());
                 auto activeRange = Range(begin, end, /*unused*/ 1);
 
-                auto fusedIndex = correspondence[0];
+                auto fusedIndex = primaryFusedIndices[en.index()];
                 auto fusedRange = fusedDomain.GetIndexRange(fusedIndex);
                 if (fusedRange != activeRange)
                 {
@@ -1248,22 +1317,23 @@ namespace loopnest
                 }
             }
 
+            // Add constraints on the unfused indices
+            // Relies on the assumption that schedules are specified in the desired fused order
+
+            // Everything before this schedule
+            for (const auto& precedingUnfusedIndex : GetUnfusedIndicesForDomains(domains.begin(), domains.begin() + idx, domainSpecificFusedIndices.begin(), domainSpecificFusedIndices.begin() + idx))
+            {
+                predicate = Conjunction(nestBuilder, predicate, Last(nestBuilder, precedingUnfusedIndex));
+            }
+
+            // Everything after this schedule
+            for (const auto& succeedingUnfusedIndex : GetUnfusedIndicesForDomains(domains.begin() + idx + 1, domains.end(), domainSpecificFusedIndices.begin() + idx + 1, domainSpecificFusedIndices.end()))
+            {
+                predicate = Conjunction(nestBuilder, predicate, First(nestBuilder, succeedingUnfusedIndex));
+            }
+
             predicates.emplace_back(predicate);
         }
-
-        // TODO: Figure out if we want to support this scenario
-        // Next the predicates on explicitly-separate indices (those with a "null" index in either spot in the correspondence list)
-        // for (const auto& [i1, i2] : indexCorrespondences)
-        // {
-        //     if (i1 == Index::none)
-        //     {
-        //         p1 = p1 && First(i2);
-        //     }
-        //     else if (i2 == Index::none)
-        //     {
-        //         p2 = p2 && Last(i1);
-        //     }
-        // }
 
         // And finally handle the indices not included in the correspondence list
 
@@ -1294,14 +1364,6 @@ namespace loopnest
 
             for (const auto& index : unfusedIndices)
             {
-                if (idx > 0)
-                {
-                    predicates[idx - 1] = Conjunction(nestBuilder, predicates[idx - 1], First(nestBuilder, index));
-                }
-                if (idx < numSchedules - 1)
-                {
-                    predicates[idx + 1] = Conjunction(nestBuilder, predicates[idx + 1], Last(nestBuilder, index));
-                }
                 fusedScheduleOrder.emplace_back(index);
             }
         }
@@ -1481,28 +1543,25 @@ namespace loopnest
     {
         size_t numSymbols = 0;
         std::vector<IndexRange> constantOrSymbolicRanges;
-        auto argumentList = builder.getBlock()->getArguments();
-        std::vector<mlir::Value> blockArgRuntimeSizes;
 
         for (auto range : domain.GetRanges())
         {
             // Reference symbolic ranges to operand indices
             if (range.End() == mlir::ShapedType::kDynamicSize)
             {
-                if (argumentList.size() > 0)
-                    blockArgRuntimeSizes.push_back(argumentList[numSymbols]);
+                if (range.GetRange().HasSymbolNameEnd())
+                {
+                    constantOrSymbolicRanges.push_back(
+                        IndexRange(range.GetIndex(),
+                                   Range(range.Begin(), range.GetRange().SymbolNameEnd(), range.Increment())));
+                    numSymbols++;
+                }
                 else
                 {
-                    argumentList = builder.getBlock()->getParentOp()->getBlock()->getArguments();
-                    if (argumentList.size() > 0)
-                        blockArgRuntimeSizes.push_back(argumentList[numSymbols]);
-                    else
-                        blockArgRuntimeSizes.push_back(runtimeSizes[numSymbols]);
+                    constantOrSymbolicRanges.push_back(
+                        IndexRange(range.GetIndex(),
+                                   Range(range.Begin(), runtimeSizes[numSymbols++], range.Increment())));
                 }
-                    
-                constantOrSymbolicRanges.push_back(
-                    IndexRange(range.GetName(),
-                                Range(range.Begin(), blockArgRuntimeSizes[numSymbols++], range.Increment())));
             }
             else
             {
@@ -1513,13 +1572,14 @@ namespace loopnest
         IterationDomain symbolicDomain(constantOrSymbolicRanges);
         auto domainAttr = IterationDomainAttr::get(symbolicDomain, builder.getContext());
 
-        if (runtimeSizes.size() != numSymbols)
-        {
-            throw std::logic_error("Runtime sizes don't match the number of symbolic ranges in the iteration domain");
-        }
+        // TODO: do we need this check?
+        //if (runtimeSizes.size() != numSymbols)
+        //{
+        //    throw std::logic_error("Runtime sizes don't match the number of symbolic ranges in the iteration domain");
+        //}
 
         // Pass the runtimeSizes as operands
-        build(builder, result, builder.getArrayAttr({}), domainAttr, {}, blockArgRuntimeSizes.size() > 0 ? ArrayRef(blockArgRuntimeSizes) : llvm::None);
+        build(builder, result, builder.getArrayAttr({}), domainAttr, {}, runtimeSizes.size() > 0 ? ArrayRef(runtimeSizes) : llvm::None);
         ensureTerminator(*result.regions.front(), builder, result.location);
     }
 
@@ -1974,7 +2034,7 @@ namespace loopnest
         if (kernelIds.count(id) == 0)
             return id;
 
-        int64_t uniqueIdVal = util::GetUniqueId();
+        int64_t uniqueIdVal = util::GetUniqueId(region->getParentOp());
         std::string uniquedId = id + "_" + std::to_string(uniqueIdVal);
         if (kernelIds.count(uniquedId) == 0)
         {
@@ -2499,12 +2559,12 @@ namespace loopnest
                 auto predicateResult = simplifiedArg.evaluate(domain, indices, schedule);
                 if (!predicateResult.has_value())
                 {
-//                    if (lastOp->isBeforeInBlock(simplifiedArg))
-//                    {
-//                        lastOp = simplifiedArg;
-//                        builder.setInsertionPointAfter(lastOp);
-//                    }
-//                    simplifiedArgs.push_back(simplifiedArg);
+                    //                    if (lastOp->isBeforeInBlock(simplifiedArg))
+                    //                    {
+                    //                        lastOp = simplifiedArg;
+                    //                        builder.setInsertionPointAfter(lastOp);
+                    //                    }
+                    //                    simplifiedArgs.push_back(simplifiedArg);
                 }
                 else if (!*predicateResult)
                 {
@@ -2523,13 +2583,13 @@ namespace loopnest
                     simplifiedArgs.push_back(simplifiedArg);
 
                     // This fails for the fusion example (why???)
-//                    auto constPred =  ConstantPredicate(builder, true);
-//                    if (lastOp->isBeforeInBlock(constPred.getOperation()))
-//                    {
-//                        lastOp = constPred.getOperation();
-//                        builder.setInsertionPointAfter(lastOp);
-//                    }
-//                    simplifiedArgs.push_back(ConstantPredicate(builder, true));
+                    //                    auto constPred =  ConstantPredicate(builder, true);
+                    //                    if (lastOp->isBeforeInBlock(constPred.getOperation()))
+                    //                    {
+                    //                        lastOp = constPred.getOperation();
+                    //                        builder.setInsertionPointAfter(lastOp);
+                    //                    }
+                    //                    simplifiedArgs.push_back(ConstantPredicate(builder, true));
                 }
             }
             else

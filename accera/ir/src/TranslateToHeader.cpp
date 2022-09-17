@@ -240,6 +240,32 @@ namespace ir
         }
 
         template <typename StreamType>
+        void WriteIndexType(StreamType& os, LLVMType t)
+        {
+            auto type = t.type;
+            auto size = type.getIntOrFloatBitWidth();
+            if (type.isUnsignedInteger(size))
+            {
+                assert(size > 1); // booleans are signless currently
+                os << "uint" << size << "_t";
+                return;
+            }
+            else if (type.isInteger(size))
+            {
+                if (size > 1)
+                {
+                    os << "int" << size << "_t";
+                }
+                else
+                {
+                    os << "bool";
+                }
+                return;
+            }
+            assert(false && "Error: unsupported bit width");
+        }
+
+        template <typename StreamType>
         void WriteIntegerType(StreamType& os, LLVMType t)
         {
             // use additional MLIR type information, if available
@@ -413,6 +439,14 @@ namespace ir
                     WriteArrayType(os, t);
                 })
                 .Case([&](mlir::IntegerType) {
+                    if (t.source && t.source->isa<mlir::IndexType>()) {
+                        WriteIndexType(os, t);
+                    }
+                    else {
+                        WriteIntegerType(os, t);
+                    }
+                })
+                .Case([&](mlir::IndexType) {
                     WriteIntegerType(os, t);
                 })
                 .Case([&](mlir::FloatType) {

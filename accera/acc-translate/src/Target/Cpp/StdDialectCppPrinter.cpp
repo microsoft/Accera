@@ -702,10 +702,6 @@ namespace cpp_printer
         if (state.hasRuntime(Runtime::ROCM))
         {
             os << R"STD(
-#ifndef __forceinline__
-#define __forceinline__ __inline__ __attribute__((always_inline))
-#endif // __forceinline__
-
 __device__ __forceinline__ float cast(const bfloat16_t val)
 {
     // Copied from /opt/rocm/include/hip/hip_bfloat16.h
@@ -728,6 +724,7 @@ __device__ __forceinline__ bfloat16_t cast(const float f)
     } u = {f};
     return uint16_t(u.int32 >> 16) | (!(~u.int32 & 0x7f800000) && (u.int32 & 0xffff));
 }
+
 )STD";
         }
         else if (!state.hasRuntime(Runtime::CUDA))

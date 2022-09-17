@@ -9,8 +9,10 @@
 
 #include <utilities/include/MathUtil.h>
 #include <utilities/include/TypeTraits.h>
+#include <value/ValueDialect.h>
 
 #include <llvm/ADT/Hashing.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/Visitors.h>
@@ -18,6 +20,7 @@
 #include <iostream>
 #include <ostream>
 
+using namespace accera::ir::value;
 using namespace accera::utilities;
 
 namespace accera::ir
@@ -34,27 +37,39 @@ namespace loopnest
         _begin(begin),
         _increment(increment)
     {
-        auto op = end.getDefiningOp();
-        if (auto dimSizeOp = mlir::dyn_cast_or_null<DimSizeOp>(op))
-        {
-            auto index = dimSizeOp.dimensionIndex();
-            _end = index.getValue();
-        }
-        else if (auto constantEnd = mlir::dyn_cast_or_null<mlir::arith::ConstantOp>(op))
-        {
-            auto constantAttr = constantEnd.getValue();
-            assert(constantAttr.isa<mlir::IntegerAttr>() && "Range Ends must be an integer constant");
-            auto constantVal = constantAttr.cast<mlir::IntegerAttr>().getInt();
-            _end = static_cast<int64_t>(constantVal);
-        }
-        else if (end.isa<mlir::BlockArgument>())
+        if (end.isa<mlir::BlockArgument>())
         {
             _end = end;
+            return;
         }
-        else
-        {
-            assert(false && "Unknown value type");
-        }
+
+        auto op = end.getDefiningOp();
+        assert(op);
+
+        mlir::TypeSwitch<mlir::Operation*>(op)
+            .Case<DimSizeOp>([&](DimSizeOp dimSizeOp) {
+                auto index = dimSizeOp.dimensionIndex();
+                _end = index.getValue();
+            })
+            .Case<mlir::arith::ConstantOp>([&](mlir::arith::ConstantOp constantOp) {
+                auto constantAttr = constantOp.getValue();
+                assert(constantAttr.isa<mlir::IntegerAttr>() && "Range end must be an integer constant");
+                auto constantVal = constantAttr.cast<mlir::IntegerAttr>().getInt();
+                _end = static_cast<int64_t>(constantVal);
+            })
+            .Case<CastOp>([&](CastOp castOp) {
+                _end = castOp.result();
+            })
+            .Default([&](Operation* op) {
+                if (op->getNumResults() == 1)
+                {
+                    _end = op->getResult(0);
+                }
+                else
+                {
+                    assert(false && "Unsupported Range end Value");
+                }
+            });
     }
 
     Range::Range(int64_t begin, Index endIndex, int64_t increment) :
@@ -66,6 +81,12 @@ namespace loopnest
     Range::Range(int64_t begin, OperandIndex endIndex, int64_t increment) :
         _begin(begin),
         _end(endIndex),
+        _increment(increment)
+    {}
+
+    Range::Range(int64_t begin, std::string endSymbol, int64_t increment) :
+        _begin(begin),
+        _end(endSymbol),
         _increment(increment)
     {}
 
@@ -90,6 +111,9 @@ namespace loopnest
                     return 0;
                 },
                 [](mlir::Value endIndex) -> int64_t {
+                    return mlir::ShapedType::kDynamicSize;
+                },
+                [](std::string endIndex) -> int64_t {
                     return mlir::ShapedType::kDynamicSize;
                 },
                 [](auto&& endVal) -> int64_t {
@@ -119,6 +143,36 @@ namespace loopnest
                     return endDynIdx;
                 },
                 [](auto&& endDynIdx) -> mlir::Value {
+                    assert(false && "Unsupported end value type");
+                    return {};
+                } },
+            _end);
+    }
+
+    std::string Range::SymbolNameEnd() const
+    {
+        return std::visit(
+            VariantVisitor{
+                [](int64_t endDynIdx) -> std::string {
+                    assert(false && "Calling SymbolNameEnd() on a constant range");
+                    return {};
+                },
+                [](Index endDynIdx) -> std::string {
+                    assert(false && "Calling SymbolNameEnd() on an Index range");
+                    return {};
+                },
+                [](OperandIndex endDynIdx) -> std::string {
+                    assert(false && "Calling SymbolNameEnd() on an OperandIndex range");
+                    return {};
+                },
+                [](mlir::Value endDynIdx) -> std::string {
+                    assert(false && "Calling SymbolNameEnd() on an mlir::Value range");
+                    return {};
+                },
+                [](std::string endDynIdx) -> std::string {
+                    return endDynIdx;
+                },
+                [](auto&& endDynIdx) -> std::string {
                     assert(false && "Unsupported end value type");
                     return {};
                 } },
@@ -197,6 +251,11 @@ namespace loopnest
         return std::holds_alternative<mlir::Value>(_end);
     }
 
+    bool Range::HasSymbolNameEnd() const
+    {
+        return std::holds_alternative<std::string>(_end);
+    }
+
     int64_t Range::Size() const
     {
         return End() - Begin();
@@ -258,6 +317,11 @@ namespace loopnest
         {
             // Both i1 and i2 have variable end values, now they're only equal if they have the same mlir::Value
             return i1.VariableEnd() == i2.VariableEnd();
+        }
+        else if (i1.HasSymbolNameEnd() && i2.HasSymbolNameEnd())
+        {
+            // Both i1 and i2 have variable end values, now they're only equal if they have the same std::string
+            return i1.SymbolNameEnd() == i2.SymbolNameEnd();
         }
         else
         {

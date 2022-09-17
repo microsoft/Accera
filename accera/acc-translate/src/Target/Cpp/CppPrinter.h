@@ -238,6 +238,7 @@ namespace cpp_printer
 
         /// print VectorType
         LogicalResult printVectorType(VectorType vecType);
+        LogicalResult printVectorType(Type elemType, int64_t count);
 
         /// Print Type
         LogicalResult printType(Type type);

@@ -58,6 +58,9 @@ add_test(NAME ${library_name}_unittests COMMAND python -m pytest -v --junitxml=t
 configure_file("accera/test/dsl_tests.py" "test/dsl_tests.py" @ONLY)
 add_test(NAME ${library_name}_dsltests COMMAND python -m pytest -v --junitxml=test/test-dsl_tests.xml test/dsl_tests.py)
 
+configure_file("accera/test/int_matmul_tests.py" "test/int_matmul_tests.py" @ONLY)
+add_test(NAME ${library_name}_intmatmultests COMMAND python -m pytest -v --junitxml=test/test-int_matmul_tests.xml test/int_matmul_tests.py)
+
 configure_file("accera/test/mfma_tests.py" "test/mfma_tests.py" @ONLY)
 add_test(NAME ${library_name}_mfmatests COMMAND python -m pytest -v --junitxml=test/test-mfma_tests.xml test/mfma_tests.py)
 

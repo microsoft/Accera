@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.8)
+[//]: # (Version: v1.2.9)
 
-# Accera v1.2.8 Reference
+# Accera v1.2.9 Reference
 
 # Module functions
 * [`accera.cast`](functions/cast.md) `(value, type)`
@@ -11,6 +11,7 @@
 * [`accera.fuse`](functions/fuse.md) `(schedules[, partial])`
 
 # Top level enumerations
+* [`accera.CacheStrategy](<enumerations/CacheStrategy.md>)
 * [`accera.ScalarType`](<enumerations/ScalarType.md>)
 * [`accera.MMASchedulingPolicy`](<enumerations/MMASchedulingPolicy.md>)
 * [`accera.MMAShape`](<enumerations/MMAShape.md>)

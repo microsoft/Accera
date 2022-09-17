@@ -9,7 +9,7 @@ from typing import Any, Tuple, Union
 from .Array import Array
 from .LoopIndex import LoopIndex
 from .._lang_python._lang import (
-    CacheIndexing, _CacheAllocation, _MemorySpace, _MemoryAffineCoefficients, _DimensionOrder
+    CacheIndexing, _CacheAllocation, _CacheStrategy, _MemorySpace, _MemoryAffineCoefficients, _DimensionOrder
 )
 
 
@@ -21,6 +21,7 @@ class Cache:
     trigger_index: LoopIndex = None
     level: int = None
     trigger_level: int = None
+    element_type: "accera.ScalarType" = None
     layout: Union[Array.Layout, Tuple[int]] = None
     max_elements: int = None
     thrifty: bool = False
@@ -30,6 +31,7 @@ class Cache:
     native_cache: Any = None
     vectorize: bool = False
     location: _MemorySpace = _MemorySpace.NONE
+    strategy: _CacheStrategy = _CacheStrategy.STRIPED
     indexing: CacheIndexing = CacheIndexing.GLOBAL_TO_PHYSICAL
     allocation: _CacheAllocation = _CacheAllocation.AUTO
 
@@ -77,6 +79,7 @@ class DelayedCache(Cache):
         self.trigger_index = cache.trigger_index
         self.level = cache.level
         self.trigger_level = cache.trigger_level
+        self.element_type = cache.element_type
         self.layout = cache.layout
         self.max_elements = cache.max_elements
         self.thrifty = cache.thrifty

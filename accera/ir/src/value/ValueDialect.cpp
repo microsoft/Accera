@@ -65,6 +65,11 @@ void ValueDialect::printType(Type type, mlir::DialectAsmPrinter& os) const
         })
         .Default([](Type) { llvm_unreachable("unexpected 'value' type kind"); });
 }
+
+mlir::Operation* ValueDialect::materializeConstant(mlir::OpBuilder& builder, mlir::Attribute value, mlir::Type type, mlir::Location loc)
+{
+    return builder.create<mlir::arith::ConstantOp>(loc, value, type);
+}
 } // namespace accera::ir::value
 
 using namespace llvm;
@@ -337,6 +342,28 @@ OpFoldResult GetElementOp::fold(ArrayRef<Attribute> operands)
     return {};
 }
 
+// Inspired by arith::IndexCastOp::fold()
+OpFoldResult CastOp::fold(ArrayRef<Attribute> operands)
+{
+    // cast(constant int) -> constant int
+    // A little hack because we go through int. Otherwise, the size of the
+    // constant might need to change.
+    if (auto value = operands[0].dyn_cast_or_null<mlir::IntegerAttr>())
+    {
+        auto castType = getType();
+        if (castType.isSignlessIntOrIndex())
+        {
+            return IntegerAttr::get(castType, value.getInt());
+        }
+        else if (castType.isSignlessIntOrIndexOrFloat())
+        {
+            return FloatAttr::get(castType, value.getInt());
+        }
+    }
+
+    return {};
+}
+
 void ReorderOp::build(OpBuilder& builder,
                       OperationState& result,
                       Value source,
@@ -557,11 +584,6 @@ std::vector<int64_t> MMAOp::getOperandShape(const MMAOperandType operandType) co
     }
 }
 
-std::pair<int, int> MMAOp::getTileShape(const int warpSizeX, const int warpSizeY) const
-{
-    return { m / warpSizeX, n / warpSizeY };
-}
-
 std::vector<uint8_t> MMAOp::getOffsetMap() const
 {
     // These index offsets are calculated based on the data layout in which
@@ -588,13 +610,8 @@ std::pair<mlir::MemRefType, mlir::RankedTensorType> MMAOp::GetMFMAThreadOffsetMa
 }
 
 //===----------------------------------------------------------------------===//
-// MFMA Ops
+// MMA Ops
 //===----------------------------------------------------------------------===//
-
-static const auto kGenericMemorySpace = 0;
-static const auto kGlobalMemorySpace = 1;
-static const auto kSharedMemorySpace = mlir::gpu::GPUDialect::getWorkgroupAddressSpace();
-static const auto kPrivateMemorySpace = mlir::gpu::GPUDialect::getPrivateAddressSpace();
 
 static LogicalResult verify(MMAComputeSyncOp op)
 {
@@ -611,7 +628,7 @@ static LogicalResult verify(MMAFillSyncOp op)
     auto value = op.value();
     auto valueType = value.getType();
 
-    if (valueType != op.result().getType().cast<MemRefType>().getElementType())
+    if (valueType != op.dest().getType().cast<MemRefType>().getElementType())
         return op.emitError("value type must match matrix element type");
 
     return success();
@@ -621,13 +638,12 @@ static LogicalResult verify(MMALoadSyncOp op)
 {
     auto srcType = op.getMemRefType();
     MMAOperandType operand{ op.operandType() };
-    auto srcMemSpace = srcType.getMemorySpaceAsInt();
+    const MemorySpace srcMemSpace{ srcType.getMemorySpaceAsInt() };
 
-    if (srcMemSpace != kGenericMemorySpace && srcMemSpace != kSharedMemorySpace &&
-        srcMemSpace != kGlobalMemorySpace && srcMemSpace != kPrivateMemorySpace)
+    if (srcMemSpace != MemorySpace::None && srcMemSpace != MemorySpace::Shared &&
+        srcMemSpace != MemorySpace::Global && srcMemSpace != MemorySpace::Private && srcMemSpace != MemorySpace::Tensor)
         return op.emitError(
-            "source memorySpace kGenericMemorySpace, kSharedMemorySpace, kPrivateMemorySpace, or"
-            "kGlobalMemorySpace only allowed");
+            "source memorySpace None, Shared, Private, Global or Tensor only allowed");
 
     if (operand != MMAOperandType::A && operand != MMAOperandType::B &&
         operand != MMAOperandType::Acc)
@@ -639,13 +655,40 @@ static LogicalResult verify(MMALoadSyncOp op)
 static LogicalResult verify(MMAStoreSyncOp op)
 {
     auto dstMemrefType = op.getMemRefType();
-    auto dstMemSpace = dstMemrefType.getMemorySpaceAsInt();
+    const MemorySpace dstMemSpace{ dstMemrefType.getMemorySpaceAsInt() };
 
-    if (dstMemSpace != kGenericMemorySpace && dstMemSpace != kSharedMemorySpace &&
-        dstMemSpace != kGlobalMemorySpace && dstMemSpace != kPrivateMemorySpace)
+    if (dstMemSpace != MemorySpace::None && dstMemSpace != MemorySpace::Shared &&
+        dstMemSpace != MemorySpace::Global && dstMemSpace != MemorySpace::Private && dstMemSpace != MemorySpace::Tensor)
         return op.emitError(
-            "destination memorySpace of kGenericMemorySpace, "
-            "kGlobalMemorySpace, kSharedMemorySpace, or kPrivateMemorySpace only allowed");
+            "destination memorySpace of None, Global, Shared, Private or Tensor only allowed");
+
+    return success();
+}
+
+static LogicalResult verify(GPUBlockCacheOp op)
+{
+    auto tileShape = op.tileShape();
+    if (tileShape.size() != 2)
+    {
+        return op.emitError("Only 2-D tiles are supported.");
+    }
+
+    auto dstMemrefType = op.dest().getType().cast<MemRefType>();
+    const MemorySpace destMemSpace{ dstMemrefType.getMemorySpaceAsInt() };
+    const auto dstShape = dstMemrefType.getShape();
+    if (dstShape.size() != 2)
+    {
+        return op.emitError("Only 2-D destination memrefs are supported.");
+    }
+
+    if (op.workPerThread() < 1 || op.vecWidth() < 1 || op.workPerThread() % op.vecWidth() != 0)
+    {
+        return op.emitError("Work per thread (WPT) must be >= 1 and vector width must be >= 1 and WPT must be a multiple of vector width.");
+    }
+
+    const auto tileShapeVec = accera::ir::util::ConvertArrayAttrToIntVector(tileShape);
+    assert(!(destMemSpace == MemorySpace::Shared && op.dstRowMajor()) || (dstShape[0] == tileShapeVec[0] && dstShape[1] == tileShapeVec[1]));
+    assert(!(destMemSpace == MemorySpace::Shared && !op.dstRowMajor()) || (dstShape[0] == tileShapeVec[1] && dstShape[1] == tileShapeVec[0]));
 
     return success();
 }

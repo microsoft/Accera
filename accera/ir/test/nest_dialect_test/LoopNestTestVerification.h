@@ -17,8 +17,6 @@ class OwningOpRef;
 class ModuleOp;
 }
 
-mlir::OpBuilder& GetTestBuilder();
-
 //
 // Test function verifiers
 //

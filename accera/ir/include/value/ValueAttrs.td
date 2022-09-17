@@ -69,12 +69,22 @@ def MEMORY_SPACE_NONE : I64EnumAttrCase<"None", 0>;
 def MEMORY_SPACE_GLOBAL : I64EnumAttrCase<"Global", 1>;
 def MEMORY_SPACE_SHARED : I64EnumAttrCase<"Shared", 3>;
 def MEMORY_SPACE_PRIVATE : I64EnumAttrCase<"Private", 5>;
+def MEMORY_SPACE_TENSOR : I64EnumAttrCase<"Tensor", 7>;
 
 def MemorySpaceAttr : I64EnumAttr<
         "MemorySpace",
         "Describes the memory space in which an allocation resides.",
-        [ MEMORY_SPACE_NONE, MEMORY_SPACE_GLOBAL, MEMORY_SPACE_SHARED, MEMORY_SPACE_PRIVATE]> {
+        [ MEMORY_SPACE_NONE, MEMORY_SPACE_GLOBAL, MEMORY_SPACE_SHARED, MEMORY_SPACE_PRIVATE, MEMORY_SPACE_TENSOR]> {
     let cppNamespace = "::accera::ir::value";
+}
+
+def CACHE_STRATEGY_BLOCKED : I32EnumAttrCase<"Blocked", 0>;
+def CACHE_STRATEGY_STRIPED : I32EnumAttrCase<"Striped", 1>;
+
+def CacheStrategyAttr : I32EnumAttr<
+  "CacheStrategy", "An attribute containing a cache strategy type enum",
+  [CACHE_STRATEGY_BLOCKED, CACHE_STRATEGY_STRIPED]> {
+  let cppNamespace = "::accera::ir::value";
 }
 
 def BARRIER_SCOPE_BLOCK : StrEnumAttrCase<"Block", 0>;

@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.8)
+[//]: # (Version: v1.2.9)
 
 # Section 6: Plans - Caching
 In the previous sections, we defined the logic and then scheduled its iterations. Now, let's move on to completing the implementation with target-specific options.
@@ -147,5 +147,16 @@ for i in range(0, M, m_tile):
                 for kk in range(0, k_tile):
                     C[i+ii, j+jj] += cache_A[ii, kk] * B[k+kk, j+jj]
 ```
+
+
+## Caching strategy
+In GPUs, the mapping between threads and data can be controlled by specifying the `strategy` option. Currently, we support the `BLOCKED` and the `STRIPED` access patterns and they are explained in detail at [`accera.CacheStrategy`](<../Reference/enumerations/CacheStrategy.md>).
+The choice of which pattern to use will depend on the hardware architecture and the intended algorithm the cache will be used for, since different access patterns incur different performance overhead.
+
+```python
+AA = plan.cache(A, level=3, double_buffer=True, strategy=_CacheStrategy.BLOCKED)
+```
+
+The above example will create a cache where each thread copies a contiguous chunk (block) of elements based on their thread index.
 
 <div style="page-break-after: always;"></div>

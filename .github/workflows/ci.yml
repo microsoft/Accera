@@ -53,5 +53,5 @@ jobs:
         eval "$($HOME/miniconda/bin/conda shell.bash hook)"
         conda init
         conda activate build
-        cd build/lib.linux-x86_64-${{ matrix.python-version }}
+        cd build/lib.*
         python -m unittest discover accera/test *.py

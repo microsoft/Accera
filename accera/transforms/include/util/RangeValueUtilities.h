@@ -4,6 +4,7 @@
 //  Authors: Abdul Dakkak, Mason Remy
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include <ir/include/value/ValueDialect.h>
 #include <llvm/IR/GlobalValue.h>
 #include <mlir/Analysis/DataFlowAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
@@ -71,6 +72,7 @@ private:
     RangeValue resolveRangeValue(mlir::gpu::BlockIdOp op);
     RangeValue resolveRangeValue(mlir::gpu::BlockDimOp op);
     RangeValue resolveRangeValue(mlir::gpu::GridDimOp op);
+    RangeValue resolveRangeValue(accera::ir::value::WarpIdOp op);
     RangeValue resolveRangeValue(llvm::Instruction::BinaryOps binOp, mlir::Operation* op);
     RangeValue resolveRangeValue(mlir::AffineForOp op);
     RangeValue resolveRangeValue(mlir::scf::ForOp op);

@@ -2097,8 +2097,9 @@ Value MLIRContext::MMALoadSyncImpl(const Matrix& source, const int64_t rowOffset
     auto mmaTileShape = mmaType.getOperandShape(operandType);
     auto vecTy = mlir::MemRefType::get(mmaTileShape, elementType);
 
-    mlir::Value result = builder.create<ir::value::MMAAllocSyncOp>(loc, vecTy, static_cast<uint32_t>(mmaType.getShapeType()), static_cast<uint8_t>(operandType), builder.getBoolAttr(/*TODO*/true));
-    builder.create<ir::value::MMALoadSyncOp>(loc, matValue, result, mmaShape, operandType, /*TODO*/true, mlir::ValueRange{ rowOff, colOff });
+    mlir::Value result = builder.create<ir::value::MMAAllocSyncOp>(loc, vecTy, static_cast<uint32_t>(mmaType.getShapeType()), /*blocks*/ 1, static_cast<uint8_t>(operandType), /*TODO*/true);
+    auto blockTid = ToMLIRValue(builder, GPU::ThreadId().X().GetValue());
+    builder.create<ir::value::MMALoadSyncOp>(loc, blockTid, matValue, result, mmaShape, operandType, /*TODO*/true, mlir::ValueRange{ rowOff, colOff }, /*staticOffsets*/false);
     EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { source.GetValue().GetBaseType(), 1 } });
     Emittable emittable{ &emittableInfo };
 
@@ -2117,7 +2118,8 @@ void MLIRContext::MMAStoreSyncImpl(const MatrixFragment& source, Matrix& target,
     auto colOff = builder.create<mlir::arith::ConstantIndexOp>(loc, colOffset);
 
     const auto mmaShape = static_cast<ir::value::MMAShape>(source.GetFragmentShape());
-    builder.create<ir::value::MMAStoreSyncOp>(loc, sourceValue, targetValue, mmaShape, mlir::ValueRange{ rowOff, colOff });
+    auto blockTid = ToMLIRValue(builder, GPU::ThreadId().X().GetValue());
+    builder.create<ir::value::MMAStoreSyncOp>(loc, blockTid, sourceValue, targetValue, mmaShape, mlir::ValueRange{ rowOff, colOff }, /*staticOffsets*/false);
 }
 
 Value MLIRContext::MMAComputeSyncImpl(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, const uint32_t cbsz, const uint32_t abid, const uint32_t blgp)

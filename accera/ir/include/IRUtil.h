@@ -396,9 +396,7 @@ namespace util
     // d) nullptr otherwise (e.g. if it is a block argument for a non-for-loop op)
     mlir::Operation* GetDefiningOpOrForLoop(mlir::Value val);
 
-    mlir::Value GetGPUIndex(value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc);
-
-    value::Processor GetGPUProcessor(mlir::Operation* gpuOp);
+    mlir::Value GetGPUIndex(value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc, ir::value::ExecutionRuntime execRuntime = ir::value::ExecutionRuntime::CUDA);
 
     int64_t GetBlockDimSize(mlir::gpu::BlockDimOp op);
     int64_t GetGridDimSize(mlir::gpu::GridDimOp op);

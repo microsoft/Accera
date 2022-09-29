@@ -40,6 +40,7 @@ namespace cpp_printer
         LogicalResult printOp(accera::ir::value::GPUBlockCacheOp op);
         LogicalResult printOp(accera::ir::value::CallOp op);
         LogicalResult printOp(accera::ir::value::ReturnOp op);
+        LogicalResult printOp(accera::ir::value::WarpIdOp warpIdOp);
 
         LogicalResult printDialectOperation(Operation* op, bool* skipped, bool* consumed) override;
 

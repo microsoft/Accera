@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.9)
+[//]: # (Version: v1.2.10)
 
 # Section 3: Schedules
 We begin with `nest` from [Section 2](<02%20Simple%20Affine%20Loop%20Nests.md>) which captures the logic of matrix-matrix multiplication. We use `nest` to create a `Schedule` that controls the execution order of the nest's iterations. Schedules are target-independent in the sense that the same schedule can be used to emit code for multiple target platforms.
@@ -85,7 +85,7 @@ for j in range(12):
 
 ![(3, 12, 15) iteration space](../assets/viz/space_3_12_15_presplit.png)  |  ![(12, 15, 3) iteration space](../assets/viz/space_12_15_3.png)
 :-------------------------:|:-------------------------:
-*Default schedule, order is (i, j, k)*` |  *After `reorder(j, k, i)`, order is (j, k, i)*
+*Default schedule, order is (i, j, k)* |  *After `reorder(j, k, i)`, order is (j, k, i)*
 
 #### Invalid orders
 

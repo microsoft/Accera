@@ -246,7 +246,7 @@ namespace cpp_printer
         auto mmaMatrix = constantMatrixOp.res().getType().cast<MMAMatrixType>();
         auto&& shape = mmaMatrix.getShape();
         const auto mmaShape = std::make_tuple(shape[0], shape[1], inferK(shape[0], shape[1]));
-        return printConstantMatrixOp(state, printer, mmaMatrix.getElementType(), mmaShape, constantMatrixOp.res(), constantMatrixOp.value());
+        return printConstantMatrixOp(state, printer, mmaShape, constantMatrixOp.res(), constantMatrixOp.value());
     }
 
     LogicalResult GpuDialectCppPrinter::printOp(SubgroupMmaLoadMatrixOp loadMatrixOp)
@@ -258,7 +258,6 @@ namespace cpp_printer
 
         const auto mmaMatrix = loadMatrixOp.res().getType().cast<MMAMatrixType>();
         const auto operandType = convertToOperandType(mmaMatrix.getOperand());
-        const auto rowcolIndices = std::make_pair(loadMatrixOp.indices()[0], loadMatrixOp.indices()[1]);
         auto&& shape = mmaMatrix.getShape();
         std::tuple<int, int, int> mmaShape;
         switch (operandType)
@@ -281,7 +280,7 @@ namespace cpp_printer
         RETURN_IF_FAILED(mlir::getStridesAndOffset(loadMatrixOp.srcMemref().getType().cast<MemRefType>(), strides, offset));
         const bool row_major = strides[1] == 1;
 
-        return printLoadMatrixOp(state, printer, mmaMatrix.getElementType(), mmaShape, loadMatrixOp.srcMemref(), loadMatrixOp.res(), operandType, rowcolIndices, row_major);
+        return printLoadMatrixOp(state, printer, mmaShape, loadMatrixOp.srcMemref(), loadMatrixOp.res(), operandType, loadMatrixOp.indices(), row_major);
     }
 
     LogicalResult GpuDialectCppPrinter::printOp(gpu::SubgroupMmaComputeOp computeMatrixOp)
@@ -294,7 +293,7 @@ namespace cpp_printer
         auto mmaMatrix = computeMatrixOp.res().getType().cast<MMAMatrixType>();
         auto&& shape = mmaMatrix.getShape();
         const auto mmaShape = std::make_tuple(shape[0], shape[1], inferK(shape[0], shape[1]));
-        return printComputeMatrixOp(state, printer, mmaMatrix.getElementType(), mmaShape, computeMatrixOp.opA(), computeMatrixOp.opB(), computeMatrixOp.opC(), computeMatrixOp.res());
+        return printComputeMatrixOp(state, printer, mmaShape, computeMatrixOp.opA(), computeMatrixOp.opB(), computeMatrixOp.opC(), computeMatrixOp.res());
     }
 
     LogicalResult GpuDialectCppPrinter::printOp(gpu::SubgroupMmaStoreMatrixOp storeMatrixOp)
@@ -304,8 +303,7 @@ namespace cpp_printer
             return storeMatrixOp.emitError("non-cuda version is not supported.");
         }
 
-        const auto rowcolIndices = std::make_pair(storeMatrixOp.indices()[0], storeMatrixOp.indices()[1]);
-        return printStoreMatrixOp(state, printer, storeMatrixOp.src(), storeMatrixOp.dstMemref(), rowcolIndices);
+        return printStoreMatrixOp(state, printer, storeMatrixOp.src(), storeMatrixOp.dstMemref(), storeMatrixOp.indices());
     }
 
     LogicalResult GpuDialectCppPrinter::printDialectOperation(Operation* op,
@@ -481,6 +479,260 @@ using vint32x32_t = int __attribute__((ext_vector_type(32)));
 #ifndef __forceinline__
 #define __forceinline__ __inline__ __attribute__((always_inline))
 #endif // __forceinline__
+
+__device__ __forceinline__ float cast(const bfloat16_t val)
+{
+    // Copied from /opt/rocm/include/hip/hip_bfloat16.h
+    union
+    {
+        uint32_t int32;
+        float    fp32;
+    } u = {uint32_t(val) << 16};
+    return u.fp32;
+}
+
+__device__ __forceinline__ bfloat16_t cast(const float f)
+{
+    // Copied from /opt/rocm/include/hip/hip_bfloat16.h
+    // This does trucation instead of proper rounding (which is slower)
+    union
+    {
+        float    fp32;
+        uint32_t int32;
+    } u = {f};
+    return uint16_t(u.int32 >> 16) | (!(~u.int32 & 0x7f800000) && (u.int32 & 0xffff));
+}
+
+namespace rocwmma {
+    enum fragment_type { matrix_a, matrix_b, accumulator };
+    enum class layout_t { mem_row_major, mem_col_major };
+    enum layout2_t { row_major, col_major };
+
+    constexpr auto WARP_SIZE = 64;
+
+    struct Idx {
+        unsigned int m;
+        unsigned int k;
+    };
+
+    template <int M>
+    __device__ __forceinline__ Idx getThreadIdx(const unsigned int block_tid)
+    {
+        const auto warp_tid = block_tid % WARP_SIZE;
+        return Idx {warp_tid % M, warp_tid / M};
+    }
+
+    template<typename _Ty, int B, int S>
+    class frag_base
+    {
+        using _VTy = _Ty __attribute__((ext_vector_type(S)));
+        _VTy data[B];
+
+    public:
+        __device__ __forceinline__ _VTy& operator()(const int b) { return data[b]; }
+        __device__ __forceinline__ _VTy operator()(const int b) const { return data[b]; }
+        __device__ __forceinline__ _Ty& operator[](const int i) { return ((_Ty*)data)[i]; }
+        __device__ __forceinline__ _Ty operator[](const int i) const { return ((_Ty*)data)[i]; }
+    };
+
+    // Primary template
+    template<fragment_type fragType, int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS, typename _Ty, layout2_t layout = row_major>
+    struct fragment : public frag_base<_Ty, BLOCKS, M * K / WARP_SIZE> {
+        static_assert(M == N, "M must be equal to N");
+        static_assert(BLOCKS == 1, "Only accumulator can have BLOCKS > 1");
+    };
+
+    // Accumulator specialization
+    template<int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS, typename _Ty>
+    struct fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, _Ty> : public frag_base<_Ty, BLOCKS, M * N / WARP_SIZE / TOTAL_BLOCKS> {};
+
+    template<fragment_type fragType, layout2_t layout, unsigned int LD>
+    __device__ __forceinline__ int getIdx(const int row, const int col)
+    {
+        if constexpr (((fragType == matrix_a || fragType == accumulator) && layout == row_major) || (fragType == matrix_b && layout == col_major))
+            return row * LD + col;
+
+        return col * LD + row;
+    }
+
+    __constant__ uint8_t threadGroupOffsets_32[16][2] = {
+        {0, 4},   {1, 5},   {2, 6},   {3, 7},   {8, 12},  {9, 13},  {10, 14}, {11, 15},
+        {16, 20}, {17, 21}, {18, 22}, {19, 23}, {24, 28}, {25, 29}, {26, 30}, {27, 31}};
+
+    __constant__ uint8_t threadGroupOffsets_16[4][4] = {
+        {0, 4, 8, 12}, {1, 5, 9, 13}, {2, 6, 10, 14}, {3, 7, 11, 15}};
+
+    template<int M> __device__ __forceinline__ int getOffset(const int r, const int c);
+    template<> __device__ __forceinline__ int getOffset<32>(const int r, const int c) { return threadGroupOffsets_32[r][c]; }
+    template<> __device__ __forceinline__ int getOffset<16>(const int r, const int c) { return threadGroupOffsets_16[r][c]; }
+
+    template<bool STATIC_OFFSETS, int M, int N, int TOTAL_BLOCKS, int BLOCKS, int FragSize, layout_t layout, unsigned int LD, typename _Ty, typename Action>
+    __device__ __forceinline__ void load_store_acc(const unsigned int block_tid, Action&& do_fn)
+    {
+        constexpr auto SubGroupSize = 4;
+        constexpr auto ValsPerThreadPerBlock = FragSize / BLOCKS / sizeof(_Ty);
+        constexpr auto MFMA_M = M / TOTAL_BLOCKS;
+        constexpr auto Layout2 = layout == layout_t::mem_row_major ? row_major : col_major;
+        const auto tid = getThreadIdx<MFMA_M>(block_tid);
+        const auto threadGroupOffset = tid.k * SubGroupSize;
+
+        for (int b = 0, blockRowOffset = 0; b < BLOCKS; ++b, blockRowOffset += MFMA_M)
+        {
+            if constexpr (STATIC_OFFSETS)
+            {
+                for (int i = 0; i < ValsPerThreadPerBlock; ++i)
+                {
+                    int row = blockRowOffset;
+                    int col = tid.m;
+                    if constexpr (TOTAL_BLOCKS == 1)
+                    {
+                        row += getOffset<MFMA_M>(i, tid.k);
+                    }
+                    else
+                    {
+                        constexpr auto offsetWidth = MFMA_M / TOTAL_BLOCKS;
+                        row += getOffset<MFMA_M>(i % offsetWidth, tid.k);
+                        col += (i / offsetWidth) * MFMA_M;
+                    }
+                    const auto idx = getIdx<accumulator, Layout2, LD>(row, col);
+                    do_fn(idx, b, i);
+                }
+            }
+            else
+            {
+                constexpr auto ValsPerThread = ValsPerThreadPerBlock * TOTAL_BLOCKS;
+                constexpr auto ThreadsPerBlock = M * N / ValsPerThread;
+                constexpr auto RowsPerSet = ThreadsPerBlock / MFMA_M * SubGroupSize;
+                constexpr auto GroupsPerCol = MFMA_M / RowsPerSet;
+                for (int itemGroup = 0, i = 0; itemGroup < ValsPerThreadPerBlock / SubGroupSize; ++itemGroup)
+                {
+                    const auto col = tid.m + (itemGroup / GroupsPerCol) * MFMA_M;
+                    const auto itemGroupOffset = (itemGroup % GroupsPerCol) * RowsPerSet;
+                    const auto rowOffset = threadGroupOffset + blockRowOffset + itemGroupOffset;
+                    for (int itemOffset = 0, row = rowOffset; itemOffset < SubGroupSize; ++itemOffset, ++row)
+                    {
+                        const auto idx = getIdx<accumulator, Layout2, LD>(row, col);
+                        do_fn(idx, b, i++);
+                    }
+                }
+            }
+        }
+    }
+
+    template <unsigned int LD, fragment_type fragType, int M, int N, int K, int TOTAL_BLOCKS, typename _Ty, layout2_t layout>
+    __device__ __forceinline__ void load_matrix_sync(const unsigned int block_tid, fragment<fragType, M, N, K, TOTAL_BLOCKS, 1, _Ty, layout>& dest, const _Ty* __restrict__ src)
+    {
+        static_assert(fragType != accumulator, "this is only for matrix_a and matrix_b");
+
+        constexpr auto Stride = WARP_SIZE / M;
+        constexpr auto ValsPerThreadPerBlock = sizeof(dest) / sizeof(_Ty);
+        const auto idx = getThreadIdx<M>(block_tid);
+        for (int i = 0; i < ValsPerThreadPerBlock; ++i)
+        {
+            dest(0)[i] = src[getIdx<fragType, layout, LD>(idx.m, idx.k + i * Stride)];
+        }
+    }
+
+    template <unsigned int LD, fragment_type fragType, int M, int N, int K, int TOTAL_BLOCKS, layout2_t layout>
+    __device__ __forceinline__ void load_matrix_sync(const unsigned int block_tid, fragment<fragType, M, N, K, TOTAL_BLOCKS, 1, bfloat16_t, layout>& dest, const bfloat16_t* __restrict__ src)
+    {
+        static_assert(fragType != accumulator, "this is only for matrix_a and matrix_b");
+
+        const auto idx = getThreadIdx<M>(block_tid);
+        for (int i = 0; i < 2; ++i)
+        {
+            dest(0)[i] = src[getIdx<fragType, layout, LD>(idx.m, 2 * idx.k + i)];
+        }
+    }
+
+    template <bool STATIC_OFFSETS, layout_t layout, unsigned int LD, int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS, typename _Ty, typename _Uy>
+    __device__ __forceinline__ void load_matrix_sync(const unsigned int block_tid, fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, _Ty>& dest, const _Uy* __restrict__ src)
+    {
+        load_store_acc<STATIC_OFFSETS, M, N, TOTAL_BLOCKS, BLOCKS, sizeof(dest), layout, LD, _Ty>(block_tid, [&](const int idx, const int b, const int i) { dest(b)[i] = src[idx]; });
+    }
+
+    template <bool STATIC_OFFSETS, layout_t layout, unsigned int LD, int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS>
+    __device__ __forceinline__ void load_matrix_sync(const unsigned int block_tid, fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, float>& dest, const bfloat16_t* __restrict__ src)
+    {
+        load_store_acc<STATIC_OFFSETS, M, N, TOTAL_BLOCKS, BLOCKS, sizeof(dest), layout, LD, float>(block_tid, [&](const int idx, const int b, const int i) { dest(b)[i] = cast(src[idx]); });
+    }
+
+    template <bool STATIC_OFFSETS, layout_t layout, unsigned int LD, int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS, typename _Ty, typename _Uy>
+    __device__ __forceinline__ void store_matrix_sync(const unsigned int block_tid, _Uy* __restrict__ dest, const fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, _Ty>& src)
+    {
+        load_store_acc<STATIC_OFFSETS, M, N, TOTAL_BLOCKS, BLOCKS, sizeof(src), layout, LD, _Ty>(block_tid, [&](const int idx, const int b, const int i) { dest[idx] = src(b)[i]; });
+    }
+
+    template <bool STATIC_OFFSETS, layout_t layout, unsigned int LD, int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS>
+    __device__ __forceinline__ void store_matrix_sync(const unsigned int block_tid, bfloat16_t* __restrict__ dest, const fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, float>& src)
+    {
+        load_store_acc<STATIC_OFFSETS, M, N, TOTAL_BLOCKS, BLOCKS, sizeof(src), layout, LD, float>(block_tid, [&](const int idx, const int b, const int i) { dest[idx] = cast(src(b)[i]); });
+    }
+
+    template <int CBSZ, int ABID, int BLGP, int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS, layout2_t layoutA, layout2_t layoutB>
+    __device__ __forceinline__ void mma_sync(fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, float>& D, const fragment<matrix_a, M, N, K, TOTAL_BLOCKS, 1, float, layoutA>& A, const fragment<matrix_b, M, N, K, TOTAL_BLOCKS, 1, float, layoutB>& B, const fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, float>& C)
+    {
+        static_assert(sizeof(A(0)) / sizeof(float) == 1, "Input matrices should have 1 float per fragment");
+
+        constexpr auto BlockId = BLOCKS == 1 ? 0 : ABID;
+        if constexpr (TOTAL_BLOCKS == 4)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_16x16x1f32(A(0)[0], B(0)[0], C(BlockId), CBSZ, ABID, BLGP);
+        else if constexpr (TOTAL_BLOCKS == 2)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_32x32x1f32(A(0)[0], B(0)[0], C(BlockId), CBSZ, ABID, BLGP);
+        else if constexpr (M == 32)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_32x32x2f32(A(0)[0], B(0)[0], C(BlockId), CBSZ, ABID, BLGP);
+        else if constexpr (M == 16)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_16x16x4f32(A(0)[0], B(0)[0], C(BlockId), CBSZ, ABID, BLGP);
+    }
+
+    template <int CBSZ, int ABID, int BLGP, int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS, layout2_t layoutA, layout2_t layoutB>
+    __device__ __forceinline__ void mma_sync(fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, float>& D, const fragment<matrix_a, M, N, K, TOTAL_BLOCKS, 1, float16_t, layoutA>& A, const fragment<matrix_b, M, N, K, TOTAL_BLOCKS, 1, float16_t, layoutB>& B, const fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, float>& C)
+    {
+        constexpr auto BlockId = BLOCKS == 1 ? 0 : ABID;
+        if constexpr (TOTAL_BLOCKS == 4)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_16x16x4f16(A(0), B(0), C(BlockId), CBSZ, ABID, BLGP);
+        else if constexpr (TOTAL_BLOCKS == 2)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_32x32x4f16(A(0), B(0), C(BlockId), CBSZ, ABID, BLGP);
+        else if constexpr (M == 32)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_32x32x8f16(A(0), B(0), C(BlockId), CBSZ, ABID, BLGP);
+        else if constexpr (M == 16)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_16x16x16f16(A(0), B(0), C(BlockId), CBSZ, ABID, BLGP);
+    }
+
+    template <int CBSZ, int ABID, int BLGP, int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS, layout2_t layoutA, layout2_t layoutB>
+    __device__ __forceinline__ void mma_sync(fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, float>& D, const fragment<matrix_a, M, N, K, TOTAL_BLOCKS, 1, bfloat16_t, layoutA>& A, const fragment<matrix_b, M, N, K, TOTAL_BLOCKS, 1, bfloat16_t, layoutB>& B, const fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, float>& C)
+    {
+        constexpr auto BlockId = BLOCKS == 1 ? 0 : ABID;
+        if constexpr (TOTAL_BLOCKS == 4)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_16x16x2bf16(A(0), B(0), C(BlockId), CBSZ, ABID, BLGP);
+        else if constexpr (TOTAL_BLOCKS == 2)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_32x32x2bf16(A(0), B(0), C(BlockId), CBSZ, ABID, BLGP);
+        else if constexpr (M == 32)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_32x32x4bf16(A(0), B(0), C(BlockId), CBSZ, ABID, BLGP);
+        else if constexpr (M == 16)
+            D(BlockId) = __builtin_amdgcn_mfma_f32_16x16x8bf16(A(0), B(0), C(BlockId), CBSZ, ABID, BLGP);
+    }
+
+    template <int CBSZ, int ABID, int BLGP, int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS, layout2_t layoutA, layout2_t layoutB>
+    __device__ __forceinline__ void mma_sync(fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, int>& D, const fragment<matrix_a, M, N, K, TOTAL_BLOCKS, 1, int8_t, layoutA>& A, const fragment<matrix_b, M, N, K, TOTAL_BLOCKS, 1, int8_t, layoutB>& B, const fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, int>& C)
+    {
+        static_assert(sizeof(A(0)) / sizeof(int8_t) == 4, "Input matrices should have 4 ints per fragment");
+
+        constexpr auto BlockId = BLOCKS == 1 ? 0 : ABID;
+        D(BlockId) = C(BlockId);
+        for (int i = 0; i < 4; ++i)
+        {
+            if constexpr (TOTAL_BLOCKS == 4)
+                D(BlockId) = __builtin_amdgcn_mfma_i32_16x16x4i8(A(0)[i], B(0)[i], D(BlockId), CBSZ, ABID, BLGP);
+            else if constexpr (TOTAL_BLOCKS == 2)
+                D(BlockId) = __builtin_amdgcn_mfma_i32_32x32x4i8(A(0)[i], B(0)[i], D(BlockId), CBSZ, ABID, BLGP);
+            else if constexpr (M == 32)
+                D(BlockId) = __builtin_amdgcn_mfma_i32_32x32x8i8(A(0)[i], B(0)[i], D(BlockId), CBSZ, ABID, BLGP);
+            else if constexpr (M == 16)
+                D(BlockId) = __builtin_amdgcn_mfma_i32_16x16x16i8(A(0)[i], B(0)[i], D(BlockId), CBSZ, ABID, BLGP);
+        }
+    }
+} // namespace rocwmma
 
 )CUDA";
         }

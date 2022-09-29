@@ -12,7 +12,7 @@ from enum import Enum, auto
 
 from ._lang_python import ScalarType, _GetKnownDeviceNames
 from ._lang_python._lang import (
-    BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z, _MemorySpace, _MMAShape, _ExecutionRuntime as Runtime
+    BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z, WARP_X, WARP_Y, _MemorySpace, _MMAShape, _ExecutionRuntime as Runtime
 )
 
 
@@ -1011,6 +1011,8 @@ class GridUnits(Enum):
     THREAD_X = THREAD_X
     THREAD_Y = THREAD_Y
     THREAD_Z = THREAD_Z
+    WARP_X = WARP_X
+    WARP_Y = WARP_Y
 
 
 class Target(_TargetContainer):

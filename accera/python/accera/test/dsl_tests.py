@@ -571,10 +571,28 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         package = Package()
 
-        package.add(nest, args=(M, N, K, A, B, C), base_name="runtimesizes")
-        package.build(
-            "test_runtimesizes", format=Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR
-        )  # TODO: format=TEST_FORMAT
+        M_test = np.int64(64)
+        N_test = np.int64(128)
+        K_test = np.int64(32)
+        A_test = np.random.random((M_test, K_test)).astype(np.float32)
+        B_test = np.random.random((K_test, N_test)).astype(np.float32)
+        C_test = np.random.random((M_test, N_test)).astype(np.float32)
+        correctness_check_values = {
+            "pre": [M_test, N_test, K_test, A_test, B_test, C_test],
+            "post": [M_test, N_test, K_test, A_test, B_test, C_test + A_test @ B_test],
+        }
+
+        function = package.add(nest, args=(M, N, K, A, B, C), base_name="runtimesizes") 
+
+        with verifiers.VerifyPackage(self, "test_runtimesizes", TEST_PACKAGE_DIR) as v:
+            package.build("test_runtimesizes", format=TEST_FORMAT | Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+            if correctness_check_values:
+                v.check_correctness(
+                    function.name,
+                    before=correctness_check_values["pre"],
+                    after=correctness_check_values["post"],
+                )
+
 
 class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
     def _create_nest(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:

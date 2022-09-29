@@ -282,6 +282,19 @@ RangeValue RangeValueAnalysis::resolveRangeValue(mlir::gpu::GridDimOp op)
     return resolveGridDimRange(op, op.dimension());
 }
 
+RangeValue RangeValueAnalysis::resolveRangeValue(WarpIdOp op)
+{
+    const mlir::gpu::Dimension dim{ op.dimension() };
+    auto upperBound = GetBlockDimSize(op, dim);
+    if (dim == mlir::gpu::Dimension::x)
+    {
+        auto [warpSizeX, warpSizeY] = ResolveWarpSize(ResolveExecutionRuntime(op)).value();
+        const auto warpSize = warpSizeX * warpSizeY;
+        upperBound /= warpSize;
+    }
+    return RangeValue(0, upperBound - 1);
+}
+
 RangeValue RangeValueAnalysis::resolveRangeValue(Instruction::BinaryOps binOp, mlir::Operation* op)
 {
     auto operands = resolveOperands(op);
@@ -312,6 +325,7 @@ RangeValue RangeValueAnalysis::resolveRangeValue(mlir::Operation* op)
         .Case([&](arith::IndexCastOp op) { return resolveRangeValue(op); })
         .Case([&](gpu::ThreadIdOp op) { return resolveRangeValue(op); })
         .Case([&](gpu::BlockIdOp op) { return resolveRangeValue(op); })
+        .Case([&](WarpIdOp op) { return resolveRangeValue(op); })
         .Case([&](arith::AddIOp op) { return resolveRangeValue(Instruction::BinaryOps::Add, op); })
         .Case([&](arith::SubIOp op) { return resolveRangeValue(Instruction::BinaryOps::Sub, op); })
         .Case([&](arith::MulIOp op) { return resolveRangeValue(Instruction::BinaryOps::Mul, op); })

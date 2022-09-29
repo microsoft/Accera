@@ -50,6 +50,83 @@ namespace ir
 {
     namespace
     {
+        class LLVMTypeConverterDynMem: public mlir::LLVMTypeConverter
+        {
+        public:
+            LLVMTypeConverterDynMem(MLIRContext *ctx, const mlir::LowerToLLVMOptions &options):
+                mlir::LLVMTypeConverter(ctx, options)
+            {}
+
+            Type convertMemRefToBarePtr(mlir::BaseMemRefType type) {
+                if (type.isa<mlir::UnrankedMemRefType>())
+                    // Unranked memref is not supported in the bare pointer calling convention.
+                    return {};
+
+                Type elementType = convertType(type.getElementType());
+                if (!elementType)
+                    return {};
+                return mlir::LLVM::LLVMPointerType::get(elementType, type.getMemorySpaceAsInt());
+            }
+
+            Type convertCallingConventionType(Type type) {
+                if (getOptions().useBarePtrCallConv)
+                    if (auto memrefTy = type.dyn_cast<mlir::BaseMemRefType>())
+                        return convertMemRefToBarePtr(memrefTy);
+
+                return convertType(type);
+            }
+
+            LogicalResult barePtrFuncArgTypeConverterDynMem(Type type,
+                                                SmallVectorImpl<Type> &result) {
+                auto llvmTy = convertCallingConventionType(type);
+                if (!llvmTy)
+                    return mlir::failure();
+
+                result.push_back(llvmTy);
+                return mlir::success();
+            }
+
+            Type convertFunctionSignature(
+                FunctionType funcTy, bool isVariadic,
+                LLVMTypeConverter::SignatureConversion &result) 
+            {
+                // Select the argument converter depending on the calling convention.
+                if (getOptions().useBarePtrCallConv) {
+                    for (auto &en : llvm::enumerate(funcTy.getInputs())) {
+                        Type type = en.value();
+                        llvm::SmallVector<Type, 8> converted;
+                        if (failed(barePtrFuncArgTypeConverterDynMem(type, converted)))
+                            return {};
+                        result.addInputs(en.index(), converted);
+                    }
+                }
+                else {
+                    for (auto &en : llvm::enumerate(funcTy.getInputs())) {
+                        Type type = en.value();
+                        llvm::SmallVector<Type, 8> converted;
+                        if (failed(mlir::structFuncArgTypeConverter(*this, type, converted)))
+                            return {};
+                        result.addInputs(en.index(), converted);
+                    }
+                }
+
+                llvm::SmallVector<Type, 8> argTypes;
+                argTypes.reserve(llvm::size(result.getConvertedTypes()));
+                for (Type type : result.getConvertedTypes())
+                    argTypes.push_back(type);
+
+                // If function does not return anything, create the void result type,
+                // if it returns on element, convert it, otherwise pack the result types into
+                // a struct.
+                Type resultType = funcTy.getNumResults() == 0
+                                        ? mlir::LLVM::LLVMVoidType::get(&getContext())
+                                        : packFunctionResults(funcTy.getResults());
+                if (!resultType)
+                    return {};
+                return mlir::LLVM::LLVMFunctionType::get(resultType, argTypes, isVariadic);
+            }
+        };
+
         value::ValueModuleOp GetValueModule(mlir::ModuleOp& module)
         {
             value::ValueModuleOp valueModuleOp;
@@ -518,6 +595,13 @@ namespace ir
 
             mlir::TypeConverter::SignatureConversion conversion(fnType.getNumInputs());
             auto llvmType = llvmTypeConverter.convertFunctionSignature(fnType, false, conversion);
+            if (!llvmType)
+            {
+                LLVMTypeConverterDynMem llvmTypeConverterDynMem(context, options);
+                mlir::TypeConverter::SignatureConversion conversionDynMem(fnType.getNumInputs());
+                llvmType = llvmTypeConverterDynMem.convertFunctionSignature(fnType, false, conversionDynMem);
+            }
+
             WriteFunctionType(os, { llvmType, fnType }, name);
 
             os << "\n\n";
@@ -677,9 +761,19 @@ namespace ir
                         options.useBarePtrCallConv = useBarePtrCallConv;
                         options.emitCWrappers = false;
                         mlir::LLVMTypeConverter llvmTypeConverter(context, options);
-
+                        
                         mlir::TypeConverter::SignatureConversion conversion(fnType.getNumInputs());
-                        auto llvmType = llvmTypeConverter.convertFunctionSignature(fnType, /*isVariadic=*/false, conversion).dyn_cast<mlir::LLVM::LLVMFunctionType>();
+                        auto convertedType = llvmTypeConverter.convertFunctionSignature(fnType, /*isVariadic=*/false, conversion);
+                        mlir::LLVM::LLVMFunctionType llvmType;
+
+                        if (convertedType)
+                            llvmType = convertedType.dyn_cast<mlir::LLVM::LLVMFunctionType>();
+                        else 
+                        {
+                            LLVMTypeConverterDynMem llvmTypeConverterDynMem(context, options);
+                            mlir::TypeConverter::SignatureConversion conversionDynMem(fnType.getNumInputs());
+                            llvmType = llvmTypeConverterDynMem.convertFunctionSignature(fnType, /*isVariadic=*/false, conversionDynMem).dyn_cast<mlir::LLVM::LLVMFunctionType>();
+                        }
 
                         auto function = std::make_unique<hat::Function>();
                         function->Name(fnName);

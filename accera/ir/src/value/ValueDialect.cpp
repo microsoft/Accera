@@ -561,7 +561,7 @@ int64_t MMAOp::getInElementsPerThread(const int64_t warpSize) const
 
 int64_t MMAOp::getOutElementsPerThread(const int64_t warpSize) const
 {
-    return getM() * getN() / warpSize;
+    return getM() * getN() / warpSize / blocks;
 }
 
 int64_t MMAOp::getNumBlocks() const
@@ -584,30 +584,6 @@ std::vector<int64_t> MMAOp::getOperandShape(const MMAOperandType operandType) co
     }
 }
 
-std::vector<uint8_t> MMAOp::getOffsetMap() const
-{
-    // These index offsets are calculated based on the data layout in which
-    // AMD mfma operation maps them to different threads.
-    if (getNumBlocks() == 2 || m == 32) // M64xN64xK1_B2, M64xN64xK4_B2, M32xN32xK2_B1, M32xN32xK8_B1
-        return { 0, 4, 1, 5, 2, 6, 3, 7, 8, 12, 9, 13, 10, 14, 11, 15, 16, 20, 17, 21, 18, 22, 19, 23, 24, 28, 25, 29, 26, 30, 27, 31 };
-
-    return { 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15 }; // M64xN64xK1_B4, M64xN64xK4_B4, M16xN16xK4_B1, M16xN16xK16_B1
-}
-
-std::array<int64_t, 2> MMAOp::getOffsetMapSize() const
-{
-    // The offset map is organised in this layout so that it can be indexed by thread id.
-    if (getNumBlocks() == 2 || m == 32) // M64xN64xK1_B2, M64xN64xK4_B2, M32xN32xK2_B1, M32xN32xK8_B1
-        return { 16, 2 };
-
-    return { 4, 4 }; // M64xN64xK1_B4, M64xN64xK4_B4, M16xN16xK4_B1, M16xN16xK16_B1
-}
-
-std::pair<mlir::MemRefType, mlir::RankedTensorType> MMAOp::GetMFMAThreadOffsetMapType(IntegerType mlirElemType) const
-{
-    auto vecSize = getOffsetMapSize();
-    return std::make_pair(mlir::MemRefType::get(vecSize, mlirElemType, {}, mlir::gpu::GPUDialect::getPrivateAddressSpace()), mlir::RankedTensorType::get(vecSize, mlirElemType));
-}
 
 //===----------------------------------------------------------------------===//
 // MMA Ops

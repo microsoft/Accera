@@ -483,9 +483,6 @@ class Plan:
         if double_buffer and location == _MemorySpace.TENSOR:
             raise ValueError("Double buffering is not supported with Tensor caching")
 
-        if self._target.category == Target.Category.GPU and self._target.runtime == Target.Runtime.ROCM and location == _MemorySpace.TENSOR:
-            location = _MemorySpace.PRIVATE # Tensor just resolves to Private in ROCM
-
         if double_buffer_location is AUTO:
             if double_buffer:
                 if (
@@ -875,9 +872,9 @@ class Plan:
 
         block_dims = [1, 1, 1]
         grid_dims = [1, 1, 1]
+        warp_dims = [0, 0]
 
         if any(proc in self._bindings for proc in target.GridUnit):
-
             # TODO: move this into the C++ layer
             block_units = [
                 target.GridUnit.BLOCK_X,
@@ -889,12 +886,27 @@ class Plan:
                 target.GridUnit.THREAD_Y,
                 target.GridUnit.THREAD_Z,
             ]
+            warp_units = [
+                target.GridUnit.WARP_X,
+                target.GridUnit.WARP_Y,
+            ]
 
             # Block units map to the grid specification
             units_to_dim(block_units, grid_dims)
 
             # Thread units map to the block specification
             units_to_dim(thread_units, block_dims)
+
+            # Use warp units to create blockdim in case of tensorization
+            units_to_dim(warp_units, warp_dims)
+
+            warp_dim_set = any(item != 0 for item in warp_dims)
+            thread_dim_set = any(item != 1 for item in block_dims)
+            if warp_dim_set and thread_dim_set:
+                raise ValueError("Cannot bind both thread and warp dimensions")
+
+            if warp_dim_set:
+                block_dims = [warp_dims[0] * target.warp_size, warp_dims[1], 1]
         else:
             BASE_BLOCK_DIM = 16
             block_dims = [BASE_BLOCK_DIM, BASE_BLOCK_DIM, 1]

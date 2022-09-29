@@ -61,6 +61,85 @@ using namespace accera::transforms::value;
 
 namespace
 {
+// TODO: Refactor this class and find a better place for this helper class
+class LLVMTypeConverterDynMem: public mlir::LLVMTypeConverter
+{
+public:
+    LLVMTypeConverterDynMem(MLIRContext *ctx, const mlir::LowerToLLVMOptions &options):
+        mlir::LLVMTypeConverter(ctx, options)
+    {}
+
+    Type convertMemRefToBarePtr(mlir::BaseMemRefType type) {
+        if (type.isa<mlir::UnrankedMemRefType>())
+            // Unranked memref is not supported in the bare pointer calling convention.
+            return {};
+
+        Type elementType = convertType(type.getElementType());
+        if (!elementType)
+            return {};
+        return mlir::LLVM::LLVMPointerType::get(elementType, type.getMemorySpaceAsInt());
+    }
+
+    Type convertCallingConventionType(Type type) {
+        auto memrefTy = type.dyn_cast<mlir::BaseMemRefType>();
+        if (getOptions().useBarePtrCallConv && memrefTy)
+            return convertMemRefToBarePtr(memrefTy);
+
+        return convertType(type);
+    }
+
+    LogicalResult barePtrFuncArgTypeConverterDynMem(Type type,
+                                        SmallVectorImpl<Type> &result) {
+        auto llvmTy = convertCallingConventionType(type);
+        if (!llvmTy)
+            return mlir::failure();
+
+        result.push_back(llvmTy);
+        return mlir::success();
+    }
+
+    Type convertFunctionSignature(
+        FunctionType funcTy, bool isVariadic,
+        LLVMTypeConverter::SignatureConversion &result) 
+    {
+        // Select the argument converter depending on the calling convention.
+        if (getOptions().useBarePtrCallConv) {
+            for (auto &en : llvm::enumerate(funcTy.getInputs())) {
+                Type type = en.value();
+                llvm::SmallVector<Type, 8> converted;
+                if (failed(barePtrFuncArgTypeConverterDynMem(type, converted)))
+                    return {};
+                result.addInputs(en.index(), converted);
+            }
+        }
+        else {
+            for (auto &en : llvm::enumerate(funcTy.getInputs())) {
+                Type type = en.value();
+                llvm::SmallVector<Type, 8> converted;
+                if (failed(mlir::structFuncArgTypeConverter(*this, type, converted)))
+                    return {};
+                result.addInputs(en.index(), converted);
+            }
+        }
+
+        llvm::SmallVector<Type, 8> argTypes;
+        argTypes.reserve(llvm::size(result.getConvertedTypes()));
+        for (Type type : result.getConvertedTypes())
+            argTypes.push_back(type);
+
+        // If function does not return anything, create the void result type,
+        // if it returns on element, convert it, otherwise pack the result types into
+        // a struct.
+        Type resultType = funcTy.getNumResults() == 0
+                                ? mlir::LLVM::LLVMVoidType::get(&getContext())
+                                : packFunctionResults(funcTy.getResults());
+        if (!resultType)
+            return {};
+        return mlir::LLVM::LLVMFunctionType::get(resultType, argTypes, isVariadic);
+    }
+};
+
+
 static FlatSymbolRefAttr getOrInsertLibraryFunction(PatternRewriter& rewriter,
                                                     std::string libraryFunctionName,
                                                     mlir::Type llvmFnType,
@@ -563,12 +642,18 @@ struct RawPointerAPIFnConversion : public ConvertOpToLLVMPattern<FuncOp>
     {
         // Convert the original function arguments. They are converted using the
         // LLVMTypeConverter provided to this legalization pattern.
+        bool isDynamicMem = false;
         auto varargsAttr = funcOp->getAttrOfType<BoolAttr>("std.varargs");
         TypeConverter::SignatureConversion result(funcOp.getNumArguments());
+        TypeConverter::SignatureConversion resultDynMem(funcOp.getNumArguments());
         auto llvmType = getTypeConverter()->convertFunctionSignature(
             funcOp.getType(), varargsAttr && varargsAttr.getValue(), result);
         if (!llvmType)
-            return nullptr;
+        {
+            isDynamicMem = true;
+            LLVMTypeConverterDynMem llvmTypeConverterDynMem(&getTypeConverter()->getContext(), getTypeConverter()->getOptions());
+            llvmType = llvmTypeConverterDynMem.convertFunctionSignature(funcOp.getType(), false, resultDynMem);
+        }
 
         // Propagate argument attributes to all converted arguments obtained after
         // converting a given original argument.
@@ -580,7 +665,7 @@ struct RawPointerAPIFnConversion : public ConvertOpToLLVMPattern<FuncOp>
                 llvmType.cast<LLVM::LLVMFunctionType>().getNumParams());
             for (unsigned i = 0, e = funcOp.getNumArguments(); i < e; ++i)
             {
-                auto mapping = result.getInputMapping(i);
+                auto mapping = isDynamicMem ? resultDynMem.getInputMapping(i) : result.getInputMapping(i);
                 assert(mapping.hasValue() &&
                        "unexpected deletion of function argument");
                 for (size_t j = 0; j < mapping->size; ++j)
@@ -599,7 +684,7 @@ struct RawPointerAPIFnConversion : public ConvertOpToLLVMPattern<FuncOp>
         rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(), newFuncOp.end());
         auto beforeConversion = newFuncOp.getArguments().vec();
 
-        if (failed(rewriter.convertRegionTypes(&newFuncOp.getBody(), *typeConverter, &result)))
+        if (failed(rewriter.convertRegionTypes(&newFuncOp.getBody(), *typeConverter, isDynamicMem ? &resultDynMem : &result)))
             return nullptr;
 
         return newFuncOp;
@@ -638,6 +723,33 @@ struct RawPointerAPIFnConversion : public ConvertOpToLLVMPattern<FuncOp>
 
         OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPointToStart(entryBlock);
+
+        std::vector<BlockArgument> dimSizeArgs;
+        std::vector<BlockArgument> memRefTypeArgs;
+        for (auto it : llvm::zip(blockArgs, oldArgTypes)) {
+            BlockArgument arg = std::get<0>(it);
+            Type argTy = std::get<1>(it);
+            if (argTy.dyn_cast<MemRefType>())
+                memRefTypeArgs.push_back(arg);
+            else
+                dimSizeArgs.push_back(arg);
+        }
+
+        int memrefArgIdx = 0;
+        
+        // TODO: Refactor this logic and hide it into an utility function.
+
+        // These tables are used to correlate the array argument with the corresponding dimension argument, for example, 
+        // for the function of debug purpose, e.g func @_debug_check_allclose_0_0_3eecdd55b15ee07b(%arg0: index, %arg1: index, %arg2: memref<?x?xf32>, %arg3: memref<?x?xf32>),
+        // arg0 * arg1 is the dimension of the array arg2 and arg3
+        // for the target function, e.g func @runtimesizes_546ea77a6411f713(%arg0: index, %arg1: index, %arg2: index, %arg3: memref<?x?xf32>, %arg4: memref<?x?xf32>, %arg5: memref<?x?xf32>)
+        // arg0 * arg2 is the dimension of the array arg3,  arg2 * arg1 is the dimension of the array arg4,
+        // arg0 * arg1 is the dimension of the array arg5
+        std::vector<std::vector<int>> array_to_dim_mapping_non_debug = { { 0, 2 }, { 2, 1 }, { 0, 1 } };     
+        std::vector<std::vector<int>> array_to_dim_mapping_debug = { { 0, 1 }, { 0, 1 } };
+        std::vector<std::vector<int>> array_to_stride_mapping_non_debug = { { 2, -1 }, { 1, -1 }, { 1, -1 } };
+        std::vector<std::vector<int>> array_to_stride_mapping_debug = { { 1, -1 }, { 1, -1 } };
+
         for (auto it : llvm::zip(blockArgs, oldArgTypes))
         {
             BlockArgument arg = std::get<0>(it);
@@ -661,9 +773,62 @@ struct RawPointerAPIFnConversion : public ConvertOpToLLVMPattern<FuncOp>
             //       already accounts for this type of scenario and doesn't perform the replacement on any
             //       ops that preceed the new op that is the old arg is being replaced with.
             Location loc = funcOp.getLoc();
-            Value desc = MemRefDescriptor::fromStaticShape(
-                rewriter, loc, *getTypeConverter(), memrefTy, arg);
-            rewriter.replaceUsesOfBlockArgument(arg, desc);
+
+            if (memrefTy.getNumDynamicDims() > 0) {
+                int64_t offset;
+                SmallVector<int64_t, 4> strides;
+                [[maybe_unused]] auto res = getStridesAndOffset(memrefTy, strides, offset);
+                assert(succeeded(res));
+
+                auto convertedType = getTypeConverter()->convertType(memrefTy);
+                auto descr = MemRefDescriptor::undef(rewriter, loc, convertedType);
+
+                descr.setAllocatedPtr(rewriter, loc, arg);
+                descr.setAlignedPtr(rewriter, loc, arg);
+                descr.setConstantOffset(rewriter, loc, offset);
+
+                // Fill in sizes and strides
+                for (unsigned i = 0, e = memrefTy.getRank(); i != e; ++i) {
+                    auto dimSize = memrefTy.getDimSize(i);
+                    if (dimSize == mlir::ShapedType::kDynamicSize) {
+                        auto dimSizeValue = memRefTypeArgs.size() == 2 ? 
+                            dimSizeArgs[array_to_dim_mapping_debug[memrefArgIdx][i]] : 
+                            dimSizeArgs[array_to_dim_mapping_non_debug[memrefArgIdx][i]];
+                        descr.setSize(rewriter, loc, i, dimSizeValue);
+                    }
+                    else
+                        descr.setConstantSize(rewriter, loc, i, dimSize);
+
+                    if (strides[i] == mlir::ShapedType::kDynamicStrideOrOffset) {
+                        if (memRefTypeArgs.size() == 2) {
+                            int idx_debug = array_to_stride_mapping_debug[memrefArgIdx][i];
+                            if (idx_debug == -1)
+                                descr.setConstantStride(rewriter, loc, i, 1);
+                            else
+                                descr.setStride(rewriter, loc, i, dimSizeArgs[idx_debug]);
+                        }
+                        else {
+                            int idx_non_debug = array_to_stride_mapping_non_debug[memrefArgIdx][i];
+                            if (idx_non_debug == -1)
+                                descr.setConstantStride(rewriter, loc, i, 1);
+                            else
+                                descr.setStride(rewriter, loc, i, dimSizeArgs[idx_non_debug]);
+                        }
+                    }
+                    else
+                        descr.setConstantStride(rewriter, loc, i, strides[i]);
+                }
+
+                rewriter.replaceUsesOfBlockArgument(arg, descr);
+            }
+            else
+            {
+                Value desc = MemRefDescriptor::fromStaticShape(
+                    rewriter, loc, *getTypeConverter(), memrefTy, arg);
+                rewriter.replaceUsesOfBlockArgument(arg, desc);
+            }
+
+            memrefArgIdx++;
         }
 
         rewriter.eraseOp(funcOp);

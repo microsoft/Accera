@@ -71,7 +71,7 @@ class TensorizeTest(unittest.TestCase):
         checker.check_label(
             'extern "C" __global__  __launch_bounds__({{.+}}) void ' + test_name + '_{{.+}}__gpu__('
         )
-        checker.check('__builtin_amdgcn_mfma_')
+        checker.check('mma_sync')
         checker.run()
 
 
@@ -80,7 +80,7 @@ class TensorizeTest(unittest.TestCase):
         checker.check_label(
             'extern "C" __global__  __launch_bounds__({{.+}}) void ' + test_name + '_{{.+}}__gpu__('
         )
-        checker.check_not('__builtin_amdgcn_mfma_')
+        checker.check_not('mma_sync')
         checker.run()
 
     def _get_np_datatype(self, p):
@@ -152,7 +152,7 @@ class TensorizeTest(unittest.TestCase):
                 file_check_fn(v)
 
     def _rocm_matmul(self, test_name, M, N, K, block_tile, outer_tile_k, thread_tile=None, thread_coarsening_tile=(1, 1), inner_tile_k=None,
-                     cache=(True, True, False), cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
+                     cache=(True, True, True), cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
                      double_buffer=False, double_buffer_location=Constants.AUTO, vectorize=False,
                      tensorize=True, mma_shape=_MMAShape.M16xN16xK4_B1, num_total_passes=1, num_fused_passes=None, use_static_offsets=False,
                      scheduling_policy=_MMASchedulingPolicy.PASS_ORDER,
@@ -166,12 +166,6 @@ class TensorizeTest(unittest.TestCase):
 
         if thread_tile is not None and tensorize:
             raise ValueError("Can't specify both a thread_tile shape and tensorize")
-
-        if thread_tile is None:
-            thread_tile = block_tile
-
-        if inner_tile_k is None:
-            inner_tile_k = outer_tile_k
 
         A = Array(role=Array.Role.INPUT, element_type=array_element_types[0], shape=(M, K), layout=array_layouts[0])
         B = Array(role=Array.Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=array_layouts[1])
@@ -204,6 +198,12 @@ class TensorizeTest(unittest.TestCase):
             plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
             plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
         else:
+            if thread_tile is None:
+                thread_tile = block_tile
+
+            if inner_tile_k is None:
+                inner_tile_k = outer_tile_k
+
             iii, jjj, kkk = schedule.tile({
                 ii: thread_tile[0],
                 jj: thread_tile[1],
@@ -255,7 +255,7 @@ class TensorizeTest(unittest.TestCase):
 
 
     def _rocm_batch_matmul(self, test_name, batch_count, M, N, K, block_tile, outer_tile_k, b_split=None, thread_tile=None, thread_coarsening_tile=(1, 1), inner_tile_k=None,
-                            cache=(True, True, False), cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
+                            cache=(True, True, True), cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
                             double_buffer=False, double_buffer_location=Constants.AUTO, vectorize=False,
                             tensorize=True, mma_shape=_MMAShape.M16xN16xK4_B1, num_total_passes=1, num_fused_passes=None, use_static_offsets=False,
                             scheduling_policy=_MMASchedulingPolicy.PASS_ORDER,
@@ -1729,6 +1729,10 @@ class TensorizeTest(unittest.TestCase):
                                     test_name="test_cuda_cache_double_buffering_tensorize_non_square", tensorize=True, cache=True,
                                     double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE)
 
+    def test_cuda_cache_double_buffering_tensorize_non_square_uneven_tile(self) -> None:
+        self._cuda_cache_tensorize(M=768, N=576, K=1024, outer_tile_m=16, outer_tile_n=64, outer_tile_k=64,
+                                    test_name="test_cuda_cache_double_buffering_tensorize_non_square_uneven_tile", tensorize=True, cache=True,
+                                    double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE)
 
     def test_cuda_vectorized_cache_double_buffering_tensorize_non_square(self) -> None:
         self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
@@ -1825,7 +1829,8 @@ class TensorizeTest(unittest.TestCase):
 
         def file_check_fn(v):
             checker = v.file_checker(f"{test_name}.cu")
-            checker.check("constexpr int8_t threadOffsetsMFMA")
+            checker.check("rocwmma::load_matrix_sync<1,")
+            checker.check("rocwmma::store_matrix_sync<1,")
             checker.run()
 
         self._rocm_matmul(test_name, M, N, K,
@@ -2157,18 +2162,18 @@ class TensorizeTest(unittest.TestCase):
                               cache=(True, True, True),
                               cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
                               double_buffer=False,
+                              array_element_types=[ScalarType.float32, ScalarType.float32, ScalarType.float32],
                               double_buffer_location=Constants.AUTO,
                               vectorize=False,
                               use_static_offsets=False,
                               scheduling_policy=_MMASchedulingPolicy.PASS_ORDER,
-                              array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR]) -> None:
-        if cache[2] and (mma_shape != _MMAShape.M16xN16xK4_B1 and mma_shape != _MMAShape.M16xN16xK16_B1):
-            # Output caching only works for the 16x16xK tensor ops currently
-            cache[2] = False
+                              array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
+                              tolerance=1e-5) -> None:
         self._rocm_matmul(test_name, M, N, K,
                           block_tile=block_tile,
                           outer_tile_k=outer_tile_k,
                           tensorize=True,
+                          array_element_types=array_element_types,
                           mma_shape=mma_shape,
                           num_total_passes=num_total_passes,
                           cache=cache,
@@ -2178,7 +2183,8 @@ class TensorizeTest(unittest.TestCase):
                           vectorize=vectorize,
                           use_static_offsets=use_static_offsets,
                           scheduling_policy=scheduling_policy,
-                          array_layouts=array_layouts)
+                          array_layouts=array_layouts,
+                          tolerance=tolerance)
 
     def test_rocm_cache_tensorize(self) -> None:
         self._rocm_cache_tensorize(M=1024, N=1024, K=1024, block_tile=(64, 64), outer_tile_k=64, test_name="test_rocm_cache_tensorize")
@@ -2240,6 +2246,52 @@ class TensorizeTest(unittest.TestCase):
                                    double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True,
                                    scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
 
+    def test_rocm_vectorized_cache_double_buffering_tensorize_blockorder(self) -> None:
+        self._rocm_cache_tensorize(M=1024, N=1024, K=1024, block_tile=(64, 64), outer_tile_k=64,
+                                   test_name="test_rocm_vectorized_cache_double_buffering_tensorize_blockorder",
+                                   double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True,
+                                   mma_shape=_MMAShape.M32xN32xK2_B1, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
+
+    def test_rocm_vectorized_cache_double_buffering_tensorize_non_square_M64xN64xK1_B2(self) -> None:
+        self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(64, 64), outer_tile_k=64,
+                                   test_name="test_rocm_vectorized_cache_double_buffering_tensorize_non_square_M64xN64xK1_B2",
+                                   mma_shape=_MMAShape.M64xN64xK1_B2, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
+                                   vectorize=True, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER)
+
+    def test_rocm_vectorized_cache_double_buffering_tensorize_non_square_M64xN64xK1_B4(self) -> None:
+        self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(64, 64), outer_tile_k=64,
+                                   test_name="test_rocm_vectorized_cache_double_buffering_tensorize_non_square_M64xN64xK1_B4",
+                                   mma_shape=_MMAShape.M64xN64xK1_B4, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
+                                   vectorize=True, scheduling_policy=_MMASchedulingPolicy.PASS_ORDER)
+
+    def test_rocm_vectorized_cache_double_buffering_tensorize_non_square_blockorder_fp16(self) -> None:
+        self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(64, 64), outer_tile_k=64,
+                                   test_name="test_rocm_vectorized_cache_double_buffering_tensorize_non_square_blockorder_fp16",
+                                   double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True,
+                                   mma_shape=_MMAShape.M16xN16xK16_B1, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER,
+                                   array_element_types=[ScalarType.float16, ScalarType.float16, ScalarType.float16], tolerance=1e-3)
+
+    def test_rocm_vectorized_cache_double_buffering_tensorize_blockorder_fp16(self) -> None:
+        self._rocm_cache_tensorize(M=1024, N=1024, K=1024, block_tile=(64, 64), outer_tile_k=64,
+                                   test_name="test_rocm_vectorized_cache_double_buffering_tensorize_blockorder_fp16",
+                                   double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True,
+                                   mma_shape=_MMAShape.M32xN32xK8_B1, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER,
+                                   array_element_types=[ScalarType.float16, ScalarType.float16, ScalarType.float32], tolerance=1e-3)
+
+    def test_rocm_vectorized_cache_double_buffering_tensorize_non_square_M64xN64xK4_B2_fp16(self) -> None:
+        self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(64, 64), outer_tile_k=64,
+                                   test_name="test_rocm_vectorized_cache_double_buffering_tensorize_non_square_M64xN64xK4_B2_fp16",
+                                   mma_shape=_MMAShape.M64xN64xK4_B2, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
+                                   vectorize=True, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER,
+                                   array_element_types=[ScalarType.float16, ScalarType.float16, ScalarType.float16], tolerance=1e-3)
+
+    def test_rocm_vectorized_cache_double_buffering_tensorize_non_square_M64xN64xK4_B4_fp16(self) -> None:
+        self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(64, 64), outer_tile_k=64,
+                                   test_name="test_rocm_vectorized_cache_double_buffering_tensorize_non_square_M64xN64xK4_B4_fp16",
+                                   mma_shape=_MMAShape.M64xN64xK4_B4, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
+                                   vectorize=True, scheduling_policy=_MMASchedulingPolicy.PASS_ORDER,
+                                   array_element_types=[ScalarType.float16, ScalarType.float16, ScalarType.float32], tolerance=1e-3)
+
     def test_rocm_vectorized_cache_non_square(self) -> None:
         self._rocm_cache_matmul(M=1280, N=768, K=1024, block_tile=(16, 16), outer_tile_k=128,
                                 test_name="test_rocm_vectorized_cache_non_square",
@@ -2298,7 +2350,6 @@ class TensorizeTest(unittest.TestCase):
                                    double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
                                    vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
 
-    @unittest.skip("output caching and static offsets aren't supported together at this time")
     def test_rocm_vectorized_cache_double_buffering_tensorize_non_square_tensormap(self) -> None:
         self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(64, 64), outer_tile_k=64,
                                     test_name="test_rocm_vectorized_cache_double_buffering_tensorize_non_square_tensormap",
@@ -2307,16 +2358,16 @@ class TensorizeTest(unittest.TestCase):
     def test_rocm_batchgemm_vectorized_cache_non_square_transpose(self) -> None:
         self._rocm_batch_matmul(batch_count=3, M=1280, N=768, K=1024, block_tile=(32, 32), outer_tile_k=64,
                                 test_name="test_rocm_batchgemm_vectorized_cache_non_square_transpose", tensorize=False,
-                                cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR],
+                                cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR],
                                 vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
 
     def test_rocm_batchgemm_vectorized_cache_non_square_tensorize_transpose(self) -> None:
         self._rocm_batch_matmul(batch_count=3, M=1280, N=768, K=1024, block_tile=(32, 32), outer_tile_k=64,
                                 test_name="test_rocm_batchgemm_vectorized_cache_non_square_tensorize_transpose", tensorize=True,
-                                cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR],
+                                cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR],
                                 vectorize=True, bind_order=[GridUnits.BLOCK_X, GridUnits.BLOCK_Y, GridUnits.THREAD_X, GridUnits.THREAD_Y])
 
-    def test_batchgemm_rocm_vectorized_cache_double_buffering_non_square(self) -> None:
+    def test_rocm_batchgemm_vectorized_cache_double_buffering_non_square(self) -> None:
         self._rocm_batch_matmul(batch_count=8, M=1280, N=768, K=1024, block_tile=(32, 32), outer_tile_k=64,
                                 test_name="test_rocm_batchgemm_vectorized_cache_double_buffering_non_square", tensorize=False,
                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True)
@@ -2332,7 +2383,7 @@ class TensorizeTest(unittest.TestCase):
                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, use_static_offsets=False)
 
     def test_rocm_batchgemm_vectorized_cache_double_buffering_tensorize_square_bsplit(self) -> None:
-        self._rocm_batch_matmul(batch_count=32, b_split=2, M=128, N=128, K=128, block_tile=(16, 16), outer_tile_k=16,
+        self._rocm_batch_matmul(batch_count=32, b_split=2, M=128, N=128, K=128, block_tile=(16, 16), outer_tile_k=16, cache=(True, True, False),
                                 test_name="test_rocm_batchgemm_vectorized_cache_double_buffering_tensorize_square_bsplit",
                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, use_static_offsets=False)
 
@@ -2638,11 +2689,11 @@ class TensorizeTest(unittest.TestCase):
         from accera import Package, Target
         from accera_gemm import benchmark_kernel
 
-        target = Target(Target.Model.AMD_MI100)
+        target = Target(Target.Model.NVIDIA_RTX_A6000)
         test_name = "test_benchmark"
 
-        plan, A, B, C = benchmark_kernel(target, 1024, 1024, 1024, False, False, "s", 32, 32, 256, Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR,
-                                         _MMAShape.M16xN16xK4_B1, False, True, True, 32, 32, _MMASchedulingPolicy.PASS_ORDER)
+        plan, A, B, C = benchmark_kernel(target, 768, 576, 1024, False, False, "h", 16, 64, 256, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR,
+                                         True, _CacheStrategy.BLOCKED, _CacheStrategy.STRIPED, _MMAShape.M16xN16xK16_B1, False, True, True, 1, 1, _MMASchedulingPolicy.PASS_ORDER)
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
 
@@ -2650,10 +2701,10 @@ class TensorizeTest(unittest.TestCase):
             function,
             package,
             test_name,
-            check_correctness=ROCM_AVAILABLE,
-            tolerance=1e-5,
+            check_correctness=CUDA_AVAILABLE,
+            tolerance=1e-2,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.MLIR | Package.Format.DEFAULT # Remove MLIR and it will break correctness
+            package_format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT # Remove MLIR and it will break correctness
         )
 
 if __name__ == '__main__':

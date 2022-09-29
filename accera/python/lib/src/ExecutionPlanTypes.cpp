@@ -53,6 +53,8 @@ namespace
             .value("THREAD_X", ir::value::Processor::ThreadX)
             .value("THREAD_Y", ir::value::Processor::ThreadY)
             .value("THREAD_Z", ir::value::Processor::ThreadZ)
+            .value("WARP_X", ir::value::Processor::WarpX)
+            .value("WARP_Y", ir::value::Processor::WarpY)
             .value("SEQUENTIAL", ir::value::Processor::Sequential)
             .export_values();
 

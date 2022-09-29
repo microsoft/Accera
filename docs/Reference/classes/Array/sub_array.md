@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.9)
+[//]: # (Version: v1.2.10)
 
-# Accera v1.2.9 Reference
+# Accera v1.2.10 Reference
 
 ## `accera.Array.sub_array(offsets, shape[, strides])`
 Creates a sub-array of a specific shape from an array. The sub-array is created from elements at specified offsets and strides into the original array.

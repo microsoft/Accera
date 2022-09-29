@@ -5,6 +5,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "CppPrinterUtils.h"
+#include "AffineDialectCppPrinter.h"
 #include <mlir/Dialect/GPU/GPUDialect.h>
 
 namespace mlir
@@ -55,16 +56,53 @@ namespace cpp_printer
         return mmaNamespace + "::layout_t::mem_" + getLayout(rowMajor);
     }
 
-    std::string getMemrefAccessStr(const bool sharedMem, std::string memrefVar, std::string row, std::string col, const int64_t leadingDim, const bool rowMajor)
+    int64_t getLeadingDim(MemRefType memRefType, const bool sharedMem, const bool rowMajor)
+    {
+        if (sharedMem)
+        {
+            auto shape = memRefType.getShape();
+            for (int i = shape.size() - 1; i >= 0; --i)
+            {
+                if (shape[i] != 1)
+                {
+                    return shape[i];
+                }
+            }
+
+            return 1;
+        }
+
+        int64_t offset;
+        SmallVector<int64_t, 2> strides;
+        (void)mlir::getStridesAndOffset(memRefType, strides, offset);
+        return rowMajor ? strides.end()[-2] : strides.back();
+    }
+
+    std::string getMemrefAccessStr(PrinterState& state, const bool sharedMem, std::string memrefVar, std::string accessMapName, mlir::Operation::operand_range indices, const bool rowMajor)
     {
         // When accessing from shared memory, no need to account for layout.
         if (sharedMem)
-            return std::string("&") + memrefVar + "[" + row + "][" + col + "]";
+        {
+            auto res = std::string("&") + memrefVar;
+            for (auto it = indices.begin(); it != indices.end(); ++it)
+            {
+                res.append("[")
+                    .append(state.nameState.getName(*it).str())
+                    .append("]");
+            }
 
-        if (!rowMajor)
-            std::swap(row, col);
+            return res;
+        }
 
-        return memrefVar + " + " + row + " * " + std::to_string(leadingDim) + " + " + col;
+        auto res = memrefVar + " + " + accessMapName + "(";
+        for (auto it = indices.begin(); it != indices.end(); ++it)
+        {
+            res.append(state.nameState.getName(*it).str());
+            if (it + 1 != indices.end())
+                res.append(", ");
+        }
+        res.append(")");
+        return res;
     }
 
     std::string getWmmaNamespace(PrinterState& state)
@@ -94,7 +132,20 @@ namespace cpp_printer
         }
     }
 
-    LogicalResult printFragmentType(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, const vir::MMAOperandType opType, const bool rowMajor = {})
+    Type GetROCMCastedOutputType(Type elementType)
+    {
+        // For FP16 or BF16 output, we need to load C in FP32 mode before passing to MFMA
+        if (elementType.isF16() || elementType.isBF16())
+            return FloatType::getF32(elementType.getContext());
+
+        // For I8 output, we need to load C in I32 mode before passing to MFMA
+        if (elementType.isInteger(8) || elementType.isInteger(16))
+            return IntegerType::get(elementType.getContext(), 32);
+
+        return elementType;
+    }
+
+    LogicalResult printFragmentType(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, const vir::MMAOperandType opType, const int totalBlocks, const int blocks, const bool rowMajor)
     {
         const auto ns = getWmmaNamespace(state);
         auto m = std::get<0>(matrixShape);
@@ -104,7 +155,15 @@ namespace cpp_printer
         os << ns << "::fragment<" << getFragmentEnum(state, opType) << ", ";
         os << m << ", " << n << ", " << k << ", ";
 
-        if (opType != vir::MMAOperandType::Acc && elementType.isF32())
+        if (state.hasRuntime(Runtime::ROCM))
+        {
+            if (opType == vir::MMAOperandType::Acc)
+                elementType = GetROCMCastedOutputType(elementType);
+
+            os << totalBlocks << ", " << blocks << ", ";
+        }
+
+        if (!state.hasRuntime(Runtime::ROCM) && opType != vir::MMAOperandType::Acc && elementType.isF32())
         {
             os << ns << "::precision::tf32";
         }
@@ -121,16 +180,16 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult printMMAMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value val, const vir::MMAOperandType operandType, const bool rowMajor)
+    LogicalResult printMMAMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value val, const vir::MMAOperandType operandType, const int totalBlocks, const int blocks, const bool rowMajor)
     {
         auto fragName = state.nameState.getOrCreateName(val, SSANameState::SSANameKind::Variable, "mmaMatrix_");
-        RETURN_IF_FAILED(printFragmentType(state, printer, elementType, matrixShape, operandType, rowMajor));
+        RETURN_IF_FAILED(printFragmentType(state, printer, elementType, matrixShape, operandType, totalBlocks, blocks, rowMajor));
         auto&& os = printer->getOStream();
         os << " " << fragName;
         return success();
     }
 
-    LogicalResult printConstantMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value dest, Value value)
+    LogicalResult printConstantMatrixOp(PrinterState& state, CppPrinter* printer, const std::tuple<int, int, int>& matrixShape, Value dest, Value value)
     {
         auto fragName = state.nameState.getName(dest);
         auto val = state.nameState.getOrCreateName(value, SSANameState::SSANameKind::Variable, "mmaFillValue_");
@@ -139,65 +198,96 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value src, Value dest, const vir::MMAOperandType operandType, std::pair<Value, Value> rowcol, const bool rowMajor)
+    LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, const std::tuple<int, int, int>& matrixShape, Value src, Value dest, const vir::MMAOperandType operandType, mlir::Operation::operand_range indices, bool rowMajor, Value blockTid, const bool useStaticOffsets)
     {
-        const auto rowIdx = state.nameState.getOrCreateName(rowcol.first, SSANameState::SSANameKind::Variable, "row_");
-        const auto colIdx = state.nameState.getOrCreateName(rowcol.second, SSANameState::SSANameKind::Variable, "col_");
         const auto ns = getWmmaNamespace(state);
         auto&& os = printer->getOStream();
         int64_t offset;
         SmallVector<int64_t, 2> strides;
         auto memRefType = src.getType().cast<MemRefType>();
         RETURN_IF_FAILED(mlir::getStridesAndOffset(memRefType, strides, offset));
-        const auto memspace = memRefType.getMemorySpaceAsInt();
-        const auto sharedMem = isPrivateOrWorkgroupMemSpace(memspace);
-        const auto ld = rowMajor || sharedMem ? strides[0] : strides[1];
-        assert(!sharedMem || memRefType.getRank() == 2); // sharedMem --> rank == 2
-
-        const auto resName = state.nameState.getName(dest);
-        os << ns << "::load_matrix_sync(" << resName << ", ";
-        os << getMemrefAccessStr(sharedMem, state.nameState.getName(src).str(), rowIdx.str(), colIdx.str(), ld, rowMajor) << ", " << ld;
         if (operandType == vir::MMAOperandType::Acc)
         {
-            os << ", " << getMmaLayout(ns, rowMajor);
+            rowMajor = strides.back() == 1;
+        }
+
+        const auto memspace = memRefType.getMemorySpaceAsInt();
+        const auto sharedMem = isPrivateOrWorkgroupMemSpace(memspace);
+        assert(!sharedMem || memRefType.getRank() >= 2); // sharedMem --> rank >= 2
+        const auto ld = getLeadingDim(memRefType, sharedMem, rowMajor);
+
+        const auto resName = state.nameState.getName(dest);
+        auto srcMap = memRefType.getLayout().getAffineMap();
+        assert(sharedMem || srcMap.getNumResults() == 1);
+        AffineDialectCppPrinter* affineDialectPrinter = dynamic_cast<AffineDialectCppPrinter*>(printer->getDialectPrinter("Affine"));
+        const auto accessMapName = affineDialectPrinter->makeAffineIdxFuncName(affineDialectPrinter->getFuncBaseName(srcMap), 0);
+        const auto srcMemrefStr = getMemrefAccessStr(state, sharedMem, state.nameState.getName(src).str(), accessMapName, indices, rowMajor);
+        os << ns << "::load_matrix_sync";
+        if (state.hasRuntime(Runtime::ROCM))
+        {
+            os << "<";
+            if (operandType == vir::MMAOperandType::Acc)
+                os << useStaticOffsets << ", " << getMmaLayout(ns, rowMajor) << ", ";
+            os << ld << ">(" << state.nameState.getName(blockTid) << ", " << resName << ", " << srcMemrefStr;
+        }
+        else
+        {
+            os << "(" << resName << ", " << srcMemrefStr << ", " << ld;
+            if (operandType == vir::MMAOperandType::Acc)
+                os << ", " << getMmaLayout(ns, rowMajor);
         }
         os << ")";
 
         return success();
     }
 
-    LogicalResult printComputeMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& resultShape, Value A, Value B, Value C, Value D)
+    LogicalResult printComputeMatrixOp(PrinterState& state, CppPrinter* printer, const std::tuple<int, int, int>& resultShape, Value A, Value B, Value C, Value D, const int cbsz, const int abid, const int blgp)
     {
         auto opA = state.nameState.getName(A);
         auto opB = state.nameState.getName(B);
         auto opC = state.nameState.getName(C);
         auto fragName = state.nameState.getName(D);
         auto&& os = printer->getOStream();
-        os << getWmmaNamespace(state) << "::mma_sync(" << fragName << ", " << opA << ", " << opB << ", " << opC << ")";
+        os << getWmmaNamespace(state) << "::mma_sync";
+        if (state.hasRuntime(Runtime::ROCM))
+        {
+            os << "<" << cbsz << ", " << abid << ", " << blgp << ">";
+        }
+        os << "(" << fragName << ", " << opA << ", " << opB << ", " << opC << ")";
         return success();
     }
 
-    LogicalResult printStoreMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, std::pair<Value, Value> rowcol)
+    LogicalResult printStoreMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, mlir::Operation::operand_range indices, Value blockTid, const bool useStaticOffsets)
     {
-        auto rowIdx = state.nameState.getOrCreateName(rowcol.first, SSANameState::SSANameKind::Variable, "row_");
-        auto colIdx = state.nameState.getOrCreateName(rowcol.second, SSANameState::SSANameKind::Variable, "col_");
         auto fragName = state.nameState.getName(src);
 
         int64_t offset;
         SmallVector<int64_t, 2> strides;
         auto memRefType = dest.getType().cast<MemRefType>();
         RETURN_IF_FAILED(mlir::getStridesAndOffset(memRefType, strides, offset));
-        const bool rowMajor = strides[1] == 1;
-        const auto ld = rowMajor ? strides[0] : strides[1];
+        const bool rowMajor = strides.back() == 1;
         const auto memspace = memRefType.getMemorySpaceAsInt();
         const auto sharedMem = isPrivateOrWorkgroupMemSpace(memspace);
         assert(!sharedMem || memRefType.getRank() == 2); // sharedMem --> rank == 2
+        const auto ld = getLeadingDim(memRefType, sharedMem, rowMajor);
 
         const auto ns = getWmmaNamespace(state);
+        auto dstMap = memRefType.getLayout().getAffineMap();
+        assert(dstMap.getNumResults() == 1);
+        AffineDialectCppPrinter* affineDialectPrinter = dynamic_cast<AffineDialectCppPrinter*>(printer->getDialectPrinter("Affine"));
+        const auto accessMapName = affineDialectPrinter->makeAffineIdxFuncName(affineDialectPrinter->getFuncBaseName(dstMap), 0);
+        const auto dstMemrefStr = getMemrefAccessStr(state, sharedMem, state.nameState.getName(dest).str(), accessMapName, indices, rowMajor);
         auto&& os = printer->getOStream();
-        os << ns << "::store_matrix_sync(";
-        os << getMemrefAccessStr(sharedMem, state.nameState.getName(dest).str(), rowIdx.str(), colIdx.str(), ld, rowMajor);
-        os << ", " << fragName << ", " << ld << ", " << getMmaLayout(ns, rowMajor) << ")";
+        os << ns << "::store_matrix_sync";
+        if (state.hasRuntime(Runtime::ROCM))
+        {
+            os << "<" << useStaticOffsets<< ", " << getMmaLayout(ns, rowMajor) << ", " << ld << ">(" << state.nameState.getName(blockTid) << ", " << dstMemrefStr << ", " << fragName;
+        }
+        else
+        {
+            os << "(" << dstMemrefStr << ", " << fragName << ", " << ld << ", " << getMmaLayout(ns, rowMajor);
+        }
+        os << ")";
         return success();
     }
 } // namespace cpp_printer

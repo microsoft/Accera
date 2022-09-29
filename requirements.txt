@@ -1,7 +1,7 @@
 setuptools>=42
 setuptools_scm
 pandas
-tomlkit>=0.11.1
+tomlkit>=0.11.1, <0.11.5
 wheel
 pybind11>=2.6.0
 six
@@ -9,7 +9,7 @@ conan
 lit
 packaging
 pytest
-hatlib>=0.0.23
+hatlib>=0.0.26
 varname
 py-cpuinfo
 termcolor

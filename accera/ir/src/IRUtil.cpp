@@ -316,7 +316,7 @@ namespace util
         int64_t nextId = currentId + 1;
         mlir::OpBuilder builder(where);
         vModuleOp->setAttr(UniqueIDAttrName, builder.getI64IntegerAttr(nextId));
-        
+
         return currentId;
     }
 
@@ -959,14 +959,26 @@ namespace util
         return builder.create<mlir::arith::IndexCastOp>(loc, builder.create<_TyOp>(loc, builder.getI32Type()), builder.getIndexType());
     }
 
-    mlir::Value GetGPUIndex(value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc)
+    mlir::Value getWarpIdOp(mlir::OpBuilder& builder, mlir::Location& loc, const mlir::gpu::Dimension dim, const vir::ExecutionRuntime execRuntime)
+    {
+        auto [warpSizeX, warpSizeY] = ResolveWarpSize(execRuntime).value();
+        const auto warpSize = warpSizeX * warpSizeY;
+        auto tid = builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), dim);
+        return builder.create<vir::WarpIdOp>(loc, builder.getIndexType(), tid, static_cast<uint8_t>(dim), warpSize);
+    }
+
+    mlir::Value GetGPUIndex(value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc, const vir::ExecutionRuntime execRuntime)
     {
         switch (idxType)
         {
         case value::Processor::ThreadX:
             return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::x);
+        case value::Processor::WarpX:
+            return getWarpIdOp(builder, loc, mlir::gpu::Dimension::x, execRuntime);
         case value::Processor::ThreadY:
             return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::y);
+        case value::Processor::WarpY:
+            return getWarpIdOp(builder, loc, mlir::gpu::Dimension::y, execRuntime);
         case value::Processor::ThreadZ:
             return builder.create<mlir::gpu::ThreadIdOp>(loc, builder.getIndexType(), mlir::gpu::Dimension::z);
         case value::Processor::BlockX:
@@ -990,101 +1002,6 @@ namespace util
         default:
             llvm_unreachable("Unexpected");
         }
-    }
-
-    value::Processor GetGPUProcessor(mlir::Operation* gpuOp)
-    {
-        assert(gpuOp != nullptr && "Can't get GPU Proc for null op");
-        return mlir::TypeSwitch<mlir::Operation*, value::Processor>(gpuOp)
-            .Case([&](mlir::gpu::ThreadIdOp threadIdOp) {
-                auto threadDim = threadIdOp.dimension();
-                if (threadDim == mlir::gpu::Dimension::x)
-                {
-                    return value::Processor::ThreadX;
-                }
-                else if (threadDim == mlir::gpu::Dimension::y)
-                {
-                    return value::Processor::ThreadY;
-                }
-                else if (threadDim == mlir::gpu::Dimension::z)
-                {
-                    return value::Processor::ThreadZ;
-                }
-                else
-                {
-                    assert(false && "Unrecognized thread dimension");
-                    return value::Processor::Sequential;
-                }
-            })
-            .Case([&](mlir::gpu::BlockIdOp blockIdOp) {
-                auto blockDim = blockIdOp.dimension();
-                if (blockDim == mlir::gpu::Dimension::x)
-                {
-                    return value::Processor::BlockX;
-                }
-                else if (blockDim == mlir::gpu::Dimension::y)
-                {
-                    return value::Processor::BlockY;
-                }
-                else if (blockDim == mlir::gpu::Dimension::z)
-                {
-                    return value::Processor::BlockZ;
-                }
-                else
-                {
-                    assert(false && "Unrecognized block dimension");
-                    return value::Processor::Sequential;
-                }
-            })
-            .Case([&](mlir::gpu::BlockDimOp blockDimOp) {
-                auto blockDim = blockDimOp.dimension();
-                if (blockDim == mlir::gpu::Dimension::x)
-                {
-                    return value::Processor::BlockDimX;
-                }
-                else if (blockDim == mlir::gpu::Dimension::y)
-                {
-                    return value::Processor::BlockDimY;
-                }
-                else if (blockDim == mlir::gpu::Dimension::z)
-                {
-                    return value::Processor::BlockDimZ;
-                }
-                else
-                {
-                    assert(false && "Unrecognized block dimension");
-                    return value::Processor::Sequential;
-                }
-            })
-            .Case([&](mlir::gpu::GridDimOp gridDimOp) {
-                auto gridDim = gridDimOp.dimension();
-                if (gridDim == mlir::gpu::Dimension::x)
-                {
-                    return value::Processor::GridDimX;
-                }
-                else if (gridDim == mlir::gpu::Dimension::y)
-                {
-                    return value::Processor::GridDimY;
-                }
-                else if (gridDim == mlir::gpu::Dimension::z)
-                {
-                    return value::Processor::GridDimZ;
-                }
-                else
-                {
-                    assert(false && "Unrecognized grid dimension");
-                    return value::Processor::Sequential;
-                }
-            })
-            .Case([&](mlir::arith::IndexCastOp castOp) {
-                // If this is an index cast, recurse to the arg of the index cast
-                auto inputVal = castOp.getIn();
-                return GetGPUProcessor(inputVal.getDefiningOp());
-            })
-            .Default([&](mlir::Operation*) {
-                assert(false && "Unsupported GPU op");
-                return value::Processor::Sequential;
-            });
     }
 
     int GetDimValByDimIndex(accera::ir::targets::Dim3 dims, mlir::gpu::Dimension dimIndex)
@@ -1248,11 +1165,11 @@ namespace util
         return lhsShape.size() == rhsShape.size() && std::equal(lhsShape.begin(), lhsShape.end(), rhsShape.begin());
     }
 
-#define IS_IMPLICITLY_CASTABLE_IF(sourceType, targetType, conditional)              \
-        if (source.isa<sourceType>() && target.isa<targetType>() && conditional)    \
-        {                                                                           \
-            return true;                                                            \
-        }
+#define IS_IMPLICITLY_CASTABLE_IF(sourceType, targetType, conditional)       \
+    if (source.isa<sourceType>() && target.isa<targetType>() && conditional) \
+    {                                                                        \
+        return true;                                                         \
+    }
 
 #define IS_IMPLICITLY_CASTABLE(sourceType, targetType) IS_IMPLICITLY_CASTABLE_IF(sourceType, targetType, true);
 

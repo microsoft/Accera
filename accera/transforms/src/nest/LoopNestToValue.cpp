@@ -55,7 +55,7 @@ namespace lnir = accera::ir::loopnest;
 
 namespace
 {
-int64_t log2(int64_t n) 
+int64_t log2(int64_t n)
 {
     // reasonably efficient for small n
     int64_t result = 0;
@@ -445,7 +445,7 @@ void ResolveRange(ScheduleOp& op, PatternRewriter& rewriter, lnir::Range& range)
         std::string symName = range.SymbolNameEnd();
         int start = symName.find_first_of(',');
         int end = symName.find_first_of('}');
-        int idx = std::stoi(symName.substr(start+1, end-start-1));
+        int idx = std::stoi(symName.substr(start + 1, end - start - 1));
         auto parentFuncOp = op.getOperation()->getParentOfType<ValueFuncOp>();
         auto endValue = parentFuncOp.getArgument(idx);
         range = lnir::Range{ range.Begin(), endValue, range.Increment() };
@@ -670,7 +670,7 @@ LogicalResult LowPrecisionIntAccumulateLoopRewrite::matchAndRewriteInt8(AffineFo
     }
 
     // Is one operand of binOp a load and the other a mul of values extended from int8?
-    // This is, does it match the pattern: 
+    // This is, does it match the pattern:
     //   (mul (ext (v1)) (ext (v2))) + (load ...)    or
     //   (load ...) + (mul (ext (v1)) (ext (v2)))
     value::BinOp mulOp;
@@ -1219,7 +1219,7 @@ LogicalResult GPUMappedAffineForOpRewrite::matchAndRewrite(mlir::AffineForOp aff
         OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPoint(&firstBlock, firstBlock.begin());
 
-        auto gpuValue = util::GetGPUIndex(processor, rewriter, loc);
+        auto gpuValue = util::GetGPUIndex(processor, rewriter, loc, util::ResolveExecutionRuntime(affineForOp));
         auto replacementVal = rewriter.create<mlir::AffineApplyOp>(loc, bindingMap, mlir::ValueRange{ gpuValue });
 
         // We're going to replace all uses of the affine loop's induction variable with GPU hardware mapping instead, so

@@ -699,35 +699,7 @@ namespace cpp_printer
 
     LogicalResult StdDialectCppPrinter::printPrologue()
     {
-        if (state.hasRuntime(Runtime::ROCM))
-        {
-            os << R"STD(
-__device__ __forceinline__ float cast(const bfloat16_t val)
-{
-    // Copied from /opt/rocm/include/hip/hip_bfloat16.h
-    union
-    {
-        uint32_t int32;
-        float    fp32;
-    } u = {uint32_t(val) << 16};
-    return u.fp32;
-}
-
-__device__ __forceinline__ bfloat16_t cast(const float f)
-{
-    // Copied from /opt/rocm/include/hip/hip_bfloat16.h
-    // This does trucation instead of proper rounding (which is slower)
-    union
-    {
-        float    fp32;
-        uint32_t int32;
-    } u = {f};
-    return uint16_t(u.int32 >> 16) | (!(~u.int32 & 0x7f800000) && (u.int32 & 0xffff));
-}
-
-)STD";
-        }
-        else if (!state.hasRuntime(Runtime::CUDA))
+        if (!state.hasRuntime(Runtime::CUDA))
         {
             os << R"STD(
 

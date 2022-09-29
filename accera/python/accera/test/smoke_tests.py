@@ -4710,7 +4710,7 @@ class SmokeTest(unittest.TestCase):
                 jj: target.GridUnit.THREAD_Y
             }
         )
-        plan.cache(C, index=iii, location=target.MemorySpace.TENSOR, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(C, index=iii, location=target.MemorySpace.PRIVATE, layout=Array.Layout.FIRST_MAJOR)
 
         test_name = "test_rocm_c_cache_private"
         package = Package()

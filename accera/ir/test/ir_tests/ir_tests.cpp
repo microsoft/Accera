@@ -2782,15 +2782,13 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_mfma_rocm", "[gpu][nest][ca
                 Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
                 Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
             .Define([=](Matrix A, Matrix B, Matrix C) {
-                Nest matmul({ M, N });
+                Nest matmul({ M, N, K });
                 auto indices = matmul.GetIndices();
                 Scalar i = indices[0];
                 Scalar j = indices[1];
+                Scalar k = indices[2];
 
                 matmul.Set([&]() {
-                    Scalar tidX = GPU::ThreadId().X();
-                    Scalar tidY = GPU::ThreadId().Y();
-
                     MatrixFragment mfmaAMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::A);
                     MatrixFragment mfmaBMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::B);
                     MatrixFragment mfmaCMatrix(MatrixFragment::Shape::M16xN16xK4_B1, MatrixFragment::Type::Acc);
@@ -2804,16 +2802,18 @@ TEST_CASE_METHOD(Fixture, "mlir_nest_test_gemm_tiled_mfma_rocm", "[gpu][nest][ca
                 auto sched = matmul.CreateSchedule();
                 auto [iOuter, iInner] = sched.Split(i, blockDim);
                 auto [jOuter, jInner] = sched.Split(j, blockDim);
+                auto [iInner1, iInner2] = sched.Split(iInner, blockDim);
+                auto [jInner1, jInner2] = sched.Split(jInner, blockDim);
                 auto plan = sched.CreateGPUPlan(gpuConfig);
                 plan.MapIndexToProcessor(iOuter, Processor::BlockY);
                 plan.MapIndexToProcessor(jOuter, Processor::BlockX);
-                plan.MapIndexToProcessor(iInner, Processor::ThreadY);
-                plan.MapIndexToProcessor(jInner, Processor::ThreadX);
+                plan.MapIndexToProcessor(iInner1, Processor::WarpY);
+                plan.MapIndexToProcessor(jInner1, Processor::WarpX);
             });
 
     accera::transforms::AcceraPassPipelineOptions opts{};
     opts.dumpPasses = true;
-    opts.dumpIntraPassIR = false;
+    opts.dumpIntraPassIR = true;
     opts.gpuOnly = true;
     opts.runtime = accera::value::ExecutionRuntime::ROCM;
 

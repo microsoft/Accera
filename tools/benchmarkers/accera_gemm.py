@@ -133,19 +133,26 @@ def print_log(verbose: bool, msg: str, color: str = None):
         else:
             print(colored(msg, color))
 
-def get_k(target: Target, mfma_tile: _MMAShape):
-    mma_shape = target.tensor_core_info.mma_shape_to_tuple(mfma_tile)
+def get_k(target: Target, mma_shape: _MMAShape):
+    mma_shape = target.tensor_core_info.mma_shape_to_tuple(mma_shape)
     return mma_shape[2]
 
-def get_leading_dim(target: Target, mfma_tile: _MMAShape):
-    mma_shape = target.tensor_core_info.mma_shape_to_tuple(mfma_tile)
+def get_m(target: Target, mma_shape: _MMAShape):
+    mma_shape = target.tensor_core_info.mma_shape_to_tuple(mma_shape)
     return mma_shape[0]
+
+def get_n(target: Target, mma_shape: _MMAShape):
+    mma_shape = target.tensor_core_info.mma_shape_to_tuple(mma_shape)
+    return mma_shape[1]
 
 def get_layout(transpose: bool):
     return Array.Layout.LAST_MAJOR if transpose else Array.Layout.FIRST_MAJOR
 
 def get_type(typeStr: str):
     return ScalarType.float32 if typeStr == 's' else ScalarType.float16
+
+def single_block_mma(mma_shape: _MMAShape):
+    return mma_shape != _MMAShape.M64xN64xK1_B4 and mma_shape != _MMAShape.M64xN64xK1_B2 and mma_shape != _MMAShape.M64xN64xK4_B4 and mma_shape != _MMAShape.M64xN64xK4_B2
 
 def create_gemm_nest_args(M: int, N: int, K: int, transA: bool, transB: bool, dtype):
     datatype = get_type(dtype)
@@ -176,7 +183,7 @@ def create_gemm_nest_args(M: int, N: int, K: int, transA: bool, transB: bool, dt
 def benchmark_kernel(
     target: Target, M: int, N: int, K: int, transA: bool, transB: bool, dtype, outer_tile_x: int, outer_tile_y: int,
     outer_tile_k: int, cacheA_layout, cacheB_layout, cache_C: bool, cacheA_strategy: _CacheStrategy, cacheB_strategy: _CacheStrategy,
-    mfma_tile, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy):
+    mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy):
     nest, (A, B, C) = create_gemm_nest_args(M, N, K, transA, transB, dtype)
     schedule = nest.create_schedule()
 
@@ -188,7 +195,7 @@ def benchmark_kernel(
         k: outer_tile_k
     })
 
-    tensor_splits = target.tensor_core_info.compute_tensor_splits(mfma_tile, num_total_passes)
+    tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes)
 
     iii, jjj, kkk = schedule.tile({
         ii: tensor_splits[0],
@@ -199,8 +206,8 @@ def benchmark_kernel(
     block_indices = (i, j)
     warp_indices = (ii, jj)
     tensor_indices = (iii, jjj, kkk)
-    plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=block_indices, warp_indices=warp_indices, tensor_indices=tensor_indices, outer_nest_order=outer_nest_order, mma_shape=mfma_tile)
-    plan.tensorize(indices=tensorization_indices, mma_shape=mfma_tile, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
+    plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=block_indices, warp_indices=warp_indices, tensor_indices=tensor_indices, outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+    plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
 
     plan.cache(
         A,
@@ -285,18 +292,24 @@ def get_variants(opts: GemmOpts, dtype, target):
     cacheA_strategy = [_CacheStrategy.BLOCKED, _CacheStrategy.STRIPED]
     cacheB_strategy = [_CacheStrategy.BLOCKED, _CacheStrategy.STRIPED]
 
-    def valid_variant(outer_t, outer_k, mfma_t, total_passes, fuse_factor):
-        leading_dim = get_leading_dim(target, mfma_t)
+    def valid_variant(outer_t, outer_k, mma_type, total_passes, fuse_factor, scheduling_policy):
+        # For single block MMA shapes, we don't need to test both scheduling policies and they will
+        # both effectively result in the same schedule. Just ignore BLOCK_ORDER in that case.
+        if single_block_mma(mma_type) and scheduling_policy == _MMASchedulingPolicy.BLOCK_ORDER:
+            return False
+
+        mma_m = get_m(target, mma_type)
+        mma_n = get_n(target, mma_type)
         cache_size_a = outer_t[0] * outer_k
         cache_size_b = outer_t[1] * outer_k
-        pass_width = total_passes * get_k(target, mfma_t)
+        pass_width = total_passes * get_k(target, mma_type)
 
         return total_passes % fuse_factor == 0 and (opts.m % outer_t[0] == 0) and (opts.n % outer_t[1] == 0) and (opts.k % outer_k == 0) and \
-                (outer_t[0] % leading_dim == 0) and (outer_t[1] % leading_dim == 0) and outer_k % pass_width == 0 and \
+                (outer_t[0] % mma_m == 0) and (outer_t[1] % mma_n == 0) and outer_k % pass_width == 0 and \
                 ((cache_size_a + cache_size_b) * ELEM_SIZE_BYTES <= target.max_shared_memory_per_block) and \
-                target.tensor_core_info.supports(datatype, datatype, mfma_t, total_passes, total_passes // fuse_factor)
+                target.tensor_core_info.supports(datatype, datatype, mma_type, total_passes, total_passes // fuse_factor)
 
-    return list(filter(lambda v: valid_variant(v[0], v[1], v[2], v[10], v[11]), product(combinations_with_replacement(outer_tiles, 2), k_split_reduced, mfma_tiles,
+    return list(filter(lambda v: valid_variant(v[0], v[1], v[2], v[10], v[11], v[12]), product(combinations_with_replacement(outer_tiles, 2), k_split_reduced, mfma_tiles,
                                                                                     use_static_offsets, double_buffering, vectorize, cacheA_layout, cacheB_layout,
                                                                                     cacheA_strategy, cacheB_strategy, num_total_passes_reduced, fuse_factor, scheduling_policy)))
 
@@ -473,9 +486,9 @@ def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, c
     try:
         assert float(opts.alpha) == 1., "alpha must be 1"
 
-        (outer_tile_x, outer_tile_y), k_split, mfma_tile, use_static_offsets, double_buffering, vectorize, cacheA_layout, cacheB_layout, cacheA_strategy, cacheB_strategy, num_total_passes, fuse_factor, scheduling_policy = variant
+        (outer_tile_x, outer_tile_y), k_split, mma_shape, use_static_offsets, double_buffering, vectorize, cacheA_layout, cacheB_layout, cacheA_strategy, cacheB_strategy, num_total_passes, fuse_factor, scheduling_policy = variant
         result = BenchmarkResult(opts=opts, dtype=dtype, gpu_id=gpu_id, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=dev_props)
-        result.mma_shape = mfma_tile.name
+        result.mma_shape = mma_shape.name
         result.use_static_offsets = use_static_offsets
         result.double_buffering = double_buffering
         result.vectorize = vectorize
@@ -490,14 +503,14 @@ def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, c
         result.k_split = k_split
         result.compiler_version = compiler_ver
         result.check = check_result
-        result.cache_C = target.runtime == Target.Runtime.CUDA or (mfma_tile == _MMAShape.M16xN16xK4_B1 or mfma_tile == _MMAShape.M16xN16xK16_B1)
+        result.cache_C = True
         if target.runtime == Target.Runtime.ROCM:
             result.target_rt = 'ROCM'
         elif target.runtime == Target.Runtime.CUDA:
             result.target_rt = 'CUDA'
 
         plan, A, B, C = benchmark_kernel(target, opts.m, opts.n, opts.k, opts.transA, opts.transB, dtype, outer_tile_x, outer_tile_y, k_split, cacheA_layout, cacheB_layout, result.cache_C,
-                                        cacheA_strategy, cacheB_strategy, mfma_tile, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy)
+                                        cacheA_strategy, cacheB_strategy, mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy)
         fn_name = f"{result.target_rt}_GEMM_{result.get_partition_key().replace('.', '_')}_{result.get_id().replace('.', '_')}"
         block_dims, grid_dims = plan._calc_block_grid_dim()
         is_valid_plan = plan._is_valid_block_dim(block_dims) and plan._is_valid_block_size(block_dims)
@@ -575,15 +588,22 @@ def gemm_runner(gpu_id: int, batch_size: int, output_prefix, device_q, result_ro
                     min_time_in_sec=1,
                     gpu_id=gpu_id
                 )
-            except hatlib.pyhip.hip.hipErrorInvalidConfiguration as e:
-                error = f"[Fail] Invalid kernel configuration for function {fn_name} on gpu {gpu_id}: {e}"
-                result.prog_out += error
-                print_log(verbose_logs, error, 'red')
             except Exception as e:
-                error = f"[Fail] Error while running function {fn_name} on gpu {gpu_id}: {e}"
+                if result.target_rt == 'ROCM':
+                    from hatlib.pyhip.hip import hipErrorInvalidConfiguration
+                    if isinstance(e, hipErrorInvalidConfiguration):
+                        error = f"[Fail] Invalid kernel configuration for function {fn_name} on gpu {gpu_id}: {e}"
+                        print_log(verbose_logs, error, 'red')
+                    else:
+                        error = f"[Fail] Error while running function {fn_name} on gpu {gpu_id}: {e}"
+                        print(colored(error, 'red'))
+                else:
+                    error = f"[Fail] Error while running function {fn_name} on gpu {gpu_id}: {e}"
+                    print(colored(error, 'red'))
+
                 result.prog_out += error
-                print(colored(error, 'red'))
-            else:
+
+            else: # if there is no exception
                 result.executable = len(results) > 0
                 result.prog_out += str(results)
                 if len(results) > 0:

@@ -980,7 +980,7 @@ Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t
         result = b.create<ir::value::AllocOp>(loc,
                                             memrefTy,
                                             alignment
-                                                ? llvm::Optional{ (int64_t)alignment }
+                                                ? llvm::Optional{ static_cast<uint64_t>(alignment) }
                                                 : llvm::None,
                                             static_cast<bool>(flags & AllocateFlags::Stack)
                                                 ? llvm::Optional{ accera::ir::value::MemoryAllocType::Stack }
@@ -992,7 +992,7 @@ Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t
         result = b.create<ir::value::AllocOp>(loc,
                                             memrefTy,
                                             alignment
-                                                ? llvm::Optional{ (int64_t)alignment }
+                                                ? llvm::Optional{ static_cast<uint64_t>(alignment) }
                                                 : llvm::None,
                                             static_cast<bool>(flags & AllocateFlags::Stack)
                                                 ? llvm::Optional{ accera::ir::value::MemoryAllocType::Stack }
@@ -1145,6 +1145,33 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
             {
                 fnOp->setAttr(ir::NoInlineAttrName, b.getUnitAttr());
             }
+            
+            // Set dynamic arg size references. This is a vector<vector<int>>, where each entry is either a reference to another
+            // argument's position or is -1. The outer vector has one entry per function argument, and each inner vector has one
+            // entry per dimension of that argument's shape
+            const auto& dynArgSizeReferences = decl.GetParameterArgSizeReferences();
+            // Check that the number of entries match and all references are in-bounds or are the sentinel -1 value
+            assert(dynArgSizeReferences.size() == argValues.size() && "Must have one arg size reference entry per function argument");
+            std::vector<mlir::Attribute> innerArrayAttrs;
+            for (const auto& [arg, argSizeRefs] : llvm::zip(argValues, dynArgSizeReferences))
+            {
+                auto rank = arg.GetLayout().NumDimensions();
+                if (rank == 0)
+                {
+                    // Treat rank-0 as rank-1 for this computation
+                    rank = 1;
+                }
+                assert(rank == static_cast<int64_t>(argSizeRefs.size()) && "Must have one arg size value per dimension of an argument");
+                for (const auto& argSizeRefIdx : argSizeRefs)
+                {
+                    bool inbounds = (argSizeRefIdx >= 0) && (argSizeRefIdx < static_cast<int64_t>(argValues.size()));
+                    assert((argSizeRefIdx == -1 || inbounds) && "Each arg size reference must refer to an inbounds argument or have a static sentinel value");
+                }
+                innerArrayAttrs.push_back(b.getI64ArrayAttr(argSizeRefs));
+            }
+            auto dynArgSizeRefAttr = b.getArrayAttr(innerArrayAttrs);
+            fnOp->setAttr(ir::DynamicArgSizeReferencesAttrName, dynArgSizeRefAttr);
+
             if (auto checkFunctions = decl.GetOutputVerifiers(); !checkFunctions.empty())
             {
                 // For each input_output parameter, set its check function

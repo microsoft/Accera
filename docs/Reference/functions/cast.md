@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.10)
+[//]: # (Version: v1.2.11)
 
-# Accera v1.2.10 Reference
+# Accera v1.2.11 Reference
 
 ## `accera.cast(value, type)`
 The `cast` operation converts a value from one `acc.ScalarType` to another.

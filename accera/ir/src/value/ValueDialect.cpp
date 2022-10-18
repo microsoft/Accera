@@ -617,7 +617,7 @@ static LogicalResult verify(MMALoadSyncOp op)
     const MemorySpace srcMemSpace{ srcType.getMemorySpaceAsInt() };
 
     if (srcMemSpace != MemorySpace::None && srcMemSpace != MemorySpace::Shared &&
-        srcMemSpace != MemorySpace::Global && srcMemSpace != MemorySpace::Private && srcMemSpace != MemorySpace::Tensor)
+        srcMemSpace != MemorySpace::Global && srcMemSpace != MemorySpace::Private && srcMemSpace != MemorySpace::MMAFragment)
         return op.emitError(
             "source memorySpace None, Shared, Private, Global or Tensor only allowed");
 
@@ -634,7 +634,7 @@ static LogicalResult verify(MMAStoreSyncOp op)
     const MemorySpace dstMemSpace{ dstMemrefType.getMemorySpaceAsInt() };
 
     if (dstMemSpace != MemorySpace::None && dstMemSpace != MemorySpace::Shared &&
-        dstMemSpace != MemorySpace::Global && dstMemSpace != MemorySpace::Private && dstMemSpace != MemorySpace::Tensor)
+        dstMemSpace != MemorySpace::Global && dstMemSpace != MemorySpace::Private && dstMemSpace != MemorySpace::MMAFragment)
         return op.emitError(
             "destination memorySpace of None, Global, Shared, Private or Tensor only allowed");
 

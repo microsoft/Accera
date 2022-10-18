@@ -94,9 +94,9 @@ namespace value
                 execTarget);
         }
 
-        Cache AddAutomaticCache(ViewAdapter target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, CacheStrategy strategy)
+        Cache AddAutomaticCache(ViewAdapter target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, const std::optional<uint64_t>& sharedMemOffset, CacheStrategy strategy)
         {
-            return { _scheduleOp, target, keySliceIndex, maxElements, strategy, mapping, allocation, memorySpace, _execTarget };
+            return { _scheduleOp, target, keySliceIndex, maxElements, sharedMemOffset, strategy, mapping, allocation, memorySpace, _execTarget };
         }
 
         Cache AddManualCache(std::variant<ViewAdapter, Cache*> target,
@@ -145,6 +145,7 @@ namespace value
                              MemorySpace memorySpace,
                              MemorySpace doubleBufferMemorySpace,
                              const DimensionOrder& dimOrder,
+                             const std::optional<uint64_t>& sharedMemOffset = {},
                              CacheStrategy strategy = CacheStrategy::Striped)
         {
             return { _scheduleOp,
@@ -155,6 +156,7 @@ namespace value
                      dimOrder,
                      elementType,
                      thrifty,
+                     sharedMemOffset,
                      strategy,
                      doubleBuffer,
                      vectorizationInfo,
@@ -430,14 +432,14 @@ namespace value
     {
     }
 
-    Cache GPUPlan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, CacheStrategy strategy, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace)
+    Cache GPUPlan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, CacheStrategy strategy, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace, const std::optional<uint64_t>& sharedMemOffset)
     {
-        return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, elementType, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder, strategy);
+        return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, elementType, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder, sharedMemOffset, strategy);
     }
 
-    Cache GPUPlan::AddCache(ViewAdapter target, int64_t maxElements, CacheStrategy strategy, MemorySpace memorySpace)
+    Cache GPUPlan::AddCache(ViewAdapter target, int64_t maxElements, CacheStrategy strategy, MemorySpace memorySpace, const std::optional<uint64_t>& sharedMemOffset)
     {
-        return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace, strategy);
+        return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace, sharedMemOffset, strategy);
     }
 
     void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy, bool _useRocWMMA)

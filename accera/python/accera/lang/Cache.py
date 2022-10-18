@@ -34,6 +34,7 @@ class Cache:
     strategy: _CacheStrategy = _CacheStrategy.STRIPED
     indexing: CacheIndexing = CacheIndexing.GLOBAL_TO_PHYSICAL
     allocation: _CacheAllocation = _CacheAllocation.AUTO
+    shared_memory_offset: int = 0
 
     @property
     def target_shape(self):

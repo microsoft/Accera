@@ -63,6 +63,7 @@ class Function:
     decorated: bool = True    # do we want to expose this?
     requested_args: tuple = ()    # args as provided into Package.add
     args: tuple = ()    # unpacked versions of the args (as native arrays)
+    arg_size_references: tuple = () # references from array args to dimension arg positions for dynamically sized arrays
     param_overrides: dict = field(default_factory=dict)    # overrides for constants
     definition: Callable = None
     no_inline: bool = False
@@ -87,7 +88,7 @@ class Function:
 
         if self.args:
             usages = [role_to_usage(arg.role) for arg in self.requested_args]
-            self._native_fn.parameters(self.args, usages)
+            self._native_fn.parameters(self.args, usages, self.arg_size_references)
 
             if self.output_verifiers:
                 self._native_fn.outputVerifiers(self.output_verifiers)
@@ -113,7 +114,7 @@ class Function:
         if self.public:
             api_decl = _DeclareFunction(self.name)
             if self.args:
-                api_decl.parameters(self.args, usages)
+                api_decl.parameters(self.args, usages, self.arg_size_references)
             if self.base_name:
                 api_decl.baseName(self.base_name)
             api_decl.public(True).decorated(False).headerDecl(True).rawPointerAPI(True).define(self._native_fn)

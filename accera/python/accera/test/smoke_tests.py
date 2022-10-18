@@ -2913,6 +2913,13 @@ class SmokeTest(unittest.TestCase):
                                                array_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32),
                                                cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32))
 
+    # Cache converting the type from uint to int and sign extending
+    def test_matmul_input_cache_element_type_uint_to_int(self) -> None:
+        test_name = "test_matmul_input_cache_element_type_uint8_to_int16"
+        self._matmul_cache_element_type_common(test_name,
+                                               array_element_types=(ScalarType.uint8, ScalarType.uint8, ScalarType.int32),
+                                               cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int32))
+
 
     def test_gpu_barrier_opt(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -4538,8 +4545,7 @@ class SmokeTest(unittest.TestCase):
             block_indices=(i, j),
             warp_indices=(ii, jj),
             tensor_indices=(iii, jjj, kkk),
-            outer_nest_order=outer_nest_order,
-            mma_shape=mma_shape
+            outer_nest_order=outer_nest_order
         )
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
@@ -4559,7 +4565,7 @@ class SmokeTest(unittest.TestCase):
             double_buffer_location=target.MemorySpace.PRIVATE,
             layout=Array.Layout.FIRST_MAJOR
         )
-        plan.cache(C, index=iii, location=target.MemorySpace.TENSOR, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(C, index=iii, location=target.MemorySpace.MMA_FRAGMENT, layout=Array.Layout.FIRST_MAJOR)
 
         test_name = "test_rocm_cache_double_buffering__with_c_cache_tensorize"
         package = Package()
@@ -4573,90 +4579,6 @@ class SmokeTest(unittest.TestCase):
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
             package_format=Package.Format.DEFAULT
         )
-
-    # def test_rocm_cache_double_buffering__with_c_cache_tensorize(self) -> None:
-    #     from accera import Array, Nest, Package, ScalarType, Target
-
-    #     M = 1024
-    #     N = 1024
-    #     K = 1024
-    #     outer_tile_x = 64
-    #     outer_tile_y = outer_tile_x
-    #     outer_tile_k = 64
-
-    #     A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-    #     B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-    #     C = Array(
-    #         role=Array.Role.INPUT_OUTPUT,
-    #         element_type=ScalarType.float32,
-    #         shape=(M, N),
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
-
-    #     nest = Nest(shape=(M, N, K))
-    #     i, j, k = nest.get_indices()
-
-    #     @nest.iteration_logic
-    #     def _():
-    #         C[i, j] += A[i, k] * B[k, j]
-
-    #     schedule = nest.create_schedule()
-
-    #     ii, jj, kk = schedule.tile({
-    #         i: outer_tile_x,
-    #         j: outer_tile_y,
-    #         k: outer_tile_k
-    #     })
-
-    #     mma_shape = _MMAShape.M16xN16xK4_B1
-    #     num_total_passes = 4
-    #     target = Target(Target.Model.AMD_MI100)
-    #     tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=num_total_passes)
-
-    #     iii, jjj, kkk = schedule.tile({
-    #         ii: tensor_splits[0],
-    #         jj: tensor_splits[1],
-    #         kk: tensor_splits[2]
-    #     })
-    #     outer_nest_order = (i, j, k, ii, jj, kk)
-    #     plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape, num_total_passes=num_total_passes)
-    #     plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
-
-    #     plan.cache(
-    #         A,
-    #         index=ii,
-    #         double_buffer=True,
-    #         location=target.MemorySpace.SHARED,
-    #         double_buffer_location=target.MemorySpace.PRIVATE,
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
-    #     plan.cache(
-    #         B,
-    #         index=ii,
-    #         double_buffer=True,
-    #         location=target.MemorySpace.SHARED,
-    #         double_buffer_location=target.MemorySpace.PRIVATE,
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
-    #     plan.cache(
-    #         C,
-    #         index=iii,
-    #         location=target.MemorySpace.PRIVATE,
-    #         layout=Array.Layout.FIRST_MAJOR
-    #     )
-
-    #     test_name = "test_rocm_cache_double_buffering__with_c_cache_tensorize"
-    #     package = Package()
-    #     function = package.add(plan, args=(A, B, C), base_name=test_name)
-
-    #     self._verify_matrix_multiplication_function(
-    #         function,
-    #         package,
-    #         test_name,
-    #         check_correctness=ROCM_AVAILABLE,
-    #         file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-    #         package_format=Package.Format.DEFAULT
-    #     )
 
     def test_rocm_c_cache_private(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -4893,8 +4815,7 @@ class SmokeTest(unittest.TestCase):
             block_indices=(i, j),
             warp_indices=(ii, jj),
             tensor_indices=(iii, jjj, kkk),
-            outer_nest_order=outer_nest_order,
-            mma_shape=mma_shape
+            outer_nest_order=outer_nest_order
         )
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape)
 
@@ -4961,8 +4882,7 @@ class SmokeTest(unittest.TestCase):
             block_indices=(i, j),
             warp_indices=(ii, jj),
             tensor_indices=(iii, jjj, kkk),
-            outer_nest_order=outer_nest_order,
-            mma_shape=mma_shape
+            outer_nest_order=outer_nest_order
         )
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape)
 
@@ -5050,8 +4970,7 @@ class SmokeTest(unittest.TestCase):
             block_indices=(i, j),
             warp_indices=(ii, jj),
             tensor_indices=(iii, jjj, kkk),
-            outer_nest_order=outer_nest_order,
-            mma_shape=mma_shape
+            outer_nest_order=outer_nest_order
         )
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 

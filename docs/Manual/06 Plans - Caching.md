@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.10)
+[//]: # (Version: v1.2.11)
 
 # Section 6: Plans - Caching
 In the previous sections, we defined the logic and then scheduled its iterations. Now, let's move on to completing the implementation with target-specific options.

@@ -663,7 +663,7 @@ bool ContainsSameElements(const std::vector<ElementType>& left, const std::vecto
 
 bool IsMemspaceLocal(const v::MemorySpace memSpace)
 {
-    return memSpace == v::MemorySpace::Private || memSpace == v::MemorySpace::Tensor;
+    return memSpace == v::MemorySpace::Private || memSpace == v::MemorySpace::MMAFragment;
 }
 
 struct LoopnestInfo
@@ -1308,7 +1308,7 @@ bool IsCacheParametricOnGPUProc(mlir::Attribute cacheMemSpace, v::Processor gpuP
     {
     case v::MemorySpace::Private:
         [[fallthrough]];
-    case v::MemorySpace::Tensor:
+    case v::MemorySpace::MMAFragment:
         return true; // Every thread has its own private memory buffer, so it should be parametric regardless of what is bound
     case v::MemorySpace::Shared:
         return isBlock;
@@ -1600,7 +1600,7 @@ MakeCacheOp UpdateActiveBlockCacheShape(PatternRewriter& rewriter,
 
     mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
     rewriter.setInsertionPoint(baseMakeCacheOp);
-    auto replacementOp = rewriter.create<MakeCacheOp>(baseMakeCacheOp.getLoc(), newCacheType, baseMakeCacheOp.memorySpace());
+    auto replacementOp = rewriter.create<MakeCacheOp>(baseMakeCacheOp.getLoc(), newCacheType, baseMakeCacheOp.memorySpace(), baseMakeCacheOp.dynamicMemoryOffset());
     return replacementOp;
 }
 
@@ -1690,7 +1690,8 @@ MakeCacheOp UpdateActiveBlockCacheAccess(PatternRewriter& rewriter,
                                                       activeBlockToCacheMap,
                                                       arrayToCacheMap,
                                                       offsetAccessIndices,
-                                                      multiCacheAccessIndices);
+                                                      multiCacheAccessIndices,
+                                                      shapedMakeCacheOp.dynamicMemoryOffset());
 
     rewriter.eraseOp(shapedMakeCacheOp);
     return replacementOp;
@@ -2171,7 +2172,7 @@ MultiCacheLoopInfo CreateMultiCacheLoops(mlir::OpBuilder& builder, MultiCacheCop
 
     if (!unpermutedExternalSymbols.empty())
     {
-        if (static_cast<v::MemorySpace>(copyOp.cache().getType().cast<MemRefType>().getMemorySpaceAsInt()) == v::MemorySpace::Tensor)
+        if (static_cast<v::MemorySpace>(copyOp.cache().getType().cast<MemRefType>().getMemorySpaceAsInt()) == v::MemorySpace::MMAFragment)
         {
             // TODO: For the tensor caching case, do not need to reorder the IVs.
             result.activeBlockExternalSymbols = unpermutedExternalSymbols;
@@ -2300,7 +2301,7 @@ LogicalResult MakeCacheOpLowering::matchAndRewrite(MakeCacheOp makeCacheOp, Patt
         return success();
     }
 
-    auto cacheBaseType = makeCacheOp.cache().getType();
+    auto cacheBaseType = cacheArray.getType();
     assert(cacheBaseType.isa<MemRefType>() && "Cache must be a memref");
     auto cacheType = cacheBaseType.cast<MemRefType>();
     auto elementBitWidth = cacheType.getElementTypeBitWidth();
@@ -2340,7 +2341,7 @@ LogicalResult MakeCacheOpLowering::matchAndRewrite(MakeCacheOp makeCacheOp, Patt
 
         break;
     }
-    case v::MemorySpace::Tensor: {
+    case v::MemorySpace::MMAFragment: {
         auto tensorizationInfo = GetTensorizationInfo(vLambdaOp);
         const v::MMAOp mmaOp(tensorizationInfo.dim);
         auto mmaType = mlir::MemRefType::get({ mmaOp.getOperandShape(MMAOperandType::Acc) }, cacheType.getElementType(), MemRefLayoutAttrInterface{}, rewriter.getI32IntegerAttr(static_cast<int32_t>(memSpace)));
@@ -2349,9 +2350,16 @@ LogicalResult MakeCacheOpLowering::matchAndRewrite(MakeCacheOp makeCacheOp, Patt
 
         break;
     }
+    case v::MemorySpace::Shared:
+        if (makeCacheOp.dynamicMemoryOffset())
+        {
+            cacheGlobalBuffer = rewriter.create<v::AllocOp>(loc, cacheType, makeCacheOp.dynamicMemoryOffset());
+            break;
+        }
+        [[fallthrough]];
     default:
         // Shared or Private
-        cacheGlobalBuffer = rewriter.create<v::AllocOp>(loc, cacheType, llvm::None);
+        cacheGlobalBuffer = rewriter.create<v::AllocOp>(loc, cacheType);
     }
 
     rewriter.replaceOp(makeCacheOp, ValueRange{ cacheGlobalBuffer });
@@ -2376,7 +2384,7 @@ LogicalResult CacheZeroOpRewrite::matchAndRewrite(CacheZeroOp cacheZeroOp, Patte
     auto zeroType = util::ToSignlessMLIRType(rewriter, innerElementType);
     auto constantZero = rewriter.create<ConstantOp>(loc, rewriter.getZeroAttr(zeroType));
 
-    if (static_cast<v::MemorySpace>(cacheType.getMemorySpaceAsInt()) == v::MemorySpace::Tensor)
+    if (static_cast<v::MemorySpace>(cacheType.getMemorySpaceAsInt()) == v::MemorySpace::MMAFragment)
     {
         auto&& tensorizationInfo = cacheZeroOp.tensorizationInfo();
         rewriter.create<MMAFillSyncOp>(loc, cache, constantZero, static_cast<uint32_t>(tensorizationInfo->getValue().dim));
@@ -2724,7 +2732,7 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
 
             auto loadsPerThread = totalLoadsPerThread / vectorSizePerThread;
 
-            if (cacheMemRefSpace == v::MemorySpace::Tensor)
+            if (cacheMemRefSpace == v::MemorySpace::MMAFragment)
             {
                 std::vector<mlir::Value> indices;
                 auto&& tensorizationInfo = cacheCopyOp.tensorizationInfo()->getValue();
@@ -3036,7 +3044,7 @@ LogicalResult ActiveBlockCacheReduceOpRewrite::matchAndRewrite(ActiveBlockCacheR
     unsigned rank = memRefType.getRank();
     assert(lbMaps.size() == ubMaps.size() && "mismatched number of lb and ub maps");
 
-    if (cacheMemRefSpace == v::MemorySpace::Tensor)
+    if (cacheMemRefSpace == v::MemorySpace::MMAFragment)
     {
         std::vector<mlir::Value> indices;
         auto&& tensorizationInfo = cacheReduceOp.tensorizationInfo()->getValue();
@@ -4275,11 +4283,11 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 if (isActiveBlockCache)
                 {
                     auto cacheSrcMemrefType = cacheSrc.getType().cast<MemRefType>();
-                    if (static_cast<v::MemorySpace>(cacheSrcMemrefType.getMemorySpaceAsInt()) == v::MemorySpace::Tensor)
+                    if (static_cast<v::MemorySpace>(cacheSrcMemrefType.getMemorySpaceAsInt()) == v::MemorySpace::MMAFragment)
                     {
                         assert(operandType == v::MMAOperandType::Acc);
 
-                        if (static_cast<v::MemorySpace>(loadOp.dest().getType().cast<MemRefType>().getMemorySpaceAsInt()) != v::MemorySpace::Tensor)
+                        if (static_cast<v::MemorySpace>(loadOp.dest().getType().cast<MemRefType>().getMemorySpaceAsInt()) != v::MemorySpace::MMAFragment)
                         {
                             auto allocOp = loadOp.dest().getDefiningOp<MMAAllocSyncOp>();
                             // Make sure the operands of the MMALoadOp/MMAStoreOp are not changed, this will prevent them from getting cleaned up properly
@@ -4315,9 +4323,9 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
                 if (isActiveBlockCache)
                 {
                     auto cacheSrcMemrefType = cacheSrc.getType().cast<MemRefType>();
-                    if (static_cast<v::MemorySpace>(cacheSrcMemrefType.getMemorySpaceAsInt()) == v::MemorySpace::Tensor)
+                    if (static_cast<v::MemorySpace>(cacheSrcMemrefType.getMemorySpaceAsInt()) == v::MemorySpace::MMAFragment)
                     {
-                        if (static_cast<v::MemorySpace>(storeOp.src().getType().cast<MemRefType>().getMemorySpaceAsInt()) != v::MemorySpace::Tensor)
+                        if (static_cast<v::MemorySpace>(storeOp.src().getType().cast<MemRefType>().getMemorySpaceAsInt()) != v::MemorySpace::MMAFragment)
                         {
                             auto allocOp = storeOp.src().getDefiningOp<MMAAllocSyncOp>();
                             rewriter.eraseOp(storeOp);
@@ -4850,7 +4858,8 @@ MakeCacheOp CreateDoubleBufferTempArray(mlir::OpBuilder& builder,
                                        info.activeBlockToCacheMap,
                                        tempArrayAccessMap,
                                        tempArrayOffsetIndices,
-                                       tempArrayMultiCacheAccessIndices);
+                                       tempArrayMultiCacheAccessIndices,
+                                       llvm::None);
 }
 
 void CreateCacheMappingRegionHelper(mlir::PatternRewriter& rewriter,
@@ -5228,7 +5237,7 @@ LogicalResult BeginCreateCacheOpRewrite::matchAndRewrite(BeginCreateCacheOp begi
             {
                 [[maybe_unused]] bool inputOnlyCache = !multiCacheInfo.arrayAccessInfo.valueWritten;
                 assert(inputOnlyCache && "Double buffering is only supported for read-only caches");
-                assert(multiCacheInfo.multiCache.memorySpace() != v::MemorySpace::Tensor && "Tensor caching cannot be used with double-buffering.");
+                assert(multiCacheInfo.multiCache.memorySpace() != v::MemorySpace::MMAFragment && "Tensor caching cannot be used with double-buffering.");
 
                 auto doubleBufferTempArray = CreateDoubleBufferTempArray(rewriter, multiCacheInfo, beginCreateCacheOp);
 
@@ -5369,7 +5378,7 @@ LogicalResult BeginCreateCacheOpRewrite::matchAndRewrite(BeginCreateCacheOp begi
                     // Create the prologue cache data moving op
                     mlir::Operation* prologueOp;
                     // We can only use CacheZeroOp with Tensor cache when we know beta == 0, since there is no way to just accumulate fragments.
-                    if (/*TODO: add beta check*/ multiCacheInfo.multiCache.memorySpace() != v::MemorySpace::Tensor && (!multiCacheInfo.arrayAccessInfo.valueRead || multiCacheInfo.arrayAccessInfo.onlyReadsAreAccumulates))
+                    if (/*TODO: add beta check*/ multiCacheInfo.multiCache.memorySpace() != v::MemorySpace::MMAFragment && (!multiCacheInfo.arrayAccessInfo.valueRead || multiCacheInfo.arrayAccessInfo.onlyReadsAreAccumulates))
                     {
                         prologueOp = builder.create<CacheZeroOp>(loc, multiCacheInfo.multiCache, beginCreateCacheOp.thrifty(), tensorizeInfoAttr);
                     }
@@ -5421,7 +5430,7 @@ LogicalResult BeginCreateCacheOpRewrite::matchAndRewrite(BeginCreateCacheOp begi
                         //       so check that reads occurred and that they were all used for accumulates
 
                         mlir::Operation* epilogueOp;
-                        if (/*TODO: add beta check*/ multiCacheInfo.multiCache.memorySpace() != v::MemorySpace::Tensor && multiCacheInfo.arrayAccessInfo.valueRead && multiCacheInfo.arrayAccessInfo.onlyReadsAreAccumulates)
+                        if (/*TODO: add beta check*/ multiCacheInfo.multiCache.memorySpace() != v::MemorySpace::MMAFragment && multiCacheInfo.arrayAccessInfo.valueRead && multiCacheInfo.arrayAccessInfo.onlyReadsAreAccumulates)
                         {
                             if (beginCreateCacheOp.activeBlockCache())
                             {

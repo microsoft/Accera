@@ -19,6 +19,7 @@ import gemm_opts
 import git
 import shutil
 from datetime import datetime
+import torch
 
 def get_current_commit_id():
     repo = git.Repo(search_parent_directories=True)
@@ -40,7 +41,36 @@ def exec_ext_benchmarker(gpu_id: int, gemm: gemm_opts.GemmOpts, datatype, benchm
     proc.check_returncode()
     return proc.stdout
 
-def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int, git_branch: str, target_name: str, output_prefix: str, rocblas: str, composable_kernel: str, cublas: str, cutlass: str, available_gpus, container_name, verbose, check, compiler_ver, deviceProperties):
+def run_pytorch_matmul(gemm: gemm_opts.GemmOpts, dtype, gpu_id: int):
+    cuda = torch.device('cuda')
+    type = torch.float32 if dtype == "s" else torch.float16
+    with torch.cuda.device(gpu_id):
+        a = torch.randn(gemm.m, gemm.k, dtype=type, device=cuda)
+        b = torch.randn(gemm.k, gemm.n, dtype=type, device=cuda)
+        c = torch.randn(gemm.m, gemm.n, dtype=type, device=cuda)
+        if gemm.transA:
+            a = a.t().contiguous().t()
+
+        if gemm.transB:
+            b = b.t().contiguous().t()
+
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+
+        # Warmup
+        c = (gemm.alpha * torch.matmul(a, b)) + (gemm.beta * c)
+
+        # Under timer
+        start.record()
+        c = (gemm.alpha * torch.matmul(a, b)) + (gemm.beta * c)
+        end.record()
+
+        torch.cuda.synchronize()
+        time_taken_ms = start.elapsed_time(end)
+        throughput_tflops = 2 * gemm.m * gemm.n * gemm.k * 1.0e-9 / time_taken_ms
+    return time_taken_ms, throughput_tflops, f"Total time taken: {time_taken_ms} ms, {throughput_tflops} TFlops"
+
+def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int, git_branch: str, target_name: str, output_prefix: str, category: str, rocblas: str, composable_kernel: str, cublas: str, cutlass: str, pytorch: str, available_gpus, container_name, verbose, check, compiler_ver, deviceProperties):
     result_dir = os.path.split(output_prefix)[0] or '.'
     if not os.path.isdir(result_dir):
         os.makedirs(result_dir)
@@ -48,36 +78,43 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int
     commit_id = get_current_commit_id()
     commit_datetime = get_current_commit_datetime()
     commit_branch = git_branch.replace("refs/heads/", "") if git_branch else get_current_branch()
+    result_rows = []
 
-    if rocblas or cublas:
-        benchmark_tool_name = 'rocblas' if rocblas else 'cublas'
+    if rocblas or cublas or pytorch:
+        benchmark_tool_name = 'pytorch' if pytorch else ('rocblas' if rocblas else 'cublas')
         benchmark_tool = rocblas if rocblas else cublas
         print(f'Running {benchmark_tool_name} baseline benchmarks')
 
-        result_rows = []
         for gemm in data:
             best_time = 0.0
             best_throughput = 0.0
-            gpu = 0
+            best_gpu = 0
             prog_out = ''
             for gpu_id in range(len(available_gpus)):
                 if available_gpus[gpu_id]:
                     print(f"Processing input: {gemm} on GPU {gpu_id}")
-                    output = exec_ext_benchmarker(gpu_id, gemm, dtype, benchmark_tool)
+                    if pytorch:
+                        time_taken_ms, throughput, output = run_pytorch_matmul(gemm, dtype, gpu_id)
+                    else:
+                        output = exec_ext_benchmarker(gpu_id, gemm, dtype, benchmark_tool)
+                        tokens = output.split(",")
+                        throughput = float(tokens[len(tokens) - 1].rstrip())
+                        time_taken_ms = tokens[len(tokens) - 2]
+
                     print(output)
-                    tokens = output.split(",")
-                    if float(tokens[len(tokens) - 1].rstrip()) > best_throughput:
-                        best_throughput = float(tokens[len(tokens) - 1].rstrip())
-                        best_time = tokens[len(tokens) - 2]
-                        gpu = gpu_id
+                    if throughput > best_throughput:
+                        best_throughput = throughput
+                        best_time = time_taken_ms
+                        best_gpu = gpu_id
                         prog_out = output
             else:
-                benchmarkResult = accera_gemm.BenchmarkResult(opts=gemm, dtype=dtype, gpu_id=gpu, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=deviceProperties[gpu])
+                benchmarkResult = accera_gemm.BenchmarkResult(opts=gemm, dtype=dtype, gpu_id=best_gpu, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=deviceProperties[best_gpu])
                 benchmarkResult.compiler_version = compiler_ver
-                benchmarkResult.target_rt = 'ROCM' if rocblas else 'CUDA'
+                benchmarkResult.target_rt = pytorch if pytorch else ('ROCM' if rocblas else 'CUDA')
                 benchmarkResult.compilable = True
                 benchmarkResult.executable = True
                 benchmarkResult.time_ms = best_time
+                benchmarkResult.category = category
                 benchmarkResult.TFlops = str(best_throughput)
                 benchmarkResult.prog_out = prog_out
                 result_rows.append(benchmarkResult.get_result_row())
@@ -86,7 +123,6 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int
             cosmosdb.show_benchmark_summary(benchmark_tool_name)
     elif composable_kernel:
         print('Running composable_kernel baseline benchmarks')
-        result_rows = []
         for gemm in data:
             print(f"Processing input: {gemm} on GPU 0")
             datatype = '0' if dtype == 's' else '1'
@@ -109,6 +145,7 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int
             benchmarkResult.target_rt = 'ROCM'
             benchmarkResult.compilable = True
             benchmarkResult.executable = True
+            benchmarkResult.category = category
             benchmarkResult.prog_out = proc.stdout
             matches = re.search('Best Perf.*: (.+) ms, (.+) TFlops', proc.stdout)
             if matches:
@@ -123,7 +160,6 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int
             cosmosdb.show_benchmark_summary("composable_kernel")
     elif cutlass:
         print('Running CUTLASS baseline benchmarks')
-        result_rows = []
         for gemm in data:
             print(f"Processing input: {gemm} on GPU 0")
             datatype = 'f32' if dtype == 's' else 'f16'
@@ -138,6 +174,7 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int
             benchmarkResult.target_rt = 'CUDA'
             benchmarkResult.compilable = True
             benchmarkResult.executable = True
+            benchmarkResult.category = category
             benchmarkResult.prog_out = proc.stdout
 
             # Read the cutlass result file and find max throughput
@@ -161,7 +198,7 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int
     else:
         for gemm in data:
             print(f"\nProcessing input: {gemm}")
-            accera_gemm.benchmark_gemm(gemm, dtype, batch_size, output_prefix, available_gpus, container_name, verbose, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, check, deviceProperties)
+            accera_gemm.benchmark_gemm(gemm, dtype, batch_size, output_prefix, category, available_gpus, container_name, verbose, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, check, deviceProperties)
         # else:
         #     if container_name:
         #         cosmosdb.show_benchmark_summary(container_name)
@@ -228,8 +265,10 @@ def main(args=[]):
     parser.add_argument('-z', '--string', help='input config string (csv, semi-colon per row)', required=False)
     parser.add_argument('-t', '--target', help='The target the emitter is emitting HAT package for')
     parser.add_argument('-o', '--output', help='The output prefix', default="results")
+    parser.add_argument('-ct', '--category', help='The category of gemm inputs (used for classification), e.g. bert, cube etc.', default="")
     parser.add_argument('-roc', '--rocblas', help="The path to the rocblas_gemm tool", required=False)
     parser.add_argument('-cu', '--cublas', help="The path to the cublas_gemm tool", required=False)
+    parser.add_argument('-pt', '--pytorch', help="The platform to use for PyTorch, e.g. ROCM or CUDA", required=False)
     parser.add_argument('-ck', '--composable_kernel', help="The path to the composable-kernel tool", required=False)
     parser.add_argument('-cl', '--cutlass', help="The path to the cutlass tool", required=False)
     parser.add_argument('-u', '--upload', help="Specify the CosmosDB container name to upload the results to", required=False)
@@ -280,9 +319,9 @@ def main(args=[]):
 
     deviceProperties, compiler_ver = prepare_system_for_benchmark(args.target, available_gpus)
 
-    benchmark_gemm_shapes(gemm_inputs, args.type, args.batch_size, args.branch, args.target, args.output,
-                            args.rocblas, args.composable_kernel, args.cublas, args.cutlass, available_gpus,
-                            args.upload, args.verbose, args.check, compiler_ver, deviceProperties)
+    benchmark_gemm_shapes(gemm_inputs, args.type, args.batch_size, args.branch, args.target, args.output, args.category,
+                            args.rocblas, args.composable_kernel, args.cublas, args.cutlass, args.pytorch,
+                            available_gpus, args.upload, args.verbose, args.check, compiler_ver, deviceProperties)
 
     print("Cleaning up output directory after benchmark")
     if args.no_janitor: # This is the correct logic since this option is a store_false

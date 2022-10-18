@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.10)
+[//]: # (Version: v1.2.11)
 
-# Accera v1.2.10 Reference
+# Accera v1.2.11 Reference
 
 ## `accera.create_dimensions([role])`
 Creates placeholder dimensions of the specified role. These represent runtime `Array` and `Nest` dimensions.

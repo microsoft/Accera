@@ -59,7 +59,7 @@ namespace cpp_printer
 
         llvm::StringRef getTempName();
 
-        llvm::StringRef getName(mlir::Value val);
+        llvm::StringRef getName(mlir::Value val) const;
 
         void addConstantValue(mlir::Value name, mlir::Attribute val);
 
@@ -122,7 +122,7 @@ namespace cpp_printer
         llvm::ScopedHashTable<llvm::StringRef, char> usedNames;
 
         /// allocator for name StringRef
-        llvm::BumpPtrAllocator nameAllocator;
+        mutable llvm::BumpPtrAllocator nameAllocator;
     };
 
     // This is a bitmask flag because right now, the printer goes through the module as a whole and "discovers" the runtimes
@@ -253,6 +253,8 @@ namespace cpp_printer
                                        bool forceSignedness = false,
                                        bool isSigned = false);
 
+        std::string getMemRefAccessOffset(const bool usingBrackets, MemRefType memRefType, Operation::operand_range indices) const;
+
         /// Print the memref load or store
         LogicalResult printMemRefLoadOrStore(bool isLoad, Value memref, MemRefType memRefType, Operation::operand_range indices, Value targetOrSrc);
 
@@ -303,7 +305,7 @@ namespace cpp_printer
         LogicalResult printOperationOperands(Operation* op);
 
         /// print the given block
-        LogicalResult printBlock(Block* block, bool printParens = true, bool printBlockTerminator = true);
+        LogicalResult printBlock(Block* block, bool printParens = true, bool printBlockTerminator = true, std::string prologueStr = "");
 
         /// print intrinsic calls
         LogicalResult printIntrinsicCallOp(Operation* callOp, Operation* defFuncOp);
@@ -321,7 +323,7 @@ namespace cpp_printer
         LogicalResult printRegion(Region& region, bool printParens = true, bool printBlockTerminator = true);
 
         /// Returns the dialect printer for the given dialect by name.
-        DialectCppPrinter* getDialectPrinter(std::string dialectName);
+        DialectCppPrinter* getDialectPrinter(std::string dialectName) const;
 
         const char* deviceAttrIfCuda(bool trailingSpace = true)
         {
@@ -340,18 +342,6 @@ namespace cpp_printer
             if (state.hasRuntime(Runtime::CUDA))
             {
                 return trailingSpace ? "__shared__ " : "__shared__";
-            }
-            else
-            {
-                return "";
-            }
-        }
-
-        const char* globalAttrIfCuda(bool trailingSpace = true)
-        {
-            if (state.hasRuntime(Runtime::CUDA))
-            {
-                return trailingSpace ? "__global__ " : "__global__";
             }
             else
             {

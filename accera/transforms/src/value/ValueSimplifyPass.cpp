@@ -163,22 +163,34 @@ LogicalResult BinOpCastOpExpandingPattern::matchAndRewrite(
 
         if (lhsCommon)
         {
-            rhs = rewriter.create<ValueCastOp>(op.getLoc(), rhs, lhsType, true /* internal */);
+            if (lhsType != rhsType)
+            {
+                rhs = rewriter.create<ValueCastOp>(op.getLoc(), rhs, lhsType, true /* internal */);
+            }
             auto newBinOp = rewriter.create<ValueBinOp>(op.getLoc(), lhsType, op.predicate(), lhs, rhs);
             rewriter.replaceOpWithNewOp<ValueCastOp>(op, newBinOp, resultType, true /* internal */);
             return success();
         }
         else if (rhsCommon)
         {
-            lhs = rewriter.create<ValueCastOp>(op.getLoc(), lhs, rhsType, true /* internal */);
+            if (lhsType != rhsType)
+            {
+                lhs = rewriter.create<ValueCastOp>(op.getLoc(), lhs, rhsType, true /* internal */);
+            }
             auto newBinOp = rewriter.create<ValueBinOp>(op.getLoc(), rhsType, op.predicate(), lhs, rhs);
             rewriter.replaceOpWithNewOp<ValueCastOp>(op, newBinOp, resultType, true /* internal */);
             return success();
         }
         else if (resultCommon)
         {
-            lhs = rewriter.create<ValueCastOp>(op.getLoc(), lhs, resultType, true /* internal */);
-            rhs = rewriter.create<ValueCastOp>(op.getLoc(), rhs, resultType, true /* internal */);
+            if (lhsType != resultType)
+            {
+                lhs = rewriter.create<ValueCastOp>(op.getLoc(), lhs, resultType, true /* internal */);
+            }
+            if (rhsType != resultType)
+            {
+                rhs = rewriter.create<ValueCastOp>(op.getLoc(), rhs, resultType, true /* internal */);
+            }
             rewriter.replaceOpWithNewOp<ValueBinOp>(op, resultType, op.predicate(), lhs, rhs);
             return success();
         }
@@ -218,18 +230,41 @@ LogicalResult SequentialCastOpFoldingPattern::matchAndRewrite(
 
     if (auto srcCastOp = mlir::dyn_cast_or_null<ValueCastOp>(op.source().getDefiningOp()))
     {
+        // Casting rules:
+        // - Pairs of internal cast ops can always be folded
+        // - Non-internal cast ops (user-specified cast ops) can only be folded if they are implicitly castable
+        //   or if the only non-implicitly castable casts are internal
+
         auto initSrcType = srcCastOp.source().getType();
         auto intermediateType = op.source().getType();
         auto finalDstType = op.result().getType();
-        bool bothInternal = op.internal() && srcCastOp.internal();
-        // Internal cast ops can always be folded
-        // Non-internal cast ops can only be folded if they are implicitly castable
-        if (bothInternal ||
-            (util::IsImplicitlyCastable(initSrcType, intermediateType) &&
-             util::IsImplicitlyCastable(intermediateType, finalDstType) &&
-             util::IsImplicitlyCastable(initSrcType, finalDstType)))
+
+        bool firstCastInternal = srcCastOp.internal();
+        bool secondCastInternal = op.internal();
+        bool bothInternal = firstCastInternal && secondCastInternal;
+
+        bool firstCastImplicit = util::IsImplicitlyCastable(initSrcType, intermediateType);
+        bool secondCastImplicit = util::IsImplicitlyCastable(intermediateType, finalDstType);
+        bool foldedCastImplicit = util::IsImplicitlyCastable(initSrcType, finalDstType);
+
+        bool bothImplicitlyCastable = firstCastImplicit && secondCastImplicit;
+        bool bothImplicitlyCastableRestrictive = bothImplicitlyCastable && foldedCastImplicit;
+
+        bool bothCastsInternalOrImplicit = (firstCastImplicit && secondCastInternal) || (secondCastImplicit && firstCastInternal);
+        // For caution's sake, don't fold together casts that produce downcasts
+        bool bothCastsInternalOrImplicitRestrictive = bothCastsInternalOrImplicit && foldedCastImplicit;
+
+        bool foldable = bothInternal || bothImplicitlyCastableRestrictive || bothCastsInternalOrImplicitRestrictive;
+        if (foldable)
         {
             rewriter.replaceOpWithNewOp<ValueCastOp>(op, srcCastOp.source(), finalDstType, bothInternal);
+
+            if (srcCastOp.result().use_empty())
+            {
+                // If our cast was the only user of the previous cast, erase the previous cast as part of folding
+                rewriter.eraseOp(srcCastOp);
+            }
+
             return success();
         }
     }

@@ -297,6 +297,12 @@ LogicalResult EmitNestDebugFunction(ir::value::ValueFuncOp& targetFnOp, PatternR
         auto callingFnType = rewriter.getFunctionType(argTypes, targetFnOp.getType().getResults());
         auto wrapperFnOp = rewriter.create<ir::value::ValueFuncOp>(loc, dbgFnName + "_internal", callingFnType, targetFnOp.exec_target());
 
+        // TODO : Clone more attributes?
+        if (auto dynamicArgSizeRefs = targetFnOp->getAttrOfType<mlir::ArrayAttr>(ir::DynamicArgSizeReferencesAttrName))
+        {
+            wrapperFnOp->setAttr(ir::DynamicArgSizeReferencesAttrName, dynamicArgSizeRefs);
+        }
+
         rewriter.setInsertionPointToStart(&wrapperFnOp.body().front());
 
         BlockAndValueMapping valueMap;
@@ -373,6 +379,13 @@ LogicalResult EmitNestDebugFunction(ir::value::ValueFuncOp& targetFnOp, PatternR
         {
             newLaunchFnOp->setAttr(ir::BaseNameAttrName, baseName);
         }
+
+        if (auto dynamicArgSizeRefs = targetLaunchFnOp->getAttrOfType<mlir::ArrayAttr>(ir::DynamicArgSizeReferencesAttrName))
+        {
+            newLaunchFnOp->setAttr(ir::DynamicArgSizeReferencesAttrName, dynamicArgSizeRefs);
+        }
+        // TODO : Clone more attributes?
+
         rewriter.eraseOp(targetLaunchFnOp);
     }
 

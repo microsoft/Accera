@@ -934,8 +934,8 @@ namespace executionPlan
         case MemorySpace::Private:
             memoryLocation = (int)value::MemorySpace::Private;
             break;
-        case MemorySpace::Tensor:
-            memoryLocation = (int)value::MemorySpace::Tensor;
+        case MemorySpace::MMAFragment:
+            memoryLocation = (int)value::MemorySpace::MMAFragment;
             break;
         }
 
@@ -977,7 +977,8 @@ namespace executionPlan
     void MakeCacheOp::build(OpBuilder& builder,
                             OperationState& result,
                             mlir::MemRefType cacheType,
-                            accera::ir::value::MemorySpace memorylocation)
+                            accera::ir::value::MemorySpace memorylocation,
+                            Optional<uint64_t> dynamicMemoryOffset)
     {
         build(
             builder,
@@ -987,7 +988,8 @@ namespace executionPlan
             mlir::AffineMap::getMultiDimIdentityMap(cacheType.getRank(), builder.getContext()),
             mlir::AffineMap::getMultiDimIdentityMap(cacheType.getRank(), builder.getContext()),
             std::vector<Index>{},
-            std::vector<Index>{});
+            std::vector<Index>{},
+            dynamicMemoryOffset);
     }
 
     void MakeCacheOp::build(OpBuilder& builder,
@@ -997,10 +999,14 @@ namespace executionPlan
                             AffineMap activeBlockToCacheMap,
                             AffineMap offsetArrayToCacheAccessMap,
                             const std::vector<Index>& offsetAccessIndices,
-                            const std::vector<Index>& multiCacheAccessIndices)
+                            const std::vector<Index>& multiCacheAccessIndices,
+                            Optional<uint64_t> dynamicMemoryOffset)
     {
         auto offsetAccessIndexAttrs = util::ConvertIndexVectorToArrayAttr(offsetAccessIndices, builder.getContext());
         auto multiCacheAccessIndexAttrs = util::ConvertIndexVectorToArrayAttr(multiCacheAccessIndices, builder.getContext());
+        IntegerAttr dynamicMemoryOffsetAttr{};
+        if (dynamicMemoryOffset)
+            dynamicMemoryOffsetAttr = builder.getIntegerAttr(builder.getIntegerType(64, false), *dynamicMemoryOffset);
 
         build(builder,
               result,
@@ -1009,7 +1015,8 @@ namespace executionPlan
               activeBlockToCacheMap,
               offsetArrayToCacheAccessMap,
               offsetAccessIndexAttrs,
-              multiCacheAccessIndexAttrs);
+              multiCacheAccessIndexAttrs,
+              dynamicMemoryOffsetAttr);
     }
 
     mlir::AffineValueMap MakeCacheOp::insertCachePosition(const std::vector<mlir::Value>& multiCacheIndexIterationCounters, const std::vector<mlir::Value>& offsetAccessIVs, const std::vector<mlir::Value>& baseArrayIndices)

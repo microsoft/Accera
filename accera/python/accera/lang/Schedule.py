@@ -77,7 +77,7 @@ class Schedule:
     def get_indices(self):
         return self._indices.copy()
 
-    def create_plan(self, target: "accera.Target" = Target.HOST) -> "accera.Plan":
+    def create_plan(self, target: "accera.Target" = Target.HOST, dynamic_shared_memory_size = None) -> "accera.Plan":
         """Creates a plan for running this schedule
 
         Args:
@@ -85,7 +85,10 @@ class Schedule:
         """
         from .Plan import Plan
 
-        return Plan(self, target)
+        if dynamic_shared_memory_size is not None and target.category != Target.Category.GPU:
+            raise ValueError("dynamic_shared_memory_size can only be set on a GPU target")
+
+        return Plan(self, target, dynamic_shared_memory_size if dynamic_shared_memory_size is not None else 0)
 
     def get_index_range(self, index):
         return self._index_map[index].interval()
@@ -509,7 +512,7 @@ class Schedule:
 
         return index_map_copy
 
-    def _create_tensorizable_plan(self, target, block_indices, warp_indices, tensor_indices, outer_nest_order, mma_shape):
+    def _create_tensorizable_plan(self, target, block_indices, warp_indices, tensor_indices, outer_nest_order, dynamic_shared_memory_size: int = 0):
         i, j = block_indices
         ii, jj = warp_indices
         iii, jjj, kk = tensor_indices
@@ -520,7 +523,7 @@ class Schedule:
                             jjj,
                             kk)
 
-        plan = self.create_plan(target=target)
+        plan = self.create_plan(target=target, dynamic_shared_memory_size=dynamic_shared_memory_size)
         plan.bind(
             mapping={
                 i: target.GridUnit.BLOCK_Y,

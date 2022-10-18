@@ -432,7 +432,7 @@ class PackagingTypesTests(unittest.TestCase):
 class ExecutionPlanTypesTests(unittest.TestCase):
     def test_gpu_config(self) -> None:
         from accera._lang_python._lang import _GPU, _Dim3
-        gpu_config = _GPU(grid=_Dim3(x=8, y=16, z=1), block=_Dim3(16, 32, 2))
+        gpu_config = _GPU(grid=_Dim3(x=8, y=16, z=1), block=_Dim3(16, 32, 2), dynamic_shared_memory_size=0)
 
         self.assertEqual(gpu_config.grid.x, 8)
         self.assertEqual(gpu_config.grid.y, 16)

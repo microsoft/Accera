@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.10)
+[//]: # (Version: v1.2.11)
 
 # Accera Case Studies
 

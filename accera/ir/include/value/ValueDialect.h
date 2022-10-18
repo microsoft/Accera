@@ -100,6 +100,7 @@ const mlir::StringRef HeaderDeclAttrName = "accv.emit_header_decl";
 const mlir::StringRef FunctionTagsAttrName = "accv.function_tags";
 const mlir::StringRef NoInlineAttrName = "accv.no_inline";
 const mlir::StringRef BaseNameAttrName = "accv.base_name";
+const mlir::StringRef DynamicArgSizeReferencesAttrName = "accv.dyn_arg_size_refs";
 
 } // namespace accera::ir
 

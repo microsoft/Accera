@@ -22,8 +22,9 @@ from .Parameter import *
 from .Constants import inf
 from .Platforms import Platform, get_library_reference
 
-_R_DIM3 = r"dim3\((\d+),\s*(\d+),\s*(\d+)\)"
-_R_GPU_LAUNCH = f"<<<{_R_DIM3},\s*{_R_DIM3}>>>"
+_R_INT = r"(\d+)"
+_R_DIM3 = f"dim3\({_R_INT},\s*{_R_INT},\s*{_R_INT}\)"
+_R_GPU_LAUNCH = f"<<<{_R_DIM3},\s*{_R_DIM3},\s*{_R_INT}>>>"
 del _R_DIM3
 
 
@@ -348,6 +349,29 @@ class Package:
             # Function names must begin with an _ or alphabetical character
             return f"{base_name}_{suffix}" if base_name else f"_{suffix}"
 
+        def compute_arg_size_references(args, SENTINEL_VALUE=-1):
+            """Computes the arg position references for arrays with Dimension arg-sized shapes
+            Uses -1 as a sentinel value indicating a statically-sized dimension of an Array or a Dimension in the arg list
+            Given args containing Arrays and Dimensions, detects which dimensions are associated with which array
+            E.g. given dynamic dimension N, static dimension M = 256, and arrays A { M x N }, B { N x N }, and C { M x M }
+                  with args = (A, B, C, N), will compute the references:
+                      ((-1, 3), (3, 3), (-1, -1), -1)
+                  Because:
+                   - A is {M x N}, and N is at arg position 3 in the args list and M is statically sized
+                   - B is {N x N}, and N is at arg position 3 in the args list
+                   - C is {M x M}, and M is statically sized
+                   - N is not an array
+            """
+            arg_size_refs = []
+            for arg in args:
+                if isinstance(arg, lang.Array):
+                    arr_dim_mappings = [args.index(dim) if isinstance(dim, lang.Dimension) else SENTINEL_VALUE for dim in arg.shape]
+                    arg_size_refs.append(arr_dim_mappings)
+                else:
+                    arg_size_refs.append([SENTINEL_VALUE])
+            return arg_size_refs
+
+
         # Resolve any undefined argument shapes based on the source usage pattern
         for arr in args:
             if isinstance(arr, lang.Array):
@@ -379,6 +403,7 @@ class Package:
             source.auxiliary = auxiliary_metadata
             source.param_overrides = parameters
             source.args = tuple(native_array_dim_args)
+            source.arg_size_references = compute_arg_size_references(args)
             source.requested_args = args
             self._fns[source.name] = source
             return source  # for composability
@@ -401,6 +426,7 @@ class Package:
                 decorated=function_opts.get("decorated", False),
                 no_inline=function_opts.get("no_inline", False),
                 args=tuple(map(_convert_arg, args)),
+                arg_size_references=compute_arg_size_references(args),
                 requested_args=args,
                 definition=wrapper_fn,
                 auxiliary=auxiliary_metadata,
@@ -736,6 +762,7 @@ class Package:
                             launch_parameters = list(
                                 map(int, [s[n] for n in range(1, 7)])
                             )
+                            dynamic_shared_mem_bytes = int(s[7])
                         gpu_source = os.path.split(gpu_source)[1]
 
                         hat_target: hat.Target = hat_file.target
@@ -752,6 +779,7 @@ class Package:
                             arguments=hat_func.arguments,
                             return_info=hat_func.return_info,
                             launch_parameters=launch_parameters,
+                            dynamic_shared_mem_bytes=dynamic_shared_mem_bytes,
                             provider=gpu_source,
                             runtime=fn.target.runtime.name,
                         )

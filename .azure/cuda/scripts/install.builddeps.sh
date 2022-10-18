@@ -30,6 +30,7 @@ update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 # TODO: support different versions of python if needed
 python -m pip install -r requirements.txt
 python -m pip install cuda-python
+python -m pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
 
 # install more recent cmake (Ubuntu 20.04 only bundles cmake 3.16)
 curl -LO https://github.com/Kitware/CMake/releases/download/v3.23.1/cmake-3.23.1-linux-x86_64.tar.gz \

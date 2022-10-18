@@ -820,7 +820,8 @@ MI100_TENSORCORE_INFO = TensorCoreInformation([
     TensorCoreInformationEntry(shape=_MMAShape.M64xN64xK2_B4, inType=ScalarType.bfloat16, outType=ScalarType.bfloat16),    # maps to the 16x16x2 mfma instruction
 ])
 
-NV_A6000_TENSORCORE_INFO = TensorCoreInformation([
+# https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html#tensor-operations
+NV_AMPERE_TENSORCORE_INFO = TensorCoreInformation([
     TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float16),
     TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.float16, outType=ScalarType.float32),
     TensorCoreInformationEntry(shape=_MMAShape.M16xN16xK16_B1, inType=ScalarType.bfloat16, outType=ScalarType.float32),
@@ -841,30 +842,31 @@ NV_A6000_TENSORCORE_INFO = TensorCoreInformation([
 
 # Tensor Cores is current unused
 KNOWN_GPUS_HEADER = [
-    "Runtime", "Model", "Branding", "Family", "Cores", "MaxThreadsPerBlock", "MaxBlockSize", "MaxSharedMemoryPerBlock",
-    "WarpSize", "Base Freq (GHz)", "MaxRegistersPerBlock", "Vector Bytes", "TensorCoreInformation"
+    "Runtime", "Model", "Branding", "Family", "Cores", "MaxThreadsPerBlock", "MaxBlockSize", "MaxStaticSharedMemoryPerBlock",
+    "MaxSharedMemoryPerBlock", "WarpSize", "Base Freq (GHz)", "MaxRegistersPerBlock", "Vector Bytes", "TensorCoreInformation"
 ]
 KNOWN_GPUS = [
     # NVIDIA
-    ["CUDA", "NVidia P100", "Pascal", "sm60", 56, 1024, [1024, 1024, 64], 49152, 32, 1.328500, 65536, 0,
-     None],    # TODO : get the real values for the vector register sizes in bytes
-    ["CUDA", "NVidia V100", "Volta", "sm70", 80, 1024, [1024, 1024, 64], 49152, 32, 1.380000, 65536, 0, None],
+    # Pascal Tuning Guide: https://docs.nvidia.com/cuda/pascal-tuning-guide/index.html#shared-memory-capacity
+    ["CUDA", "NVidia P100", "Pascal", "sm60", 56, 1024, [1024, 1024, 64], 49152, 49152, 32, 1.328500, 65536, 0, None],    # TODO : get the real values for the vector register sizes in bytes
+
+    # Volta Tuning Guide: https://docs.nvidia.com/cuda/volta-tuning-guide/index.html#l1-cache
+    ["CUDA", "NVidia V100", "Volta", "sm70", 80, 1024, [1024, 1024, 64], 49152, 98304, 32, 1.380000, 65536, 0, None],
+
     # https://developer.nvidia.com/blog/nvidia-ampere-architecture-in-depth/
-    ["CUDA", "NVidia A100", "Ampere", "sm80", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, 0, None],
-    [
-        "CUDA", "NVidia RTX A6000", "Ampere", "sm86", 108, 1024, [1024, 1024, 64], 49152, 32, 1.410000, 65536, 0,
-        NV_A6000_TENSORCORE_INFO
-    ],
+    # Ampere Tuning Guide: https://docs.nvidia.com/cuda/ampere-tuning-guide/index.html#l1-cache
+    # Devices of compute capability 8.6 have 2x more FP32 operations per cycle per SM than devices of compute capability 8.0.
+    # While a binary compiled for 8.0 will run as is on 8.6, it is recommended to compile explicitly for 8.6 to benefit from the increased FP32 throughput.
+    ["CUDA", "NVidia A100", "Ampere", "sm80", 108, 1024, [1024, 1024, 64], 49152, 166912, 32, 1.410000, 65536, 0, NV_AMPERE_TENSORCORE_INFO],
+    ["CUDA", "NVidia RTX A6000", "Ampere", "sm86", 108, 1024, [1024, 1024, 64], 49152, 101376, 32, 1.410000, 65536, 0, NV_AMPERE_TENSORCORE_INFO],
+
     # AMD
-    ["ROCM", "AMD Radeon7", "Vega20", "gfx906", 60, 1024, [1024, 1024, 1024], 65536, 64, 1.801000, 65536, 0, None],
-    ["ROCM", "AMD MI50", "Vega20", "gfx906", 60, 1024, [1024, 1024, 1024], 65536, 64, 1.725000, 65536, 0, None],
+    ["ROCM", "AMD Radeon7", "Vega20", "gfx906", 60, 1024, [1024, 1024, 1024], 65536, 65536, 64, 1.801000, 65536, 0, None],
+    ["ROCM", "AMD MI50", "Vega20", "gfx906", 60, 1024, [1024, 1024, 1024], 65536, 65536, 64, 1.725000, 65536, 0, None],
 
     # The MI100 can move up to Up to 4 DWORDs per instruction, so we set the vector size to 16 bytes - https://developer.amd.com/wp-content/resources/CDNA1_Shader_ISA_14December2020.pdf
-    [
-        "ROCM", "AMD MI100", "Arcturus", "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 64, 1.502000, 65536, 16,
-        MI100_TENSORCORE_INFO
-    ],
-    ["ROCM", "AMD MI200", "Aldebaran", "gfx90a", 220, 1024, [1024, 1024, 1024], 65536, 64, 1.700000, 65536, 0, None]
+    ["ROCM", "AMD MI100", "Arcturus", "gfx908", 120, 1024, [1024, 1024, 1024], 65536, 65536, 64, 1.502000, 65536, 16, MI100_TENSORCORE_INFO],
+    ["ROCM", "AMD MI200", "Aldebaran", "gfx90a", 220, 1024, [1024, 1024, 1024], 65536, 65536, 64, 1.700000, 65536, 0, None]
 ]
 # yapf: enable
 
@@ -890,6 +892,7 @@ class _TargetContainer:
     warp_size: int = 0
     max_threads_per_block: int = 0
     max_block_size: List[int] = field(default_factory=list)
+    max_static_shared_memory_per_block: int = 0
     max_shared_memory_per_block: int = 0
     max_registers_per_block: int = 0
 
@@ -981,6 +984,7 @@ def _recompute_known_devices():
             warp_size=device["WarpSize"],
             max_threads_per_block=device["MaxThreadsPerBlock"],
             max_block_size=device["MaxBlockSize"],
+            max_static_shared_memory_per_block=device["MaxStaticSharedMemoryPerBlock"],
             max_shared_memory_per_block=device["MaxSharedMemoryPerBlock"],
             frequency_GHz=device["Base Freq (GHz)"],
             max_registers_per_block=device["MaxRegistersPerBlock"],

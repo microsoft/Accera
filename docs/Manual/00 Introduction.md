@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.10)
+[//]: # (Version: v1.2.11)
 
 # Introduction
 Accera is a framework with a Python-based Domain-specific Language (eDSL) that produces optimized compute-intensive code. Accera's primary focus is the optimization of affine and semi-affine nested for-loops for CPU and GPU targets.

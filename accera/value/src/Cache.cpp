@@ -153,6 +153,7 @@ namespace value
                            Value value,
                            const std::optional<Index>& outermostIncludedSplitIndex,
                            const std::optional<int64_t>& maxElements,
+                           const std::optional<uint64_t>& sharedMemOffset,
                            CacheStrategy strategy,
                            CacheIndexing mapping,
                            CacheAllocation allocation,
@@ -170,7 +171,10 @@ namespace value
 
             if (allocation == CacheAllocation::Automatic)
             {
-                auto makeCache = builder.create<MakeCacheOp>(loc, _cacheInfo.cacheType, memorySpace);
+                llvm::Optional<uint64_t> memOffset{};
+                if (sharedMemOffset)
+                    memOffset = llvm::Optional{ *sharedMemOffset };
+                auto makeCache = builder.create<MakeCacheOp>(loc, _cacheInfo.cacheType, memorySpace, memOffset);
                 _cacheValue = makeCache;
                 auto op = makeCache;
                 op->moveBefore(schedule.getOperation());
@@ -219,6 +223,7 @@ namespace value
                              const std::optional<value::ValueType>& elementType,
                              bool thrifty,
                              bool doubleBufferCache,
+                             const std::optional<uint64_t>& sharedMemOffset,
                              CacheStrategy strategy,
                              const std::optional<VectorizationInformation>& vecInfo,
                              CacheIndexing mapping,
@@ -244,7 +249,10 @@ namespace value
 
             if (allocation == CacheAllocation::Automatic)
             {
-                auto makeCache = builder.create<MakeCacheOp>(loc, _cacheInfo.cacheType, memorySpace);
+                llvm::Optional<uint64_t> memOffset{};
+                if (sharedMemOffset)
+                    memOffset = llvm::Optional{ *sharedMemOffset };
+                auto makeCache = builder.create<MakeCacheOp>(loc, _cacheInfo.cacheType, memorySpace, memOffset);
                 _cacheValue = makeCache.getResult();
                 auto op = makeCache;
                 op->moveBefore(schedule.getOperation());
@@ -784,6 +792,7 @@ namespace value
                  ViewAdapter value,
                  const std::optional<ScalarIndex>& keySliceIndex,
                  const std::optional<int64_t>& maxElements,
+                 const std::optional<uint64_t>& sharedMemOffset,
                  CacheStrategy strategy,
                  CacheIndexing mapping,
                  CacheAllocation allocation,
@@ -795,7 +804,7 @@ namespace value
         {
             keySlice = GetIndex(*keySliceIndex);
         }
-        _impl = std::make_unique<AutomaticCacheImpl>(schedule, value, keySlice, maxElements, strategy, mapping, allocation, memorySpace, execTarget);
+        _impl = std::make_unique<AutomaticCacheImpl>(schedule, value, keySlice, maxElements, sharedMemOffset, strategy, mapping, allocation, memorySpace, execTarget);
     }
 
     // Manual caching version
@@ -837,6 +846,7 @@ namespace value
                                                            elementType,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           std::nullopt, // sharedMemOffset
                                                            strategy,
                                                            vectorizationInfo,
                                                            mapping,
@@ -856,6 +866,7 @@ namespace value
                                                            elementType,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           std::nullopt, // sharedMemOffset
                                                            strategy,
                                                            vectorizationInfo,
                                                            mapping,
@@ -874,6 +885,7 @@ namespace value
                  const DimensionOrder& dimOrder,
                  const std::optional<value::ValueType>& elementType,
                  bool thrifty,
+                 const std::optional<uint64_t>& sharedMemOffset,
                  CacheStrategy strategy,
                  bool doubleBufferCache,
                  const std::optional<VectorizationInformation>& vectorizationInfo,
@@ -905,6 +917,7 @@ namespace value
                                                            elementType,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           sharedMemOffset,
                                                            strategy,
                                                            vectorizationInfo,
                                                            mapping,
@@ -924,6 +937,7 @@ namespace value
                                                            elementType,
                                                            thrifty,
                                                            doubleBufferCache,
+                                                           sharedMemOffset,
                                                            strategy,
                                                            vectorizationInfo,
                                                            mapping,

@@ -3024,8 +3024,8 @@ TEST_CASE_METHOD(Fixture, "test_rocm_cache_double_buffer", "[gpu][nest][cache][m
                 plan.MapIndexToProcessor(ii, Processor::ThreadY);
                 plan.MapIndexToProcessor(jj, Processor::ThreadX);
 
-                plan.AddCache(A, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, true, CacheStrategy::Striped, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::Private);
-                plan.AddCache(B, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, true, CacheStrategy::Blocked, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::Private);
+                plan.AddCache(A, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, true, CacheStrategy::Striped, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::Private, std::nullopt);
+                plan.AddCache(B, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, true, CacheStrategy::Blocked, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::Private, std::nullopt);
             });
 
     accera::transforms::AcceraPassPipelineOptions opts{};
@@ -3095,8 +3095,8 @@ TEST_CASE_METHOD(Fixture, "test_rocm_cache_tensorize", "[gpu][nest][cache][tenso
                 plan.MapIndexToProcessor(jj, Processor::ThreadX);
 
                 plan.Tensorize({ iii, jjj, kkk }, v::MMAShape::M16xN16xK4_B1, 4);
-                plan.AddCache(A, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, false, CacheStrategy::Striped, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::None);
-                plan.AddCache(B, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, false, CacheStrategy::Blocked, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::None);
+                plan.AddCache(A, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, false, CacheStrategy::Striped, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::None, std::nullopt);
+                plan.AddCache(B, ii, ii, accera::utilities::DimensionOrder(2), std::nullopt, false, false, CacheStrategy::Blocked, std::nullopt, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, MemorySpace::Shared, MemorySpace::None, std::nullopt);
             });
 
     accera::transforms::AcceraPassPipelineOptions opts{};

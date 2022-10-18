@@ -64,15 +64,13 @@ module @test_bin_op_cast_op_folding_module {
       return
     }
 
-    // CHECK-LABEL: func @dont_fold_bin_op_cast_op(%arg0: memref<1xi64>, %arg1: memref<1xi32>, %arg2: memref<1xi64>) {
+    // CHECK-LABEL: func @fold_bin_op_internal_cast_explicit_cast_op(%arg0: memref<1xi64>, %arg1: memref<1xi32>, %arg2: memref<1xi64>) {
     // CHECK-NEXT:    %0 = affine.load %arg0[0] : memref<1xi64>
     // CHECK-NEXT:    %1 = affine.load %arg1[0] : memref<1xi32>
     // CHECK-NEXT:    %2 = arith.extsi %1 : i32 to i64
     // CHECK-NEXT:    %3 = arith.addi %0, %2 : i64
-    // CHECK-NEXT:    %4 = arith.trunci %3 : i64 to i32
-    // CHECK-NEXT:    %5 = arith.extsi %4 : i32 to i64
-    // CHECK-NEXT:    affine.store %5, %arg2[0] : memref<1xi64>
-    builtin.func @dont_fold_bin_op_cast_op(%arg0: memref<1xi64>, %arg1: memref<1xi32>, %arg2: memref<1xi64>) {
+    // CHECK-NEXT:    affine.store %3, %arg2[0] : memref<1xi64>
+    builtin.func @fold_bin_op_internal_cast_explicit_cast_op(%arg0: memref<1xi64>, %arg1: memref<1xi32>, %arg2: memref<1xi64>) {
       %0 = affine.load %arg0[0] : memref<1xi64>
       %1 = affine.load %arg1[0] : memref<1xi32>
       %2 = "accv.cast"(%1) : (i32) -> i64

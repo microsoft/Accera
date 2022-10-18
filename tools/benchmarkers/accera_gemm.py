@@ -10,7 +10,7 @@ from copy import deepcopy
 from functools import reduce
 import progressbar
 from termcolor import colored
-from dataclasses import dataclass, InitVar
+from dataclasses import dataclass, InitVar, asdict
 from datetime import datetime
 import time
 from itertools import combinations_with_replacement, product
@@ -49,6 +49,7 @@ class BenchmarkResult:
     cache_strategy_B: str = ''
     cache_C: bool=False
     block_tile: Tuple[int, int]=(0, 0)
+    thread_coarsening_factor: Tuple[int, int]=(1, 1)
     k_split: int=-1
     double_buffering: bool=False
     vectorize: bool=False
@@ -60,6 +61,7 @@ class BenchmarkResult:
     TFlops: float= 0.0
     dt: str= datetime.now().ctime()
     compiler_version: str=''
+    category: str=''
     compilable: bool=False
     executable: bool=False
     check: bool=False
@@ -110,6 +112,8 @@ class BenchmarkResult:
             'cc' : self.cache_C,
             'bt0' : self.block_tile[0],
             'bt1' : self.block_tile[1],
+            'tc0' : self.thread_coarsening_factor[0],
+            'tc1' : self.thread_coarsening_factor[1],
             'ks' : self.k_split,
             'db' : self.double_buffering,
             'v' : self.vectorize,
@@ -181,32 +185,43 @@ def create_gemm_nest_args(M: int, N: int, K: int, transA: bool, transB: bool, dt
     return nest, (A, B, C)
 
 def benchmark_kernel(
-    target: Target, M: int, N: int, K: int, transA: bool, transB: bool, dtype, outer_tile_x: int, outer_tile_y: int,
+    target: Target, M: int, N: int, K: int, transA: bool, transB: bool, dtype, outer_tile_m: int, outer_tile_n: int,
     outer_tile_k: int, cacheA_layout, cacheB_layout, cache_C: bool, cacheA_strategy: _CacheStrategy, cacheB_strategy: _CacheStrategy,
-    mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy):
+    mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy, thread_coarsening_factor):
     nest, (A, B, C) = create_gemm_nest_args(M, N, K, transA, transB, dtype)
     schedule = nest.create_schedule()
 
     i, j, k = schedule.get_indices()
 
     ii, jj, kk = schedule.tile({
-        i: outer_tile_x,
-        j: outer_tile_y,
+        i: outer_tile_m,
+        j: outer_tile_n,
         k: outer_tile_k
     })
 
     tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes)
 
-    iii, jjj, kkk = schedule.tile({
-        ii: tensor_splits[0],
-        jj: tensor_splits[1],
+    iii, jjj = schedule.tile({
+        ii: tensor_splits[0] * thread_coarsening_factor[0],
+        jj: tensor_splits[1] * thread_coarsening_factor[1]
+    })
+
+    iiii, jjjj, kkk = schedule.tile({
+        iii: tensor_splits[0],
+        jjj: tensor_splits[1],
         kk: tensor_splits[2]
     })
-    outer_nest_order = (i, j, k, ii, jj, kk)
+    outer_nest_order = (i, j, k, ii, jj, iii, jjj, kk)
     block_indices = (i, j)
     warp_indices = (ii, jj)
-    tensor_indices = (iii, jjj, kkk)
-    plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=block_indices, warp_indices=warp_indices, tensor_indices=tensor_indices, outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+    tensor_indices = (iiii, jjjj, kkk)
+
+    elem_bytes = 4 if dtype == "s" else 2
+    shared_mem_usage_bytes = elem_bytes * (outer_tile_m + outer_tile_n) * outer_tile_k
+    use_dynamic_shared_mem = shared_mem_usage_bytes > target.max_static_shared_memory_per_block
+    dynamic_shared_mem_usage_bytes = shared_mem_usage_bytes if use_dynamic_shared_mem else 0
+
+    plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=block_indices, warp_indices=warp_indices, tensor_indices=tensor_indices, outer_nest_order=outer_nest_order, dynamic_shared_memory_size=dynamic_shared_mem_usage_bytes)
     plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
 
     plan.cache(
@@ -217,7 +232,8 @@ def benchmark_kernel(
         vectorize=vectorize,
         location=target.MemorySpace.SHARED,
         layout=cacheA_layout,
-        strategy=cacheA_strategy
+        strategy=cacheA_strategy,
+        _shared_memory_offset=0 if use_dynamic_shared_mem else None
     )
     plan.cache(
         B,
@@ -227,16 +243,17 @@ def benchmark_kernel(
         vectorize=vectorize,
         location=target.MemorySpace.SHARED,
         layout=cacheB_layout,
-        strategy=cacheB_strategy
+        strategy=cacheB_strategy,
+        _shared_memory_offset=outer_tile_m * outer_tile_k if use_dynamic_shared_mem else None
     )
 
     if cache_C:
-        # Output caching is only supported for 16x16 output tiles currently on ROCM
+        out_cache_idx = k if thread_coarsening_factor == (1, 1) else kk
         plan.cache(
             C,
-            index=k,
+            index=out_cache_idx,
             vectorize=vectorize,
-            location=target.MemorySpace.TENSOR
+            location=target.MemorySpace.MMA_FRAGMENT
             # Don't specify layout so it defaults to the C array's layout
         )
 
@@ -284,6 +301,8 @@ def get_variants(opts: GemmOpts, dtype, target):
     num_total_passes_reduced.append(1)
     fuse_factor = [1]#, 2, 4, 8]
     scheduling_policy = [_MMASchedulingPolicy.PASS_ORDER, _MMASchedulingPolicy.BLOCK_ORDER]
+    thread_coarsening_factor_r = [1, 2, 4]
+    thread_coarsening_factor_c = [1, 2, 4]
     use_static_offsets = [False]
     vectorize = [True]
     double_buffering = [True]
@@ -292,7 +311,7 @@ def get_variants(opts: GemmOpts, dtype, target):
     cacheA_strategy = [_CacheStrategy.BLOCKED, _CacheStrategy.STRIPED]
     cacheB_strategy = [_CacheStrategy.BLOCKED, _CacheStrategy.STRIPED]
 
-    def valid_variant(outer_t, outer_k, mma_type, total_passes, fuse_factor, scheduling_policy):
+    def valid_variant(outer_t, outer_k, mma_type, total_passes, fuse_factor, scheduling_policy, thread_coarsening_factor_r, thread_coarsening_factor_c):
         # For single block MMA shapes, we don't need to test both scheduling policies and they will
         # both effectively result in the same schedule. Just ignore BLOCK_ORDER in that case.
         if single_block_mma(mma_type) and scheduling_policy == _MMASchedulingPolicy.BLOCK_ORDER:
@@ -303,18 +322,21 @@ def get_variants(opts: GemmOpts, dtype, target):
         cache_size_a = outer_t[0] * outer_k
         cache_size_b = outer_t[1] * outer_k
         pass_width = total_passes * get_k(target, mma_type)
+        warp_tile_rows = mma_m * thread_coarsening_factor_r
+        warp_tile_cols = mma_n * thread_coarsening_factor_c
 
         return total_passes % fuse_factor == 0 and (opts.m % outer_t[0] == 0) and (opts.n % outer_t[1] == 0) and (opts.k % outer_k == 0) and \
-                (outer_t[0] % mma_m == 0) and (outer_t[1] % mma_n == 0) and outer_k % pass_width == 0 and \
+                (outer_t[0] % warp_tile_rows == 0) and (outer_t[1] % warp_tile_cols == 0) and outer_k % pass_width == 0 and \
                 ((cache_size_a + cache_size_b) * ELEM_SIZE_BYTES <= target.max_shared_memory_per_block) and \
                 target.tensor_core_info.supports(datatype, datatype, mma_type, total_passes, total_passes // fuse_factor)
 
-    return list(filter(lambda v: valid_variant(v[0], v[1], v[2], v[10], v[11], v[12]), product(combinations_with_replacement(outer_tiles, 2), k_split_reduced, mfma_tiles,
-                                                                                    use_static_offsets, double_buffering, vectorize, cacheA_layout, cacheB_layout,
-                                                                                    cacheA_strategy, cacheB_strategy, num_total_passes_reduced, fuse_factor, scheduling_policy)))
+    return list(filter(lambda v: valid_variant(v[0], v[1], v[2], v[10], v[11], v[12], v[13], v[14]), product(combinations_with_replacement(outer_tiles, 2), k_split_reduced,
+                                                                                    mfma_tiles, use_static_offsets, double_buffering, vectorize, cacheA_layout, cacheB_layout,
+                                                                                    cacheA_strategy, cacheB_strategy, num_total_passes_reduced, fuse_factor, scheduling_policy,
+                                                                                    thread_coarsening_factor_r, thread_coarsening_factor_c)))
 
 
-def benchmark_gemm(opts: GemmOpts, dtype, batch_size: int, output_prefix: str, available_gpus, container_name, verbose_logs, compiler_ver, commit_id, commit_datetime: str, commit_branch, target_name, check_result, dev_props):
+def benchmark_gemm(opts: GemmOpts, dtype, batch_size: int, output_prefix: str, category: str, available_gpus, container_name, verbose_logs, compiler_ver, commit_id, commit_datetime: str, commit_branch, target_name, check_result, dev_props):
     """
     Architecture Overview:
     --------------------------------------------------------------------------------------------
@@ -444,7 +466,7 @@ def benchmark_gemm(opts: GemmOpts, dtype, batch_size: int, output_prefix: str, a
             for i in range(wave, min(wave + waveSize, len(variants))):
                 gpu_idx = i % total_gpus
                 gpu_id = gpu_devices[gpu_idx]
-                p = multiprocessing.Process(name=f"builder{i}", target=run_variant, args=(variants[i], gpu_id, device_q[gpu_idx], opts, dtype, target, output_prefix, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props[gpu_id], verbose_logs, check_result))
+                p = multiprocessing.Process(name=f"builder{i}", target=run_variant, args=(variants[i], gpu_id, device_q[gpu_idx], opts, dtype, target, output_prefix, category, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props[gpu_id], verbose_logs, check_result))
                 p.start()
 
             time.sleep(5)
@@ -482,11 +504,11 @@ def benchmark_gemm(opts: GemmOpts, dtype, batch_size: int, output_prefix: str, a
                 cosmosdb.upsert_benchmark_results(result_rows, container_name, verbose_logs)
 
 
-def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props, verbose_logs, check_result):
+def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, category, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props, verbose_logs, check_result):
     try:
         assert float(opts.alpha) == 1., "alpha must be 1"
 
-        (outer_tile_x, outer_tile_y), k_split, mma_shape, use_static_offsets, double_buffering, vectorize, cacheA_layout, cacheB_layout, cacheA_strategy, cacheB_strategy, num_total_passes, fuse_factor, scheduling_policy = variant
+        (outer_tile_m, outer_tile_n), k_split, mma_shape, use_static_offsets, double_buffering, vectorize, cacheA_layout, cacheB_layout, cacheA_strategy, cacheB_strategy, num_total_passes, fuse_factor, scheduling_policy, thread_coarsening_factor_r, thread_coarsening_factor_c = variant
         result = BenchmarkResult(opts=opts, dtype=dtype, gpu_id=gpu_id, commit_id=commit_id, commit_datetime=commit_datetime, commit_branch=commit_branch, target_name=target_name, deviceProperties=dev_props)
         result.mma_shape = mma_shape.name
         result.use_static_offsets = use_static_offsets
@@ -499,9 +521,11 @@ def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, c
         result.num_total_passes = num_total_passes
         result.num_fused_passes = num_fused_passes = num_total_passes // fuse_factor
         result.scheduling_policy = 0 if scheduling_policy == _MMASchedulingPolicy.PASS_ORDER else 1
-        result.block_tile = (outer_tile_x, outer_tile_y)
+        result.block_tile = (outer_tile_m, outer_tile_n)
+        result.thread_coarsening_factor = (thread_coarsening_factor_r, thread_coarsening_factor_c)
         result.k_split = k_split
         result.compiler_version = compiler_ver
+        result.category = category
         result.check = check_result
         result.cache_C = True
         if target.runtime == Target.Runtime.ROCM:
@@ -509,14 +533,14 @@ def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, c
         elif target.runtime == Target.Runtime.CUDA:
             result.target_rt = 'CUDA'
 
-        plan, A, B, C = benchmark_kernel(target, opts.m, opts.n, opts.k, opts.transA, opts.transB, dtype, outer_tile_x, outer_tile_y, k_split, cacheA_layout, cacheB_layout, result.cache_C,
-                                        cacheA_strategy, cacheB_strategy, mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy)
+        plan, A, B, C = benchmark_kernel(target, opts.m, opts.n, opts.k, opts.transA, opts.transB, dtype, outer_tile_m, outer_tile_n, k_split, cacheA_layout, cacheB_layout, result.cache_C,
+                                        cacheA_strategy, cacheB_strategy, mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy, result.thread_coarsening_factor)
         fn_name = f"{result.target_rt}_GEMM_{result.get_partition_key().replace('.', '_')}_{result.get_id().replace('.', '_')}"
         block_dims, grid_dims = plan._calc_block_grid_dim()
         is_valid_plan = plan._is_valid_block_dim(block_dims) and plan._is_valid_block_size(block_dims)
         block_size = reduce(lambda a, b: a * b, block_dims)
-        tile_size_a = outer_tile_x * k_split
-        tile_size_b = k_split * outer_tile_y
+        tile_size_a = outer_tile_m * k_split
+        tile_size_b = k_split * outer_tile_n
         wpt_a = tile_size_a // block_size
         wpt_b = tile_size_b // block_size
         submit_package = is_valid_plan and wpt_a >= 1 and wpt_b >= 1 and tile_size_a % block_size == 0 and tile_size_b % block_size == 0
@@ -605,11 +629,11 @@ def gemm_runner(gpu_id: int, batch_size: int, output_prefix, device_q, result_ro
 
             else: # if there is no exception
                 result.executable = len(results) > 0
-                result.prog_out += str(results)
+                result.prog_out += str([asdict(r) for r in results])
                 if len(results) > 0:
                     print_log(verbose_logs, f"[Pass] {fn_name}", 'green')
 
-                    time_s = results[0].get('min_of_means', '-')
+                    time_s = results[0].min_of_means
                     if time_s != '-':
                         flops = 2 * opts.k * opts.m * opts.n / float(time_s)
                         tflops = flops * 1e-12

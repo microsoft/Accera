@@ -258,7 +258,7 @@ namespace utilities
         Global = 1,
         Shared = 3,
         Private = 5,
-        Tensor = 7,
+        MMAFragment = 7,
     };
 
     /// <summary> A class representing layout of a block of data in memory where the block can also

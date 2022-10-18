@@ -694,7 +694,7 @@ struct ValueModuleOpRewritePattern : OpRewritePattern<vir::ValueModuleOp>
 
 constexpr int kLaunchConfigDefaultDimValue = 1;
 constexpr int kLocalSizeDimSize = 3;
-constexpr size_t kLaunchConfigNumDims = 6;
+constexpr size_t kLaunchConfigNumDims = 7;
 
 auto GetGPUModuleBinaryAnnotationAttrName()
 {
@@ -771,8 +771,8 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
         auto launchConfig = llvm::makeArrayRef(launchConfigVec);
         assert(launchConfig.size() == kLaunchConfigNumDims);
         // split out the launch config into the grid and block dimensions, respectively
-        [[maybe_unused]] auto gridDimsLaunchConfig = launchConfig.take_front(kLocalSizeDimSize);
-        auto blockDimsLaunchConfig = launchConfig.drop_front(kLocalSizeDimSize);
+        auto gridDimsLaunchConfig = launchConfig.take_front(kLocalSizeDimSize);
+        auto blockDimsLaunchConfig = launchConfig.drop_front(kLocalSizeDimSize).take_front(kLocalSizeDimSize);
 
         fnAttrs.emplace_back(mlir::NamedAttribute(rewriter.getStringAttr(mlir::gpu::GPUDialect::getKernelFuncAttrName()),
                                                   rewriter.getUnitAttr()));
@@ -974,11 +974,15 @@ struct ValueLaunchFuncOpRewritePattern : OpRewritePattern<vir::LaunchFuncOp>
                 rewriter.create<arith::ConstantIndexOp>(loc, launchConfig[(int)vir::Processor::ThreadZ]),
             };
 
+            mlir::Value dynamicSharedMemorySize{};
+            if (utilir::ResolveExecutionRuntime(op) != vir::ExecutionRuntime::VULKAN)
+                dynamicSharedMemorySize = rewriter.create<arith::ConstantIntOp>(loc, launchConfig[6], 32);
+
             rewriter.replaceOpWithNewOp<gpu::LaunchFuncOp>(op,
                                                            gpuFuncOp,
                                                            gridSize,
                                                            blockSize,
-                                                           /*dynamicSharedMemorySize=*/nullptr,
+                                                           dynamicSharedMemorySize,
                                                            op.getOperands());
             return success();
         }

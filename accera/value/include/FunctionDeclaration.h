@@ -132,9 +132,10 @@ namespace value
         /// <summary> Sets the parameters this function requires </summary>
         /// <param name="parameters"> Zero or more Value instances describing the types of the arguments and their memory layout expected by the function </param>
         /// <param name="usages"> Zero or more FunctionParameterUsages describing the usage of the arguments expected by the function </param>
+        /// <param name="argSizeReferences"> Parameter-sized number of entries, each containing either a sentinel -1 value, or an array arg shape that references the positions of other parameters if they are dynamic sizes </param>
         /// <returns> A reference to this instance </returns>
         /// <remarks> If this function is not called, the instance defaults to taking no arguments </remarks>
-        [[nodiscard]] FunctionDeclaration& Parameters(std::vector<ViewAdapter> parameters, std::optional<std::vector<FunctionParameterUsage>> usages = std::nullopt);
+        [[nodiscard]] FunctionDeclaration& Parameters(std::vector<ViewAdapter> parameters, std::optional<std::vector<FunctionParameterUsage>> usages = std::nullopt, std::optional<std::vector<std::vector<int64_t>>> argSizeReferences = std::nullopt);
 
         /// <summary> Emits a call to the function declaration </summary>
         /// <param name="arguments"> A vector of Value instances that hold the arguments for the function call </param>
@@ -162,6 +163,9 @@ namespace value
 
         /// <summary> Gets the vector of Value instances describing the parameter types the function requires </summary>
         const std::vector<Value>& GetParameterTypes() const;
+
+        /// <summary> Gets the vector of references from one arg's size to another arg's position </summary>
+        const std::vector<std::vector<int64_t>>& GetParameterArgSizeReferences() const;
 
         /// <summary> Gets the return type, wrapped in a std::optional. If the function expects to return a value, its type is described.
         /// Otherwise, the std::optional instance is empty </summary>
@@ -230,6 +234,7 @@ namespace value
         std::optional<Value> _returnType;
         std::vector<Value> _paramTypes;
         std::vector<FunctionParameterUsage> _paramUsages;
+        std::vector<std::vector<int64_t>> _parameterSizeReferences;
         std::optional<Scalar> _pointer;
 
         ExecutionTarget _execTarget;

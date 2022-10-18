@@ -104,20 +104,22 @@ def accxp_MakeCacheOp : accxp_Op<"make_cache"> {
                    AffineMapAttr:$activeBlockToCacheMap,
                    AffineMapAttr:$offsetArrayToCacheAccessMap,
                    ArrayAttr:$offsetAccessIndices,
-                   ArrayAttr:$multiCacheAccessIndices);
+                   ArrayAttr:$multiCacheAccessIndices,
+                   OptionalAttr<UI64Attr>:$dynamicMemoryOffset);
   let results = (outs AnyMemRef:$cache);
   let builders = [
     OpBuilder<(ins
       "mlir::MemRefType":$cache,
-      "MemorySpace":$memorySpace)>,
+      "MemorySpace":$memorySpace,
+      "Optional<uint64_t>":$dynamicMemoryOffset)>,
     OpBuilder<(ins
       "mlir::MemRefType":$cache,
       "MemorySpace":$memorySpace,
       "AffineMap":$activeBlockToCacheMap,
       "AffineMap":$offsetArrayToCacheAccessMap,
       "const std::vector<Index>&":$offsetAccessIndices,
-      "const std::vector<Index>&":$multiCacheAccessIndices
-    )>,
+      "const std::vector<Index>&":$multiCacheAccessIndices,
+      "Optional<uint64_t>":$dynamicMemoryOffset)>,
   ];
 
   let extraClassDeclaration = [{

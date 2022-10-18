@@ -42,7 +42,7 @@ namespace value
         return *this;
     }
 
-    FunctionDeclaration& FunctionDeclaration::Parameters(std::vector<ViewAdapter> paramTypes, std::optional<std::vector<FunctionParameterUsage>> paramUsages)
+    FunctionDeclaration& FunctionDeclaration::Parameters(std::vector<ViewAdapter> paramTypes, std::optional<std::vector<FunctionParameterUsage>> paramUsages, std::optional<std::vector<std::vector<int64_t>>> argSizeReferences)
     {
         CheckNonEmpty();
         if (paramUsages.has_value())
@@ -57,6 +57,29 @@ namespace value
         {
             // assume input/output if not specified
             std::fill_n(std::back_inserter(_paramUsages), paramTypes.size(), FunctionParameterUsage::inputOutput);
+        }
+        if (argSizeReferences.has_value())
+        {
+            if (argSizeReferences->size() != paramTypes.size())
+            {
+                throw InputException(InputExceptionErrors::invalidArgument, "Arg size references, if specified, must match the number of parameter types");
+            }
+            _parameterSizeReferences.assign(argSizeReferences->begin(), argSizeReferences->end());
+        }
+        else
+        {
+            // assume static sizes for all array args, and therefore a sentinel -1 value
+            for (auto& param : paramTypes)
+            {
+                auto numDims = param.GetValue().GetLayout().NumDimensions();
+                if (numDims == 0)
+                {
+                    // Treat rank 0 as rank 1 for arg referencing purposes
+                    numDims = 1;
+                }
+                std::vector<int64_t> sentinelValueReferences(numDims, -1);
+                _parameterSizeReferences.push_back(sentinelValueReferences);
+            }
         }
         _paramTypes.assign(paramTypes.begin(), paramTypes.end());
         
@@ -232,6 +255,13 @@ namespace value
         CheckNonEmpty();
 
         return _paramTypes;
+    }
+
+    const std::vector<std::vector<int64_t>>& FunctionDeclaration::GetParameterArgSizeReferences() const
+    {
+        CheckNonEmpty();
+        
+        return _parameterSizeReferences;
     }
 
     const std::optional<Value>& FunctionDeclaration::GetReturnType() const

@@ -71,12 +71,12 @@ def MEMORY_SPACE_NONE : I64EnumAttrCase<"None", 0>;
 def MEMORY_SPACE_GLOBAL : I64EnumAttrCase<"Global", 1>;
 def MEMORY_SPACE_SHARED : I64EnumAttrCase<"Shared", 3>;
 def MEMORY_SPACE_PRIVATE : I64EnumAttrCase<"Private", 5>;
-def MEMORY_SPACE_TENSOR : I64EnumAttrCase<"Tensor", 7>;
+def MEMORY_SPACE_MMA_FRAGMENT : I64EnumAttrCase<"MMAFragment", 7>;
 
 def MemorySpaceAttr : I64EnumAttr<
         "MemorySpace",
         "Describes the memory space in which an allocation resides.",
-        [ MEMORY_SPACE_NONE, MEMORY_SPACE_GLOBAL, MEMORY_SPACE_SHARED, MEMORY_SPACE_PRIVATE, MEMORY_SPACE_TENSOR]> {
+        [ MEMORY_SPACE_NONE, MEMORY_SPACE_GLOBAL, MEMORY_SPACE_SHARED, MEMORY_SPACE_PRIVATE, MEMORY_SPACE_MMA_FRAGMENT]> {
     let cppNamespace = "::accera::ir::value";
 }
 

@@ -78,31 +78,20 @@ namespace cpp_printer
         return rowMajor ? strides.end()[-2] : strides.back();
     }
 
-    std::string getMemrefAccessStr(PrinterState& state, const bool sharedMem, std::string memrefVar, std::string accessMapName, mlir::Operation::operand_range indices, const bool rowMajor)
+    std::string getMemrefAccessStr(CppPrinter* printer, const bool squareBracket, MemRefType memRefType, std::string memrefVar, mlir::Operation::operand_range indices)
     {
-        // When accessing from shared memory, no need to account for layout.
-        if (sharedMem)
+        auto indexOffsetStr = printer->getMemRefAccessOffset(squareBracket, memRefType, indices);
+        std::string memrefStr;
+        if (squareBracket)
         {
-            auto res = std::string("&") + memrefVar;
-            for (auto it = indices.begin(); it != indices.end(); ++it)
-            {
-                res.append("[")
-                    .append(state.nameState.getName(*it).str())
-                    .append("]");
-            }
-
-            return res;
+            memrefStr = "&" + memrefVar + indexOffsetStr;
+        }
+        else
+        {
+            memrefStr = memrefVar + " + " + indexOffsetStr;
         }
 
-        auto res = memrefVar + " + " + accessMapName + "(";
-        for (auto it = indices.begin(); it != indices.end(); ++it)
-        {
-            res.append(state.nameState.getName(*it).str());
-            if (it + 1 != indices.end())
-                res.append(", ");
-        }
-        res.append(")");
-        return res;
+        return memrefStr;
     }
 
     std::string getWmmaNamespace(PrinterState& state)
@@ -205,6 +194,7 @@ namespace cpp_printer
         int64_t offset;
         SmallVector<int64_t, 2> strides;
         auto memRefType = src.getType().cast<MemRefType>();
+        auto memRefVarName = state.nameState.getName(src).str();
         RETURN_IF_FAILED(mlir::getStridesAndOffset(memRefType, strides, offset));
         if (operandType == vir::MMAOperandType::Acc)
         {
@@ -217,11 +207,7 @@ namespace cpp_printer
         const auto ld = getLeadingDim(memRefType, sharedMem, rowMajor);
 
         const auto resName = state.nameState.getName(dest);
-        auto srcMap = memRefType.getLayout().getAffineMap();
-        assert(sharedMem || srcMap.getNumResults() == 1);
-        AffineDialectCppPrinter* affineDialectPrinter = dynamic_cast<AffineDialectCppPrinter*>(printer->getDialectPrinter("Affine"));
-        const auto accessMapName = affineDialectPrinter->makeAffineIdxFuncName(affineDialectPrinter->getFuncBaseName(srcMap), 0);
-        const auto srcMemrefStr = getMemrefAccessStr(state, sharedMem, state.nameState.getName(src).str(), accessMapName, indices, rowMajor);
+        auto srcMemrefStr = getMemrefAccessStr(printer, sharedMem, memRefType, memRefVarName, indices);
         os << ns << "::load_matrix_sync";
         if (state.hasRuntime(Runtime::ROCM))
         {
@@ -272,11 +258,7 @@ namespace cpp_printer
         const auto ld = getLeadingDim(memRefType, sharedMem, rowMajor);
 
         const auto ns = getWmmaNamespace(state);
-        auto dstMap = memRefType.getLayout().getAffineMap();
-        assert(dstMap.getNumResults() == 1);
-        AffineDialectCppPrinter* affineDialectPrinter = dynamic_cast<AffineDialectCppPrinter*>(printer->getDialectPrinter("Affine"));
-        const auto accessMapName = affineDialectPrinter->makeAffineIdxFuncName(affineDialectPrinter->getFuncBaseName(dstMap), 0);
-        const auto dstMemrefStr = getMemrefAccessStr(state, sharedMem, state.nameState.getName(dest).str(), accessMapName, indices, rowMajor);
+        const auto dstMemrefStr = getMemrefAccessStr(printer, sharedMem, memRefType, state.nameState.getName(dest).str(), indices);
         auto&& os = printer->getOStream();
         os << ns << "::store_matrix_sync";
         if (state.hasRuntime(Runtime::ROCM))

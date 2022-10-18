@@ -23,3 +23,4 @@ update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
 # TODO: support different versions of python if needed
 python -m pip install -r requirements.txt
+python -m pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/rocm5.1.1

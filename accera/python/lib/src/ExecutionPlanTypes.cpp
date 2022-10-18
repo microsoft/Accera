@@ -44,7 +44,7 @@ namespace
             .value("GLOBAL", value::MemorySpace::Global)
             .value("SHARED", value::MemorySpace::Shared)
             .value("PRIVATE", value::MemorySpace::Private)
-            .value("TENSOR", value::MemorySpace::Tensor);
+            .value("MMA_FRAGMENT", value::MemorySpace::MMAFragment);
 
         py::enum_<ir::value::Processor>(module, "Processor", "An enumeration of processors for loop index mapping")
             .value("BLOCK_X", ir::value::Processor::BlockX)
@@ -111,9 +111,10 @@ namespace
             .def_readwrite("z", &value::targets::Dim3::z);
 
         py::class_<value::targets::GPU>(module, "_GPU", "The GPU execution options")
-            .def(py::init<value::targets::Dim3, value::targets::Dim3>(), "grid"_a, "block"_a)
+            .def(py::init<value::targets::Dim3, value::targets::Dim3, int64_t>(), "grid"_a, "block"_a, "dynamic_shared_memory_size"_a)
             .def_readwrite("grid", &value::targets::GPU::grid)
-            .def_readwrite("block", &value::targets::GPU::block);
+            .def_readwrite("block", &value::targets::GPU::block)
+            .def_readwrite("dynamic_shared_memory_size", &value::targets::GPU::dynamicSharedMemorySize);
 
         py::class_<util::MemoryAffineCoefficients>(module, "_MemoryAffineCoefficients", "Used for mapping Array or Cache dimensions to memory locations")
             .def(py::init<std::vector<int64_t>, int64_t>(), "coefficients"_a, "offset"_a = 0);
@@ -146,6 +147,7 @@ namespace
                    bool thrifty,
                    bool doubleBuffer,
                    value::MemorySpace doubleBufferMemorySpace,
+                   const std::optional<uint64_t>& sharedMemOffset,
                    const std::optional<value::VectorizationInformation>& vectorizationInfo,
                    const std::optional<value::ValueType>& elementType,
                    value::CacheStrategy /*not hooked up*/) {
@@ -193,6 +195,7 @@ namespace
                 "thrifty"_a,
                 "double_buffer"_a,
                 "double_buffer_location"_a,
+                "shared_memory_offset"_a,
                 "vectorization_info"_a,
                 "element_type"_a,
                 "strategy"_a)
@@ -221,18 +224,19 @@ namespace
                    bool thrifty,
                    bool doubleBuffer,
                    value::MemorySpace doubleBufferMemorySpace,
+                   const std::optional<uint64_t>& sharedMemOffset,
                    const std::optional<value::VectorizationInformation>& vectorizationInfo,
                    const std::optional<value::ValueType>& elementType,
                    value::CacheStrategy strategy) {
                     value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
                     if (outermostIncludedSplitIndex.has_value())
                     {
-                        return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, elementType, thrifty, doubleBuffer, strategy, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace);
+                        return plan.AddCache(target, *outermostIncludedSplitIndex, resolvedTriggerIndex, *dimOrder, elementType, thrifty, doubleBuffer, strategy, vectorizationInfo, indexing, allocation, memorySpace, doubleBufferMemorySpace, sharedMemOffset);
                     }
                     else if (maxElements.has_value())
                     {
                         // TODO : convert all GPUPlan::AddCache() impls to use manual caching rather than automatic, then plumb remaining arguments
-                        return plan.AddCache(std::get<value::ViewAdapter>(target), *maxElements, strategy, memorySpace);
+                        return plan.AddCache(std::get<value::ViewAdapter>(target), *maxElements, strategy, memorySpace, sharedMemOffset);
                     }
                     else
                     {
@@ -252,6 +256,7 @@ namespace
                 "thrifty"_a,
                 "double_buffer"_a,
                 "double_buffer_location"_a,
+                "shared_memory_offset"_a,
                 "vectorization_info"_a,
                 "element_type"_a,
                 "strategy"_a)

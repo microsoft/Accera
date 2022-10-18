@@ -61,7 +61,7 @@ namespace cpp_printer
         }
     }
 
-    StringRef SSANameState::getName(Value val)
+    StringRef SSANameState::getName(Value val) const
     {
         if (auto constant = constantValues.find(val); constant != constantValues.end())
         {
@@ -580,6 +580,61 @@ namespace cpp_printer
         return success();
     }
 
+    std::string CppPrinter::getMemRefAccessOffset(const bool usingBrackets, MemRefType memRefType, Operation::operand_range indices) const
+    {
+        auto rank = memRefType.getRank();
+        std::string offsetStr;
+        llvm::raw_string_ostream offsetOS(offsetStr);
+        if (memRefType.getLayout().isIdentity())
+        {
+            if (usingBrackets)
+            {
+                for (int i = 0; i < rank; i++)
+                {
+                    auto idx = state.nameState.getName(indices[i]);
+                    offsetOS << "[" << idx << "]";
+                }
+            }
+            else
+            {
+                llvm::SmallVector<int64_t, 5> strides(rank);
+                strides[rank - 1] = 1;
+                auto shape = memRefType.getShape();
+                for (int i = static_cast<int>(rank) - 2; i >= 0; i--)
+                {
+                    strides[i] = strides[i + 1] * static_cast<int64_t>(shape[i + 1]);
+                }
+                llvm::interleave(
+                    llvm::zip(indices, strides), offsetOS, [&](auto elem) {
+                        auto [idx, stride] = elem;
+                        offsetOS << state.nameState.getName(idx) << " * " << stride;
+                    },
+                    " + ");
+            }
+        }
+        else
+        {
+            AffineDialectCppPrinter* affineDialectPrinter = dynamic_cast<AffineDialectCppPrinter*>(getDialectPrinter("Affine"));
+            assert(affineDialectPrinter && "Affine dialect printer not found");
+            auto map = memRefType.getLayout().getAffineMap();
+            std::string affineFuncArgs;
+            llvm::raw_string_ostream tmpOs(affineFuncArgs);
+            interleaveComma(indices, tmpOs, [&](Value operand) {
+                tmpOs << state.nameState.getName(operand);
+            });
+
+            StringRef funcBaseName = affineDialectPrinter->getFuncBaseName(map);
+            // making a call for computing each result index
+            for (size_t idx = 0; idx < map.getNumResults(); idx++)
+            {
+                std::string idxFuncName = affineDialectPrinter->makeAffineIdxFuncName(funcBaseName, idx);
+                offsetOS << idxFuncName << "(" << affineFuncArgs << ")";
+            }
+        }
+
+        return offsetStr;
+    }
+
     LogicalResult CppPrinter::printMemRefLoadOrStore(bool isLoad, Value memref, MemRefType memRefType, Operation::operand_range indices, Value targetOrSrc)
     {
         auto rank = memRefType.getRank();
@@ -614,60 +669,8 @@ namespace cpp_printer
         static size_t OffsetId = 0;
         const std::string memrefName = state.nameState.getName(memref).str();
         const std::string offsetVarName = memrefName + "_offset" + std::to_string(OffsetId++);
-
-        std::string offsetStr;
-        llvm::raw_string_ostream offsetOS(offsetStr);
-
-        auto shape = memRefType.getShape();
-        bool usingBrackets = false;
-
-        if (memRefType.getLayout().isIdentity())
-        {
-            auto memspace = memRefType.getMemorySpaceAsInt();
-            usingBrackets = (isPrivateOrWorkgroupMemSpace(memspace) && rank > 1) || rank == 1;
-            if (usingBrackets)
-            {
-                for (int i = 0; i < rank; i++)
-                {
-                    auto idx = state.nameState.getName(indices[i]);
-                    offsetOS << "[" << idx << "]";
-                }
-            }
-            else
-            {
-                llvm::SmallVector<int64_t, 5> strides(rank);
-                strides[rank - 1] = 1;
-                for (int i = static_cast<int>(rank) - 2; i >= 0; i--)
-                {
-                    strides[i] = strides[i + 1] * static_cast<int64_t>(shape[i + 1]);
-                }
-                llvm::interleave(
-                    llvm::zip(indices, strides), os, [&](auto elem) {
-                        auto [idx, stride] = elem;
-                        os << idx << " * " << stride;
-                    },
-                    "+");
-            }
-        }
-        else
-        {
-            AffineDialectCppPrinter* affineDialectPrinter = dynamic_cast<AffineDialectCppPrinter*>(getDialectPrinter("Affine"));
-            assert(affineDialectPrinter && "Affine dialect printer not found");
-            auto map = memRefType.getLayout().getAffineMap();
-            std::string affineFuncArgs;
-            llvm::raw_string_ostream tmpOs(affineFuncArgs);
-            interleaveComma(indices, tmpOs, [&](Value operand) {
-                tmpOs << state.nameState.getName(operand);
-            });
-
-            StringRef funcBaseName = affineDialectPrinter->getFuncBaseName(map);
-            // making a call for computing each result index
-            for (size_t idx = 0; idx < map.getNumResults(); idx++)
-            {
-                std::string idxFuncName = affineDialectPrinter->makeAffineIdxFuncName(funcBaseName, idx);
-                offsetOS << idxFuncName << "(" << affineFuncArgs << ")";
-            }
-        }
+        const auto usingBrackets = memRefType.getLayout().isIdentity() && ((isPrivateOrWorkgroupMemSpace(memRefType.getMemorySpaceAsInt()) && rank > 1) || rank == 1);
+        auto offsetStr = getMemRefAccessOffset(usingBrackets, memRefType, indices);
         if (usingBrackets)
         {
             if (isLoad)
@@ -741,7 +744,7 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult CppPrinter::printBlock(Block* block, bool printParens, bool printBlockTerminator)
+    LogicalResult CppPrinter::printBlock(Block* block, bool printParens, bool printBlockTerminator, std::string prologueStr)
     {
         SSANameState::Scope scope(state.nameState);
         auto usedNamesScope = state.nameState.createUsedNamesScope();
@@ -749,6 +752,7 @@ namespace cpp_printer
         // TODO: support block arguments?
         if (printParens)
             os << "{\n";
+        os << prologueStr;
         auto i = block->getOperations().begin();
         auto e = block->getOperations().end();
         if (!printBlockTerminator)
@@ -1113,7 +1117,7 @@ namespace cpp_printer
         return success();
     }
 
-    DialectCppPrinter* CppPrinter::getDialectPrinter(std::string dialectName)
+    DialectCppPrinter* CppPrinter::getDialectPrinter(std::string dialectName) const
     {
         for (auto& dialectPrinter : dialectPrinters)
         {

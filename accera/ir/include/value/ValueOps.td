@@ -201,13 +201,13 @@ def accv_AllocOp : accv_Op<"alloc"> {
   }];
 
   let arguments = (ins OptionalAttr<AnyAttr>:$data,
-                   Confined<OptionalAttr<I64Attr>, [IntMinValue<0>]>:$alignment,
+                   Confined<OptionalAttr<UI64Attr>, [IntMinValue<0>]>:$alignment,
                    OptionalAttr<MemoryAllocTypeAttr>:$allocType,
                    Variadic<AnyType>:$operands);
   let results = (outs AnyMemRef);
 
   let builders = [
-    OpBuilder<(ins "MemRefType":$memrefType, CArg<"Optional<int64_t>", "llvm::None">:$alignment, CArg<"Optional<MemoryAllocType>", "llvm::None">:$allocType, CArg<"ValueRange", "{}">:$operands), [{
+    OpBuilder<(ins "MemRefType":$memrefType, CArg<"Optional<uint64_t>", "llvm::None">:$alignment, CArg<"Optional<MemoryAllocType>", "llvm::None">:$allocType, CArg<"ValueRange", "{}">:$operands), [{
        $_state.types.push_back(memrefType);
        if (alignment)
          $_state.addAttribute(getAlignmentAttrName(), $_builder.getI64IntegerAttr(*alignment));

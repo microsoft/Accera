@@ -35,9 +35,10 @@ def _ceildiv(x, y):
     return ((x - 1) // y) + 1
 
 class Plan:
-    def __init__(self, schedule: Schedule, target: Target = Target.HOST):
+    def __init__(self, schedule: Schedule, target: Target, dynamic_shared_memory_size: int):
         self._sched = schedule
         self._target = target
+        self._dynamic_shared_memory_size = dynamic_shared_memory_size
         self._commands = []
         self._delayed_calls = {}
         self._index_attrs: Mapping[LoopIndex, List[str]] = {}
@@ -371,6 +372,7 @@ class Plan:
         trigger_level: Union[int, DelayedParameter] = None,
         double_buffer: Union[bool, DelayedParameter] = False,
         double_buffer_location: Union[object, _MemorySpace, DelayedParameter] = AUTO,
+        _shared_memory_offset: Union[int, DelayedParameter] = None,
         vectorize: Union[bool, DelayedParameter, object] = AUTO,
         strategy: _CacheStrategy = AUTO,
         _delayed_cache: DelayedCache = None,
@@ -411,7 +413,8 @@ class Plan:
                         double_buffer_location,
                         vectorize,
                         layout,
-                        element_type
+                        element_type,
+                        _shared_memory_offset
                     )
                 ]
             )
@@ -441,6 +444,7 @@ class Plan:
                 "thrifty": thrifty,
                 "double_buffer": double_buffer,
                 "double_buffer_location": double_buffer_location,
+                "_shared_memory_offset": _shared_memory_offset,
                 "vectorize": vectorize,
                 "element_type": element_type
             }
@@ -480,8 +484,11 @@ class Plan:
         if strategy == AUTO:
             strategy = _CacheStrategy.STRIPED
 
-        if double_buffer and location == _MemorySpace.TENSOR:
+        if double_buffer and location == _MemorySpace.MMA_FRAGMENT:
             raise ValueError("Double buffering is not supported with Tensor caching")
+
+        if _shared_memory_offset is not None and location != _MemorySpace.SHARED:
+            raise ValueError("_shared_memory_offset can only be set with shared memory")
 
         if double_buffer_location is AUTO:
             if double_buffer:
@@ -608,6 +615,7 @@ class Plan:
             location=location,
             double_buffer=double_buffer,
             double_buffer_location=double_buffer_location,
+            shared_memory_offset=_shared_memory_offset,
             vectorize=vectorize,
             strategy=strategy
         )
@@ -663,6 +671,7 @@ class Plan:
             thrifty=cache.thrifty,
             double_buffer=cache.double_buffer,
             double_buffer_location=cache.double_buffer_location,
+            shared_memory_offset=cache.shared_memory_offset,
             vectorization_info=vectorization_info,
             element_type=cache.element_type,
             strategy=cache.strategy
@@ -960,7 +969,7 @@ class Plan:
             if not self._is_valid_block_size(block_dims):
                 raise ValueError(f"Invalid block size {block_dims}. Max threads per block: {target.max_threads_per_block}.")
 
-            context.options = _GPU(grid=_Dim3(*grid_dims), block=_Dim3(*block_dims))
+            context.options = _GPU(grid=_Dim3(*grid_dims), block=_Dim3(*block_dims), dynamic_shared_memory_size=self._dynamic_shared_memory_size)
             context.plan = context.schedule.create_gpu_plan(
                 gpu_options=context.options, runtime=target.runtime
             )

@@ -585,7 +585,231 @@ class DSLTest_01Arrays(unittest.TestCase):
         function = package.add(nest, args=(M, N, K, A, B, C), base_name="runtimesizes") 
 
         with verifiers.VerifyPackage(self, "test_runtimesizes", TEST_PACKAGE_DIR) as v:
-            package.build("test_runtimesizes", format=TEST_FORMAT | Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+            package.build("test_runtimesizes", format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+            if correctness_check_values:
+                v.check_correctness(
+                    function.name,
+                    before=correctness_check_values["pre"],
+                    after=correctness_check_values["post"],
+                )
+
+    def test_runtimesizes_mixed(self) -> None:
+        from accera import Dimension
+        M = Dimension()
+        N = Dimension()
+
+        A = Array(shape=(M, 32), element_type=ScalarType.float32, role=Array.Role.INPUT)
+
+        B = Array(shape=(32, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
+
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+
+        nest = Nest((M, N, 32))
+
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        package = Package()
+
+        M_test = np.int64(64)
+        N_test = np.int64(128)
+        A_test = np.random.random((M_test, 32)).astype(np.float32)
+        B_test = np.random.random((32, N_test)).astype(np.float32)
+        C_test = np.random.random((M_test, N_test)).astype(np.float32)
+        correctness_check_values = {
+            "pre": [M_test, N_test, A_test, B_test, C_test],
+            "post": [M_test, N_test, A_test, B_test, C_test + A_test @ B_test],
+        }
+
+        function = package.add(nest, args=(M, N, A, B, C), base_name="test_runtimesizes_mixed") 
+
+        with verifiers.VerifyPackage(self, "test_runtimesizes_mixed", TEST_PACKAGE_DIR) as v:
+            package.build("test_runtimesizes_mixed", format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+            if correctness_check_values:
+                v.check_correctness(
+                    function.name,
+                    before=correctness_check_values["pre"],
+                    after=correctness_check_values["post"],
+                )
+
+    def _test_runtimesizes_common(self, name, M, N, K, sizes_first=True) -> None:
+        from accera import Dimension
+
+        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+
+        nest = Nest((M, N, K))
+
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        package = Package()
+        
+        size_test_args = []
+        size_args = []
+        if isinstance(M, Dimension):
+            M_test = np.int64(64)
+            size_test_args.append(M_test)
+            size_args.append(M)
+        else:
+            M_test = M
+            
+        if isinstance(N, Dimension):
+            N_test = np.int64(128)
+            size_test_args.append(N_test)
+            size_args.append(N)
+        else:
+            N_test = N
+            
+        if isinstance(K, Dimension):
+            K_test = np.int64(32)
+            size_test_args.append(K_test)
+            size_args.append(K)
+        else:
+            K_test = K
+
+        A_test = np.random.random((M_test, K_test)).astype(np.float32)
+        B_test = np.random.random((K_test, N_test)).astype(np.float32)
+        C_test = np.random.random((M_test, N_test)).astype(np.float32)
+
+        array_pre_args = [A_test, B_test, C_test]
+        array_post_args = [A_test, B_test, C_test + A_test @ B_test]
+        pre_args = (size_test_args + array_pre_args) if sizes_first else (array_pre_args + size_test_args)
+        post_args = (size_test_args + array_post_args) if sizes_first else (array_post_args + size_test_args) 
+
+        correctness_check_values = {
+            "pre": pre_args,
+            "post": post_args,
+        }
+
+        array_args = [A, B, C]
+        args = (size_args + array_args) if sizes_first else (array_args + size_args)
+
+        function = package.add(nest, args=args, base_name=name) 
+
+        with verifiers.VerifyPackage(self, name, TEST_PACKAGE_DIR) as v:
+            package.build(name, format=TEST_FORMAT | Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+            if correctness_check_values:
+                v.check_correctness(
+                    function.name,
+                    before=correctness_check_values["pre"],
+                    after=correctness_check_values["post"],
+                )
+
+    # 1/3 dynamic
+    def test_matmul_partial_runtimesizes_M(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_common(
+            "test_matmul_partial_runtimesizes_M",
+            Dimension(),
+            128,
+            32,
+            sizes_first=True)
+
+    def test_matmul_partial_runtimesizes_K(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_common(
+            "test_matmul_partial_runtimesizes_K",
+            64,
+            128,
+            Dimension(),
+            sizes_first=True)
+
+    def test_matmul_partial_runtimesizes_N(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_common(
+            "test_matmul_partial_runtimesizes_N",
+            64,
+            Dimension(),
+            32,
+            sizes_first=True)
+
+
+    # 2/3 dynamic
+    def test_matmul_partial_runtimesizes_MN(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_common(
+            "test_matmul_partial_runtimesizes_MN",
+            Dimension(),
+            Dimension(),
+            32,
+            sizes_first=True)
+
+    def test_matmul_partial_runtimesizes_MK(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_common(
+            "test_matmul_partial_runtimesizes_MK",
+            Dimension(),
+            128,
+            Dimension(),
+            sizes_first=True)
+
+    def test_matmul_partial_runtimesizes_NK(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_common(
+            "test_matmul_partial_runtimesizes_NK",
+            64,
+            Dimension(),
+            Dimension(),
+            sizes_first=True)
+
+    # 3/3 dynamic
+    def test_matmul_partial_runtimesizes_MNK(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_common(
+            "test_matmul_partial_runtimesizes_MNK",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            sizes_first=True)
+
+    # Fails because debug mode expects all the arguments first
+    # def test_matmul_partial_runtimesizes_MNK_size_last(self) -> None:
+    #     from accera import Dimension
+    #     self._test_runtimesizes_common(
+    #         "test_matmul_partial_runtimesizes_MNK_size_last",
+    #         Dimension(),
+    #         Dimension(),
+    #         Dimension(),
+    #         sizes_first=False)
+
+
+    def test_runtimesizes_vector_add(self) -> None:
+        from accera import Dimension
+        N = Dimension()
+
+        A = Array(shape=(N,), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        B = Array(shape=(N,), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+
+        nest = Nest((N,))
+
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i] += A[i]
+
+        package = Package()
+
+        N_test = np.int64(128)
+        A_test = np.random.random((N_test,)).astype(np.float32)
+        B_test = np.random.random((N_test,)).astype(np.float32)
+        correctness_check_values = {
+            "pre": [N_test, A_test, B_test],
+            "post": [N_test, A_test, B_test + A_test],
+        }
+
+        function = package.add(nest, args=(N, A, B), base_name="test_runtimesizes_vector_add") 
+
+        with verifiers.VerifyPackage(self, "test_runtimesizes_vector_add", TEST_PACKAGE_DIR) as v:
+            package.build("test_runtimesizes_vector_add", format=TEST_FORMAT | Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,

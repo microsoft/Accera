@@ -103,9 +103,28 @@ namespace cpp_printer
                                     std::to_string(memspace) + " for AllocOp>>");
             }
 
-            if (memspace == gpu::GPUDialect::getWorkgroupAddressSpace())
-                os << printer->sharedAttrIfCuda();
-            RETURN_IF_FAILED(printer->printArrayDeclaration(memrefType, varName));
+            if (memspace == gpu::GPUDialect::getWorkgroupAddressSpace() && allocOp.alignment())
+            {
+                auto shape = memrefType.getShape();
+                std::string idxAccess;
+                for (int i = 1; i < memrefType.getRank(); ++i)
+                {
+                    idxAccess += "[" + std::to_string(shape[i]) + "]";
+                }
+                RETURN_IF_FAILED(printer->printType(elemType));
+                os << "(*" << varName << ")" << idxAccess;
+                os << " = reinterpret_cast<";
+                RETURN_IF_FAILED(printer->printType(elemType));
+                os <<"(*)" << idxAccess << ">(reinterpret_cast<";
+                RETURN_IF_FAILED(printer->printType(elemType));
+                os << "*>(sharedMemBaseAddr) + " << *allocOp.alignment() << ")";
+            }
+            else
+            {
+                if (memspace == gpu::GPUDialect::getWorkgroupAddressSpace())
+                    os << printer->sharedAttrIfCuda();
+                RETURN_IF_FAILED(printer->printArrayDeclaration(memrefType, varName));
+            }
         }
 
         return success();

@@ -46,9 +46,6 @@ namespace cpp_printer
 
         LogicalResult printIntrinsicCallOp(Operation* callOp, Operation* defFuncOp, bool* consumed) override;
 
-        /// print out host function that launches the kernel
-        LogicalResult printHostLaunchFunc();
-
         LogicalResult printPrologue() override;
 
         LogicalResult printEpilogue() override;

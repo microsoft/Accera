@@ -209,14 +209,14 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="doubleBufferMemorySpace"> The memory space to put the double buffer temporary buffer in </param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, CacheStrategy strategy, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace = MemorySpace::None);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, CacheStrategy strategy, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace, const std::optional<uint64_t>& sharedMemOffset);
 
         /// <summary> Adds a cache for a view target </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="maxElements"> A cutoff budget that can be used to infer the outermost index to include the cache </param>
         /// <param name="memorySpace"> The memory space</param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(ViewAdapter target, int64_t maxElements, CacheStrategy strategy, MemorySpace memorySpace = MemorySpace::Shared);
+        Cache AddCache(ViewAdapter target, int64_t maxElements, CacheStrategy strategy, MemorySpace memorySpace, const std::optional<uint64_t>& sharedMemOffset);
 
         /// <summary> Assigns an ordered sequence of loop indices to a GPU processor </summary>
         /// <param name="indices"> The loop indices </param>

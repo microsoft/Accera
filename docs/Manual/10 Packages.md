@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.10)
+[//]: # (Version: v1.2.11)
 
 # Section 10: Building Packages
 The `Package` class represents a collection of Accera-generated functions. Whenever a package is built, it creates a stand-alone function library that other pieces of software can use. Currently, Accera supports two package formats: HAT and MLIR.

@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.10)
+[//]: # (Version: v1.2.11)
 
-# Accera v1.2.10 Reference
+# Accera v1.2.11 Reference
 
 ## `accera.Schedule.pad(index, size)`
 Pads the beginning of a specified dimension of the iteration-space with empty (no-op) elements.

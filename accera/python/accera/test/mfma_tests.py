@@ -189,14 +189,20 @@ class TensorizeTest(unittest.TestCase):
         if tensorize:
             tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes)
 
-            iii, jjj, kkk = schedule.tile({
-                ii: tensor_splits[0],
-                jj: tensor_splits[1],
+            iii, jjj = schedule.tile({
+                ii: tensor_splits[0] * thread_coarsening_tile[0],
+                jj: tensor_splits[1] * thread_coarsening_tile[1]
+            })
+
+            iiii, jjjj, kkk = schedule.tile({
+                iii: tensor_splits[0],
+                jjj: tensor_splits[1],
                 kk: tensor_splits[2]
             })
-            outer_nest_order = (i, j, k, ii, jj, kk)
-            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+            outer_nest_order = (i, j, k, ii, jj, iii, jjj, kk)
+            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iiii, jjjj, kkk), outer_nest_order=outer_nest_order)
             plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
+            out_cache_idx = k if thread_coarsening_tile == (1, 1) else kk
         else:
             if thread_tile is None:
                 thread_tile = block_tile
@@ -225,6 +231,8 @@ class TensorizeTest(unittest.TestCase):
                 }
             )
 
+            out_cache_idx = k
+
         if cache[0]:
             plan.cache(
                 A, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[0], strategy=_CacheStrategy.BLOCKED
@@ -234,9 +242,9 @@ class TensorizeTest(unittest.TestCase):
                 B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1], strategy=_CacheStrategy.STRIPED
             )
         if cache[2]:
-            acc_loc = target.MemorySpace.TENSOR if tensorize else target.MemorySpace.PRIVATE
+            acc_loc = target.MemorySpace.MMA_FRAGMENT if tensorize else target.MemorySpace.PRIVATE
             plan.cache(
-                C, index=k, vectorize=vectorize, location=acc_loc, layout=cache_layouts[2]
+                C, index=out_cache_idx, vectorize=vectorize, location=acc_loc, layout=cache_layouts[2]
             )
 
         package = Package()
@@ -315,7 +323,7 @@ class TensorizeTest(unittest.TestCase):
                 outer_nest_order = (i, j, k, ii, jj, b, kk, bb)
             else:
                 outer_nest_order = (b, i, j, k, ii, jj, kk)
-            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order)
             plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
         else:
             iii, jjj, kkk = schedule.tile({
@@ -351,7 +359,7 @@ class TensorizeTest(unittest.TestCase):
                 B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1]
             )
         if cache[2]:
-            acc_loc = target.MemorySpace.TENSOR if tensorize else target.MemorySpace.PRIVATE
+            acc_loc = target.MemorySpace.MMA_FRAGMENT if tensorize else target.MemorySpace.PRIVATE
             plan.cache(
                 C, index=k, vectorize=vectorize, location=acc_loc, layout=cache_layouts[2]
             )
@@ -410,7 +418,7 @@ class TensorizeTest(unittest.TestCase):
         })
 
         outer_nest_order = (i, j, k, ii, jj)
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -474,7 +482,7 @@ class TensorizeTest(unittest.TestCase):
         })
 
         outer_nest_order = (i, j, ii, jj, k)
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -538,7 +546,7 @@ class TensorizeTest(unittest.TestCase):
         })
 
         outer_nest_order = (i, j, ii, jj, k)
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -603,7 +611,7 @@ class TensorizeTest(unittest.TestCase):
 
         outer_nest_order = (i, j, ii, jj, k)
 
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -735,7 +743,7 @@ class TensorizeTest(unittest.TestCase):
 
         outer_nest_order = (i, j, ii, jj, k)
 
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -799,7 +807,7 @@ class TensorizeTest(unittest.TestCase):
 
         outer_nest_order = (i, j, ii, jj, k)
 
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -863,7 +871,7 @@ class TensorizeTest(unittest.TestCase):
 
         outer_nest_order = (i, j, ii, jj, k)
 
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -928,7 +936,7 @@ class TensorizeTest(unittest.TestCase):
 
         outer_nest_order = (i, j, ii, jj, k)
 
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -993,7 +1001,7 @@ class TensorizeTest(unittest.TestCase):
 
         outer_nest_order = (i, j, ii, jj, k)
 
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -1057,7 +1065,7 @@ class TensorizeTest(unittest.TestCase):
 
         outer_nest_order = (i, j, ii, jj, k)
 
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -1123,7 +1131,7 @@ class TensorizeTest(unittest.TestCase):
 
         outer_nest_order = (i, j, ii, jj, k)
 
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -1194,7 +1202,7 @@ class TensorizeTest(unittest.TestCase):
 
         outer_nest_order = (i, j, ii, jj, k)
 
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -1260,7 +1268,7 @@ class TensorizeTest(unittest.TestCase):
 
         outer_nest_order = (i, j, ii, jj, k)
 
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -1327,7 +1335,7 @@ class TensorizeTest(unittest.TestCase):
         })
 
         outer_nest_order = (i, j, ii, jj, k)
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
 
         test_name = inspect.currentframe().f_code.co_name
@@ -1432,7 +1440,7 @@ class TensorizeTest(unittest.TestCase):
         })
 
         outer_nest_order = (i, j, k, ii, jj)
-        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+        plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kk), outer_nest_order=outer_nest_order)
         plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
 
         package = Package()
@@ -1607,6 +1615,10 @@ class TensorizeTest(unittest.TestCase):
         })
 
         target = Target(Target.Model.NVIDIA_RTX_A6000)
+        elem_bytes = 4 if element_type == ScalarType.float32 else 2
+        shared_mem_usage_bytes = elem_bytes * (outer_tile_m + outer_tile_n) * outer_tile_k
+        use_dynamic_shared_mem = shared_mem_usage_bytes > target.max_static_shared_memory_per_block
+        dynamic_shared_mem_usage_bytes = shared_mem_usage_bytes if use_dynamic_shared_mem else 0
         if tensorize:
             tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes)
             iii, jjj, kkk = schedule.tile({
@@ -1616,7 +1628,7 @@ class TensorizeTest(unittest.TestCase):
             })
 
             outer_nest_order = (i, j, k, ii, jj, kk)
-            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, dynamic_shared_memory_size=dynamic_shared_mem_usage_bytes)
             plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, scheduling_policy=scheduling_policy)
         else:
             # TODO : split this case into a different helper function as this is a tensorize helper
@@ -1628,7 +1640,7 @@ class TensorizeTest(unittest.TestCase):
             })
             schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
-            plan = schedule.create_plan(target=target)
+            plan = schedule.create_plan(target=target, dynamic_shared_memory_size=dynamic_shared_mem_usage_bytes)
             plan.bind(
                 mapping={
                     i: bind_order[0],
@@ -1639,20 +1651,32 @@ class TensorizeTest(unittest.TestCase):
             )
 
         if cache:
-            plan.cache(
-                A, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[0], strategy=_CacheStrategy.BLOCKED
-            )
-            plan.cache(
-                B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1], strategy=_CacheStrategy.STRIPED
-            )
+            if use_dynamic_shared_mem:
+                plan.cache(
+                    A, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, _shared_memory_offset=0, layout=cache_layouts[0], strategy=_CacheStrategy.BLOCKED
+                )
+                plan.cache(
+                    B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, _shared_memory_offset=outer_tile_m * outer_tile_k, layout=cache_layouts[1], strategy=_CacheStrategy.STRIPED
+                )
+            else:
+                plan.cache(
+                    A, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[0], strategy=_CacheStrategy.BLOCKED
+                )
+                plan.cache(
+                    B, index=ii, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1], strategy=_CacheStrategy.STRIPED
+                )
 
-            acc_loc = target.MemorySpace.TENSOR if tensorize else target.MemorySpace.PRIVATE
+            acc_loc = target.MemorySpace.MMA_FRAGMENT if tensorize else target.MemorySpace.PRIVATE
             plan.cache(
                 C, index=k, vectorize=vectorize, location=acc_loc, layout=Array.Layout.FIRST_MAJOR
             )
 
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
+        def file_check_fn(v):
+            checker = v.file_checker(f"{test_name}.cu")
+            checker.check(f"{dynamic_shared_mem_usage_bytes}>>>")
+            checker.run()
 
         self._verify_matrix_multiplication_function(
             function,
@@ -1661,7 +1685,8 @@ class TensorizeTest(unittest.TestCase):
             check_correctness=CUDA_AVAILABLE,
             tolerance=1e-5 if element_type == ScalarType.float32 else 1e-2,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
-            package_format=Package.Format.MLIR | Package.Format.DEFAULT
+            package_format=Package.Format.MLIR | Package.Format.DEFAULT,
+            file_check_fn=file_check_fn if use_dynamic_shared_mem else None
         )
 
     def test_cuda_cache_tensorize(self) -> None:
@@ -1679,6 +1704,12 @@ class TensorizeTest(unittest.TestCase):
         self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
                                    test_name="test_cuda_non_square_last_major_inputs", tensorize=False,
                                    cache=False, vectorize=False, element_type=ScalarType.float32, output_type=ScalarType.float32,
+                                   array_layouts=[Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR])
+
+    def test_cuda_non_square_last_major_inputs_dynamic_shared(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=128,
+                                   test_name="test_cuda_non_square_last_major_inputs_dynamic_shared", tensorize=False,
+                                   cache=True, vectorize=False, element_type=ScalarType.float32, output_type=ScalarType.float32,
                                    array_layouts=[Array.Layout.LAST_MAJOR, Array.Layout.LAST_MAJOR, Array.Layout.FIRST_MAJOR])
 
     def test_cuda_non_square_last_major_output(self) -> None:
@@ -1703,6 +1734,12 @@ class TensorizeTest(unittest.TestCase):
         self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=16, outer_tile_n=16, outer_tile_k=128,
                                    test_name="test_cuda_tensorize_non_square_last_major_output", tensorize=True,
                                    cache=False, vectorize=False,
+                                   array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR])
+
+    def test_cuda_tensorize_non_square_last_major_output_dynamic_shared(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=256,
+                                   test_name="test_cuda_tensorize_non_square_last_major_output_dynamic_shared", tensorize=True,
+                                   cache=True, vectorize=False, double_buffer = True,
                                    array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR])
 
     def test_cuda_tensorize_non_square_last_major_inputs_output(self) -> None:
@@ -1807,6 +1844,7 @@ class TensorizeTest(unittest.TestCase):
                         intype=ScalarType.float32, outtype=ScalarType.float32,
                         use_static_offsets=False, num_fused_passes=None,
                         scheduling_policy=_MMASchedulingPolicy.PASS_ORDER,
+                        thread_coarsening_tile=(1, 1),
                         test_name=None) -> None:
 
         target = Target(Target.Model.AMD_MI100)
@@ -1826,6 +1864,8 @@ class TensorizeTest(unittest.TestCase):
                 test_name += "_tensormap"
             if num_fused_passes is not None:
                 test_name += "_p" + str(num_fused_passes)
+            if thread_coarsening_tile[0] != 1 or thread_coarsening_tile[1] != 1:
+                test_name += "_t" + str(thread_coarsening_tile[0]) + "_" + str(thread_coarsening_tile[1])
 
         def file_check_fn(v):
             checker = v.file_checker(f"{test_name}.cu")
@@ -1843,6 +1883,7 @@ class TensorizeTest(unittest.TestCase):
                           cache=(False, False, False),
                           use_static_offsets=use_static_offsets,
                           scheduling_policy=scheduling_policy,
+                          thread_coarsening_tile=thread_coarsening_tile,
                           array_element_types=[intype, intype, outtype],
                           file_check_fn=file_check_fn if use_static_offsets else None,
                           tolerance=tolerance)
@@ -2158,6 +2199,7 @@ class TensorizeTest(unittest.TestCase):
                               outer_tile_k,
                               test_name,
                               mma_shape=_MMAShape.M16xN16xK4_B1,
+                              thread_coarsening_tile=(1, 1),
                               num_total_passes=1,
                               cache=(True, True, True),
                               cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
@@ -2168,7 +2210,8 @@ class TensorizeTest(unittest.TestCase):
                               use_static_offsets=False,
                               scheduling_policy=_MMASchedulingPolicy.PASS_ORDER,
                               array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
-                              tolerance=1e-5) -> None:
+                              tolerance=1e-5,
+                              file_check_fn=None) -> None:
         self._rocm_matmul(test_name, M, N, K,
                           block_tile=block_tile,
                           outer_tile_k=outer_tile_k,
@@ -2177,6 +2220,7 @@ class TensorizeTest(unittest.TestCase):
                           mma_shape=mma_shape,
                           num_total_passes=num_total_passes,
                           cache=cache,
+                          thread_coarsening_tile=thread_coarsening_tile,
                           cache_layouts=cache_layouts,
                           double_buffer=double_buffer,
                           double_buffer_location=double_buffer_location,
@@ -2184,7 +2228,8 @@ class TensorizeTest(unittest.TestCase):
                           use_static_offsets=use_static_offsets,
                           scheduling_policy=scheduling_policy,
                           array_layouts=array_layouts,
-                          tolerance=tolerance)
+                          tolerance=tolerance,
+                          file_check_fn=file_check_fn)
 
     def test_rocm_cache_tensorize(self) -> None:
         self._rocm_cache_tensorize(M=1024, N=1024, K=1024, block_tile=(64, 64), outer_tile_k=64, test_name="test_rocm_cache_tensorize")
@@ -2387,6 +2432,34 @@ class TensorizeTest(unittest.TestCase):
                                 test_name="test_rocm_batchgemm_vectorized_cache_double_buffering_tensorize_square_bsplit",
                                 double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True, use_static_offsets=False)
 
+    # Testing thread coarsening with tensorization
+    def test_rocm_tensorize_1024x1024x1024_fp32_fp32_64x64x64_M64xN64xK1_B4_t2_2(self) -> None:
+        self._rocm_tensorize(1024, 1024, 1024, 128, 128, mma_shape=_MMAShape.M64xN64xK1_B4, num_total_passes=64, tolerance=1e-2, thread_coarsening_tile=(2, 2))
+
+    def test_rocm_tensorize_1024x1024x1024_fp16_fp16_32x32x32_M32xN32xK8_B1_tensormap_t2_1(self) -> None:
+        self._rocm_tensorize(1024, 1024, 1024, 128, 128, mma_shape=_MMAShape.M32xN32xK8_B1, num_total_passes=4, tolerance=1e-2, thread_coarsening_tile=(2, 1), intype=ScalarType.float16, outtype=ScalarType.float16, use_static_offsets=True)
+
+    def test_rocm_vectorized_cache_double_buffering_tensorize_non_square_M64xN64xK1_B4_t2_1(self) -> None:
+        test_name = "test_rocm_vectorized_cache_double_buffering_tensorize_non_square_M64xN64xK1_B4_t2_1"
+        def file_check_fn(v):
+            checker = v.file_checker(f"{test_name}.cu")
+            checker.check("<<<dim3(12, 10, 1), dim3(64, 1, 1), 0>>>")
+            checker.run()
+        self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(128, 64), outer_tile_k=64, thread_coarsening_tile=(2, 1),
+                                   mma_shape=_MMAShape.M64xN64xK1_B4, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
+                                   test_name=test_name, file_check_fn=file_check_fn, vectorize=True, scheduling_policy=_MMASchedulingPolicy.PASS_ORDER)
+
+    def test_rocm_vectorized_cache_double_buffering_tensorize_non_square_blockorder_fp16_t2_2(self) -> None:
+        test_name = "test_rocm_vectorized_cache_double_buffering_tensorize_non_square_blockorder_fp16_t2_2"
+        def file_check_fn(v):
+            checker = v.file_checker(f"{test_name}.cu")
+            checker.check("<<<dim3(6, 10, 1), dim3(256, 4, 1), 0>>>")
+            checker.run()
+        self._rocm_cache_tensorize(M=1280, N=768, K=1024, block_tile=(128, 128), outer_tile_k=64, thread_coarsening_tile=(2, 2),
+                                   test_name=test_name, file_check_fn=file_check_fn, double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE,
+                                   vectorize=True, mma_shape=_MMAShape.M16xN16xK16_B1, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER,
+                                   array_element_types=[ScalarType.float16, ScalarType.float16, ScalarType.float32], tolerance=1e-3)
+
     def _test_cache_memory_order_helper(self, a_layout, a_cache_layout, double_buffer, vectorize, tensorize, element_type = ScalarType.float32,
                                         mma_shape = _MMAShape.M16xN16xK4_B1, num_total_passes = 4, model = Target.Model.AMD_MI100) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -2431,7 +2504,7 @@ class TensorizeTest(unittest.TestCase):
         })
         if tensorize:
             outer_nest_order = (i, j, k, ii, jj, kk)
-            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, mma_shape=mma_shape)
+            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order)
             plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes)
         else:
             schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)

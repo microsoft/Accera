@@ -21,6 +21,7 @@ from accera import Array, Nest, Constants, ScalarType, Target, Package
 from accera._lang_python._lang import _MMASchedulingPolicy, _MMAShape, _CacheStrategy
 import cosmosdb
 from gemm_opts import GemmOpts
+import math
 
 @dataclass
 class BenchmarkResult:
@@ -315,6 +316,17 @@ def get_variants(opts: GemmOpts, dtype, target):
         # For single block MMA shapes, we don't need to test both scheduling policies and they will
         # both effectively result in the same schedule. Just ignore BLOCK_ORDER in that case.
         if single_block_mma(mma_type) and scheduling_policy == _MMASchedulingPolicy.BLOCK_ORDER:
+            return False
+
+        thread_coarsening_factor = thread_coarsening_factor_r * thread_coarsening_factor_c
+        if thread_coarsening_factor > 4:
+            return False
+
+        thread_blocks_x = math.ceil(opts.n / outer_t[1])
+        thread_blocks_y = math.ceil(opts.m / outer_t[0])
+        num_waves = math.ceil(thread_blocks_x * thread_blocks_y / target.num_cores) # Assuming a minimum occupancy of 1 thread block per SM
+        # No point having a thread-coarsening factor which is greater than the number of waves required with single occupancy.
+        if thread_coarsening_factor > num_waves:
             return False
 
         mma_m = get_m(target, mma_type)

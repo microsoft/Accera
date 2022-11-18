@@ -19,6 +19,7 @@
 #include <ir/include/value/ValueEnums.h>
 
 #include <utilities/include/Boolean.h>
+#include <utilities/include/Exception.h>
 #include <utilities/include/MathUtil.h>
 #include <utilities/include/TypeTraits.h>
 
@@ -609,11 +610,16 @@ bool HasOutOfBoundsAccess(LoadOrStoreOp op, mlir::Location loc)
     unsigned rank = memRefType.getRank();
     (void)accessRegion.compute(op, 0, nullptr /*sliceState*/, false /*addMemRefDimBounds */);
     bool outOfBounds = false;
+
+    // TODO : handle dynamic dimension out of bounds checks generically
+    if (!memRefType.hasStaticShape())
+    {
+        return false;
+    }
+
     // For each dimension, check for out of bounds.
     for (unsigned dim = 0; dim < rank; ++dim)
     {
-        assert(!memRefType.isDynamicDim(dim) && "Dynamic dimensions are not currently supported");
-
         // Intersect memory region with constraint capturing out of bounds (both out
         // of upper and out of lower), and check if the constraint system is
         // feasible. If it is, there is at least one point out of bounds.
@@ -878,6 +884,19 @@ std::tuple<NestOp, ScheduleOp, ExecPlanOp> CreateCacheLoopnestHelper(
 
 std::vector<size_t> GetMajorToMinorDimensionTraversal(const mlir::MemRefType& sourceType)
 {
+    auto sourceMemRefMap = sourceType.getLayout().getAffineMap();
+    if (sourceMemRefMap.isIdentity())
+    {
+        // Note: this case is handled explicitly to quickly enable dynamically-sized identity order map support before more general support is added
+
+        // an N-dimensional memref with an identity map has a major-to-minor dimension traversal order
+        //      [0, 1, 2, ..., N-1]
+        std::vector<size_t> result(sourceType.getRank(), 0); // [0, 0, ..., 0]
+        std::iota(result.begin(), result.end(), 0); // [0, 1, ..., N-1]
+        return result;
+    }
+    // TODO : support dynamic shapes for cases beyond the identity map case
+
     llvm::SmallVector<int64_t, 4> strides;
     int64_t offset;
     auto strideResult = mlir::getStridesAndOffset(sourceType, strides, offset);
@@ -1321,8 +1340,64 @@ bool IsCacheParametricOnGPUProc(mlir::Attribute cacheMemSpace, v::Processor gpuP
     }
 }
 
+mlir::MemRefRegion ProjectOutNonLoopIVs(const mlir::MemRefRegion& activeBlock)
+{
+    unsigned rank = activeBlock.getRank();
+    auto activeBlockCopy = activeBlock; // mutable copy
+    auto& cst = activeBlockCopy.cst;
+    mlir::SmallVector<mlir::Value, 8> regionSymbols;
+    cst.getValues(rank, cst.getNumIds(), &regionSymbols);
+    std::stack<unsigned> idsToProjectOut;
+    for (unsigned cstId = rank; cstId < cst.getNumIds(); ++cstId)
+    {
+        auto symId = cstId - rank;
+        auto loop = mlir::getForInductionVarOwner(regionSymbols[symId]);
+        if (loop == nullptr)
+        {
+            idsToProjectOut.push(cstId);
+        }
+    }
+    // project out ids from highest-to-lowest id as each projection will shift any ids greater than it
+    while (!idsToProjectOut.empty())
+    {
+        unsigned cstId = idsToProjectOut.top();
+        idsToProjectOut.pop();
+        cst.projectOut(cstId);
+    }
+    return activeBlockCopy;
+}
+
+bool IsStaticallySized(const mlir::MemRefRegion& activeBlockRegion)
+{
+    mlir::SmallVector<int64_t, 4> shape;
+    std::vector<mlir::SmallVector<int64_t, 4>> lbs;
+    mlir::SmallVector<int64_t, 4> lbDivisors;
+
+    auto activeBlockVolumeOpt = activeBlockRegion.getConstantBoundingSizeAndShape(&shape, &lbs, &lbDivisors);
+    if (!activeBlockVolumeOpt.hasValue())
+    {
+        return false;
+    }
+
+    // TODO : relax this constraint
+    // Project out non-loop-IVs and see if we still have the same volume.
+    // Some dynamic shapes have a constant bounding box (which we ultimately want to support as a cache)
+    // but our cache value handle usage expects everything to be indexed with loop IVs currently, so we can't support it yet
+    auto projectedActiveBlockRegion = ProjectOutNonLoopIVs(activeBlockRegion);
+
+    auto projectedActiveBlockVolumeOpt = projectedActiveBlockRegion.getConstantBoundingSizeAndShape(&shape, &lbs, &lbDivisors);
+    if (!projectedActiveBlockVolumeOpt.hasValue())
+    {
+        return false;
+    }
+    // If a dynamic value is controlling the size of an active block dimension (even when it has a constant bound),
+    // then projecting it out will change that dimension and hence the active block volume
+    return *activeBlockVolumeOpt == *projectedActiveBlockVolumeOpt;
+}
+
 // Computes the active block for the array for the ops in the graph in half-open graph interval [startOp, endOp)
-ArrayAccessInfo ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir::Value array, mlir::Block::iterator startOp, mlir::Block::iterator endOp, bool computeActiveBlock, mlir::Attribute cacheMemorySpace)
+// If the active block has a dynamic size, returns std::nullopt
+std::optional<ArrayAccessInfo> ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir::Value array, mlir::Block::iterator startOp, mlir::Block::iterator endOp, bool computeActiveBlock, mlir::Attribute cacheMemorySpace)
 {
     auto loc = startOp->getLoc();
     unsigned loopDepth = mlir::getNestingDepth(&(*startOp));
@@ -1455,6 +1530,10 @@ ArrayAccessInfo ComputeAccessInfoForArrayAtLevel(PatternRewriter& rewriter, mlir
             {
                 if (ComputeRegionAccessedByOp(rewriter, activeBlockRegion, arrayUserOp, loopDepth, result.parametricIVHandles))
                 {
+                    if (!IsStaticallySized(activeBlockRegion))
+                    {
+                        return std::nullopt;
+                    }
                     if (firstMemRefRegionSeen)
                     {
                         result.activeBlock = activeBlockRegion;
@@ -1493,13 +1572,25 @@ ActiveBlockInfo ConvertMemRefRegionToActiveBlockInfo(OpBuilder& builder, const m
 {
     ActiveBlockInfo activeBlockInfo;
 
-    // This shape computation is duplicated from GetActiveBlockVolume() since this function is the only one that needs the shape, lbs, and lbDivisors
+    unsigned rank = activeBlockRegion.getRank();
+
+    if (!IsStaticallySized(activeBlockRegion))
+    {
+        throw accera::utilities::LogicException(accera::utilities::LogicExceptionErrors::notImplemented, "Dynamically-sized cache active blocks are not currently supported");
+    }
+
+    // TODO : this may need to be changed to support dynamically shaped active blocks
+    // Project out any symbols from the MemRefRegion that are not loop IVs
+    // When we have loops with dynamic ranges, they bring their dynamic values into the constraint system
+    // but for statically-shaped caches, these dynamic values don't impact the cache shape or indexing,
+    // only the loop IVs do
+    auto activeBlockRegionProjected = ProjectOutNonLoopIVs(activeBlockRegion);
+
     mlir::SmallVector<int64_t, 4> shape;
     std::vector<mlir::SmallVector<int64_t, 4>> lbs;
     mlir::SmallVector<int64_t, 4> lbDivisors; // TODO : do we have scenarios where we need to consider these?
 
-    auto activeBlockVolumeOpt = activeBlockRegion.getConstantBoundingSizeAndShape(&shape, &lbs, &lbDivisors);
-    assert(activeBlockVolumeOpt.hasValue());
+    auto activeBlockVolumeOpt = activeBlockRegionProjected.getConstantBoundingSizeAndShape(&shape, &lbs, &lbDivisors);
     activeBlockInfo.activeBlockVolume = activeBlockVolumeOpt.getValue();
 
     activeBlockInfo.shape.insert(activeBlockInfo.shape.begin(), shape.begin(), shape.end());
@@ -1507,15 +1598,14 @@ ActiveBlockInfo ConvertMemRefRegionToActiveBlockInfo(OpBuilder& builder, const m
     std::vector<std::vector<int64_t>> lbsVec;
     std::transform(lbs.begin(), lbs.end(), std::back_inserter(lbsVec), [](const mlir::SmallVector<int64_t, 4>& vec) { return std::vector<int64_t>(vec.begin(), vec.end()); });
 
-    unsigned rank = activeBlockRegion.getRank();
     activeBlockInfo.lbMaps.resize(rank);
     activeBlockInfo.ubMaps.resize(rank);
     for (auto dim = 0u; dim < rank; ++dim)
     {
-        activeBlockRegion.getLowerAndUpperBound(dim, activeBlockInfo.lbMaps[dim], activeBlockInfo.ubMaps[dim]);
+        activeBlockRegionProjected.getLowerAndUpperBound(dim, activeBlockInfo.lbMaps[dim], activeBlockInfo.ubMaps[dim]);
     }
 
-    const FlatAffineValueConstraints* cst = activeBlockRegion.getConstraints();
+    const FlatAffineValueConstraints* cst = activeBlockRegionProjected.getConstraints();
     mlir::SmallVector<mlir::Value, 8> regionSymbols;
     cst->getValues(rank, cst->getNumIds(), &regionSymbols);
     std::vector<mlir::Value> regionSymbolsVec;
@@ -1816,10 +1906,34 @@ mlir::AffineMap ComputeLoopIVToDefinitionOrderMap(const std::vector<mlir::Value>
         const auto& otherIV = ivs[otherIdx];
         auto currentOriginalIV = GetOriginalIV(currentIV);
         auto otherOriginalIV = GetOriginalIV(otherIV);
-        auto currentDefiningOp = mlir::getForInductionVarOwner(currentOriginalIV);
-        auto otherDefiningOp = mlir::getForInductionVarOwner(otherOriginalIV);
-        assert(currentDefiningOp != nullptr);
-        assert(otherDefiningOp != nullptr);
+        mlir::Operation* currentDefiningOp = mlir::getForInductionVarOwner(currentOriginalIV);
+        mlir::Operation* otherDefiningOp = mlir::getForInductionVarOwner(otherOriginalIV);
+        auto currentIVBlockArg = currentOriginalIV.dyn_cast<mlir::BlockArgument>();
+        auto otherIVBlockArg = otherOriginalIV.dyn_cast<mlir::BlockArgument>();
+
+        // If either op is null, then the IVs are function block arguments, and set the op to the funcop defining them
+        if (currentDefiningOp == nullptr && otherDefiningOp == nullptr)
+        {
+            // If both are block args of the same block, then return which one occurs first in the block arg list
+            if (currentIVBlockArg.getOwner() == otherIVBlockArg.getOwner())
+            {
+                return currentIVBlockArg.getArgNumber() < otherIVBlockArg.getArgNumber();
+            }
+            else
+            {
+                // Different blocks, so return true if the current block arg is an ancestor of the other
+                currentDefiningOp = currentIVBlockArg.getOwner()->getParentOp();
+                otherDefiningOp = otherIVBlockArg.getOwner()->getParentOp();
+            }
+        }
+        else if (currentDefiningOp == nullptr)
+        {
+            currentDefiningOp = currentIVBlockArg.getOwner()->getParentOp();
+        }
+        else if (otherDefiningOp == nullptr)
+        {
+            otherDefiningOp = otherIVBlockArg.getOwner()->getParentOp();
+        }
         bool currentIsAncestor = currentDefiningOp->isAncestor(otherDefiningOp);
         bool otherIsAncestor = otherDefiningOp->isAncestor(currentDefiningOp);
         assert((currentIsAncestor || otherIsAncestor) && "ComputeLoopIVDefinitionOrder only works on nested AffineForOp IVs");
@@ -4994,12 +5108,30 @@ LogicalResult BeginCreateCacheOpRewrite::matchAndRewrite(BeginCreateCacheOp begi
         assert(cacheType.isa<mlir::MemRefType>());
         auto cacheMemRefType = cacheType.cast<mlir::MemRefType>();
 
-        auto arrayAccessInfo = ComputeAccessInfoForArrayAtLevel(rewriter, baseInput, cacheLevelStartOp, cacheLevelEndOp, beginCreateCacheOp.activeBlockCache(), cacheMemRefType.getMemorySpace());
+        auto arrayAccessInfoOpt = ComputeAccessInfoForArrayAtLevel(rewriter, baseInput, cacheLevelStartOp, cacheLevelEndOp, beginCreateCacheOp.activeBlockCache(), cacheMemRefType.getMemorySpace());
+        if (!arrayAccessInfoOpt.has_value())
+        {
+            // No statically-sized array access info available because the active block is dynamically-sized
+            rewriter.eraseOp(endOp);
+            rewriter.eraseOp(beginCreateCacheOp);
+            return success();
+        }
+
+        auto arrayAccessInfo = *arrayAccessInfoOpt;
         if (!arrayAccessInfo.cacheUsedInRegion)
         {
             // The cache isn't used inside this cacheLevelLoop, so don't bother computing anything else
             continue;
         }
+
+        if (!IsStaticallySized(arrayAccessInfo.activeBlock))
+        {
+            // Dynamically sized active blocks are not currently supported, so don't try to cache here at all
+            rewriter.eraseOp(endOp);
+            rewriter.eraseOp(beginCreateCacheOp);
+            return success();
+        }
+
         currentMultiCacheInfo.arrayAccessInfo = arrayAccessInfo;
 
         if (beginCreateCacheOp.activeBlockCache())
@@ -5024,6 +5156,14 @@ LogicalResult BeginCreateCacheOpRewrite::matchAndRewrite(BeginCreateCacheOp begi
                     auto iv = currentLoop.getInductionVar();
                     if (std::find(currentMultiCacheInfo.activeBlockInfo.externalSymbols.begin(), currentMultiCacheInfo.activeBlockInfo.externalSymbols.end(), iv) != currentMultiCacheInfo.activeBlockInfo.externalSymbols.end())
                     {
+                        if (!currentLoop.hasConstantBounds())
+                        {
+                            // Dynamically sized multicaches are not currently supported, so don't try to cache here at all
+                            // TODO : have a flag for allowing smaller multi-caches that are statically sized? (similar to max element case)
+                            rewriter.eraseOp(endOp);
+                            rewriter.eraseOp(beginCreateCacheOp);
+                            return success();
+                        }
                         multiCacheLoops.push_back(currentLoop);
 
                         // This symbol isn't external to the multiCache layer
@@ -5528,12 +5668,21 @@ LogicalResult MaxElementCacheRegionOpRewrite::matchAndRewrite(BeginCreateMaxElem
     auto cacheMemRefType = cacheType.cast<mlir::MemRefType>();
     auto cacheMemorySpace = cacheMemRefType.getMemorySpace();
 
-    ArrayAccessInfo arrayAccessInfo = ComputeAccessInfoForArrayAtLevel(rewriter,
-                                                                       baseInput,
-                                                                       mlir::Block::iterator(beginCreateMaxElementCacheOp),
-                                                                       mlir::Block::iterator(endOp),
-                                                                       true /* computeActiveBlock */,
-                                                                       cacheMemorySpace);
+    auto arrayAccessInfoOpt = ComputeAccessInfoForArrayAtLevel(rewriter,
+                                                               baseInput,
+                                                               mlir::Block::iterator(beginCreateMaxElementCacheOp),
+                                                               mlir::Block::iterator(endOp),
+                                                               true /* computeActiveBlock */,
+                                                               cacheMemorySpace);
+    if (!arrayAccessInfoOpt.has_value())
+    {
+        // No statically-sized array access info available because the active block is dynamically-sized
+        rewriter.eraseOp(endOp);
+        rewriter.eraseOp(beginCreateMaxElementCacheOp);
+        return success();
+    }
+    auto arrayAccessInfo = *arrayAccessInfoOpt;
+
     int64_t initialActiveBlockVolume = GetActiveBlockVolume(arrayAccessInfo.activeBlock);
 
     if (initialActiveBlockVolume == 0)
@@ -5612,7 +5761,13 @@ LogicalResult MaxElementCacheRegionOpRewrite::matchAndRewrite(BeginCreateMaxElem
             {
                 nextStart = mlir::Block::iterator(parentOp);
                 nextEnd = ++mlir::Block::iterator(parentOp);
-                ArrayAccessInfo nextArrayAccessInfo = ComputeAccessInfoForArrayAtLevel(rewriter, baseInput, nextStart, nextEnd, true /* computeActiveBlock */, cacheMemorySpace);
+                auto nextArrayAccessInfoOpt = ComputeAccessInfoForArrayAtLevel(rewriter, baseInput, nextStart, nextEnd, true /* computeActiveBlock */, cacheMemorySpace);
+                if (!nextArrayAccessInfoOpt.has_value())
+                {
+                    // Stepping one layer out would produce a dynamically-sized active block, so stop here
+                    break;
+                }
+                auto nextArrayAccessInfo = *nextArrayAccessInfoOpt;
                 nextActiveBlockVolume = GetActiveBlockVolume(nextArrayAccessInfo.activeBlock);
             }
         }
@@ -5746,6 +5901,21 @@ LogicalResult VectorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     {
         // This isn't an AffineForOp marked for vectorization so just return without modifying it
         return failure();
+    }
+
+    if (!affineForOp.hasConstantBounds())
+    {
+        // Dynamically-sized loops can't be vectorized
+        RemoveVectorizationInfo(affineForOp);
+        return failure();
+    }
+
+    // First, match and rewrite the special case for vectorizing int16 matmul
+    auto result = vectorizeInt16MatMul(affineForOp, rewriter);
+    if (succeeded(result))
+    {
+        RemoveVectorizationInfo(affineForOp);
+        return result;
     }
 
     auto vectorInfo = GetVectorizationInfo(affineForOp);
@@ -6245,8 +6415,8 @@ struct MatrixOp
         std::vector<MMAAllocSyncOp> ops;
         auto mmaType = mlir::MemRefType::get({ mmaOp.getOperandShape(matrixProp.operandType) }, matrixProp.elementType);
 
-        std::generate_n(std::back_inserter(ops), matrixProp.numPassesInGroup, [&](){
-            return rewriter.create<MMAAllocSyncOp>(loc, mmaType, static_cast<uint32_t>(mmaOp.getShapeType()), /*blocks*/1, static_cast<uint8_t>(matrixProp.operandType), matrixProp.rowMajor);
+        std::generate_n(std::back_inserter(ops), matrixProp.numPassesInGroup, [&]() {
+            return rewriter.create<MMAAllocSyncOp>(loc, mmaType, static_cast<uint32_t>(mmaOp.getShapeType()), /*blocks*/ 1, static_cast<uint8_t>(matrixProp.operandType), matrixProp.rowMajor);
         });
 
         return ops;

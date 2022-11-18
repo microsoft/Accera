@@ -9,6 +9,7 @@
 #include "OperandIndex.h"
 
 #include <mlir/IR/Value.h>
+#include <mlir/Dialect/Affine/IR/AffineValueMap.h>
 
 #include <iosfwd>
 #include <variant>
@@ -34,25 +35,36 @@ namespace loopnest
         Range(int64_t begin, OperandIndex end, int64_t increment = 1);
         Range(int64_t begin, std::string endSymbol, int64_t increment = 1);
 
+        Range(mlir::AffineValueMap beginMap, mlir::AffineValueMap endMap, int64_t increment = 1);
+
+        bool HasConstantBegin() const;
+        bool HasValueMapBegin() const;
+
         int64_t Begin() const;
-        int64_t End() const;
-        mlir::Value VariableEnd() const;
+        mlir::AffineValueMap ValueMapBegin() const;
+
         bool HasConstantEnd() const;
+        bool HasValueMapEnd() const;
         bool HasVariableEnd() const;
         bool HasIndexEnd() const;
         bool HasOperandIndexEnd() const;
         bool HasSymbolNameEnd() const;
+
+        int64_t End() const;
+        mlir::AffineValueMap ValueMapEnd() const;
+        mlir::Value VariableEnd() const;
         Index EndIndex() const;
         OperandIndex EndOperandIndex() const;
         std::string SymbolNameEnd() const;
+
         int64_t Size() const;
         int64_t Increment() const;
         int64_t NumIterations() const;
         int64_t LastIterationBegin() const;
 
     private:
-        int64_t _begin;
-        std::variant<int64_t, Index, OperandIndex, mlir::Value, std::string> _end;
+        std::variant<int64_t, mlir::AffineValueMap> _begin;
+        std::variant<int64_t, Index, OperandIndex, mlir::Value, std::string, mlir::AffineValueMap> _end;
         int64_t _increment;
     };
 

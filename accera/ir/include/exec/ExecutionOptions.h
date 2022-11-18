@@ -49,8 +49,11 @@ namespace targets
         /// <summary> Indicates size in bytes to be allocated for shared memory </summary>
         int64_t dynamicSharedMemorySize;
 
-        GPU(Dim3 grid_ = Dim3(1, 1, 1), Dim3 block_ = Dim3(1, 1, 1), int64_t dynamicSharedMemorySize_ = 0) :
-            grid(grid_), block(block_), dynamicSharedMemorySize{dynamicSharedMemorySize_}{};
+        /// <summary> Indicates the requested number of thread blocks to execute concurrently in a single SM (streaming multiprocessor). </summary>
+        int64_t blocksPerSM;
+
+        GPU(Dim3 grid_ = Dim3(1, 1, 1), Dim3 block_ = Dim3(1, 1, 1), int64_t dynamicSharedMemorySize_ = 0, int64_t blocksPerSM_ = 0) :
+            grid(grid_), block(block_), dynamicSharedMemorySize{dynamicSharedMemorySize_}, blocksPerSM{blocksPerSM_}{};
 
         static GPU FromArrayAttr(const mlir::ArrayAttr& arrayAttr)
         {
@@ -58,12 +61,13 @@ namespace targets
             Dim3 gridDimSizes(launchParams[0], launchParams[1], launchParams[2]);
             Dim3 blockDimSizes(launchParams[3], launchParams[4], launchParams[5]);
             auto dynamicSharedMemorySize = launchParams[6];
-            return { gridDimSizes, blockDimSizes, dynamicSharedMemorySize };
+            auto blocksPerSM = launchParams[7];
+            return { gridDimSizes, blockDimSizes, dynamicSharedMemorySize, blocksPerSM };
         }
 
         mlir::ArrayAttr ToArrayAttr(mlir::MLIRContext* context) const
         {
-            std::vector<int64_t> gridAndBlockDims{ grid.x, grid.y, grid.z, block.x, block.y, block.z, dynamicSharedMemorySize };
+            std::vector<int64_t> gridAndBlockDims{ grid.x, grid.y, grid.z, block.x, block.y, block.z, dynamicSharedMemorySize, blocksPerSM };
             return util::VectorToArrayAttr<int64_t, mlir::IntegerAttr>(
                 gridAndBlockDims, [&](const int64_t& intVal) {
                     return mlir::IntegerAttr::get(mlir::IntegerType::get(context, 64), intVal);

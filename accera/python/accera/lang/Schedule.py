@@ -77,7 +77,7 @@ class Schedule:
     def get_indices(self):
         return self._indices.copy()
 
-    def create_plan(self, target: "accera.Target" = Target.HOST, dynamic_shared_memory_size = None) -> "accera.Plan":
+    def create_plan(self, target: "accera.Target" = Target.HOST, _dynamic_shared_memory_size: int = None, _blocks_per_SM: int = None) -> "accera.Plan":
         """Creates a plan for running this schedule
 
         Args:
@@ -85,10 +85,13 @@ class Schedule:
         """
         from .Plan import Plan
 
-        if dynamic_shared_memory_size is not None and target.category != Target.Category.GPU:
-            raise ValueError("dynamic_shared_memory_size can only be set on a GPU target")
+        if _dynamic_shared_memory_size is not None and target.category != Target.Category.GPU:
+            raise ValueError("_dynamic_shared_memory_size can only be set on a GPU target")
 
-        return Plan(self, target, dynamic_shared_memory_size if dynamic_shared_memory_size is not None else 0)
+        if _blocks_per_SM is not None and target.category != Target.Category.GPU:
+            raise ValueError("_blocks_per_SM can only be set on a GPU target")
+
+        return Plan(self, target, _dynamic_shared_memory_size if _dynamic_shared_memory_size is not None else 0, _blocks_per_SM if _blocks_per_SM is not None else 0)
 
     def get_index_range(self, index):
         return self._index_map[index].interval()
@@ -142,7 +145,6 @@ class Schedule:
         self._indices.insert(order_pos, inner_index)
 
         start, stop, step = self._index_map[index].interval()
-        interval = stop - start
         self._index_map[index].step *= size
         self._index_map[index].inners.insert(0, inner_index)
         self._index_map[inner_index] = IndexEntry(stop=size, parent=index, transform=(IndexTransform.SPLIT, size))
@@ -512,7 +514,7 @@ class Schedule:
 
         return index_map_copy
 
-    def _create_tensorizable_plan(self, target, block_indices, warp_indices, tensor_indices, outer_nest_order, dynamic_shared_memory_size: int = 0):
+    def _create_tensorizable_plan(self, target, block_indices, warp_indices, tensor_indices, outer_nest_order, dynamic_shared_memory_size: int = 0, blocks_per_SM: int = 0):
         i, j = block_indices
         ii, jj = warp_indices
         iii, jjj, kk = tensor_indices
@@ -523,7 +525,7 @@ class Schedule:
                             jjj,
                             kk)
 
-        plan = self.create_plan(target=target, dynamic_shared_memory_size=dynamic_shared_memory_size)
+        plan = self.create_plan(target=target, _dynamic_shared_memory_size=dynamic_shared_memory_size, _blocks_per_SM=blocks_per_SM)
         plan.bind(
             mapping={
                 i: target.GridUnit.BLOCK_Y,

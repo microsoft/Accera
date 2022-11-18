@@ -694,7 +694,7 @@ struct ValueModuleOpRewritePattern : OpRewritePattern<vir::ValueModuleOp>
 
 constexpr int kLaunchConfigDefaultDimValue = 1;
 constexpr int kLocalSizeDimSize = 3;
-constexpr size_t kLaunchConfigNumDims = 7;
+constexpr size_t kLaunchConfigNumDims = 8;
 
 auto GetGPUModuleBinaryAnnotationAttrName()
 {
@@ -773,6 +773,7 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
         // split out the launch config into the grid and block dimensions, respectively
         auto gridDimsLaunchConfig = launchConfig.take_front(kLocalSizeDimSize);
         auto blockDimsLaunchConfig = launchConfig.drop_front(kLocalSizeDimSize).take_front(kLocalSizeDimSize);
+        auto blocksPerSM = launchConfig.take_back()[0];
 
         fnAttrs.emplace_back(mlir::NamedAttribute(rewriter.getStringAttr(mlir::gpu::GPUDialect::getKernelFuncAttrName()),
                                                   rewriter.getUnitAttr()));
@@ -800,6 +801,10 @@ struct GPUTargetedFuncRewritePattern : OpRewritePattern<FuncOp>
             rewriter.getStringAttr("gridSize"), rewriter.getArrayAttr(gridDimsLaunchConfigAttrs));
         fnAttrs.emplace_back(
             rewriter.getStringAttr("blockSize"), rewriter.getArrayAttr(blockDimsLaunchConfigAttrs));
+        if (blocksPerSM > 0)
+        {
+            fnAttrs.emplace_back(rewriter.getStringAttr("blocksPerSM"), rewriter.getI32IntegerAttr(blocksPerSM));
+        }
 
         auto newFuncOp = rewriter.create<gpu::GPUFuncOp>(
             loc,

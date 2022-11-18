@@ -14,6 +14,7 @@ import sys
 import unittest
 import os
 import pathlib
+import shutil
 import numpy as np
 from enum import Enum
 from typing import Callable, Tuple
@@ -549,236 +550,17 @@ class DSLTest_01Arrays(unittest.TestCase):
                 output_dir=TEST_PACKAGE_DIR,
             )
 
-    def test_runtimesizes(self) -> None:
-        from accera import Dimension
-        M = Dimension()
-        N = Dimension()
-        K = Dimension()
-
-        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
-
-        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
-
-        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
-
-        nest = Nest((M, N, K))
-
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        package = Package()
-
-        M_test = np.int64(64)
-        N_test = np.int64(128)
-        K_test = np.int64(32)
-        A_test = np.random.random((M_test, K_test)).astype(np.float32)
-        B_test = np.random.random((K_test, N_test)).astype(np.float32)
-        C_test = np.random.random((M_test, N_test)).astype(np.float32)
-        correctness_check_values = {
-            "pre": [M_test, N_test, K_test, A_test, B_test, C_test],
-            "post": [M_test, N_test, K_test, A_test, B_test, C_test + A_test @ B_test],
-        }
-
-        function = package.add(nest, args=(M, N, K, A, B, C), base_name="runtimesizes") 
-
-        with verifiers.VerifyPackage(self, "test_runtimesizes", TEST_PACKAGE_DIR) as v:
-            package.build("test_runtimesizes", format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
-            if correctness_check_values:
+    def _verify_helper(self, package, test_name, function_name=None, correctness_check_values=None) -> None:
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            shutil.rmtree(output_dir, ignore_errors=True)
+            package.build(test_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir)
+            if function_name and correctness_check_values:
                 v.check_correctness(
-                    function.name,
+                    function_name,
                     before=correctness_check_values["pre"],
                     after=correctness_check_values["post"],
                 )
-
-    def test_runtimesizes_mixed(self) -> None:
-        from accera import Dimension
-        M = Dimension()
-        N = Dimension()
-
-        A = Array(shape=(M, 32), element_type=ScalarType.float32, role=Array.Role.INPUT)
-
-        B = Array(shape=(32, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
-
-        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
-
-        nest = Nest((M, N, 32))
-
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        package = Package()
-
-        M_test = np.int64(64)
-        N_test = np.int64(128)
-        A_test = np.random.random((M_test, 32)).astype(np.float32)
-        B_test = np.random.random((32, N_test)).astype(np.float32)
-        C_test = np.random.random((M_test, N_test)).astype(np.float32)
-        correctness_check_values = {
-            "pre": [M_test, N_test, A_test, B_test, C_test],
-            "post": [M_test, N_test, A_test, B_test, C_test + A_test @ B_test],
-        }
-
-        function = package.add(nest, args=(M, N, A, B, C), base_name="test_runtimesizes_mixed") 
-
-        with verifiers.VerifyPackage(self, "test_runtimesizes_mixed", TEST_PACKAGE_DIR) as v:
-            package.build("test_runtimesizes_mixed", format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
-            if correctness_check_values:
-                v.check_correctness(
-                    function.name,
-                    before=correctness_check_values["pre"],
-                    after=correctness_check_values["post"],
-                )
-
-    def _test_runtimesizes_common(self, name, M, N, K, sizes_first=True) -> None:
-        from accera import Dimension
-
-        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
-
-        nest = Nest((M, N, K))
-
-        i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
-        package = Package()
-        
-        size_test_args = []
-        size_args = []
-        if isinstance(M, Dimension):
-            M_test = np.int64(64)
-            size_test_args.append(M_test)
-            size_args.append(M)
-        else:
-            M_test = M
-            
-        if isinstance(N, Dimension):
-            N_test = np.int64(128)
-            size_test_args.append(N_test)
-            size_args.append(N)
-        else:
-            N_test = N
-            
-        if isinstance(K, Dimension):
-            K_test = np.int64(32)
-            size_test_args.append(K_test)
-            size_args.append(K)
-        else:
-            K_test = K
-
-        A_test = np.random.random((M_test, K_test)).astype(np.float32)
-        B_test = np.random.random((K_test, N_test)).astype(np.float32)
-        C_test = np.random.random((M_test, N_test)).astype(np.float32)
-
-        array_pre_args = [A_test, B_test, C_test]
-        array_post_args = [A_test, B_test, C_test + A_test @ B_test]
-        pre_args = (size_test_args + array_pre_args) if sizes_first else (array_pre_args + size_test_args)
-        post_args = (size_test_args + array_post_args) if sizes_first else (array_post_args + size_test_args) 
-
-        correctness_check_values = {
-            "pre": pre_args,
-            "post": post_args,
-        }
-
-        array_args = [A, B, C]
-        args = (size_args + array_args) if sizes_first else (array_args + size_args)
-
-        function = package.add(nest, args=args, base_name=name) 
-
-        with verifiers.VerifyPackage(self, name, TEST_PACKAGE_DIR) as v:
-            package.build(name, format=TEST_FORMAT | Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
-            if correctness_check_values:
-                v.check_correctness(
-                    function.name,
-                    before=correctness_check_values["pre"],
-                    after=correctness_check_values["post"],
-                )
-
-    # 1/3 dynamic
-    def test_matmul_partial_runtimesizes_M(self) -> None:
-        from accera import Dimension
-        self._test_runtimesizes_common(
-            "test_matmul_partial_runtimesizes_M",
-            Dimension(),
-            128,
-            32,
-            sizes_first=True)
-
-    def test_matmul_partial_runtimesizes_K(self) -> None:
-        from accera import Dimension
-        self._test_runtimesizes_common(
-            "test_matmul_partial_runtimesizes_K",
-            64,
-            128,
-            Dimension(),
-            sizes_first=True)
-
-    def test_matmul_partial_runtimesizes_N(self) -> None:
-        from accera import Dimension
-        self._test_runtimesizes_common(
-            "test_matmul_partial_runtimesizes_N",
-            64,
-            Dimension(),
-            32,
-            sizes_first=True)
-
-
-    # 2/3 dynamic
-    def test_matmul_partial_runtimesizes_MN(self) -> None:
-        from accera import Dimension
-        self._test_runtimesizes_common(
-            "test_matmul_partial_runtimesizes_MN",
-            Dimension(),
-            Dimension(),
-            32,
-            sizes_first=True)
-
-    def test_matmul_partial_runtimesizes_MK(self) -> None:
-        from accera import Dimension
-        self._test_runtimesizes_common(
-            "test_matmul_partial_runtimesizes_MK",
-            Dimension(),
-            128,
-            Dimension(),
-            sizes_first=True)
-
-    def test_matmul_partial_runtimesizes_NK(self) -> None:
-        from accera import Dimension
-        self._test_runtimesizes_common(
-            "test_matmul_partial_runtimesizes_NK",
-            64,
-            Dimension(),
-            Dimension(),
-            sizes_first=True)
-
-    # 3/3 dynamic
-    def test_matmul_partial_runtimesizes_MNK(self) -> None:
-        from accera import Dimension
-        self._test_runtimesizes_common(
-            "test_matmul_partial_runtimesizes_MNK",
-            Dimension(),
-            Dimension(),
-            Dimension(),
-            sizes_first=True)
-
-    # Fails because debug mode expects all the arguments first
-    # def test_matmul_partial_runtimesizes_MNK_size_last(self) -> None:
-    #     from accera import Dimension
-    #     self._test_runtimesizes_common(
-    #         "test_matmul_partial_runtimesizes_MNK_size_last",
-    #         Dimension(),
-    #         Dimension(),
-    #         Dimension(),
-    #         sizes_first=False)
 
 
     def test_runtimesizes_vector_add(self) -> None:
@@ -806,16 +588,501 @@ class DSLTest_01Arrays(unittest.TestCase):
             "post": [N_test, A_test, B_test + A_test],
         }
 
-        function = package.add(nest, args=(N, A, B), base_name="test_runtimesizes_vector_add") 
+        test_name = "test_runtimesizes_vector_add"
+        function = package.add(nest, args=(N, A, B), base_name="test_runtimesizes_vector_add")
+        self._verify_helper(package, test_name, function.name, correctness_check_values)
 
-        with verifiers.VerifyPackage(self, "test_runtimesizes_vector_add", TEST_PACKAGE_DIR) as v:
-            package.build("test_runtimesizes_vector_add", format=TEST_FORMAT | Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
-            if correctness_check_values:
-                v.check_correctness(
-                    function.name,
-                    before=correctness_check_values["pre"],
-                    after=correctness_check_values["post"],
-                )
+
+    def _simple_runtimesize_loopnest_common(self, name, splits=[]) -> None:
+        from accera import Dimension
+        M = Dimension()
+
+        A = Array(shape=(M,), element_type=ScalarType.float32, role=Array.Role.INPUT)
+
+        nest = Nest((M,))
+
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            A[i] = 0.0
+
+        sched = nest.create_schedule()
+        current_inner_index = i
+        for split in splits:
+            current_inner_index = sched.split(current_inner_index, split)
+
+        package = Package()
+        package.add(sched, args=(A, M), base_name=name)
+        self._verify_helper(package, name)
+
+
+    def test_runtimesizes_simple(self) -> None:
+        self._simple_runtimesize_loopnest_common("test_runtimesizes_simple")
+
+    def test_runtimesizes_static_split_simple(self) -> None:
+        self._simple_runtimesize_loopnest_common("test_runtimesizes_static_split_simple", splits=[8])
+
+    def test_runtimesizes_two_static_split_simple(self) -> None:
+        self._simple_runtimesize_loopnest_common("test_runtimesizes_two_static_split_simple", splits=[128, 8])
+
+    def test_runtimesizes_two_static_split_boundary(self) -> None:
+        self._simple_runtimesize_loopnest_common("test_runtimesizes_two_static_split_boundary", splits=[60, 8])
+
+
+    def _test_runtimesizes_matmul_common(self, name, M, N, K,
+                                         sizes_first=True, splits=None,
+                                         level_caches=None, max_element_caches=None) -> None:
+        from accera import Dimension
+
+        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+
+        nest = Nest((M, N, K))
+
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        sched = nest.create_schedule()
+        if splits:
+            if len(splits) != 3:
+                raise ValueError("Must have one split list per loopnest dimension")
+            
+            split_indices = [ [i], [j], [k] ]
+            for idx, dimSplits in enumerate(splits):
+                for split in dimSplits:
+                    split_indices[idx].append(sched.split(split_indices[idx][-1], split))
+            
+            # Collate the splits into a schedule order by taking one index from each dimension
+            #   in turn as long as that dimension has more split indices
+            # E.g suppose we have split indices:
+            # [ 
+            #   [i, ii, iii],
+            #   [j, jj, jjj, jjjj],
+            #   [k, kk]
+            # ]
+            # Then produce the order:
+            # [ i, j, k, ii, jj, kk, iii, jjj, jjjj]
+            
+            # First, pad the dimensions with `None` until they all have the same number of entries
+            max_splits = max([len(dim_split_indices) for dim_split_indices in split_indices])
+            for idx in range(len(split_indices)):
+                num_padding_entries = max_splits - len(split_indices[idx])
+                split_indices[idx] = split_indices[idx] + [None]*num_padding_entries
+
+            # Now collate the entries and skip the `None` padding entries
+            order = [split_index for split_level in zip(*split_indices) for split_index in split_level if split_index is not None]
+            sched.reorder(order)
+        
+        plan = sched.create_plan()
+        if level_caches is not None and max_element_caches is not None:
+            raise ValueError("Test code only supports either level caches or max element caches but not both at this time")
+
+        arrays_and_caches = [ [A], [B], [C] ]
+        if level_caches:
+            if len(level_caches) != 3:
+                raise ValueError("Must have one level cache entry per array (even if it is empty)")
+            for idx, cache_levels in enumerate(level_caches):
+                for cache_level in cache_levels:
+                    arrays_and_caches[idx].append(plan.cache(arrays_and_caches[idx][-1], level=cache_level))
+
+        if max_element_caches:
+            if len(max_element_caches) != 3:
+                raise ValueError("Must have one max element cache entry per array (even if it is empty)")
+            for idx, max_elements_per_array in enumerate(max_element_caches):
+                for element_budget in max_elements_per_array:
+                    arrays_and_caches[idx].append(plan.cache(arrays_and_caches[idx][-1], max_elements=element_budget))
+
+        package = Package()
+        
+        size_test_args = []
+        size_args = []
+        if isinstance(M, Dimension):
+            M_test = np.int64(123)
+            size_test_args.append(M_test)
+            size_args.append(M)
+        else:
+            M_test = M
+            
+        if isinstance(N, Dimension):
+            N_test = np.int64(234)
+            size_test_args.append(N_test)
+            size_args.append(N)
+        else:
+            N_test = N
+            
+        if isinstance(K, Dimension):
+            K_test = np.int64(345)
+            size_test_args.append(K_test)
+            size_args.append(K)
+        else:
+            K_test = K
+
+        A_test = np.random.random((M_test, K_test)).astype(np.float32)
+        B_test = np.random.random((K_test, N_test)).astype(np.float32)
+        C_test = np.random.random((M_test, N_test)).astype(np.float32)
+
+        array_pre_args = [A_test, B_test, C_test]
+        array_post_args = [A_test, B_test, C_test + A_test @ B_test]
+        pre_args = (size_test_args + array_pre_args) if sizes_first else (array_pre_args + size_test_args)
+        post_args = (size_test_args + array_post_args) if sizes_first else (array_post_args + size_test_args) 
+
+        correctness_check_values = {
+            "pre": pre_args,
+            "post": post_args,
+        }
+
+        array_args = [A, B, C]
+        args = (size_args + array_args) if sizes_first else (array_args + size_args)
+
+        function = package.add(plan, args=args, base_name=name)
+        self._verify_helper(package, name, function.name, correctness_check_values)
+
+
+    # 1/3 dynamic
+    def test_matmul_partial_runtimesizes_M(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_M", 
+                                                Dimension(), 128, 32,
+                                                sizes_first=True)
+
+    def test_matmul_partial_runtimesizes_K(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_K",
+                                                64, 128, Dimension(),
+                                                sizes_first=True)
+
+    def test_matmul_partial_runtimesizes_N(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_N",
+                                                64, Dimension(), 32,
+                                                sizes_first=True)
+
+
+    # 2/3 dynamic
+    def test_matmul_partial_runtimesizes_MN(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_MN",
+                                                Dimension(), Dimension(), 32,
+                                                sizes_first=True)
+
+    def test_matmul_partial_runtimesizes_MK(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_MK",
+                                                Dimension(), 128, Dimension(),
+                                                sizes_first=True)
+
+    def test_matmul_partial_runtimesizes_NK(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_NK",
+                                                64, Dimension(), Dimension(),
+                                                sizes_first=True)
+
+    # 3/3 dynamic
+    def test_matmul_all_runtimesizes(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_matmul_all_runtimesizes",
+                                                Dimension(), Dimension(), Dimension(),
+                                                sizes_first=True)
+
+    # Fails because debug mode expects all the arguments first
+    # def test_matmul_partial_runtimesizes_MNK_size_last(self) -> None:
+    #     from accera import Dimension
+    #     self._test_runtimesizes_matmul_common(
+    #         "test_matmul_partial_runtimesizes_MNK_size_last",
+    #         Dimension(),
+    #         Dimension(),
+    #         Dimension(),
+    #         sizes_first=False)
+
+
+    def test_partial_runtimesizes_static_splits_matmul(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_partial_runtimesizes_static_splits_matmul",
+                                                256, Dimension(), 128,
+                                                splits=[[],[8],[]])
+
+    def test_all_runtimesizes_matmul_single_static_split(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_single_static_split",
+                                                Dimension(), Dimension(), Dimension(),
+                                                splits=[[],[8],[]])
+
+    def test_all_runtimesizes_matmul_single_dim_two_static_split(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_single_dim_two_static_split",
+                                                Dimension(), Dimension(), Dimension(),
+                                                splits=[[],[64, 8],[]])
+
+    def test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_1(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_1",
+                                                Dimension(), Dimension(), Dimension(),
+                                                splits=[[],[60, 8],[]])
+
+    def test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_2(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_2",
+                                                Dimension(), Dimension(), Dimension(),
+                                                splits=[[],[64, 6],[]])
+
+    def test_all_runtimesizes_matmul_two_dim_single_static_split(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_two_dim_single_static_split",
+                                                Dimension(), Dimension(), Dimension(),
+                                                splits=[[],[8],[16]])
+
+    def test_all_runtimesizes_matmul_two_dim_two_static_split(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_two_dim_two_static_split",
+                                                Dimension(), Dimension(), Dimension(),
+                                                splits=[[32, 4],[64, 8],[]])
+
+    def test_all_runtimesizes_matmul_three_dim_two_static_split_boundary(self) -> None:
+        from accera import Dimension
+        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_three_dim_two_static_split_boundary",
+                                                Dimension(), Dimension(), Dimension(),
+                                                splits=[[32, 3],[64, 7],[128, 15]])
+
+
+    def test_all_runtimesizes_matmul_two_dim_single_static_split_static_cache(self) -> None:
+        from accera import Dimension
+        # Creates a cache in the statically sized main loop, but no cache in the dynamically sized cleanup loops as dynamically-sized caches are not supported yet
+        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_two_dim_single_static_split_static_cache",
+                                                Dimension(), Dimension(), Dimension(),
+                                                splits=[[],[8],[16]],
+                                                level_caches=[[],[2],[]]) # Cache B at level 2, which will be the jj index in a (i, j, k, jj, kk) schedule
+
+    def test_all_runtimesizes_matmul_two_dim_two_static_split_static_cache(self) -> None:
+        from accera import Dimension
+        # Creates a cache in the statically sized main loop, but no cache in the dynamically sized cleanup loops as dynamically-sized caches are not supported yet
+        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_two_dim_two_static_split_static_cache",
+                                                Dimension(), Dimension(), Dimension(),
+                                                splits=[[],[64, 8],[32, 4]],
+                                                level_caches=[[],[4],[]]) # Cache B at level 4, which will be the jj index in a (i, j, k, jj, kk, jjj, kkk) schedule
+
+    def test_all_runtimesizes_matmul_two_dim_two_static_split_static_max_element_cache(self) -> None:
+        from accera import Dimension
+        j_outer_split = 64
+        j_inner_split = 8
+        k_outer_split = 32
+        k_inner_split = 4
+        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_two_dim_two_static_split_static_max_element_cache",
+                                                Dimension(), Dimension(), Dimension(),
+                                                splits=[[],[j_outer_split, j_inner_split],[k_outer_split, k_inner_split]],
+                                                max_element_caches=[[],[k_outer_split * j_inner_split],[]])
+
+    def test_partial_dynamic_sized_uint8_matmul(self) -> None:
+        from accera import Dimension
+
+        test_name = "test_partial_dynamic_sized_uint8_matmul"
+
+        M = 256
+        N = 256
+        K = Dimension()
+
+        A = Array(shape=(M, K), element_type=ScalarType.uint8, role=Array.Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.uint8, role=Array.Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.int32, role=Array.Role.INPUT_OUTPUT)
+
+        nest = Nest((M, N, K))
+
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        sched = nest.create_schedule()
+
+        static_tile_shape = [60, 64, 64]
+        compute_kernel_shape = [6, 16, 4]
+        vector_kernel_shape = [1, 8, 2]
+
+        ii, jj, kk = sched.tile(dict(zip([i, j, k], static_tile_shape)))
+        iii, jjj, kkk = sched.tile(dict(zip([ii, jj, kk], compute_kernel_shape)))
+        iiii, jjjj, kkkk = sched.tile(dict(zip([iii, jjj, kkk], vector_kernel_shape)))
+
+        sched.reorder(i, j, k,
+                      ii, jj, kk,
+                      iii, jjj, kkk,
+                      iiii, jjjj, kkkk)
+
+        plan = sched.create_plan()
+        plan.cache(A, index=kkkk, trigger_index=iii, element_type=ScalarType.int16, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(B, index=jjjj, trigger_index=jj, element_type=ScalarType.int16, layout=Array.Layout.LAST_MAJOR)
+        plan.cache(C, index=iii, layout=Array.Layout.FIRST_MAJOR)
+        # TODO: Re-enable vectorization when vectorization pattern rewrite is available
+        # plan.vectorize(jjjj)
+
+        package = Package()
+        function = package.add(plan, args=(A, B, C, K), base_name=test_name)
+
+        M_test = M
+        N_test = N
+        K_test = np.int64(128)
+        A_test = np.random.random((M_test, K_test)).astype(np.uint8)
+        B_test = np.random.random((K_test, N_test)).astype(np.uint8)
+        C_test = np.random.random((M_test, N_test)).astype(np.int32)
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test, K_test],
+            "post": [A_test, B_test, C_test + A_test @ B_test, K_test],
+        }
+
+        self._verify_helper(package, test_name, function.name, correctness_check_values)
+
+
+    def test_all_dynamic_sizes_static_unroll_matmul(self) -> None:
+        from accera import Dimension
+
+        test_name = "test_all_dynamic_sizes_static_unroll_matmul"
+
+        M = Dimension()
+        N = Dimension()
+        K = Dimension()
+
+        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+
+        nest = Nest((M, N, K))
+
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        sched = nest.create_schedule()
+
+        jj = sched.split(j, 4)
+        sched.reorder(i, j, k, jj)
+        plan = sched.create_plan()
+        plan.unroll(jj)
+
+        package = Package()
+        function = package.add(plan, args=(A, B, C, M, N, K), base_name=test_name)
+
+        M_test = np.int64(123)
+        N_test = np.int64(234)
+        K_test = np.int64(345)
+        A_test = np.random.random((M_test, K_test)).astype(np.float32)
+        B_test = np.random.random((K_test, N_test)).astype(np.float32)
+        C_test = np.random.random((M_test, N_test)).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test, M_test, N_test, K_test],
+            "post": [A_test, B_test, C_test + A_test @ B_test, M_test, N_test, K_test],
+        }
+
+        self._verify_helper(package, test_name, function.name, correctness_check_values)
+
+
+    def test_all_dynamic_sizes_static_vectorize_matmul(self) -> None:
+        from accera import Dimension
+
+        test_name = "test_all_dynamic_sizes_static_vectorize_matmul"
+
+        M = Dimension()
+        N = Dimension()
+        K = Dimension()
+
+        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+
+        nest = Nest((M, N, K))
+
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        sched = nest.create_schedule()
+
+        jj = sched.split(j, 8)
+        sched.reorder(i, j, k, jj)
+        plan = sched.create_plan()
+        plan.vectorize(jj)
+
+        package = Package()
+        function = package.add(plan, args=(A, B, C, M, N, K), base_name=test_name)
+
+        M_test = np.int64(123)
+        N_test = np.int64(234)
+        K_test = np.int64(345)
+        A_test = np.random.random((M_test, K_test)).astype(np.float32)
+        B_test = np.random.random((K_test, N_test)).astype(np.float32)
+        C_test = np.random.random((M_test, N_test)).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test, M_test, N_test, K_test],
+            "post": [A_test, B_test, C_test + A_test @ B_test, M_test, N_test, K_test],
+        }
+
+        self._verify_helper(package, test_name, function.name, correctness_check_values)
+
+
+    def test_all_dynamic_sized_fp32_mlas_matmul(self) -> None:
+        from accera import Dimension
+
+        test_name = "test_all_dynamic_sized_fp32_mlas_matmul"
+
+        M = Dimension()
+        N = Dimension()
+        K = Dimension()
+
+        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+
+        nest = Nest((M, N, K))
+
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        sched = nest.create_schedule()
+
+        NK_static_tile_shape = [128, 128]
+        MNK_compute_kernel_shape = [6, 16, 4]
+        N_vector_size = 8
+
+        jj, kk = sched.tile(dict(zip([j, k], NK_static_tile_shape)))
+        ii, jjj, kkk = sched.tile(dict(zip([i, jj, kk], MNK_compute_kernel_shape)))
+        jjjj = sched.split(jjj, N_vector_size)
+
+        sched.reorder(i, j, k, jj, kk, kkk, ii, jjj, jjjj)
+
+        plan = sched.create_plan()
+        plan.cache(B, index=jj, layout=Array.Layout.FIRST_MAJOR)
+        plan.cache(C, index=ii, layout=Array.Layout.FIRST_MAJOR)
+        # plan.unroll(kkk) # implicit
+        plan.unroll(ii)
+        plan.unroll(jjj)
+        plan.vectorize(jjjj)
+
+        package = Package()
+        function = package.add(plan, args=(A, B, C, M, N, K), base_name=test_name)
+
+        M_test = np.int64(123)
+        N_test = np.int64(234)
+        K_test = np.int64(345)
+        A_test = np.random.random((M_test, K_test)).astype(np.float32)
+        B_test = np.random.random((K_test, N_test)).astype(np.float32)
+        C_test = np.random.random((M_test, N_test)).astype(np.float32)
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test, M_test, N_test, K_test],
+            "post": [A_test, B_test, C_test + A_test @ B_test, M_test, N_test, K_test],
+        }
+
+        self._verify_helper(package, test_name, function.name, correctness_check_values)
+
 
 
 class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
@@ -2461,6 +2728,88 @@ class DSLTest_04Fusing(unittest.TestCase):
             "post": [A_ref, B_ref, C_ref],
         }
         self._verify_schedule(fused, (A, B, C), "test_multi_partial_fusion_2", correctness_check_values)
+
+
+    def test_hierarchical_partial_fuse(self) -> None:
+        from accera import fuse
+
+        M = 256
+        N = 128
+        M_tile = 32
+        N_tile = 16
+        A = Array(role=Array.Role.INPUT, shape=(M,))
+        B = Array(role=Array.Role.INPUT, shape=(N,))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+
+        # Create nest0 and schedule
+        nest0 = Nest(shape=(M, N))
+        i0, j0 = nest0.get_indices()
+
+        @nest0.iteration_logic
+        def _():
+            C[i0, j0] += A[i0] * B[j0]
+
+        schedule0 = nest0.create_schedule()
+        ii0, jj0 = schedule0.tile({ i0: M_tile, j0: N_tile })
+        schedule0.reorder(i0, j0, ii0, jj0)
+
+        # Create nest1 and schedule1
+        nest1 = Nest(shape=(M, N))
+        i1, j1 = nest1.get_indices()
+
+        @nest1.iteration_logic
+        def _():
+            C[i1, j1] = C[i1, j1] * 0.2
+
+        schedule1 = nest1.create_schedule()
+        ii1, jj1 = schedule1.tile({ i1: M_tile, j1: N_tile })
+        schedule1.reorder(i1, j1, ii1, jj1)
+
+        schedule_01 = fuse((schedule0, schedule1), partial=2)
+        f, i, j, ii0, jj0, ii1, jj1 = schedule_01.get_indices()
+        schedule_01.reorder(i, j, f, ii0, jj0, ii1, jj1)
+
+
+        # Create nest2 and schedule2
+        nest2 = Nest(shape=(M, N))
+        i2, j2 = nest2.get_indices()
+
+        @nest2.iteration_logic
+        def _():
+            C[i2, j2] = C[i2, j2] + 0.2
+
+        schedule2 = nest2.create_schedule()
+        ii2, jj2 = schedule2.tile({ i2: M_tile, j2: N_tile })
+        schedule2.reorder(i2, j2, ii2, jj2)
+
+        # Create nest3 and schedule3
+        nest3 = Nest(shape=(M, N))
+        i3, j3 = nest3.get_indices()
+
+        @nest3.iteration_logic
+        def _():
+            C[i3, j3] = C[i3, j3] + 0.3
+
+        schedule3 = nest3.create_schedule()
+        ii3, jj3 = schedule3.tile({ i3: M_tile, j3: N_tile })
+        schedule3.reorder(i3, j3, ii3, jj3)
+
+        schedule_23 = fuse((schedule2, schedule3), partial=2)
+        f_23, i_23, j_23, ii2, jj2, ii3, jj3 = schedule_23.get_indices()
+        schedule_23.reorder(i_23, j_23, f_23, ii2, jj2, ii3, jj3)
+
+        schedule_0123 = fuse((schedule_01, schedule_23), partial=1)
+        f_0123, i_0123, j_01, f_01, ii0, jj0, ii1, jj1, j_23, f_23, ii2, jj2, ii3, jj3 = schedule_0123.get_indices()
+        schedule_0123.reorder(i_0123, f_0123, j_01, f_01, ii0, jj0, ii1, jj1, j_23, f_23, ii2, jj2, ii3, jj3)
+
+        plan = schedule_0123.create_plan()
+
+        # Create a package and add our function definition to it
+        package_name = "test_hierarchical_partial_fuse"
+        package = Package()
+        package.add(plan, args=(A, B, C), base_name="test_hierarchical_partial_fuse")
+
+        self._verify_schedule(plan, (A, B, C), "test_hierarchical_partial_fuse", None)
 
 
 class DSLTest_05Targets(unittest.TestCase):

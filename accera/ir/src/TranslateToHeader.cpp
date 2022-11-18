@@ -5,6 +5,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "ir/include/TranslateToHeader.h"
+#include "ir/include/IRUtil.h"
 #include "ir/include/Metadata.h"
 #include "ir/include/value/ValueDialect.h"
 
@@ -728,6 +729,28 @@ namespace ir
             return param;
         }
 
+        std::vector<hat::UsageType> GetHATParameterUsages(const value::ValueFuncOp& funcOp)
+        {
+            std::vector<hat::UsageType> hatUsages;
+            if (auto usagesAttr = funcOp->getAttrOfType<mlir::ArrayAttr>(UsagesAttrName))
+            {
+                auto usagesVec = accera::ir::util::ConvertArrayAttrToIntVector(usagesAttr);
+                std::transform(usagesVec.cbegin(), usagesVec.cend(), std::back_inserter(hatUsages), [](int usage) {
+                    switch (static_cast<accera::value::FunctionParameterUsage>(usage))
+                    {
+                    case accera::value::FunctionParameterUsage::input:
+                        return hat::UsageType::Input;
+                    case accera::value::FunctionParameterUsage::output:
+                        return hat::UsageType::Output;
+                    case accera::value::FunctionParameterUsage::inputOutput:
+                    default:
+                        return hat::UsageType::InputOutput;
+                    }
+                });
+            }
+            return hatUsages;
+        }
+
         mlir::LogicalResult WriteMultiModuleHATFile(llvm::raw_ostream& os,
                                                     const std::string& name,
                                                     std::vector<mlir::ModuleOp>& modules)
@@ -780,10 +803,11 @@ namespace ir
                         function->Description("");
                         function->CallingConvention(hat::CallingConventionType::CDecl); // TODO : plumb this through
 
+                        auto usages = GetHATParameterUsages(fn);
                         auto numInputs = fnType.getNumInputs();
                         for (unsigned i = 0; i < numInputs; ++i)
                         {
-                            // TODO : plumb name / description / usage / etc through
+                            // TODO : plumb name / description / etc through
 
                             // Get the logical type information from the MLIR standard dialect version of the function signature
                             // as the LLVM converted version will lose shape and signness information
@@ -792,7 +816,7 @@ namespace ir
                             std::unique_ptr<hat::Parameter> arg = ConvertToIncompleteHATParameter(mlirArgType); // TODO : plumb through size string
                             arg->Name(""); // TODO : plumb parameter name through
                             arg->Description(""); // TODO : plumb parameter description
-                            arg->Usage(hat::UsageType::InputOutput); // TODO : plumb usage through
+                            arg->Usage(usages.size() == numInputs ? usages[i] : hat::UsageType::InputOutput);
 
                             auto declaredType = GetLLVMTypeString({ llvmArgType, mlirArgType }); // TODO : support for const
                             arg->DeclaredType(declaredType);
@@ -871,7 +895,7 @@ namespace ir
             return mlir::success();
         }
 
-    } // namespace
+        } // namespace
 
     mlir::LogicalResult TranslateToHeader(std::vector<mlir::ModuleOp>& modules, const std::string& libraryName, llvm::raw_ostream& os)
     {

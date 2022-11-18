@@ -35,10 +35,11 @@ def _ceildiv(x, y):
     return ((x - 1) // y) + 1
 
 class Plan:
-    def __init__(self, schedule: Schedule, target: Target, dynamic_shared_memory_size: int):
+    def __init__(self, schedule: Schedule, target: Target, _dynamic_shared_memory_size: int, _blocks_per_SM: int):
         self._sched = schedule
         self._target = target
-        self._dynamic_shared_memory_size = dynamic_shared_memory_size
+        self._dynamic_shared_memory_size = _dynamic_shared_memory_size
+        self._blocks_per_SM = _blocks_per_SM
         self._commands = []
         self._delayed_calls = {}
         self._index_attrs: Mapping[LoopIndex, List[str]] = {}
@@ -376,6 +377,7 @@ class Plan:
         vectorize: Union[bool, DelayedParameter, object] = AUTO,
         strategy: _CacheStrategy = AUTO,
         _delayed_cache: DelayedCache = None,
+        _temp_array_multicaches: bool = False # experimental: allow multi-caching of TEMP arrays
     ):
         """Adds a cache for a view target
 
@@ -527,10 +529,14 @@ class Plan:
                 index_pos = self._sched._indices.index(index)
                 level = len(self._sched._indices) - index_pos
 
-            if (trigger_level or trigger_index) and array_role not in [
+            multicaching_roles = [
                 Array.Role.CONST,
                 Array.Role.INPUT,
-            ]:
+            ]
+            if _temp_array_multicaches:
+                multicaching_roles += [Array.Role.TEMP]
+
+            if (trigger_level or trigger_index) and array_role not in multicaching_roles:
                 raise ValueError(
                     "Multicaching is only supported for CONST and INPUT arrays"
                 )
@@ -969,7 +975,7 @@ class Plan:
             if not self._is_valid_block_size(block_dims):
                 raise ValueError(f"Invalid block size {block_dims}. Max threads per block: {target.max_threads_per_block}.")
 
-            context.options = _GPU(grid=_Dim3(*grid_dims), block=_Dim3(*block_dims), dynamic_shared_memory_size=self._dynamic_shared_memory_size)
+            context.options = _GPU(grid=_Dim3(*grid_dims), block=_Dim3(*block_dims), dynamic_shared_memory_size=self._dynamic_shared_memory_size, blocks_per_SM=self._blocks_per_SM)
             context.plan = context.schedule.create_gpu_plan(
                 gpu_options=context.options, runtime=target.runtime
             )

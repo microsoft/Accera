@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.11)
+[//]: # (Version: v1.2.12)
 
 # Accera v1.2.1 Manual
 

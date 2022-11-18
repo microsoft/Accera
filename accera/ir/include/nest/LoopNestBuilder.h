@@ -11,6 +11,7 @@
 #include "LoopNestOps.h"
 #include "LoopVisitSchedule.h"
 #include "TransformedDomain.h"
+#include "LoopNestAffineConstraints.h"
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
@@ -36,6 +37,7 @@ namespace loopnest
     {
         Index index;
         Range range;
+        LoopPartitionConstraints constraints;
     };
 
     struct LoopRange
@@ -51,6 +53,8 @@ namespace loopnest
         Range GetVariableRange() const;
         Range GetRange() const;
         bool IsVariable() const;
+        bool IsVariableStart() const;
+        bool IsVariableStop() const;
     };
 
     /// <summary>
@@ -69,7 +73,7 @@ namespace loopnest
     private:
         struct RecursionState
         {
-            RecursionState(const LoopNestBuilder&);
+            RecursionState(LoopNestBuilder&);
             RecursionState(const RecursionState&) = default;
 
             // loopIndices is a map from a loop Index variable to:
@@ -80,13 +84,15 @@ namespace loopnest
 
             std::unordered_map<KernelId, bool> validKernelGroups;
             std::vector<int64_t> subdomainSize;
+
+            LoopNestAffineConstraints affineConstraints;
         };
 
         // The main "passes" in code generation
         RecursionState GenerateInitialLoopStructure(const RecursionState& state, const LoopVisitSchedule& schedule);
         RecursionState AddInvokeOps(const std::vector<ScheduledLoopOp>& loops, const RecursionState& state, const LoopVisitSchedule& schedule);
         void VerifyPredicates(const std::vector<ScheduledLoopOp>& loops, const LoopVisitSchedule& schedule);
-        LoopNestBuilder::RecursionState UnswitchLoops(const std::vector<ScheduledLoopOp>& loops, const RecursionState& state, const LoopVisitSchedule& schedule);
+        LoopNestBuilder::RecursionState UnswitchLoops(const std::vector<ScheduledLoopOp>& loops, const RecursionState& state, const LoopVisitSchedule& schedule, const LoopNestAffineConstraints& currentConstraints);
         void MergeAdjacentKernelBodies(std::vector<ScheduledLoopOp> loops, const LoopVisitSchedule& schedule);
         RecursionState EmitLoopBodies(std::vector<ScheduledLoopOp> loops, const RecursionState& state, const LoopVisitSchedule& schedule);
         void ApplyInjectableMappings();
@@ -95,6 +101,7 @@ namespace loopnest
 
         TransformedDomain GetDomain() const;
         LoopVisitSchedule GetLoopSchedule() const;
+        LoopNestAffineConstraints GetInitialConstraints();
 
         ScheduledLoopOp EmitLoopOp(const LoopRange& range, const RecursionState& state, const LoopVisitSchedule& schedule);
         void AddLoopLimitMetadata(ScheduledLoopOp loop);

@@ -256,6 +256,8 @@ namespace util
     mlir::AffineMap MakeIdentityAccessMap(mlir::Value val, mlir::MLIRContext* context);
 
     mlir::AffineValueMap AffineApplyToAffineValueMap(mlir::AffineApplyOp applyOp);
+    std::vector<mlir::AffineApplyOp> AffineValueMapToAffineApplyOps(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineValueMap affineValueMap);
+    mlir::AffineValueMap SimplifyAffineValueMap(mlir::AffineValueMap affineValueMap);
 
     mlir::Type GetElementType(mlir::Type type);
 
@@ -412,6 +414,15 @@ namespace util
 
     bool ShapesMatch(mlir::ShapedType lhs, mlir::ShapedType rhs);
     bool IsImplicitlyCastable(mlir::Type source, mlir::Type target);
+
+    bool AffineValueMapsEqual(const mlir::AffineValueMap& lhs, const mlir::AffineValueMap& rhs);
+
+    std::vector<std::vector<int64_t>> ParseDynamicArgSizeReferences(mlir::Operation* op, const std::vector<mlir::Type>& argTypes);
+    mlir::AffineValueMap GetMemrefShapeValueMap(mlir::Value memref);
+    mlir::AffineValueMap GetIdentityMemrefStridesValueMap(mlir::Value memref);
+    std::vector<mlir::Value> GetIdentityMemrefStrideSymbols(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value memref);
+
+    bool HasIdentityLayout(mlir::Value memref);
 
 } // namespace util
 } // namespace accera::ir

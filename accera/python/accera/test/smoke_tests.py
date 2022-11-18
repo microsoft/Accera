@@ -213,6 +213,58 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
+
+    def test_differently_split_fused_schedules(self) -> None:
+        # Split a dimension twice in one schedule and once in another schedule, then fuse the outermost split indices
+
+        M = 256
+        N = 128
+        K = 512
+        A = Array(role=Array.Role.INPUT, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+
+        # Create nest0 and schedule
+        nest0 = Nest(shape=(M, N, K))
+        i0, j0, k0 = nest0.get_indices()
+
+        @nest0.iteration_logic
+        def _():
+            C[i0, j0] += A[i0, k0] * B[k0, j0]
+
+        schedule0 = nest0.create_schedule()
+        ii0 = schedule0.split(i0, 16)
+        iii0 = schedule0.split(ii0, 8)
+        schedule0.reorder(i0, j0, ii0, k0, iii0)
+
+        # Create nest1 and schedule1
+        nest1 = Nest(shape=(M, N))
+        i1, j1 = nest1.get_indices()
+
+        @nest1.iteration_logic
+        def _():
+            C[i1, j1] = C[i1, j1] * Scalar(0.2)
+
+        schedule1 = nest1.create_schedule()
+        ii1 = schedule1.split(i1, 16)
+        schedule1.reorder(i1, j1, ii1)
+
+
+        schedule = fuse((schedule0, schedule1), partial=2)
+        f, i, j, ii0, k0, iii0, ii1 = schedule.get_indices()
+        schedule.reorder(i, j, f, ii0, k0, iii0, ii1)
+        plan = schedule.create_plan()
+
+        # Create a package and add our function definition to it
+        package_name = "test_differently_split_fused_schedules"
+        package = Package()
+        package.add(plan, args=(A, B, C), base_name="test_differently_split_fused_schedules")
+
+        # Build the HAT package
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
+
+
     def test_partial_fusion_matmul3_naive(self) -> None:
         A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(16, 11))
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(11, 10))

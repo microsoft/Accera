@@ -9,6 +9,7 @@
 #include "AffineConstraints.h"
 #include "AffineExpression.h"
 #include "IterationDomain.h"
+#include "LoopNestAffineConstraints.h"
 
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/Dialect/Affine/Analysis/AffineStructures.h>
@@ -96,6 +97,8 @@ namespace loopnest
         void Print(std::ostream& os) const;
 
         AffineConstraints GetConstraints() const;
+        // TODO : merge constraint systems
+        LoopNestAffineConstraints GetLoopNestConstraints(const std::vector<Index>& scheduleOrder, mlir::MLIRContext* context) const;
 
         // Vector of (index, isDimension, expr, range, padding) tuples
         struct AttributeKey

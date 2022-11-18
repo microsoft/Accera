@@ -1101,6 +1101,7 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
 
     const auto& argValues = decl.GetParameterTypes();
     const auto& returnValue = decl.GetReturnType();
+    const auto& argUsages = decl.GetParameterUsages();
 
     const auto& fnName = decl.GetFunctionName();
     auto argValuesCopy = argValues;
@@ -1145,7 +1146,7 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
             {
                 fnOp->setAttr(ir::NoInlineAttrName, b.getUnitAttr());
             }
-            
+
             // Set dynamic arg size references. This is a vector<vector<int>>, where each entry is either a reference to another
             // argument's position or is -1. The outer vector has one entry per function argument, and each inner vector has one
             // entry per dimension of that argument's shape
@@ -1172,13 +1173,21 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
             auto dynArgSizeRefAttr = b.getArrayAttr(innerArrayAttrs);
             fnOp->setAttr(ir::DynamicArgSizeReferencesAttrName, dynArgSizeRefAttr);
 
+            // Set arg usages for emitting HAT metadata
+            std::vector<mlir::Attribute> usagesAttr;
+            std::transform(argUsages.cbegin(), argUsages.cend(), std::back_inserter(usagesAttr), [&](FunctionParameterUsage usage) {
+                return b.getIntegerAttr(b.getI8Type(), static_cast<char>(usage));
+            });
+            auto usagesArrayAttr = b.getArrayAttr(usagesAttr);
+            fnOp->setAttr(ir::UsagesAttrName, usagesArrayAttr);
+
+            // For each input_output parameter, set its check function
             if (auto checkFunctions = decl.GetOutputVerifiers(); !checkFunctions.empty())
             {
-                // For each input_output parameter, set its check function
                 // TODO: emit these in DebugFunctionPass by plumbing the tolerance and parameter usage
                 size_t checkFunctionIdx = 0;
                 std::vector<mlir::Attribute> checkFunctionAttrs;
-                for (const auto& usage : decl.GetParameterUsages())
+                for (const auto& usage : argUsages)
                 {
                     if (usage == FunctionParameterUsage::inputOutput)
                     {

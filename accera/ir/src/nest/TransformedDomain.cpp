@@ -29,7 +29,7 @@ namespace loopnest
             auto affineExpr = expr.GetAffineExpr();
             auto binOpExpr = affineExpr.dyn_cast_or_null<mlir::AffineBinaryOpExpr>();
             return binOpExpr && binOpExpr.getKind() == mlir::AffineExprKind::Add &&
-                binOpExpr.getRHS().isa<mlir::AffineDimExpr>() && binOpExpr.getLHS().isa<mlir::AffineDimExpr>();
+                   binOpExpr.getRHS().isa<mlir::AffineDimExpr>() && binOpExpr.getLHS().isa<mlir::AffineDimExpr>();
         }
 
         bool IsSkewExpression(const AffineExpression& expr)
@@ -48,7 +48,7 @@ namespace loopnest
             }
             return false;
         }
-    }
+    } // namespace
 
     TransformedDomain::TransformedDomain(const IterationDomain& domain)
     {
@@ -69,7 +69,7 @@ namespace loopnest
 
         for (const auto& [index, expr, range, padding] : info.indices)
         {
-            _indices[index] = { expr, range, padding, /*parents=*/ {} };
+            _indices[index] = { expr, range, padding, /*parents=*/{} };
             if (expr.IsIdentity())
             {
                 _loopIndices.insert(index);
@@ -149,7 +149,7 @@ namespace loopnest
     Index TransformedDomain::Pad(const Index& index, int64_t size, bool padFront, mlir::MLIRContext* context)
     {
         auto prefix = index.GetName() + "_";
-        Index paddedIndex = { prefix + "p"};
+        Index paddedIndex = { prefix + "p" };
         if (_indices.count(index) == 0)
             throw accera::utilities::InputException(accera::utilities::InputExceptionErrors::invalidArgument, "Padding an unknown index");
         if (!IsLoopIndex(index))
@@ -217,15 +217,29 @@ namespace loopnest
             auto parentEndValue = parentRange.End();
             _indices[outer] = { {}, { parentRange.Begin(), parentEndValue, splitSize }, parentPadding, { index } };
         }
+        else if (parentRange.HasVariableEnd())
+        {
+            auto parentEndVariable = parentRange.VariableEnd();
+            _indices[outer] = { {}, { parentRange.Begin(), parentEndVariable, splitSize }, parentPadding, { index } };
+        }
         else if (parentRange.HasIndexEnd())
         {
             auto parentEndIndex = parentRange.EndIndex();
             _indices[outer] = { {}, { parentRange.Begin(), parentEndIndex, splitSize }, parentPadding, { index } };
         }
-        else
+        else if (parentRange.HasOperandIndexEnd())
         {
             auto parentEndOperandIndex = parentRange.EndOperandIndex();
             _indices[outer] = { {}, { parentRange.Begin(), parentEndOperandIndex, splitSize }, parentPadding, { index } };
+        }
+        else if (parentRange.HasSymbolNameEnd())
+        {
+            auto parentEndSymbolName = parentRange.SymbolNameEnd();
+            _indices[outer] = { {}, { parentRange.Begin(), parentEndSymbolName, splitSize }, parentPadding, { index } };
+        }
+        else
+        {
+            assert(false && "Unknown parent range end type");
         }
 
         // Add inner index
@@ -252,7 +266,7 @@ namespace loopnest
     Index TransformedDomain::Skew(const Index& index, const Index& referenceIndex, mlir::MLIRContext* context)
     {
         auto prefix = index.GetName() + "_";
-        Index skewedIndex = { prefix + "s"};
+        Index skewedIndex = { prefix + "s" };
         if (_indices.count(index) == 0 || _indices.count(referenceIndex) == 0)
             throw accera::utilities::InputException(accera::utilities::InputExceptionErrors::invalidArgument, "Skewing or referencing an unknown index");
         if (!IsLoopIndex(index) || !IsLoopIndex(referenceIndex))
@@ -772,10 +786,26 @@ namespace loopnest
         }
 
         // Now fix up any expressions still referencing the old indices
+        auto isIndexUsedInOtherIndexExpr = [&](const Index& index) {
+            for (auto& indexInfo : result._indices)
+            {
+                auto& otherIndex = indexInfo.first;
+                if (otherIndex != index)
+                {
+                    auto exprIndices = indexInfo.second.expr.GetIndices();
+                    if (std::find(exprIndices.begin(), exprIndices.end(), index) != exprIndices.end())
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+
         std::vector<Index> unusedIndices;
         for (auto& resultIndex : result._indices)
         {
-            if (!result.IsLoopIndex(resultIndex.first) && !result.IsDimension(resultIndex.first))
+            if (!result.IsLoopIndex(resultIndex.first) && !result.IsDimension(resultIndex.first) && !isIndexUsedInOtherIndexExpr(resultIndex.first))
             {
                 unusedIndices.push_back(resultIndex.first);
                 continue;
@@ -835,6 +865,7 @@ namespace loopnest
 
     AffineConstraints TransformedDomain::GetConstraints() const
     {
+        // Note: Only handle static ranges
         auto indices = GetIndices();
 
         AffineConstraints constraints(indices);
@@ -876,24 +907,62 @@ namespace loopnest
 
             if (!indexInfo.expr.IsIdentity())
             {
-                constraints.AddConstraint(index, indexInfo.expr, [](AffineExpression expr) -> std::vector<int64_t>
-                {
+                constraints.AddConstraint(index, indexInfo.expr, [](AffineExpression expr) -> std::vector<int64_t> {
                     // determine the coefficients by parsing the expression type
                     // coefficients are in the same order as expr's arguments
                     if (IsSplitExpression(expr))
                     {
                         // split: d2 = d0 + d1
-                        return {1, 1};
+                        return { 1, 1 };
                     }
                     else if (IsSkewExpression(expr))
                     {
                         // skew: d2 = d0 - d1
-                        return {1, -1};
+                        return { 1, -1 };
                     }
                     return {}; // unrecognized expr, do nothing
                 });
             }
         }
+        return constraints;
+    }
+
+    LoopNestAffineConstraints TransformedDomain::GetLoopNestConstraints(const std::vector<Index>& scheduleOrder, mlir::MLIRContext* context) const
+    {
+        LoopNestAffineConstraints constraints(scheduleOrder, context);
+        // Add the bounds for each individual index as separate dimensions
+        for (auto& index : scheduleOrder)
+        {
+            constraints.AddConstraint(index, GetIndexRange(index));
+        }
+
+        // For each loopnest dimension
+        // - get the loop indices along that dimension
+        // - bound every suffix of ordered split indices by the step size of the parent index
+        //      e.g.: for dimension j = j_0 + j_1 + j_2 + j_3 with full size N, we add the following constraints:
+        //              j_0 + j_1 + j_2 + j_3 < N
+        //              j_1 + j_2 + j_3 < j_0_step_size
+        //              j_2 + j_3 < j_1_step_size
+        //              j_3 < j_2_step_size
+        auto loopDims = GetDimensions();
+        for (auto dimIndex : loopDims)
+        {
+            auto dimLoopIndices = GetLoopIndicesForDimension(dimIndex);
+            std::vector<Index> scheduleOrderDimSplitIndices;
+            std::copy_if(scheduleOrder.begin(), scheduleOrder.end(), std::back_inserter(scheduleOrderDimSplitIndices), [&](const Index& index) {
+                return std::find(dimLoopIndices.begin(), dimLoopIndices.end(), index) != dimLoopIndices.end();
+            });
+
+            // Set all split loop indices sum less than dimension range
+            // For each suffix of loop indices, bind their range by that suffix's outermost loop range
+            for (auto loopIndexIter = scheduleOrderDimSplitIndices.begin(); loopIndexIter != scheduleOrderDimSplitIndices.end(); loopIndexIter++)
+            {
+                auto loopRange = GetIndexRange(*loopIndexIter);
+                std::vector<Index> currentLoopSuffix(loopIndexIter, scheduleOrderDimSplitIndices.end());
+                constraints.AddIndexSumConstraint(currentLoopSuffix, loopRange);
+            }
+        }
+
         return constraints;
     }
 

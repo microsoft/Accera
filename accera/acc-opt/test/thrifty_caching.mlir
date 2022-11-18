@@ -54,39 +54,39 @@ module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "
   }
 }
 
-// CHECK: #map = affine_map<(d0, d1) -> (d0 * 32 + d1)>
-// CHECK: module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"}  {
-// CHECK:   accv.module "test_thrifty_caching_simple_input_cache"  {
-// CHECK:     "accv.global"() {sym_name = "cache_[[CacheID:[0-9]+]]", type = memref<32x16xf32, 3>} : () -> ()
-// CHECK:     accv.func nested @test_thrifty_caching_simple_input_cache_1127a105_impl_6891397719071098712(%arg0: memref<32x32xf32, #map>, %arg1: memref<32x32xf32, #map>, %arg2: memref<32x32xf32, #map>) attributes {exec_target = 0 : i64} {
-// CHECK:       "accv.lambda"() ({
-// CHECK:         %0 = "accv.ref_global"() {global_name = @cache_[[CacheID]]} : () -> memref<32x16xf32, 3>
-// CHECK:         affine.for %arg3 = 0 to 32 step 4 {
-// CHECK:           affine.for %arg4 = 0 to 32 step 16 {
-// CHECK:             affine.for %arg5 = 0 to 32 {
-// CHECK:               affine.for %arg6 = 0 to 16 {
-// CHECK:                 %1 = affine.load %arg1[%arg5, %arg4 + %arg6] : memref<32x32xf32, #map>
-// CHECK:                 affine.store %1, %0[%arg5, %arg6] : memref<32x16xf32, 3>
-// CHECK:               } {accxp.access_bounds_check, begin = 0 : i64, domain = #xdomain, end = 16 : i64,
-// CHECK:             } {accxp.access_bounds_check, begin = 0 : i64, domain = #xdomain, end = 32 : i64,
-// CHECK:             affine.for %arg5 = 0 to 4 {
-// CHECK:               affine.for %arg6 = 0 to 16 {
-// CHECK:                 affine.for %arg7 = 0 to 32 {
-// CHECK:                   %1 = affine.load %arg0[%arg3 + %arg5, %arg7] : memref<32x32xf32, #map>
-// CHECK:                   %2 = affine.load %0[%arg7, %arg6] : memref<32x16xf32, 3>
-// CHECK:                   %3 = "accv.bin_op"(%1, %2) {predicate = 2 : i64} : (f32, f32) -> f32
-// CHECK:                   %4 = affine.load %arg2[%arg3 + %arg5, %arg4 + %arg6] : memref<32x32xf32, #map>
-// CHECK:                   %5 = "accv.bin_op"(%4, %3) {predicate = 0 : i64} : (f32, f32) -> f32
-// CHECK:                   affine.store %5, %arg2[%arg3 + %arg5, %arg4 + %arg6] : memref<32x32xf32, #map>
-// CHECK:                   %6 = affine.load %arg2[%arg3 + %arg5, %arg4 + %arg6] : memref<32x32xf32, #map>
-// CHECK:                   affine.store %6, %arg2[%arg3 + %arg5, %arg4 + %arg6] : memref<32x32xf32, #map>
-// CHECK:                 } {begin = 0 : i64, end = 32 : i64, index = #accln<"index{k_i,8}">, kernels = ["_"], subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 1, 1]}
-// CHECK:               } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{j_i,6}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 1, 32]}
-// CHECK:             } {begin = 0 : i64, end = 4 : i64, index = #accln<"index{i_i,4}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 16, 32]}
-// CHECK:           } {begin = 0 : i64, end = 32 : i64, index = #accln<"index{j_o,5}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [4, 16, 32]}
-// CHECK:         } {begin = 0 : i64, end = 32 : i64, index = #accln<"index{i_o,3}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [4, 32, 32]}
-// CHECK:         accv.return
-// CHECK:       }) {exec_target = 0 : i64, sym_name = "NestFunction_0", type = () -> ()} : () -> ()
+// CHECK: #map0 = affine_map<(d0, d1) -> (d0 * 32 + d1)>
+// CHECK: #map1 = affine_map<() -> (0)>
+// CHECK: #map2 = affine_map<() -> (16)>
+// CHECK: #map3 = affine_map<() -> (32)>
+// CHECK: module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"} {
+// CHECK:   accv.module "test_thrifty_caching_simple_input_cache" {
+// CHECK:     "accv.global"() {sym_name = "cache_6", type = memref<32x16xf32, 3>} : () -> ()
+// CHECK:     accv.func nested @test_thrifty_caching_simple_input_cache_1127a105_impl_6891397719071098712(%arg0: memref<32x32xf32, #map0>, %arg1: memref<32x32xf32, #map0>, %arg2: memref<32x32xf32, #map0>) attributes {exec_target = 0 : i64} {
+// CHECK:       %0 = "accv.ref_global"() {global_name = @cache_6} : () -> memref<32x16xf32, 3>
+// CHECK:       affine.for %arg3 = 0 to 32 step 4 {
+// CHECK:         affine.for %arg4 = 0 to 32 step 16 {
+// CHECK:           affine.for %arg5 = 0 to 32 {
+// CHECK:             affine.for %arg6 = 0 to 16 {
+// CHECK:               %1 = affine.load %arg1[%arg5, %arg4 + %arg6] : memref<32x32xf32, #map0>
+// CHECK:               affine.store %1, %0[%arg5, %arg6] : memref<32x16xf32, 3>
+// CHECK:             } {accxp.access_bounds_check, beginMap = #map1, domain = #xdomain, endMap = #map2, index = #accln<"index{j,7}">, kernels = ["cache_internal_loopnest_kernel_active_block_copy"], operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi32>, scheduledIndex = #accln<"index{j,7}">, subdomainIndexOrder = [#accln<"index{i,6}">, #accln<"index{j,7}">], subdomainSize = [32, 16]}
+// CHECK:           } {accxp.access_bounds_check, beginMap = #map1, domain = #xdomain, endMap = #map3, index = #accln<"index{i,6}">, operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi32>, scheduledIndex = #accln<"index{i,6}">, subdomainIndexOrder = [#accln<"index{i,6}">, #accln<"index{j,7}">], subdomainSize = [32, 16]}
+// CHECK:           affine.for %arg5 = 0 to 4 {
+// CHECK:             affine.for %arg6 = 0 to 16 {
+// CHECK:               affine.for %arg7 = 0 to 32 {
+// CHECK:                 %1 = affine.load %arg0[%arg3 + %arg5, %arg7] : memref<32x32xf32, #map0>
+// CHECK:                 %2 = affine.load %0[%arg7, %arg6] : memref<32x16xf32, 3>
+// CHECK:                 %3 = "accv.bin_op"(%1, %2) {predicate = 2 : i64} : (f32, f32) -> f32
+// CHECK:                 %4 = affine.load %arg2[%arg3 + %arg5, %arg4 + %arg6] : memref<32x32xf32, #map0>
+// CHECK:                 %5 = "accv.bin_op"(%4, %3) {predicate = 0 : i64} : (f32, f32) -> f32
+// CHECK:                 affine.store %5, %arg2[%arg3 + %arg5, %arg4 + %arg6] : memref<32x32xf32, #map0>
+// CHECK:                 %6 = affine.load %arg2[%arg3 + %arg5, %arg4 + %arg6] : memref<32x32xf32, #map0>
+// CHECK:                 affine.store %6, %arg2[%arg3 + %arg5, %arg4 + %arg6] : memref<32x32xf32, #map0>
+// CHECK:               } {begin = 0 : i64, end = 32 : i64, index = #accln<"index{k_i,8}">, kernels = ["_"], subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 1, 1]}
+// CHECK:             } {begin = 0 : i64, end = 16 : i64, index = #accln<"index{j_i,6}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 1, 32]}
+// CHECK:           } {begin = 0 : i64, end = 4 : i64, index = #accln<"index{i_i,4}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [1, 16, 32]}
+// CHECK:         } {begin = 0 : i64, end = 32 : i64, index = #accln<"index{j_o,5}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [4, 16, 32]}
+// CHECK:       } {begin = 0 : i64, end = 32 : i64, index = #accln<"index{i_o,3}">, subdomainIndexOrder = [#accln<"index{i,0}">, #accln<"index{j,1}">, #accln<"index{k,2}">], subdomainSize = [4, 32, 32]}
 // CHECK:       accv.return
 // CHECK:     }
 // CHECK:   }

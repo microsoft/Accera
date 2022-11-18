@@ -1617,6 +1617,7 @@ class TensorizeTest(unittest.TestCase):
         target = Target(Target.Model.NVIDIA_RTX_A6000)
         elem_bytes = 4 if element_type == ScalarType.float32 else 2
         shared_mem_usage_bytes = elem_bytes * (outer_tile_m + outer_tile_n) * outer_tile_k
+        blocks_per_SM = 2 if (2 * shared_mem_usage_bytes) <= target.max_shared_memory_per_block else None
         use_dynamic_shared_mem = shared_mem_usage_bytes > target.max_static_shared_memory_per_block
         dynamic_shared_mem_usage_bytes = shared_mem_usage_bytes if use_dynamic_shared_mem else 0
         if tensorize:
@@ -1628,7 +1629,7 @@ class TensorizeTest(unittest.TestCase):
             })
 
             outer_nest_order = (i, j, k, ii, jj, kk)
-            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, dynamic_shared_memory_size=dynamic_shared_mem_usage_bytes)
+            plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, dynamic_shared_memory_size=dynamic_shared_mem_usage_bytes, blocks_per_SM=blocks_per_SM)
             plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, scheduling_policy=scheduling_policy)
         else:
             # TODO : split this case into a different helper function as this is a tensorize helper
@@ -1640,7 +1641,7 @@ class TensorizeTest(unittest.TestCase):
             })
             schedule.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk)
 
-            plan = schedule.create_plan(target=target, dynamic_shared_memory_size=dynamic_shared_mem_usage_bytes)
+            plan = schedule.create_plan(target=target, _dynamic_shared_memory_size=dynamic_shared_mem_usage_bytes, _blocks_per_SM=blocks_per_SM)
             plan.bind(
                 mapping={
                     i: bind_order[0],
@@ -1673,9 +1674,14 @@ class TensorizeTest(unittest.TestCase):
 
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
-        def file_check_fn(v):
+        def file_check_dyn_mem_fn(v):
             checker = v.file_checker(f"{test_name}.cu")
             checker.check(f"{dynamic_shared_mem_usage_bytes}>>>")
+            checker.run()
+
+        def file_check_blocksPerSM_fn(v):
+            checker = v.file_checker(f"{test_name}.cu")
+            checker.check_label('extern "C" __global__  __launch_bounds__({{.+}}, ' + f'{blocks_per_SM}' + ') void ' + test_name + '_{{.+}}__gpu__(')
             checker.run()
 
         self._verify_matrix_multiplication_function(
@@ -1686,7 +1692,7 @@ class TensorizeTest(unittest.TestCase):
             tolerance=1e-5 if element_type == ScalarType.float32 else 1e-2,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
             package_format=Package.Format.MLIR | Package.Format.DEFAULT,
-            file_check_fn=file_check_fn if use_dynamic_shared_mem else None
+            file_check_fn=file_check_dyn_mem_fn if use_dynamic_shared_mem else (file_check_blocksPerSM_fn if blocks_per_SM > 0 else None)
         )
 
     def test_cuda_cache_tensorize(self) -> None:

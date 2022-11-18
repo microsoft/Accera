@@ -14,6 +14,7 @@
 
 #include <mlir/IR/SymbolTable.h>
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/TypeSwitch.h>
 
@@ -216,7 +217,8 @@ namespace loopnest
     //
     // RecursionState
     //
-    LoopNestBuilder::RecursionState::RecursionState(const LoopNestBuilder& builder)
+    LoopNestBuilder::RecursionState::RecursionState(LoopNestBuilder& builder) :
+        affineConstraints(builder.GetInitialConstraints())
     {
         for (const auto& id : builder.GetKernelIds())
         {
@@ -252,15 +254,29 @@ namespace loopnest
         return { startInt, stopInt, stepInt };
     }
 
+    mlir::AffineValueMap GetAffineValueMap(mlir::Value val)
+    {
+        // Create a 1-dimensional <(d0) -> (d0)> affine map
+        auto map = mlir::AffineMap::getMultiDimIdentityMap(1 /* numDims */, val.getContext());
+        llvm::SmallVector<mlir::Value, 4> operands{ val };
+
+        // Compose and canonicalize the <(d0) -> (d0)> map with the { val } operand:
+        // - detects if val can be a symbol and converts the map to <(s0) -> (s0)>
+        // - detects if val is a constant and converts the map to give that contant and have no operands. e.g. <() -> (16)>
+        mlir::fullyComposeAffineMapAndOperands(&map, &operands);
+        mlir::canonicalizeMapAndOperands(&map, &operands);
+        return mlir::AffineValueMap(map, operands);
+    }
+
     Range LoopRange::GetVariableRange() const
     {
         assert(IsVariable() && "GetVariableRange called on a constant range");
 
         // TODO: support variable increment
-        auto startInt = GetValue<int64_t>(start);
-        auto stopVar = stop;
+        mlir::AffineValueMap startValueMap = GetAffineValueMap(start);
+        mlir::AffineValueMap stopValueMap = GetAffineValueMap(stop);
         auto stepInt = GetValue<int64_t>(step);
-        return { startInt, stopVar, stepInt };
+        return { startValueMap, stopValueMap, stepInt };
     }
 
     Range LoopRange::GetRange() const
@@ -268,10 +284,21 @@ namespace loopnest
         return IsVariable() ? GetVariableRange() : GetConstantRange();
     }
 
+    bool LoopRange::IsVariableStart() const
+    {
+        auto constStartOp = start.getDefiningOp<mlir::arith::ConstantIndexOp>();
+        return (constStartOp == nullptr);
+    }
+
+    bool LoopRange::IsVariableStop() const
+    {
+        auto constStopOp = stop.getDefiningOp<mlir::arith::ConstantIndexOp>();
+        return (constStopOp == nullptr);
+    }
+
     bool LoopRange::IsVariable() const
     {
-        auto constOp = stop.getDefiningOp<mlir::arith::ConstantIndexOp>();
-        return (constOp == nullptr);
+        return IsVariableStart() || IsVariableStop();
     }
 
     //
@@ -298,7 +325,7 @@ namespace loopnest
         auto baseLoops = _loops[initialIndex];
         _loops.clear();
 
-        UnswitchLoops(baseLoops, state, schedule);
+        UnswitchLoops(baseLoops, state, schedule, state.affineConstraints);
 
         AddInvokeOps(_loops[initialIndex], state, schedule);
         VerifyPredicates(_loops[initialIndex], schedule);
@@ -327,6 +354,21 @@ namespace loopnest
         return { indexRanges };
     }
 
+    LoopNestAffineConstraints LoopNestBuilder::GetInitialConstraints()
+    {
+        auto loopSequence = const_cast<ScheduleOp&>(_schedule).getOrder();
+        auto domain = GetDomain();
+        auto context = _schedule->getContext();
+        auto constraints = domain.GetLoopNestConstraints(loopSequence, context);
+        // Set the value for each loop index to the SymbolicIndexOp mlir::Value handle
+        for (auto& index : loopSequence)
+        {
+            mlir::Value symbolicIndexVal = GetSymbolicIndex(index);
+            constraints.SetValue(index, symbolicIndexVal);
+        }
+        return constraints;
+    }
+
     LoopNestBuilder::RecursionState LoopNestBuilder::GenerateInitialLoopStructure(const RecursionState& state, const LoopVisitSchedule& schedule)
     {
         if (schedule.IsDone())
@@ -339,7 +381,7 @@ namespace loopnest
 
         // Find the active range for the current loop dimension and reduce the end amount if it exceeds the active range (boundary case)
         auto fullRange = schedule.GetActiveLoopRange(domain, loopIndex, state.loopIndices);
-        Partition p = { loopIndex, fullRange };
+        Partition p = { loopIndex, fullRange, LoopPartitionConstraints{ state.affineConstraints, state.affineConstraints } };
 
         auto newState = state;
         LoopRange partitionRange = MakeLoopRange(_builder, p.range);
@@ -460,7 +502,6 @@ namespace loopnest
                 {
                     auto pred = scheduledKernelOp.getKernelPredicate();
                     auto predVal = pred.evaluate(domain, loopIndices, schedule);
-                    
                     // verify pred evaluates to 'true' or 'unknown'
                     if (predVal.has_value())
                     {
@@ -474,7 +515,46 @@ namespace loopnest
         }
     }
 
-    LoopNestBuilder::RecursionState LoopNestBuilder::UnswitchLoops(const std::vector<ScheduledLoopOp>& loops, const RecursionState& state, const LoopVisitSchedule& schedule)
+    ScheduledLoopOp CloneWithNewRange(mlir::PatternRewriter& rewriter, ScheduledLoopOp loopToClone, const Range& range)
+    {
+        auto newLoop = rewriter.create<ScheduledLoopOp>(loopToClone->getLoc(),
+                                                        range,
+                                                        loopToClone.getSymbolicIndex(),
+                                                        loopToClone.getSubdomainSize(), // TODO : remove subdomain size, this is not accurate anymore with a new range
+                                                        loopToClone.getSubdomainIndexOrder());
+
+        rewriter.eraseBlock(newLoop.getPrologue());
+        rewriter.eraseBlock(newLoop.getBody());
+        rewriter.eraseBlock(newLoop.getEpilogue());
+        newLoop.prologue().getBlocks().clear();
+        newLoop.body().getBlocks().clear();
+        newLoop.epilogue().getBlocks().clear();
+        rewriter.cloneRegionBefore(loopToClone.prologue(), newLoop.prologue(), newLoop.prologue().end());
+        rewriter.cloneRegionBefore(loopToClone.body(), newLoop.body(), newLoop.body().end());
+        rewriter.cloneRegionBefore(loopToClone.epilogue(), newLoop.epilogue(), newLoop.epilogue().end());
+
+        // Clone attributes that aren't the beginMap, endMap, step, or operand_segment_sizes attrs
+        // TODO : make this a more general "copy all attrs from X dialect" type of copy so we don't have to keep this list up to date eternally
+        //        currently not all of our attributes follow the required naming convention to make this easy
+        std::vector<mlir::StringAttr> attrsToSkip = { loopToClone.beginMapAttrName(),
+                                                      loopToClone.endMapAttrName(),
+                                                      loopToClone.stepAttrName(),
+                                                      loopToClone.operand_segment_sizesAttrName() };
+        auto srcLoopAttrs = loopToClone->getAttrs();
+        for (auto namedAttr : srcLoopAttrs)
+        {
+            auto nameStringAttr = namedAttr.getName();
+            auto findIter = std::find(attrsToSkip.begin(), attrsToSkip.end(), nameStringAttr);
+            if (findIter == attrsToSkip.end())
+            {
+                newLoop->setAttr(namedAttr.getName(), namedAttr.getValue());
+            }
+        }
+
+        return newLoop;
+    }
+
+    LoopNestBuilder::RecursionState LoopNestBuilder::UnswitchLoops(const std::vector<ScheduledLoopOp>& loops, const RecursionState& state, const LoopVisitSchedule& schedule, const LoopNestAffineConstraints& currentConstraints)
     {
         if (schedule.IsDone())
         {
@@ -482,39 +562,40 @@ namespace loopnest
         }
 
         auto newState = state;
+        newState.affineConstraints = currentConstraints;
         OpBuilder::InsertionGuard guard(_builder);
         for (auto loop : loops)
         {
             auto loopIndex = loop.getIndex();
             assert(loopIndex == schedule.CurrentLoopIndex());
             auto domain = GetDomain();
-            auto fullRange = schedule.GetActiveLoopRange(domain, loopIndex, state.loopIndices);
-            //  auto fullRange = loop.getRange();
+            auto fullRange = schedule.GetActiveLoopRange(domain, loopIndex, newState.loopIndices);
             std::vector<Partition> partitions;
             bool shouldGuardLoopBounds = IsGpuLoop(loopIndex);
             if (shouldGuardLoopBounds)
             {
-                partitions.push_back({ loopIndex, fullRange });
+                partitions.push_back({ loopIndex, fullRange, LoopPartitionConstraints{ currentConstraints, currentConstraints } });
             }
             else
             {
-                partitions = GetPartitions(loopIndex, fullRange, state, schedule);
+                partitions = GetPartitions(loopIndex, fullRange, newState, schedule);
             }
-   
+
             _builder.setInsertionPointAfter(loop);
             _loops[loopIndex].erase(std::remove(_loops[loopIndex].begin(), _loops[loopIndex].end(), loop), _loops[loopIndex].end());
 
-            for (const auto& p : partitions)
+            for (auto& p : partitions)
             {
                 newState = state;
-                auto newLoop = mlir::cast<ScheduledLoopOp>(_builder.clone(*loop.getOperation()));
+                newState.affineConstraints = currentConstraints;
+
                 LoopRange partitionRange = MakeLoopRange(_builder, p.range);
+                auto newLoop = CloneWithNewRange(_builder, loop, partitionRange.GetRange());
+
+                // TODO : remove subdomain sizes
                 auto subdomainSizes = newLoop.getSubdomainSize();
                 UpdateSubdomainSizes(loopIndex, partitionRange, subdomainSizes);
                 newLoop.setSubdomainSize(subdomainSizes);
-                newLoop.setBegin(p.range.Begin());
-                newLoop.setStep(p.range.Increment());
-                newLoop.setEnd(p.range.End());
 
                 if (shouldGuardLoopBounds)
                 {
@@ -527,10 +608,10 @@ namespace loopnest
                 _loops[loopIndex].push_back(newLoop);
 
                 auto innerLoops = GetInnerLoops(newLoop.getBody());
-                UnswitchLoops(innerLoops, newState, schedule.Next());
+                UnswitchLoops(innerLoops, newState, schedule.Next(), p.constraints.innerConstraints);
 
                 // set the loop index state to be "done"
-               DefinePostLoopIndex(_builder, loopIndex, newState.loopIndices, schedule);
+                DefinePostLoopIndex(_builder, loopIndex, newState.loopIndices, schedule);
             }
 
             _builder.eraseOp(loop);
@@ -568,6 +649,12 @@ namespace loopnest
                 auto thisLoop = *loopIt;
                 auto nextLoop = nextIt == loops.end() ? nullptr : *nextIt;
 
+                if (!thisLoop.hasConstantRange() || (nextLoop && !nextLoop.hasConstantRange()))
+                {
+                    // TODO : support merging dynamic ranges
+                    continue;
+                }
+
                 auto thisLoopKernels = GetInvokeKernelOps(thisLoop.getBody());
                 if (thisLoopKernels.size() >= 0)
                 {
@@ -578,7 +665,7 @@ namespace loopnest
                             prevLoopKernels.size() > thisLoopKernels.size() &&
                             std::equal(thisLoopKernels.rbegin(), thisLoopKernels.rend(), prevLoopKernels.rbegin(), [](auto k1, auto k2) { return k1.kernel() == k2.kernel(); }))
                         {
-                            thisLoop.setBegin(prevLoop.begin());
+                            thisLoop.setConstantBegin(prevLoop.getConstantBegin());
                             for (auto it = prevLoopKernels.rbegin(); it != prevLoopKernels.rbegin() + thisLoopKernels.size(); ++it)
                             {
                                 _builder.eraseOp(*it);
@@ -599,14 +686,14 @@ namespace loopnest
                             {
                                 if (std::equal(matchStart, thisLoopKernels.end(), nextLoopKernels.begin(), [](auto k1, auto k2) { return k1.kernel() == k2.kernel(); }))
                                 {
-                                    auto newPartition = Range(thisLoop.begin(), nextLoop.end(), thisLoop.step());
+                                    auto newPartition = Range(thisLoop.getConstantBegin(), nextLoop.getConstantEnd(), thisLoop.step());
                                     auto numBadPrefixKernels = matchStart - thisLoopKernels.begin();
                                     auto numMovedKernels = thisLoopKernels.end() - matchStart;
                                     auto builder = GetCurrentLoopBuilder(schedule);
                                     OpBuilder::InsertionGuard guard(builder);
                                     builder.setInsertionPointAfter(thisLoop);
                                     auto newLoop = cast<ScheduledLoopOp>(builder.clone(*thisLoop.getOperation()));
-                                    newLoop.setEnd(nextLoop.end());
+                                    newLoop.setConstantEnd(nextLoop.getConstantEnd());
                                     auto loopIndex = schedule.CurrentLoopIndex();
                                     auto partitionRange = MakeLoopRange(builder, newPartition.Begin(), newPartition.End(), newPartition.Increment());
                                     auto subdomainSizes = newLoop.getSubdomainSize();
@@ -630,7 +717,7 @@ namespace loopnest
                                  nextLoopKernels.size() > thisLoopKernels.size() &&
                                  std::equal(thisLoopKernels.begin(), thisLoopKernels.end(), nextLoopKernels.begin(), [](auto k1, auto k2) { return k1.kernel() == k2.kernel(); }))
                         {
-                            thisLoop.setEnd(nextLoop.end());
+                            thisLoop.setConstantEnd(nextLoop.getConstantEnd());
                             for (auto it = nextLoopKernels.begin(); it != nextLoopKernels.begin() + thisLoopKernels.size(); ++it)
                             {
                                 _builder.eraseOp(*it);
@@ -656,7 +743,8 @@ namespace loopnest
 
         for (auto loop : loops)
         {
-            auto partitionRange = MakeLoopRange(_builder, loop.begin(), loop.end(), loop.step());
+            // TODO : fix with dynamic ranges
+            auto partitionRange = MakeLoopRange(_builder, 0, 1, 1);
             auto loopIndexOp = loop.getSymbolicIndex();
             newState.loopIndices.insert_or_assign(loopIndex, LoopIndexSymbolTableEntry{ loopIndexOp, partitionRange.GetConstantRange(), LoopIndexState::inProgress });
             EmitLoopBody(loop, newState, schedule); // This contains the recursive call to EmitLoopBodies
@@ -712,16 +800,13 @@ namespace loopnest
         // Emit a ScheduledLoopOp
         auto builder = GetCurrentLoopBuilder(schedule);
 
-        auto begin = range.Begin();
-        auto step = range.Increment();
-
         auto loc = GetLocation();
         auto symbolicIndex = GetSymbolicIndex(loopIndex);
         assert(symbolicIndex && "Error: bad symbolic index");
         auto domain = GetDomain();
         auto domainIndexOrder = domain.GetDimensions();
 
-        auto loop = range.HasVariableEnd() ? builder.create<ScheduledLoopOp>(loc, begin, range.VariableEnd(), step, symbolicIndex, state.subdomainSize, domainIndexOrder) : builder.create<ScheduledLoopOp>(loc, begin, range.End(), step, symbolicIndex, state.subdomainSize, domainIndexOrder);
+        auto loop = builder.create<ScheduledLoopOp>(loc, range, symbolicIndex, state.subdomainSize, domainIndexOrder);
 
         // TODO : move these attributes to the loop attribute infra
         loop->setAttr("index", IndexAttr::get(loopIndex, builder.getContext()));
@@ -1045,9 +1130,32 @@ namespace loopnest
 
     std::vector<Partition> LoopNestBuilder::GetPartitions(const Index& loopIndex, Range loopRange, const RecursionState& state, const LoopVisitSchedule& schedule) const
     {
-        if (loopRange.HasVariableEnd())
+        // TODO : better integration between the dynamic and static scenarios
+        // If this loop index is part of a dynamic dimension, then its partition begin and end values may be functions of that dynamic value
+        auto loc = const_cast<ScheduleOp&>(_schedule).getLoc();
+        auto domain = GetDomain();
+        auto baseIndices = domain.GetBaseIndices(loopIndex);
+        bool isConstantSizeDimensionIndex = true;
+        for (auto& baseIndex : baseIndices)
         {
-            return std::vector<Partition>({ { loopIndex, loopRange } }); // TODO: handle transformations on variable ranges
+            isConstantSizeDimensionIndex &= domain.HasConstantDimensionSize(baseIndex);
+        }
+        if (!isConstantSizeDimensionIndex)
+        {
+            // This loop range, even if it is a statically-sized split index by itself, is part of a dynamic dimension and therefore may have a dynamic begin or end value
+            auto splitSize = loopRange.Increment();
+            auto constraintPartitions = state.affineConstraints.SplitIndex(_builder, loc, loopIndex, splitSize);
+            std::vector<Partition> result;
+            for (auto& constraintPartition : constraintPartitions)
+            {
+                // TODO : move to SplitIndex and let SplitIndex return a variable number of constraints
+                if (!constraintPartition.resolveConstraints.IsEmpty())
+                {
+                    auto [lbValueMap, ubValueMap] = constraintPartition.resolveConstraints.GetLowerAndUpperBound(loopIndex, _builder, loc);
+                    result.push_back({ loopIndex, { lbValueMap, ubValueMap, splitSize }, constraintPartition });
+                }
+            }
+            return result;
         }
 
         // Find conditions involving this index and add any relevant partition split points
@@ -1057,17 +1165,22 @@ namespace loopnest
             AddSplits(loopIndex, loopRange, k.getKernelPredicate(), state.loopIndices, schedule, splits);
         }
 
+        // Get constraint partitions
+        auto allConstraintPartitions = state.affineConstraints.PartitionIndex(_builder, loc, loopIndex, splits);
+        auto lastConstraintPartition = allConstraintPartitions.back();
+        std::vector<LoopPartitionConstraints> allButLastConstraintPartitions(allConstraintPartitions.begin(), allConstraintPartitions.end() - 1);
+
         // Get index ranges
         int begin = loopRange.Begin();
         int end = loopRange.End();
         int increment = loopRange.Increment();
         std::vector<Partition> result;
-        for (auto partitionEnd : splits)
+        for (auto [partitionEnd, constraintPartition] : llvm::zip(splits, allButLastConstraintPartitions))
         {
-            result.push_back({ loopIndex, { begin, partitionEnd, increment } });
+            result.push_back({ loopIndex, { begin, partitionEnd, increment }, constraintPartition });
             begin = partitionEnd;
         }
-        result.push_back({ loopIndex, { begin, end, increment } });
+        result.push_back({ loopIndex, { begin, end, increment }, lastConstraintPartition });
 
         return result;
     }
@@ -1243,8 +1356,8 @@ namespace loopnest
                         case FragmentType::select:
                             // single select value (split points are just before the selected value, and 1 increment after)
                             assert(indexValues.size() == 1 && "Invalid number of index values for select predicate");
-                                splitVals.push_back(indexValues[0]);
-                                splitVals.push_back(indexValues[0] + 1);
+                            splitVals.push_back(indexValues[0]);
+                            splitVals.push_back(indexValues[0] + 1);
                             break;
                         case FragmentType::endBoundary:
                             // already set by automatic boundary-handling code
@@ -1678,7 +1791,23 @@ namespace loopnest
 
     LoopRange LoopNestBuilder::MakeLoopRange(mlir::OpBuilder& builder, const Range& range)
     {
-        if (range.HasVariableEnd())
+        // TODO : merge these scenarios better
+        if (range.HasValueMapBegin() && range.HasValueMapEnd())
+        {
+            // Create affine apply ops for the begin and end values
+            auto beginApplyOps = util::AffineValueMapToAffineApplyOps(builder, GetLocation(), range.ValueMapBegin());
+            auto endApplyOps = util::AffineValueMapToAffineApplyOps(builder, GetLocation(), range.ValueMapEnd());
+
+            // TODO : do we need to support situations with multiple begin/end values. (These turn into mins/maxes that get emitted and evaluated at runtime)
+            assert(beginApplyOps.size() == 1);
+            assert(endApplyOps.size() == 1);
+            return {
+                beginApplyOps[0].getResult(),
+                endApplyOps[0].getResult(),
+                GetConstantIndex(builder, range.Increment()).getResult()
+            };
+        }
+        else if (range.HasVariableEnd())
         {
             return {
                 GetConstantIndex(builder, range.Begin()).getResult(),

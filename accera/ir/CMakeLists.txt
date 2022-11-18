@@ -14,6 +14,7 @@ get_filename_component(IR_INCLUDE include ABSOLUTE)
 add_subdirectory(include)
 
 set(src
+    src/AffineConstraintsHelper.cpp
     src/DialectRegistry.cpp
     src/InitializeAccera.cpp
     src/IRUtil.cpp
@@ -22,6 +23,7 @@ set(src
     )
 
 set(include
+    include/AffineConstraintsHelper.h
     include/Common.td
     include/DialectRegistry.h
     include/InitializeAccera.h
@@ -51,6 +53,7 @@ set(accnest_src
     src/nest/Index.cpp
     src/nest/IndexRange.cpp
     src/nest/IterationDomain.cpp
+    src/nest/LoopNestAffineConstraints.cpp
     src/nest/LoopNestAttributes.cpp
     src/nest/LoopNestBuilder.cpp
     src/nest/LoopNestOps.cpp
@@ -68,6 +71,7 @@ set(accnest_include
     include/nest/IndexRange.h
     include/nest/IterationDomain.h
     include/nest/LoopIndexInfo.h
+    include/nest/LoopNestAffineConstraints.h
     include/nest/LoopNestAttributes.h
     include/nest/LoopNestBuilder.h
     include/nest/LoopNestOps.h

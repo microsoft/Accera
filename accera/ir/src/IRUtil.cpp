@@ -11,7 +11,9 @@
 #include <ir/include/nest/LoopNestOps.h>
 #include <ir/include/value/ValueDialect.h>
 
+#include <utilities/include/Exception.h>
 #include <utilities/include/StringUtil.h>
+#include <utilities/include/TypeTraits.h>
 
 #include <mlir/Dialect/Affine/Analysis/LoopAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
@@ -34,6 +36,8 @@
 #include <mutex>
 #include <optional>
 #include <set>
+
+using namespace accera::utilities;
 
 namespace vir = accera::ir::value;
 
@@ -281,6 +285,32 @@ namespace util
     {
         mlir::AffineApplyOpAdaptor adaptor{ applyOp };
         return mlir::AffineValueMap(applyOp.map(), adaptor.mapOperands());
+    }
+
+    std::vector<mlir::AffineApplyOp> AffineValueMapToAffineApplyOps(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineValueMap affineValueMap)
+    {
+        std::vector<mlir::AffineApplyOp> applyOps;
+        auto map = affineValueMap.getAffineMap();
+        auto results = map.getResults();
+        for (auto result : results)
+        {
+            auto resultMap = mlir::AffineMap::get(map.getNumDims(), map.getNumSymbols(), result);
+            auto applyOp = builder.create<mlir::AffineApplyOp>(loc, resultMap, affineValueMap.getOperands());
+            applyOps.push_back(applyOp);
+        }
+        return applyOps;
+    }
+
+    mlir::AffineValueMap SimplifyAffineValueMap(mlir::AffineValueMap affineValueMap)
+    {
+        auto map = affineValueMap.getAffineMap();
+        auto operands = affineValueMap.getOperands();
+
+        llvm::SmallVector<mlir::Value, 2> operandsVec(operands.begin(), operands.end());
+        mlir::fullyComposeAffineMapAndOperands(&map, &operandsVec);
+        mlir::canonicalizeMapAndOperands(&map, &operandsVec);
+
+        return mlir::AffineValueMap(map, operandsVec);
     }
 
     mlir::Type GetElementType(mlir::Type type)
@@ -835,8 +865,7 @@ namespace util
         auto memRefMap = memRefType.getLayout().getAffineMap();
         if (memRefMap.isIdentity())
         {
-            auto stridedLayout = mlir::makeCanonicalStridedLayoutExpr(memRefType.getShape(), context);
-            memRefMap = mlir::AffineMap::get(memRefType.getRank(), 0, stridedLayout);
+            memRefMap = mlir::getStridedLinearLayoutMap(memRefType);
         }
         return memRefMap;
     }
@@ -1184,6 +1213,196 @@ namespace util
         auto targetShapedTypeOrNull = target.dyn_cast<mlir::ShapedType>();
         IS_IMPLICITLY_CASTABLE_IF(mlir::VectorType, mlir::VectorType, (ShapesMatch(sourceShapedTypeOrNull, targetShapedTypeOrNull) && IsImplicitlyCastable(GetElementType(source), GetElementType(target))));
         return false;
+    }
+
+    bool AffineValueMapsEqual(const mlir::AffineValueMap& lhs, const mlir::AffineValueMap& rhs)
+    {
+        auto lhsMap = lhs.getAffineMap();
+        auto rhsMap = rhs.getAffineMap();
+        auto lhsOperands = lhs.getOperands();
+        auto rhsOperands = rhs.getOperands();
+        return (lhsMap == rhsMap) && (lhsOperands == rhsOperands);
+    }
+
+    // TODO : move to ValueFuncOp?
+    std::vector<std::vector<int64_t>> ParseDynamicArgSizeReferences(mlir::Operation* op, const std::vector<mlir::Type>& argTypes)
+    {
+        std::vector<std::vector<int64_t>> dynArgSizeReferences;
+        if (auto dynArgSizeRefsArrayAttr = op->getAttrOfType<mlir::ArrayAttr>(DynamicArgSizeReferencesAttrName))
+        {
+            for (auto dynArgSizeRefs : dynArgSizeRefsArrayAttr)
+            {
+                auto dynArgSizeRefsVec = util::ConvertArrayAttrToIntVector(dynArgSizeRefs.cast<mlir::ArrayAttr>());
+                dynArgSizeReferences.push_back(dynArgSizeRefsVec);
+            }
+            if (dynArgSizeReferences.size() != argTypes.size())
+            {
+                throw LogicException(LogicExceptionErrors::illegalState, "Must have one dynamic arg size references entry for each function argument");
+            }
+        }
+        else
+        {
+            // No arg size references given, assume that all args are statically sized
+            const int64_t staticSentinelValue = -1;
+            for (auto argTy : argTypes)
+            {
+                if (auto memrefTy = argTy.dyn_cast<MemRefType>())
+                {
+                    assert(memrefTy.getNumDynamicDims() == 0);
+                    std::vector<int64_t> rankSentinelValues(memrefTy.getRank(), staticSentinelValue);
+                    dynArgSizeReferences.push_back(rankSentinelValues);
+                }
+                else
+                {
+                    dynArgSizeReferences.push_back({ staticSentinelValue });
+                }
+            }
+        }
+        return dynArgSizeReferences;
+    }
+
+    std::vector<std::variant<int64_t, mlir::Value>> GetMemrefShape(mlir::Value memref)
+    {
+        // TODO : instead of a helper function should we have an op that wraps the memref and size values and returns a memref?
+        auto type = memref.getType();
+        auto memrefType = type.cast<mlir::MemRefType>();
+        std::vector<std::variant<int64_t, mlir::Value>> shape;
+        if (memrefType.hasStaticShape())
+        {
+            auto staticShapeVec = memrefType.getShape().vec();
+            shape.insert(shape.end(), staticShapeVec.begin(), staticShapeVec.end());
+            return shape;
+        }
+
+        // Currently this utility only supports dynamic memrefs that are function arguments with dimension size handles which are
+        // also function arguments
+        if (!memref.isa<mlir::BlockArgument>())
+        {
+            throw LogicException(LogicExceptionErrors::notImplemented, "Currently only supports function arguments for dynamic memref shape resolution");
+        }
+        auto memrefBlockArg = memref.cast<mlir::BlockArgument>();
+        auto memrefFuncArgIdx = memrefBlockArg.getArgNumber();
+        auto blockParentOp = memrefBlockArg.getOwner()->getParentOp();
+
+        auto allFuncArgs = memrefBlockArg.getOwner()->getArguments();
+        std::vector<mlir::Type> allFuncArgTypes;
+        allFuncArgTypes.reserve(allFuncArgs.size());
+        std::transform(allFuncArgs.begin(), allFuncArgs.end(), std::back_inserter(allFuncArgTypes), [](mlir::Value val) { return val.getType(); });
+
+        std::vector<std::vector<int64_t>> dynamicArgSizeRefs = ParseDynamicArgSizeReferences(blockParentOp, allFuncArgTypes);
+
+        for (unsigned dimIdx = 0; dimIdx < memrefType.getRank(); ++dimIdx)
+        {
+            if (memrefType.isDynamicDim(dimIdx))
+            {
+                auto shapeRefArgIdx = dynamicArgSizeRefs[memrefFuncArgIdx][dimIdx];
+                shape.push_back(allFuncArgs[shapeRefArgIdx]);
+            }
+            else
+            {
+                shape.push_back(memrefType.getDimSize(dimIdx));
+            }
+        }
+        return shape;
+    }
+
+    mlir::AffineValueMap GetMemrefShapeValueMap(mlir::Value memref)
+    {
+        // TODO : instead of a helper function should we have an op that wraps the memref and size values and returns a memref?
+        auto context = memref.getContext();
+        auto type = memref.getType();
+        auto memrefType = type.cast<mlir::MemRefType>();
+        if (memrefType.hasStaticShape())
+        {
+            std::vector<mlir::AffineExpr> constExprs;
+            std::transform(memrefType.getShape().begin(), memrefType.getShape().end(), std::back_inserter(constExprs), [&](int64_t dimSize) {
+                return mlir::getAffineConstantExpr(dimSize, context);
+            });
+            return mlir::AffineValueMap(mlir::AffineMap::get(0, 0, constExprs, context), {});
+        }
+
+        // Currently this utility only supports dynamic memrefs that are function arguments with dimension size handles which are
+        // also function arguments
+        std::vector<std::variant<int64_t, mlir::Value>> memrefShape = GetMemrefShape(memref);
+        std::vector<mlir::Value> symbols;
+
+        std::vector<mlir::AffineExpr> dynShapeExprs;
+        for (auto dimShapeVar : memrefShape)
+        {
+            auto shapeExpr = std::visit(
+                accera::utilities::VariantVisitor{
+                    [&](int64_t dimSize) -> mlir::AffineExpr {
+                        return mlir::getAffineConstantExpr(dimSize, context);
+                    },
+                    [&](mlir::Value dynamicSize) -> mlir::AffineExpr {
+                        unsigned symIdx = symbols.size();
+                        symbols.push_back(dynamicSize);
+                        return mlir::getAffineSymbolExpr(symIdx, context);
+                    },
+                },
+                dimShapeVar);
+            dynShapeExprs.push_back(shapeExpr);
+        }
+        auto map = mlir::AffineMap::get(0, symbols.size(), dynShapeExprs, context);
+        return mlir::AffineValueMap(map, symbols);
+    }
+
+    mlir::AffineValueMap GetIdentityMemrefStridesValueMap(mlir::Value memref)
+    {
+        auto context = memref.getContext();
+        assert(HasIdentityLayout(memref) && "Only supports computing dynamic strides for identity-mapped memrefs");
+        auto shapeValueMap = GetMemrefShapeValueMap(memref);
+        auto shapeMap = shapeValueMap.getAffineMap();
+        auto shapeExprs = shapeMap.getResults().vec();
+        auto shapeSymbols = shapeValueMap.getOperands();
+
+        // Since we're only dealing with an identity map, the strides of a { M x N x K } memref are [K*N, K, 1]
+        // so compute strides as series of functions of the possibly-dynamic memref shape
+        mlir::AffineExpr cumulativeStrideProductExpr = mlir::getAffineConstantExpr(1, context);
+        std::reverse(shapeExprs.begin(), shapeExprs.end());
+        std::vector<mlir::AffineExpr> strideExprs;
+        for (auto expr : shapeExprs)
+        {
+            strideExprs.push_back(cumulativeStrideProductExpr);
+            cumulativeStrideProductExpr = cumulativeStrideProductExpr * expr;
+        }
+
+        // Now flip the dimensions back into outer-to-inner order
+        std::reverse(strideExprs.begin(), strideExprs.end());
+        auto strideMap = mlir::AffineMap::get(0, shapeSymbols.size(), strideExprs, context);
+        return mlir::AffineValueMap(strideMap, shapeSymbols);
+    }
+
+    std::vector<mlir::Value> GetIdentityMemrefStrideSymbols(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value memref)
+    {
+        std::vector<mlir::Value> strideSymbols;
+        auto stridesValueMap = GetIdentityMemrefStridesValueMap(memref);
+        stridesValueMap = SimplifyAffineValueMap(stridesValueMap);
+        auto strideAffineApplyOps = AffineValueMapToAffineApplyOps(builder, loc, stridesValueMap);
+        auto stridesMap = stridesValueMap.getAffineMap();
+        auto stridesExprs = stridesMap.getResults();
+        for (unsigned dimIdx = 0; dimIdx < stridesExprs.size(); ++dimIdx)
+        {
+            auto expr = stridesExprs[dimIdx];
+            if (!expr.isa<mlir::AffineConstantExpr>())
+            {
+                // If it is not constant, then it has a symbol that we should return
+                strideSymbols.push_back(strideAffineApplyOps[dimIdx].getResult());
+            }
+        }
+        return strideSymbols;
+    }
+
+    bool HasIdentityLayout(mlir::Value memref)
+    {
+        auto type = memref.getType();
+        if (!type.isa<mlir::MemRefType>())
+        {
+            return false;
+        }
+        auto memRefType = type.cast<mlir::MemRefType>();
+        auto memRefMap = memRefType.getLayout().getAffineMap();
+        return memRefMap.isIdentity();
     }
 
 } // namespace util

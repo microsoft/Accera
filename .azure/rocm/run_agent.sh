@@ -13,7 +13,7 @@ for var in "${VARS[@]}"; do
     fi
 done
 
-ROCMVER=5.1.1-ub20
+ROCMVER=5.3.0-ub20
 IMAGE=${ACR_REPO}/rocm-linuxagent:${ROCMVER}
 POOL=LinuxAMDGPUPool
 

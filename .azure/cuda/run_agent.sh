@@ -15,7 +15,7 @@ for var in "${VARS[@]}"; do
     fi
 done
 
-CUDAVER=11.7.0-devel-ubuntu20.04
+CUDAVER=11.8.0-devel-ubuntu20.04
 IMAGE=${ACR_REPO}/cuda-linuxagent:${CUDAVER}
 POOL=LinuxNVGPUPool
 

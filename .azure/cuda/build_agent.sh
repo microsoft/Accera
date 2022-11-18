@@ -5,7 +5,7 @@
 ####################################################################################################
 set -x -e
 
-CUDAVER=11.7.0-devel-ubuntu20.04
+CUDAVER=11.8.0-devel-ubuntu20.04
 
 SCRIPT_DIR=$(dirname $(readlink -f "$0"))
 ACCERA_ROOT=${SCRIPT_DIR}/../../

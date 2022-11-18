@@ -473,7 +473,13 @@ namespace cpp_printer
             auto blockSizeX = arrayAttr[0].getInt();
             auto blockSizeY = arrayAttr[1].getInt();
             auto blockSizeZ = arrayAttr[2].getInt();
-            os << " __launch_bounds__(" << blockSizeX * blockSizeY * blockSizeZ << ") ";
+            os << " __launch_bounds__(" << blockSizeX * blockSizeY * blockSizeZ;
+            if (funcOp->hasAttrOfType<mlir::IntegerAttr>("blocksPerSM"))
+            {
+                auto blocksPerSM = funcOp->getAttrOfType<mlir::IntegerAttr>("blocksPerSM").getInt();
+                os << ", " << blocksPerSM;
+            }
+            os << ") ";
         }
 
         auto resultType = funcOp.getType().getResults();

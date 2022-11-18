@@ -31,9 +31,14 @@ namespace loopnest
         }
 
         auto loopRange = domain.GetIndexRange(loopIndex);
-        if (loopRange.HasVariableEnd())
+        auto dimBaseIndices = domain.GetBaseIndices(loopIndex);
+        for (auto& baseIndex : dimBaseIndices)
         {
-            return loopRange; // TODO: handle transformations on variable ranges
+            auto baseRange = domain.GetIndexRange(baseIndex);
+            if (baseRange.HasVariableEnd())
+            {
+                return loopRange; // TODO: merge with LoopNestAffineConstraints
+            }
         }
 
         int begin = loopRange.Begin();

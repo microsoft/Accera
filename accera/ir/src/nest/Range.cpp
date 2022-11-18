@@ -6,6 +6,7 @@
 #include "nest/Range.h"
 #include "nest/LoopNestAttributes.h"
 #include "nest/LoopNestOps.h"
+#include "IRUtil.h"
 
 #include <utilities/include/MathUtil.h>
 #include <utilities/include/TypeTraits.h>
@@ -13,6 +14,7 @@
 
 #include <llvm/ADT/Hashing.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/Visitors.h>
@@ -22,6 +24,23 @@
 
 using namespace accera::ir::value;
 using namespace accera::utilities;
+
+namespace
+{
+    int64_t GetValueMapSingleConstant(mlir::AffineValueMap& valueMap)
+    {
+        mlir::AffineMap simplifiedMap = valueMap.getAffineMap();
+        auto operandsTmp = valueMap.getOperands();
+        llvm::SmallVector<mlir::Value, 2> operands(operandsTmp.begin(), operandsTmp.end());
+        mlir::fullyComposeAffineMapAndOperands(&simplifiedMap, &operands);
+        mlir::canonicalizeMapAndOperands(&simplifiedMap, &operands);
+        if (simplifiedMap.isSingleConstant())
+        {
+            return simplifiedMap.getSingleConstantResult();
+        }
+        return mlir::ShapedType::kDynamicSize;
+    }
+}
 
 namespace accera::ir
 {
@@ -90,9 +109,45 @@ namespace loopnest
         _increment(increment)
     {}
 
+    Range::Range(mlir::AffineValueMap begin, mlir::AffineValueMap end, int64_t increment) :
+        _begin(begin),
+        _end(end),
+        _increment(increment)
+    {}
+
     int64_t Range::Begin() const
     {
-        return _begin;
+        return std::visit(
+            VariantVisitor{
+                [](int64_t beginVal) -> int64_t {
+                    return beginVal;
+                },
+                [](mlir::AffineValueMap beginValueMap) -> int64_t {
+                    return GetValueMapSingleConstant(beginValueMap);
+                },
+                [](auto&& beginVal) -> int64_t {
+                    assert(false && "Unsupported begin value type");
+                    return -1;
+                } },
+            _begin);
+    }
+
+    mlir::AffineValueMap Range::ValueMapBegin() const
+    {
+        return std::visit(
+            VariantVisitor{
+                [](int64_t beginMap) -> mlir::AffineValueMap {
+                    assert(false && "Calling VariableBegin() on a constant range begin");
+                    return {};
+                },
+                [](mlir::AffineValueMap beginMap) -> mlir::AffineValueMap {
+                    return beginMap;
+                },
+                [](auto&& beginMap) -> mlir::AffineValueMap {
+                    assert(false && "Unsupported begin value type");
+                    return {};
+                } },
+            _begin);
     }
 
     int64_t Range::End() const
@@ -116,9 +171,42 @@ namespace loopnest
                 [](std::string endIndex) -> int64_t {
                     return mlir::ShapedType::kDynamicSize;
                 },
+                [](mlir::AffineValueMap endValueMap) -> int64_t {
+                    return GetValueMapSingleConstant(endValueMap);
+                },
                 [](auto&& endVal) -> int64_t {
                     assert(false && "Unsupported end value type");
                     return -1;
+                } },
+            _end);
+    }
+
+    mlir::AffineValueMap Range::ValueMapEnd() const
+    {
+        return std::visit(
+            VariantVisitor{
+                [](int64_t endDynIdx) -> mlir::AffineValueMap {
+                    assert(false && "Calling ValueMapEnd() on a constant range");
+                    return {};
+                },
+                [](Index endDynIdx) -> mlir::AffineValueMap {
+                    assert(false && "Calling ValueMapEnd() on an Index range");
+                    return {};
+                },
+                [](OperandIndex endDynIdx) -> mlir::AffineValueMap {
+                    assert(false && "Calling ValueMapEnd() on an OperandIndex range");
+                    return {};
+                },
+                [](mlir::Value endDynIdx) -> mlir::AffineValueMap {
+                    assert(false && "Calling ValueMapEnd() on a mlir::Value range");
+                    return {};
+                },
+                [](mlir::AffineValueMap endMap) -> mlir::AffineValueMap {
+                    return endMap;
+                },
+                [](auto&& endDynIdx) -> mlir::AffineValueMap {
+                    assert(false && "Unsupported end value type");
+                    return {};
                 } },
             _end);
     }
@@ -141,6 +229,10 @@ namespace loopnest
                 },
                 [](mlir::Value endDynIdx) -> mlir::Value {
                     return endDynIdx;
+                },
+                [](mlir::AffineValueMap endMap) -> mlir::Value {
+                    assert(false && "Calling VariableEnd() on a ValueMap range");
+                    return {};
                 },
                 [](auto&& endDynIdx) -> mlir::Value {
                     assert(false && "Unsupported end value type");
@@ -172,6 +264,10 @@ namespace loopnest
                 [](std::string endDynIdx) -> std::string {
                     return endDynIdx;
                 },
+                [](mlir::AffineValueMap endMap) -> std::string {
+                    assert(false && "Calling SymbolNameEnd() on a ValueMap range");
+                    return {};
+                },
                 [](auto&& endDynIdx) -> std::string {
                     assert(false && "Unsupported end value type");
                     return {};
@@ -196,6 +292,10 @@ namespace loopnest
                 },
                 [](mlir::Value endIndex) -> Index {
                     assert(false && "Calling EndIndex() on a variable range");
+                    return {};
+                },
+                [](mlir::AffineValueMap endMap) -> Index {
+                    assert(false && "Calling EndIndex() on a ValueMap range");
                     return {};
                 },
                 [](auto&& endVal) -> Index {
@@ -224,11 +324,25 @@ namespace loopnest
                     assert(false && "Calling EndOperandIndex() on a variable range");
                     return {};
                 },
+                [](mlir::AffineValueMap endMap) -> OperandIndex {
+                    assert(false && "Calling EndOperandIndex() on a ValueMap range");
+                    return {};
+                },
                 [](auto&& endOpIdx) -> OperandIndex {
                     assert(false && "Unsupported end value type");
                     return {};
                 } },
             _end);
+    }
+
+    bool Range::HasConstantBegin() const
+    {
+        return std::holds_alternative<int64_t>(_begin);
+    }
+
+    bool Range::HasValueMapBegin() const
+    {
+        return std::holds_alternative<mlir::AffineValueMap>(_begin);
     }
 
     bool Range::HasConstantEnd() const
@@ -254,6 +368,11 @@ namespace loopnest
     bool Range::HasSymbolNameEnd() const
     {
         return std::holds_alternative<std::string>(_end);
+    }
+
+    bool Range::HasValueMapEnd() const
+    {
+        return std::holds_alternative<mlir::AffineValueMap>(_end);
     }
 
     int64_t Range::Size() const
@@ -299,9 +418,28 @@ namespace loopnest
 
     bool operator==(const Range& i1, const Range& i2)
     {
+        if (i1.Increment() != i2.Increment())
+        {
+            return false;
+        }
+        if (i1.HasValueMapBegin() && i2.HasValueMapBegin())
+        {
+            if (!util::AffineValueMapsEqual(i1.ValueMapBegin(), i2.ValueMapBegin()))
+            {
+                return false;
+            }
+        }
+        else if (i1.HasConstantBegin() && i2.HasConstantBegin())
+        {
+            if (i1.Begin() != i2.Begin())
+            {
+                return false;
+            }
+        }
+
         if (i1.HasConstantEnd() && i2.HasConstantEnd())
         {
-            return (i1.Begin() == i2.Begin()) && (i1.End() == i2.End()) && (i1.Increment() == i2.Increment());
+            return (i1.End() == i2.End());
         }
         else if (i1.HasIndexEnd() && i2.HasIndexEnd())
         {
@@ -322,6 +460,10 @@ namespace loopnest
         {
             // Both i1 and i2 have variable end values, now they're only equal if they have the same std::string
             return i1.SymbolNameEnd() == i2.SymbolNameEnd();
+        }
+        else if (i1.HasValueMapEnd() && i2.HasValueMapEnd())
+        {
+            return util::AffineValueMapsEqual(i1.ValueMapEnd(), i2.ValueMapEnd());
         }
         else
         {

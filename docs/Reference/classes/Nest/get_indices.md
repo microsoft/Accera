@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.11)
+[//]: # (Version: v1.2.12)
 
-# Accera v1.2.11 Reference
+# Accera v1.2.12 Reference
 
 ## `accera.Nest.get_indices()`
 Gets the iteration space dimensions for a nest.

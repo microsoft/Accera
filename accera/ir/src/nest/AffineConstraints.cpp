@@ -30,17 +30,21 @@ namespace loopnest
 
     void AffineConstraints::AddConstraint(Index index, Range range)
     {
-        auto pos = GetIndexPosition(index);
-        _constraints.addBound(mlir::FlatAffineConstraints::LB, pos, range.Begin());
+        // TODO : merge with LoopNestAffineConstraints
+        if (range.HasConstantBegin() && range.HasConstantEnd())
+        {
+            auto pos = GetIndexPosition(index);
+            _constraints.addBound(mlir::FlatAffineConstraints::LB, pos, range.Begin());
 
-        if (range.End() > 0)
-        {
-            _constraints.addBound(mlir::FlatAffineConstraints::UB, pos, range.End()-1); // half open bound -> closed bound
-        }
-        else
-        {
-            assert(range.End() == range.Begin() && "Bad range (end < begin)");
-            _constraints.addBound(mlir::FlatAffineConstraints::UB, pos, range.Begin()); // single-value closed bound
+            if (range.End() > 0)
+            {
+                _constraints.addBound(mlir::FlatAffineConstraints::UB, pos, range.End()-1); // half open bound -> closed bound
+            }
+            else
+            {
+                assert(range.End() == range.Begin() && "Bad range (end < begin)");
+                _constraints.addBound(mlir::FlatAffineConstraints::UB, pos, range.Begin()); // single-value closed bound
+            }
         }
     }
 

@@ -111,10 +111,11 @@ namespace
             .def_readwrite("z", &value::targets::Dim3::z);
 
         py::class_<value::targets::GPU>(module, "_GPU", "The GPU execution options")
-            .def(py::init<value::targets::Dim3, value::targets::Dim3, int64_t>(), "grid"_a, "block"_a, "dynamic_shared_memory_size"_a)
+            .def(py::init<value::targets::Dim3, value::targets::Dim3, int64_t, int64_t>(), "grid"_a, "block"_a, "dynamic_shared_memory_size"_a, "blocks_per_SM"_a)
             .def_readwrite("grid", &value::targets::GPU::grid)
             .def_readwrite("block", &value::targets::GPU::block)
-            .def_readwrite("dynamic_shared_memory_size", &value::targets::GPU::dynamicSharedMemorySize);
+            .def_readwrite("dynamic_shared_memory_size", &value::targets::GPU::dynamicSharedMemorySize)
+            .def_readwrite("blocks_per_SM", &value::targets::GPU::blocksPerSM);
 
         py::class_<util::MemoryAffineCoefficients>(module, "_MemoryAffineCoefficients", "Used for mapping Array or Cache dimensions to memory locations")
             .def(py::init<std::vector<int64_t>, int64_t>(), "coefficients"_a, "offset"_a = 0);

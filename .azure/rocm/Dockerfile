@@ -6,7 +6,7 @@
 ####################################################################################################
 
 # https://docs.docker.com/engine/reference/builder/#understand-how-arg-and-from-interact
-ARG ROCMVER=5.1.1-ub20
+ARG ROCMVER=5.3.0-ub20
 
 # cf: amddcgpuce/rocm:${ROCMVER}
 FROM acceracontainers.azurecr.io/rocm:${ROCMVER}

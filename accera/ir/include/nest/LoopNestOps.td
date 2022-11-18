@@ -220,20 +220,28 @@ def accln_NestOp : accln_Op<"nest",[SingleBlockImplicitTerminator<"TerminatorOp"
 // ScheduledLoopOp
 //
 def accln_ScheduledLoopOp : accln_Op<"scheduled_loop",
-  [SingleBlockImplicitTerminator<"TerminatorOp">]> {
+  [SingleBlockImplicitTerminator<"TerminatorOp">, AttrSizedOperandSegments]> {
   let summary = "Represents a scheduled loop and separates prologue, body, and epilogue regions";
   let description = [{
     The "accln.ScheduledLoopOp" operation represents a scheduled loop level and separates prologue, body, and epilogue regions
   }];
 
-  // TODO: merge $end and $endValue into one (they are kept separate for a less intrusive change)
-  // TODO: endValue is Variadic<AnyType> because we just need an optional Value argument, any better representation?
-  let arguments = (ins I64Attr:$begin, I64Attr:$end, Variadic<AnyType>:$endValue, I64Attr:$step, accln_IndexAttr:$index, Index:$symbolicIndex, ArrayAttr:$subdomainSize, ArrayAttr:$subdomainIndexOrder);
+  let arguments = (ins
+                   AffineMapAttr:$beginMap,
+                   AffineMapAttr:$endMap,
+                   Variadic<AnyType>:$beginOperands,
+                   Variadic<AnyType>:$endOperands,
+                   I64Attr:$step,
+                   accln_IndexAttr:$index,
+                   Index:$symbolicIndex,
+                   ArrayAttr:$subdomainSize,
+                   ArrayAttr:$subdomainIndexOrder);
   let regions = (region AnyRegion:$prologue, AnyRegion:$body, AnyRegion:$epilogue);
 
-  let printer = [{ return ::print(p, *this); }];
+  // TODO : bring back custom printer and parser
+  // let printer = [{ return ::print(p, *this); }];
+  // let parser = [{ return ::parseScheduledLoopOp(parser, result); }];
   let verifier = [{ return ::verify(*this); }];
-  let parser = [{ return ::parseScheduledLoopOp(parser, result); }];
 
   let builders = [
     OpBuilder<(ins
@@ -245,9 +253,17 @@ def accln_ScheduledLoopOp : accln_Op<"scheduled_loop",
       "const std::vector<Index>&":$subdomainIndexOrder)>,
 
     OpBuilder<(ins
-      "int64_t":$begin,
-      "Value":$endValue,
+      "AffineMap":$beginMap,
+      "AffineMap":$endMap,
+      "const std::vector<mlir::Value>&":$beginOperands,
+      "const std::vector<mlir::Value>&":$endOperands,
       "int64_t":$step,
+      "Value":$symbolicIndex,
+      "const std::vector<int64_t>&":$subdomainSize,
+      "const std::vector<Index>&":$subdomainIndexOrder)>,
+
+    OpBuilder<(ins
+      "const Range&":$range,
       "Value":$symbolicIndex,
       "const std::vector<int64_t>&":$subdomainSize,
       "const std::vector<Index>&":$subdomainIndexOrder)>
@@ -287,24 +303,17 @@ def accln_ScheduledLoopOp : accln_Op<"scheduled_loop",
       return index().getValue();
     }
     SymbolicIndexOp getSymbolicIndex();
-    void setBegin(int64_t begin)
-    {
-      mlir::Builder builder(getContext());
-      (*this)->setAttr("begin", builder.getI64IntegerAttr(begin));
-    }
-    void setEnd(int64_t end)
-    {
-      mlir::Builder builder(getContext());
-      (*this)->setAttr("end", builder.getI64IntegerAttr(end));
-    }
+    bool hasConstantBegin();
+    bool hasConstantEnd();
+    bool hasConstantRange();
+    int64_t getConstantBegin();
+    int64_t getConstantEnd();
+    void setConstantBegin(int64_t begin);
+    void setConstantEnd(int64_t end);
     void setStep(int64_t step)
     {
       mlir::Builder builder(getContext());
       (*this)->setAttr("step", builder.getI64IntegerAttr(step));
-    }
-    bool hasVariableEnd()
-    {
-      return !endValue().empty();
     }
     std::vector<int64_t> getSubdomainSize();
     void setSubdomainSize(const std::vector<int64_t>&);

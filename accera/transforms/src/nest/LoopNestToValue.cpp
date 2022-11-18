@@ -210,8 +210,6 @@ struct LowPrecisionIntAccumulateLoopRewrite : public OpRewritePattern<AffineForO
     using OpRewritePattern<AffineForOp>::OpRewritePattern;
 
     LogicalResult matchAndRewrite(AffineForOp op, PatternRewriter& rewriter) const final;
-    LogicalResult matchAndRewriteInt8(AffineForOp op, PatternRewriter& rewriter) const;
-    LogicalResult matchAndRewriteInt16(AffineForOp op, PatternRewriter& rewriter) const;
 };
 
 struct ScheduledLoopOpRewrite : public OpRewritePattern<ScheduledLoopOp>
@@ -551,14 +549,6 @@ LogicalResult ScheduleOpConversion::matchAndRewrite(ScheduleOp op, PatternRewrit
 
 LogicalResult LowPrecisionIntAccumulateLoopRewrite::matchAndRewrite(AffineForOp loopOp, PatternRewriter& rewriter) const
 {
-    if (auto result = matchAndRewriteInt8(loopOp, rewriter); result.succeeded())
-        return result;
-    else
-        return matchAndRewriteInt16(loopOp, rewriter);
-}
-
-LogicalResult LowPrecisionIntAccumulateLoopRewrite::matchAndRewriteInt8(AffineForOp loopOp, PatternRewriter& rewriter) const
-{
     if (!loopOp.hasConstantBounds())
         return failure();
 
@@ -812,274 +802,13 @@ LogicalResult LowPrecisionIntAccumulateLoopRewrite::matchAndRewriteInt8(AffineFo
     return success();
 }
 
-LogicalResult LowPrecisionIntAccumulateLoopRewrite::matchAndRewriteInt16(AffineForOp loopOp, PatternRewriter& rewriter) const
-{
-    // TODO: Check that the loop(s) in question are vectorized / tensorized
-
-    if (!loopOp.hasConstantBounds())
-        return failure();
-
-    // Only operate on the innermost loop
-    bool isInnermost = true;
-    loopOp.getBody()->walk([&](AffineForOp innerLoop) { isInnermost = false; });
-    if (!isInnermost)
-        return failure();
-
-    // Currently only check loops of length 2
-    int64_t begin = loopOp.getConstantLowerBound();
-    int64_t end = loopOp.getConstantUpperBound();
-    int64_t step = loopOp.getStep();
-    int64_t numIter = (end - begin) / step;
-    if (numIter != 2)
-        return failure();
-
-    // Look for [Affine]LoadOps and [Affine]StoreOps
-    mlir::Operation* loadOp = nullptr;
-    mlir::Operation* storeOp = nullptr;
-    Value valueToStore;
-    for (auto& op : loopOp.getBody()->without_terminator())
-    {
-        mlir::Operation* thisLoadOp = nullptr;
-        mlir::Value memRef;
-        mlir::ValueRange indices;
-        mlir::AffineMap map;
-        if (auto load = mlir::dyn_cast<mlir::memref::LoadOp>(op))
-        {
-            thisLoadOp = &op;
-            memRef = load.getMemRef();
-            indices = load.getIndices();
-        }
-        else if (auto load = mlir::dyn_cast<mlir::AffineLoadOp>(op))
-        {
-            thisLoadOp = &op;
-            memRef = load.getMemRef();
-            indices = load.indices();
-            map = load.getAffineMap();
-        }
-
-        if (thisLoadOp)
-        {
-            // Check that the load op is eventually used by a StoreOp to the same memory location
-            auto stores = util::getRecursiveUsesOfType<mlir::memref::StoreOp>(op.getResult(0));
-            for (auto store : stores)
-            {
-                if (store.getMemRef() == memRef && store.getIndices() == indices && map.isIdentity())
-                {
-                    loadOp = thisLoadOp;
-                    storeOp = store.getOperation();
-                    valueToStore = store.getValueToStore();
-                }
-            }
-
-            // Didn't find a StoreOp, look for an AffineStoreOp
-            if (!storeOp)
-            {
-                auto stores = util::getRecursiveUsesOfType<mlir::AffineStoreOp>(op.getResult(0));
-                for (auto store : stores)
-                {
-                    if (store.getMemRef() == memRef && store.indices() == indices && store.getAffineMap() == map)
-                    {
-                        loadOp = thisLoadOp;
-                        storeOp = store.getOperation();
-                        valueToStore = store.value();
-                    }
-                }
-            }
-        }
-
-        if (storeOp) break;
-    }
-
-    if (!storeOp)
-        return failure();
-
-    auto storeType = valueToStore.getType();
-
-    // Currently only check for result type == int32
-    if (!storeType.isInteger(32))
-        return failure();
-
-    // Is the stored value from an add?
-    value::BinOp binOp;
-    if (binOp = mlir::dyn_cast_or_null<value::BinOp>(valueToStore.getDefiningOp()); !binOp || binOp.getPredicate() != value::BinaryOpPredicate::ADD)
-        return failure();
-
-    auto isExtFromInt16 = [](mlir::Value v) {
-        return (mlir::isa<arith::ExtSIOp>(v.getDefiningOp()) ||
-                mlir::isa<arith::ExtUIOp>(v.getDefiningOp())) &&
-               v.getDefiningOp()->getOperand(0).getType().isInteger(16);
-    };
-    auto isMulOfExtFromInt16 = [&](mlir::Value v) {
-        if (auto binOp = mlir::dyn_cast_or_null<value::BinOp>(v.getDefiningOp()); binOp && binOp.getPredicate() == value::BinaryOpPredicate::MUL)
-        {
-            return isExtFromInt16(binOp.getOperand(0)) && isExtFromInt16(binOp.getOperand(1));
-        }
-        return false;
-    };
-
-    // Verify one operand is the product of two upcasted 16-bit values
-    if (!isMulOfExtFromInt16(binOp.getOperand(0)) && !isMulOfExtFromInt16(binOp.getOperand(1)))
-    {
-        return failure();
-    }
-
-    // Is one operand a load and the other a mul of values extended from int16?
-    value::BinOp mulOp;
-    if (isMulOfExtFromInt16(binOp.getOperand(0)) && binOp.getOperand(1).getDefiningOp() && binOp.getOperand(1).getDefiningOp() == loadOp)
-    {
-        mulOp = mlir::cast<value::BinOp>(binOp.getOperand(0).getDefiningOp());
-    }
-    else if (isMulOfExtFromInt16(binOp.getOperand(1)) && binOp.getOperand(0).getDefiningOp() && binOp.getOperand(0).getDefiningOp() == loadOp)
-    {
-        mulOp = mlir::cast<value::BinOp>(binOp.getOperand(1).getDefiningOp());
-    }
-
-    if (!mulOp)
-        return failure();
-
-    // TODO: Also check that the operands of the mul operation are loads, and that they load from adjacent locations for adjacent values of the loop induction variable
-
-    // Pattern matches! Now unroll the loop and convert it to something of the form:
-    //   sat(p0 + p1)
-    auto loc = loopOp.getLoc();
-    mlir::Value initialLoadVal;
-    mlir::Value prevStoreVal;
-    BlockAndValueMapping indexMap;
-
-    auto inductionVar = loopOp.getInductionVar();
-
-    // Push ceil(log2(n)) + 1 empty vectors onto list of stacks
-    std::vector<std::vector<mlir::Value>> accumStacks(log2(numIter - 1) + 2);
-    [[maybe_unused]] auto inductionVarMap = AffineMap::get(1, 1, rewriter.getAffineDimExpr(0) + step * rewriter.getAffineSymbolExpr(0));
-    for (int64_t i = 0; i < numIter; ++i)
-    {
-        auto offset = rewriter.create<arith::ConstantIndexOp>(loc, step * i + begin);
-        indexMap.map(inductionVar, offset);
-
-        for (auto& op : loopOp.getBody()->without_terminator())
-        {
-            // Check if op is a bin op whose value is stored by the storeOp
-            auto isAccumulate = mlir::isa<value::BinOp>(&op) && op.getResult(0) == valueToStore;
-
-            // If we get an "accumulate" operation, push the non-loadOp arg onto stack 0
-            //   if stack 0 has 2 arguments, pop them off, emit an add, and push the result onto stack 1
-            //   if stack 1 has 2 arguments, pop them off, emit an add, and push the result onto stack 2
-            //   ...and so on
-            // If we've processed a power-of-2 number of addends, there is hopefully just one non-empty stack,
-            // containing the value to accumulate
-            if (isAccumulate)
-            {
-                if (op.getOperand(0).getDefiningOp() == loadOp)
-                {
-                    // push operand 1
-                    accumStacks[0].push_back(indexMap.lookupOrNull(op.getOperand(1)));
-                }
-                else if (op.getOperand(1).getDefiningOp() == loadOp)
-                {
-                    // push operand 0
-                    accumStacks[0].push_back(indexMap.lookupOrNull(op.getOperand(0)));
-                }
-                else
-                {
-                    op.emitError("Accumulate op didn't have a load as one of the arguments");
-                    return failure();
-                }
-
-                // Now fix up stacks and emit add ops
-                for (unsigned s = 0; s < accumStacks.size() - 1; ++s)
-                {
-                    if (accumStacks[s].size() > 2)
-                        op.emitError("Error! stack size > 2");
-
-                    if (accumStacks[s].size() == 2)
-                    {
-                        auto sum = rewriter.create<value::BinOp>(op.getLoc(), value::BinaryOpPredicate::ADD, accumStacks[s][0], accumStacks[s][1]);
-                        auto sumVal = sum.getResult();
-                        // At level 0 (where the values are up-casted 16-bit values), saturate the output to an intermediate 16-bit value
-                        if (s == 0)
-                        {
-                            sumVal = SaturateValue(rewriter, sumVal, 16, true);
-                        }
-
-                        accumStacks[s + 1].push_back(sumVal);
-                        accumStacks[s].clear();
-                    }
-                }
-            }
-            else if (&op == loadOp && i != 0)
-            {
-                indexMap.map(op.getResult(0), prevStoreVal);
-            }
-            else if (&op == storeOp && i != numIter - 1)
-            {
-                prevStoreVal = indexMap.lookupOrNull(valueToStore);
-            }
-            else if (&op == storeOp && i == numIter - 1)
-            {
-                // emit final add(s) & map to the value to store
-                mlir::Value newSum;
-                for (auto& stack : accumStacks)
-                {
-                    for (auto accumVal : stack)
-                    {
-                        if (!newSum)
-                        {
-                            newSum = accumVal;
-                        }
-                        else
-                        {
-                            auto sumOp = rewriter.create<value::BinOp>(op.getLoc(), value::BinaryOpPredicate::ADD, newSum, accumVal);
-                            newSum = sumOp.getResult();
-                        }
-                    }
-                }
-
-                // now add the original load value
-                auto sumOp = rewriter.create<value::BinOp>(op.getLoc(), value::BinaryOpPredicate::ADD, newSum, initialLoadVal);
-                newSum = sumOp.getResult();
-
-                indexMap.map(op.getOperand(0), newSum); // value to store
-                [[maybe_unused]] auto mappedClonedOp = rewriter.clone(op, indexMap);
-            }
-            else
-            {
-                // common case: just clone the operation
-                auto mappedClonedOp = rewriter.clone(op, indexMap);
-
-                // special case for the first load operation: save the initial load value
-                if (&op == loadOp && i == 0)
-                {
-                    initialLoadVal = mappedClonedOp->getResult(0);
-                }
-            }
-        }
-    }
-
-    rewriter.eraseOp(loopOp);
-    return success();
-}
-
 LogicalResult ScheduledLoopOpRewrite::matchAndRewrite(ScheduledLoopOp op, PatternRewriter& rewriter) const
 {
     auto loc = op.getLoc();
+    ScheduledLoopOp::Adaptor adaptor{ op };
 
     // First create the body loop and move the nested region into it
-    auto bodyLoop = [loc, &rewriter, &op]() -> AffineForOp {
-        int64_t begin = op.beginAttr().getInt();
-        int64_t step = op.stepAttr().getInt();
-
-        if (op.hasVariableEnd())
-        {
-            auto beginValue = rewriter.create<arith::ConstantIndexOp>(loc, begin).getResult();
-            auto endValue = op.endValue().front();
-            return rewriter.create<AffineForOp>(loc, beginValue, rewriter.getDimIdentityMap(), endValue, rewriter.getDimIdentityMap(), step);
-        }
-        else
-        {
-            int64_t end = op.endAttr().getInt();
-            return rewriter.create<AffineForOp>(loc, begin, end, step);
-        }
-    }();
+    auto bodyLoop = rewriter.create<AffineForOp>(loc, adaptor.beginOperands(), adaptor.beginMap(), adaptor.endOperands(), adaptor.endMap(), adaptor.step());
 
     // Transfer attributes
     auto scheduledLoopOpAttrs = op->getAttrs();
@@ -1365,6 +1094,9 @@ LogicalResult MergeNearlyIdenticalSiblingLoops::matchAffineForOps(AffineForOp op
         return failure();
     }
 
+    if (!op1.hasConstantBounds() || !op2.hasConstantBounds())
+        return failure();
+
     // if top level, they need to be siblings
     if (topLevel)
     {
@@ -1523,6 +1255,9 @@ LogicalResult MergeNearlyIdenticalSiblingLoops::matchAffineForOps(AffineForOp op
 
 LogicalResult MergeNearlyIdenticalSiblingLoops::matchAndRewrite(AffineForOp op, PatternRewriter& rewriter) const
 {
+    if (!op.hasConstantBounds())
+        return failure();
+
     auto firstLoop = op;
 
     Operation* rawOp = op->getNextNode();

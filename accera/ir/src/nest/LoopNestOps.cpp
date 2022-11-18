@@ -15,6 +15,7 @@
 #include <ir/include/value/ValueFuncOp.h>
 #include <utilities/include/MathUtil.h>
 
+#include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/AffineMap.h>
 #include <mlir/IR/BlockAndValueMapping.h>
@@ -1380,6 +1381,34 @@ namespace loopnest
                 {
                     auto clonedPredicate = mlir::cast<KernelPredicateOpInterface>(ir::util::CloneRecursively(nestBuilder, oldPredicateOp, valueMap[idx]));
                     predicate = Conjunction(nestBuilder, predicate, clonedPredicate);
+
+                    // TODO : Clean up this hacky index attribute mapping fix-up
+                    //        FragmentTypePredicateOps refer to indices via attributes rather than operands
+                    //        so the above clone with a value map does not wind up adjusting the index attrs.
+                    //        A more robust fix would be to make the FragmentTypePredicateOps take the symbolic index ops as operands
+                    //        however we will need to also reduce the amount of duplicate SymbolicIndexOps we create for a single index because
+                    //        we can't rely on recently created SymbolicIndexOps having been de-duped already
+                    auto currentIndexMap = schedFusedIndexMap[schedules[idx]];
+                    std::function<void(KernelPredicateOpInterface)> mapPredicateIndicesRecursively = [&](mlir::Operation* currentPred) {
+                        if (auto conjPred = mlir::dyn_cast<ConjunctionPredicateOp>(currentPred))
+                        {
+                            for (auto innerPred : conjPred.values())
+                            {
+                                mapPredicateIndicesRecursively(innerPred.getDefiningOp());
+                            }
+                        }
+                        else if (auto fragPred = mlir::dyn_cast<FragmentTypePredicateOp>(currentPred))
+                        {
+                            auto fragIndex = fragPred.index().getValue();
+                            auto indexMapIter = currentIndexMap.find(fragIndex);
+                            if (indexMapIter != currentIndexMap.end())
+                            {
+                                auto newIndex = indexMapIter->second;
+                                fragPred.indexAttr(IndexAttr::get(newIndex, schedules[idx]->getContext()));
+                            }
+                        }
+                    };
+                    mapPredicateIndicesRecursively(predicate);
                 }
 
                 auto scheduledKernelId = scheduledKernel.getId();
@@ -1779,44 +1808,115 @@ namespace loopnest
     // Create a constant range ScheduledLoopOp
     void ScheduledLoopOp::build(OpBuilder& builder, OperationState& result, int64_t begin, int64_t end, int64_t step, Value symbolicIndex, const std::vector<int64_t>& subdomainSize, const std::vector<Index>& subdomainIndexOrder)
     {
-        ArrayAttr subdomainIndexOrderAttr = util::ConvertIndexVectorToArrayAttr(subdomainIndexOrder, builder.getContext());
+        mlir::AffineMap beginMap = mlir::AffineMap::getConstantMap(begin, builder.getContext());
+        mlir::AffineMap endMap = mlir::AffineMap::getConstantMap(end, builder.getContext());
 
+        build(builder, result, beginMap, endMap, {}, {}, step, symbolicIndex, subdomainSize, subdomainIndexOrder);
+    }
+
+    // Create a variable range ScheduledLoopOp
+    void ScheduledLoopOp::build(OpBuilder& builder, OperationState& result, mlir::AffineMap beginMap, mlir::AffineMap endMap, const std::vector<mlir::Value>& beginOperands, const std::vector<mlir::Value>& endOperands, int64_t step, Value symbolicIndex, const std::vector<int64_t>& subdomainSize, const std::vector<Index>& subdomainIndexOrder)
+    {
+        ArrayAttr subdomainIndexOrderAttr = util::ConvertIndexVectorToArrayAttr(subdomainIndexOrder, builder.getContext());
         auto index = cast<SymbolicIndexOp>(symbolicIndex.getDefiningOp()).index();
 
-        build(builder, result, builder.getI64IntegerAttr(begin), builder.getI64IntegerAttr(end), /*endVal=*/llvm::None, builder.getI64IntegerAttr(step), index, symbolicIndex, builder.getI64ArrayAttr(subdomainSize), subdomainIndexOrderAttr);
+        build(builder, result, beginMap, endMap, beginOperands, endOperands, step, index, symbolicIndex, builder.getI64ArrayAttr(subdomainSize), subdomainIndexOrderAttr);
 
         InitScheduledLoopOpRegions(builder, result);
     }
 
-    // Create a variable range ScheduledLoopOp
-    void ScheduledLoopOp::build(OpBuilder& builder, OperationState& result, int64_t begin, mlir::Value endValue, int64_t step, Value symbolicIndex, const std::vector<int64_t>& subdomainSize, const std::vector<Index>& subdomainIndexOrder)
+    void ScheduledLoopOp::build(OpBuilder& builder, OperationState& result, const Range& range, Value symbolicIndex, const std::vector<int64_t>& subdomainSize, const std::vector<Index>& subdomainIndexOrder)
     {
-        ArrayAttr subdomainIndexOrderAttr = util::ConvertIndexVectorToArrayAttr(subdomainIndexOrder, builder.getContext());
+        if (range.HasConstantBegin() && range.HasConstantEnd())
+        {
+            build(builder, result, range.Begin(), range.End(), range.Increment(), symbolicIndex, subdomainSize, subdomainIndexOrder);
+        }
+        else
+        {
+            mlir::AffineMap beginMap;
+            mlir::AffineMap endMap;
+            std::vector<mlir::Value> beginOperands;
+            std::vector<mlir::Value> endOperands;
+            if (range.HasValueMapBegin())
+            {
+                auto beginValueMap = range.ValueMapBegin();
+                beginMap = beginValueMap.getAffineMap();
+                beginOperands = beginValueMap.getOperands().vec();
+            }
+            else
+            {
+                beginMap = mlir::AffineMap::getConstantMap(range.Begin(), builder.getContext());
+            }
 
-        auto index = cast<SymbolicIndexOp>(symbolicIndex.getDefiningOp()).index();
-        auto endSentinel = builder.getI64IntegerAttr(mlir::ShapedType::kDynamicSize);
+            if (range.HasValueMapEnd())
+            {
+                auto endValueMap = range.ValueMapEnd();
+                endMap = endValueMap.getAffineMap();
+                endOperands = endValueMap.getOperands().vec();
+            }
+            else
+            {
+                endMap = mlir::AffineMap::getConstantMap(range.End(), builder.getContext());
+            }
 
-        build(builder, result, builder.getI64IntegerAttr(begin), endSentinel, { endValue }, builder.getI64IntegerAttr(step), index, symbolicIndex, builder.getI64ArrayAttr(subdomainSize), subdomainIndexOrderAttr);
+            build(builder, result, beginMap, endMap, beginOperands, endOperands, range.Increment(), symbolicIndex, subdomainSize, subdomainIndexOrder);
+        }
+    }
 
-        InitScheduledLoopOpRegions(builder, result);
+    bool ScheduledLoopOp::hasConstantBegin()
+    {
+        auto beginValueMap = util::SimplifyAffineValueMap(mlir::AffineValueMap(beginMap(), beginOperands()));
+        auto map = beginValueMap.getAffineMap();
+        return map.isSingleConstant();
+    }
+
+    bool ScheduledLoopOp::hasConstantEnd()
+    {
+        auto endValueMap = util::SimplifyAffineValueMap(mlir::AffineValueMap(endMap(), endOperands()));
+        auto map = endValueMap.getAffineMap();
+        return map.isSingleConstant();
+    }
+
+    bool ScheduledLoopOp::hasConstantRange()
+    {
+        return hasConstantBegin() && hasConstantEnd();
+    }
+
+    int64_t ScheduledLoopOp::getConstantBegin()
+    {
+        assert(hasConstantBegin() && "Can't get a constant begin for a loop that does not have a constant begin index");
+        auto beginValueMap = util::SimplifyAffineValueMap(mlir::AffineValueMap(beginMap(), beginOperands()));
+        auto map = beginValueMap.getAffineMap();
+        return map.getSingleConstantResult();
+    }
+    int64_t ScheduledLoopOp::getConstantEnd()
+    {
+        assert(hasConstantEnd() && "Can't get a constant end for a loop that does not have a constant end index");
+        auto endValueMap = util::SimplifyAffineValueMap(mlir::AffineValueMap(endMap(), endOperands()));
+        auto map = endValueMap.getAffineMap();
+        return map.getSingleConstantResult();
+    }
+    void ScheduledLoopOp::setConstantBegin(int64_t begin)
+    {
+        auto beginConstantMap = mlir::AffineMap::getConstantMap(begin, getContext());
+        beginMapAttr(mlir::AffineMapAttr::get(beginConstantMap));
+    }
+    void ScheduledLoopOp::setConstantEnd(int64_t end)
+    {
+        auto endConstantMap = mlir::AffineMap::getConstantMap(end, getContext());
+        endMapAttr(mlir::AffineMapAttr::get(endConstantMap));
     }
 
     Range ScheduledLoopOp::getRange()
     {
-        if (static_cast<int64_t>(end()) == mlir::ShapedType::kDynamicSize)
-        {
-            return Range(begin(), endValue().front(), step());
-        }
-        return Range(begin(), end(), step());
+        auto beginValueMap = mlir::AffineValueMap(beginMap(), beginOperands());
+        auto endValueMap = mlir::AffineValueMap(endMap(), endOperands());
+        return Range(beginValueMap, endValueMap, step());
     }
 
     int64_t ScheduledLoopOp::getNumIterations()
     {
-        if (static_cast<int64_t>(end()) == mlir::ShapedType::kDynamicSize)
-        {
-            throw std::runtime_error("Num iterations unknown for variable range ScheduledLoopOp");
-        }
-        return Range(begin(), end(), step()).NumIterations();
+        return Range(getConstantBegin(), getConstantEnd(), 1).NumIterations();
     }
 
     SymbolicIndexOp ScheduledLoopOp::getSymbolicIndex()
@@ -1845,133 +1945,134 @@ namespace loopnest
         return mlir::success();
     }
 
-    static void print(OpAsmPrinter& p, ScheduledLoopOp op)
-    {
-        bool printBlockTerminators = false;
-        auto indexAttr = op.index();
-        p << op.getOperationName() << " " << op.symbolicIndex() << " (" << indexAttr << ")";
-        p << " = " << op.begin() << " to ";
+    // TODO : custom printer/parser with dynamic sizes
+    // static void print(OpAsmPrinter& p, ScheduledLoopOp op)
+    // {
+    //     bool printBlockTerminators = false;
+    //     auto indexAttr = op.index();
+    //     p << op.getOperationName() << " " << op.symbolicIndex() << " (" << indexAttr << ")";
+    //     p << " = " << op.begin() << " to ";
 
-        if (op.hasVariableEnd())
-        {
-            assert(op.endValue().size() == 1 && "Only 1 variable end Value is expected per op");
-            p << op.endValue().front();
-        }
-        else
-        {
-            p << op.end();
-        }
-        p << " step " << op.step();
+    //     if (op.hasVariableEnd())
+    //     {
+    //         assert(op.endValue().size() == 1 && "Only 1 variable end Value is expected per op");
+    //         p << op.endValue().front();
+    //     }
+    //     else
+    //     {
+    //         p << op.end();
+    //     }
+    //     p << " step " << op.step();
 
-        p << "  prologue(" << op.getPrologue()->getArgument(0) << ")";
-        p.printRegion(op.prologue(),
-                      /*printEntryBlockArgs=*/false,
-                      /*printBlockTerminators=*/printBlockTerminators);
-        p << ",  body(" << op.getBody()->getArgument(0) << ")";
-        p.printRegion(op.body(),
-                      /*printEntryBlockArgs=*/false,
-                      /*printBlockTerminators=*/printBlockTerminators);
-        p << ",  epilogue(" << op.getEpilogue()->getArgument(0) << ")";
-        p.printRegion(op.epilogue(),
-                      /*printEntryBlockArgs=*/false,
-                      /*printBlockTerminators=*/printBlockTerminators);
-        p.printOptionalAttrDict(op->getAttrs(),
-                                /*elidedAttrs=*/{ "begin", "end", "step", "index" });
-    }
+    //     p << "  prologue(" << op.getPrologue()->getArgument(0) << ")";
+    //     p.printRegion(op.prologue(),
+    //                   /*printEntryBlockArgs=*/false,
+    //                   /*printBlockTerminators=*/printBlockTerminators);
+    //     p << ",  body(" << op.getBody()->getArgument(0) << ")";
+    //     p.printRegion(op.body(),
+    //                   /*printEntryBlockArgs=*/false,
+    //                   /*printBlockTerminators=*/printBlockTerminators);
+    //     p << ",  epilogue(" << op.getEpilogue()->getArgument(0) << ")";
+    //     p.printRegion(op.epilogue(),
+    //                   /*printEntryBlockArgs=*/false,
+    //                   /*printBlockTerminators=*/printBlockTerminators);
+    //     p.printOptionalAttrDict(op->getAttrs(),
+    //                             /*elidedAttrs=*/{ "begin", "end", "step", "index" });
+    // }
 
-    static ParseResult parseScheduledLoopOp(OpAsmParser& parser, OperationState& result)
-    {
-        auto& builder = parser.getBuilder();
-        Type indexType = builder.getIndexType();
-        Type i64Type = builder.getIntegerType(64);
+    // static ParseResult parseScheduledLoopOp(OpAsmParser& parser, OperationState& result)
+    // {
+    //     auto& builder = parser.getBuilder();
+    //     Type indexType = builder.getIndexType();
+    //     Type i64Type = builder.getIntegerType(64);
 
-        OpAsmParser::OperandType symbolicIndex;
-        OpAsmParser::OperandType endValue;
+    //     OpAsmParser::OperandType symbolicIndex;
+    //     OpAsmParser::OperandType endValue;
 
-        // Parse the SSA index variable followed by '(', then the index as an attribute, then ')' and '='
-        if (failed(parser.parseOperand(symbolicIndex)) ||
-            failed(parser.resolveOperand(symbolicIndex, indexType, result.operands)))
-            return failure();
+    //     // Parse the SSA index variable followed by '(', then the index as an attribute, then ')' and '='
+    //     if (failed(parser.parseOperand(symbolicIndex)) ||
+    //         failed(parser.resolveOperand(symbolicIndex, indexType, result.operands)))
+    //         return failure();
 
-        if (failed(parser.parseLParen()))
-            return failure();
+    //     if (failed(parser.parseLParen()))
+    //         return failure();
 
-        IndexAttr index;
-        if (failed(parser.parseAttribute(index, "index", result.attributes)))
-            return failure();
+    //     IndexAttr index;
+    //     if (failed(parser.parseAttribute(index, "index", result.attributes)))
+    //         return failure();
 
-        if (failed(parser.parseRParen()))
-            return failure();
+    //     if (failed(parser.parseRParen()))
+    //         return failure();
 
-        if (failed(parser.parseEqual()))
-            return failure();
+    //     if (failed(parser.parseEqual()))
+    //         return failure();
 
-        // Parse loop bounds.
-        IntegerAttr boundsAttr;
-        if (failed(parser.parseAttribute(boundsAttr, i64Type, "begin", result.attributes)))
-            return failure();
-        if (failed(parser.parseKeyword("to")))
-            return failure();
-        if (failed(parser.parseAttribute(boundsAttr, i64Type, "end", result.attributes)) ||
-            failed(parser.parseOperand(endValue)) || // TODO: verify
-            failed(parser.resolveOperand(endValue, indexType, result.operands)))
-            return failure();
-        if (failed(parser.parseKeyword("step")))
-            return failure();
-        if (failed(parser.parseAttribute(boundsAttr, i64Type, "step", result.attributes)))
-            return failure();
+    //     // Parse loop bounds.
+    //     IntegerAttr boundsAttr;
+    //     if (failed(parser.parseAttribute(boundsAttr, i64Type, "begin", result.attributes)))
+    //         return failure();
+    //     if (failed(parser.parseKeyword("to")))
+    //         return failure();
+    //     if (failed(parser.parseAttribute(boundsAttr, i64Type, "end", result.attributes)) ||
+    //         failed(parser.parseOperand(endValue)) || // TODO: verify
+    //         failed(parser.resolveOperand(endValue, indexType, result.operands)))
+    //         return failure();
+    //     if (failed(parser.parseKeyword("step")))
+    //         return failure();
+    //     if (failed(parser.parseAttribute(boundsAttr, i64Type, "step", result.attributes)))
+    //         return failure();
 
-        // TODO: figure this out
-        OpAsmParser::OperandType prologueInductionVar;
-        OpAsmParser::OperandType bodyInductionVar;
-        OpAsmParser::OperandType epilogueInductionVar;
+    //     // TODO: figure this out
+    //     OpAsmParser::OperandType prologueInductionVar;
+    //     OpAsmParser::OperandType bodyInductionVar;
+    //     OpAsmParser::OperandType epilogueInductionVar;
 
-        SmallVector<OpAsmParser::OperandType, 4> regionArgs;
-        SmallVector<Type, 4> argTypes;
-        argTypes.push_back(indexType);
+    //     SmallVector<OpAsmParser::OperandType, 4> regionArgs;
+    //     SmallVector<Type, 4> argTypes;
+    //     argTypes.push_back(indexType);
 
-        // Parse prologue
-        if (failed(parser.parseKeyword("prologue")) || failed(parser.parseLParen()) || failed(parser.parseRegionArgument(prologueInductionVar)) || failed(parser.parseRParen()))
-            return parser.emitError(parser.getNameLoc(), "Error parsing prologue header");
+    //     // Parse prologue
+    //     if (failed(parser.parseKeyword("prologue")) || failed(parser.parseLParen()) || failed(parser.parseRegionArgument(prologueInductionVar)) || failed(parser.parseRParen()))
+    //         return parser.emitError(parser.getNameLoc(), "Error parsing prologue header");
 
-        regionArgs.push_back(prologueInductionVar);
-        Region* prologue = result.addRegion();
-        if (parser.parseRegion(*prologue, regionArgs, argTypes))
-            return parser.emitError(parser.getNameLoc(), "Error parsing prologue region");
-        ScheduledLoopOp::ensureTerminator(*prologue, builder, result.location);
+    //     regionArgs.push_back(prologueInductionVar);
+    //     Region* prologue = result.addRegion();
+    //     if (parser.parseRegion(*prologue, regionArgs, argTypes))
+    //         return parser.emitError(parser.getNameLoc(), "Error parsing prologue region");
+    //     ScheduledLoopOp::ensureTerminator(*prologue, builder, result.location);
 
-        if (failed(parser.parseComma()))
-            return failure();
+    //     if (failed(parser.parseComma()))
+    //         return failure();
 
-        // Parse body
-        if (failed(parser.parseKeyword("body")) || failed(parser.parseLParen()) || failed(parser.parseRegionArgument(bodyInductionVar)) || failed(parser.parseRParen()))
-            return parser.emitError(parser.getNameLoc(), "Error parsing body header");
-        regionArgs.clear();
-        regionArgs.push_back(bodyInductionVar);
-        Region* body = result.addRegion();
-        if (parser.parseRegion(*body, regionArgs, argTypes))
-            return parser.emitError(parser.getNameLoc(), "Error parsing body region");
-        ScheduledLoopOp::ensureTerminator(*body, builder, result.location);
+    //     // Parse body
+    //     if (failed(parser.parseKeyword("body")) || failed(parser.parseLParen()) || failed(parser.parseRegionArgument(bodyInductionVar)) || failed(parser.parseRParen()))
+    //         return parser.emitError(parser.getNameLoc(), "Error parsing body header");
+    //     regionArgs.clear();
+    //     regionArgs.push_back(bodyInductionVar);
+    //     Region* body = result.addRegion();
+    //     if (parser.parseRegion(*body, regionArgs, argTypes))
+    //         return parser.emitError(parser.getNameLoc(), "Error parsing body region");
+    //     ScheduledLoopOp::ensureTerminator(*body, builder, result.location);
 
-        if (failed(parser.parseComma()))
-            return failure();
+    //     if (failed(parser.parseComma()))
+    //         return failure();
 
-        // Parse epilogue
-        if (failed(parser.parseKeyword("epilogue")) || failed(parser.parseLParen()) || failed(parser.parseRegionArgument(epilogueInductionVar)) || failed(parser.parseRParen()))
-            return parser.emitError(parser.getNameLoc(), "Error parsing epilogue header");
-        regionArgs.clear();
-        regionArgs.push_back(epilogueInductionVar);
-        Region* epilogue = result.addRegion();
-        if (parser.parseRegion(*epilogue, regionArgs, argTypes))
-            return parser.emitError(parser.getNameLoc(), "Error parsing epilogue region");
-        ScheduledLoopOp::ensureTerminator(*epilogue, builder, result.location);
+    //     // Parse epilogue
+    //     if (failed(parser.parseKeyword("epilogue")) || failed(parser.parseLParen()) || failed(parser.parseRegionArgument(epilogueInductionVar)) || failed(parser.parseRParen()))
+    //         return parser.emitError(parser.getNameLoc(), "Error parsing epilogue header");
+    //     regionArgs.clear();
+    //     regionArgs.push_back(epilogueInductionVar);
+    //     Region* epilogue = result.addRegion();
+    //     if (parser.parseRegion(*epilogue, regionArgs, argTypes))
+    //         return parser.emitError(parser.getNameLoc(), "Error parsing epilogue region");
+    //     ScheduledLoopOp::ensureTerminator(*epilogue, builder, result.location);
 
-        // Parse the optional attribute list.
-        if (parser.parseOptionalAttrDict(result.attributes))
-            return failure();
+    //     // Parse the optional attribute list.
+    //     if (parser.parseOptionalAttrDict(result.attributes))
+    //         return failure();
 
-        return success();
-    }
+    //     return success();
+    // }
 
     //
     // KernelOp

@@ -1,0 +1,316 @@
+From 0361e3ae6d586c745392ae72e897388596145e5e Mon Sep 17 00:00:00 2001
+From: Lisa Ong <onglisa@microsoft.com>
+Date: Tue, 25 Oct 2022 09:48:24 +0800
+Subject: [PATCH] More flexible code generation for vpmaddwd instruction
+
+This change increases the number of patterns that will generate a vpmaddwd instruction:
+
+It now handles the case where opt linearizes the sum-of-product instructions
+It handles some cases where one of the operands can be interpreted as 2 adjacent values broadcast to fill a vector register (this is the case with the "A" matrix in matrix-matrix multiply)
+---
+ llvm/lib/Target/X86/X86ISelLowering.cpp | 206 +++++++++++++++++++++---
+ 1 file changed, 187 insertions(+), 19 deletions(-)
+
+diff --git a/llvm/lib/Target/X86/X86ISelLowering.cpp b/llvm/lib/Target/X86/X86ISelLowering.cpp
+index 5d00e1506417..55470d7737f2 100644
+--- a/llvm/lib/Target/X86/X86ISelLowering.cpp
++++ b/llvm/lib/Target/X86/X86ISelLowering.cpp
+@@ -31,6 +31,7 @@
+ #include "llvm/Analysis/ObjCARCUtil.h"
+ #include "llvm/Analysis/ProfileSummaryInfo.h"
+ #include "llvm/Analysis/VectorUtils.h"
++#include "llvm/CodeGen/ISDOpcodes.h"
+ #include "llvm/CodeGen/IntrinsicLowering.h"
+ #include "llvm/CodeGen/MachineFrameInfo.h"
+ #include "llvm/CodeGen/MachineFunction.h"
+@@ -49277,7 +49278,7 @@ static SDValue combinePMULH(SDValue Src, EVT VT, const SDLoc &DL,
+ 
+ // Helper function for PMADDUBSW / PMADDWD
+ // TODO: need to do the convert-load-to-broadcast-splat fixup in the function that takes the a0/a1 pair
+-static SDValue getExtMulOperand(SDValue node, int index, EVT VT, const SDLoc &DL,
++static SDValue getPMADDOperand(SDValue node, int index, EVT VT, const SDLoc &DL,
+                                 SelectionDAG &DAG) {
+   unsigned NumElems = VT.getVectorNumElements();
+   auto op = node.getOperand(index);
+@@ -49384,14 +49385,38 @@ static SDValue getExtMulOperand(SDValue node, int index, EVT VT, const SDLoc &DL
+           // TODO: reduce to a single global load
+         }
+ 
++        auto bv = DAG.getBuildVector(argVT, DL, elements);
++        auto replacement = DAG.getNode(opcode, DL, VT, bv);
++        return replacement;
++      } // end if (arg.getOpcode() == ISD::INSERT_VECTOR_ELT)
++      else if (arg.getOpcode() == ISD::VECTOR_SHUFFLE) {
++        // "broadcast-A" case: arg is vector_shuffle<...> X
++        SmallVector<SDValue, 32> elements;
++        auto shuffleNode = dyn_cast<ShuffleVectorSDNode>(arg);
++        assert(shuffleNode);
++        auto mask = shuffleNode->getMask();
++        auto val = shuffleNode->getOperand(0);
++        if (val.getOpcode() == ISD::EXTRACT_SUBVECTOR) {
++          val = val->getOperand(0);
++        }
++        // TODO: see if val is an extract_subvector op, and if so return its arg
++        
++        MVT elemMT = argVT.getSimpleVT().getVectorElementType();
++        for (auto idx: mask)
++        {
++          SDValue elt = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, elemMT, val,
++                                        DAG.getIntPtrConstant(idx, DL));
++          elements.push_back(elt);
++        }
++
+         auto bv = DAG.getBuildVector(argVT, DL, elements);
+         auto replacement = DAG.getNode(opcode, DL, VT, bv);
+         return replacement;
+       }
+       return op;
+-    }
++    } // end if (opcode == ISD::ZERO_EXTEND || ...)
+ 
+-  // look for (shuf<0,0,0,0...> (insert_elt (extend ...) 0) undef) pattern and translate it
++  // TODO: look for (shuf<0,0,0,0...> (insert_elt (extend ...) 0) undef) pattern and translate it
+   // into (extend (shuf<0,0,0,0...> (insert_elt ... 0) undef))
+   // or better yet: (extend (splat ...))
+   if (opcode != ISD::VECTOR_SHUFFLE)
+@@ -49423,7 +49448,7 @@ static SDValue getExtMulOperand(SDValue node, int index, EVT VT, const SDLoc &DL
+   SDValue buildVec = DAG.getSplatBuildVector(splatVT, DL, val);
+   SDValue newExt = isSigned ? DAG.getSExtOrTrunc(buildVec, DL, resultVT) : DAG.getZExtOrTrunc(buildVec, DL, resultVT);
+   return newExt;
+-} // end of getExtMulOperand
++} // end of getPMADDOperand
+ 
+ static void replaceWithInterleavedShuffles(ArrayRef<std::reference_wrapper<SDValue>> interleavedOps, const std::vector<std::vector<int>>& masks, SDValue val, SelectionDAG &DAG, const SDLoc &DL) {
+   const unsigned dotProdSize = interleavedOps.size();
+@@ -52589,10 +52614,19 @@ static SDValue matchPMADDWD_2(SelectionDAG &DAG, SDValue N0, SDValue N1,
+       !isPowerOf2_32(VT.getVectorNumElements()))
+     return SDValue();
+ 
+-  SDValue N00 = N0.getOperand(0);
+-  SDValue N01 = N0.getOperand(1);
+-  SDValue N10 = N1.getOperand(0);
+-  SDValue N11 = N1.getOperand(1);
++  // Nxx naming scheme: N<phase><operand>, where phase == 0 means "even", and operand is the operand index of the MUL operation
++  // So, the "even" left-hand operand is N00, and the "odd" left-hand operand is N10
++
++  // "evens"
++  SDValue N00 = getPMADDOperand(N0, 0, VT, DL, DAG);
++  SDValue N01 = getPMADDOperand(N0, 1, VT, DL, DAG);
++  
++  // "odds"
++  SDValue N10 = getPMADDOperand(N1, 0, VT, DL, DAG);
++  SDValue N11 = getPMADDOperand(N1, 1, VT, DL, DAG);
++
++  if (!N00 || !N01 || !N10 || !N11)
++    return SDValue();
+ 
+   // All inputs need to be sign extends.
+   // TODO: Support ZERO_EXTEND from known positive?
+@@ -52621,6 +52655,8 @@ static SDValue matchPMADDWD_2(SelectionDAG &DAG, SDValue N0, SDValue N1,
+       N11.getOpcode() != ISD::BUILD_VECTOR)
+     return SDValue();
+ 
++  // TODO: verify N00, N01, N10, and N11 have the same # of operands
++
+   // For each element, we need to ensure we have an odd element from one vector
+   // multiplied by the odd element of another vector and the even element from
+   // one of the same vectors being multiplied by the even element from the
+@@ -52628,6 +52664,8 @@ static SDValue matchPMADDWD_2(SelectionDAG &DAG, SDValue N0, SDValue N1,
+   // is being performed:
+   //  A[2 * i] * B[2 * i] + A[2 * i + 1] * B[2 * i + 1]
+   SDValue In0, In1;
++  bool prevIdxN00WasZero = true;
++  bool prevIdxN01WasZero = true;
+   for (unsigned i = 0; i != N00.getNumOperands(); ++i) {
+     SDValue N00Elt = N00.getOperand(i);
+     SDValue N01Elt = N01.getOperand(i);
+@@ -52654,9 +52692,21 @@ static SDValue matchPMADDWD_2(SelectionDAG &DAG, SDValue N0, SDValue N1,
+       std::swap(IdxN00, IdxN10);
+       std::swap(IdxN01, IdxN11);
+     }
+-    // N0 indices be the even element. N1 indices must be the next odd element.
+-    if (IdxN00 != 2 * i || IdxN10 != 2 * i + 1 ||
+-        IdxN01 != 2 * i || IdxN11 != 2 * i + 1)
++
++    // N0 indices must be sequential even elements.
++    // TODO: also allow even indices to be element 0 broadcasted to fill the array
++    //       ... which means Idx can be 0 if prev Idx was zero
++    if (IdxN00 != 2 * i && !(IdxN00 == 0 && prevIdxN00WasZero) || 
++        IdxN01 != 2 * i && !(IdxN01 == 0 && prevIdxN01WasZero))
++    {
++      return SDValue();
++    }
++    
++    prevIdxN00WasZero = IdxN00 == 0;
++    prevIdxN01WasZero = IdxN01 == 0;
++
++    // N1 indices must be the next (odd) element after the corresponding N0 indcex
++    if (IdxN10 != IdxN00 + 1 || IdxN11 != IdxN01 + 1)
+       return SDValue();
+     SDValue N00In = N00Elt.getOperand(0);
+     SDValue N01In = N01Elt.getOperand(0);
+@@ -52684,6 +52734,41 @@ static SDValue matchPMADDWD_2(SelectionDAG &DAG, SDValue N0, SDValue N1,
+       return SDValue();
+   }
+ 
++  // ####
++  if (prevIdxN00WasZero) // a splat, so just use the original build_vector
++  {
++      unsigned NumElems = VT.getVectorNumElements();
++      SmallVector<SDValue, 32> elements(2*NumElems);
++      EVT argVT = In0.getValueType();
++      MVT elemMT = argVT.getSimpleVT().getVectorElementType();
++      for(unsigned idx = 0; idx < 2*NumElems; ++idx)
++      {
++        SDValue elt = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, elemMT, In0,
++                              DAG.getIntPtrConstant(idx%2, DL));
++        elements[idx] = elt;
++      }
++
++    // In0 = <broadcast elements from N00, N10>
++      In0 = DAG.getBuildVector(argVT, DL, elements);
++  }
++
++  if (prevIdxN01WasZero) // a splat, so just use the original build_vector
++  {
++      unsigned NumElems = VT.getVectorNumElements();
++      SmallVector<SDValue, 32> elements(2*NumElems);
++      EVT argVT = In1.getValueType();
++      MVT elemMT = argVT.getSimpleVT().getVectorElementType();
++      for(unsigned idx = 0; idx < 2*NumElems; ++idx)
++      {
++        SDValue elt = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, elemMT, In1,
++                              DAG.getIntPtrConstant(idx%2, DL));
++        elements[idx] = elt;
++      }
++
++    // In1 = <broadcast elements from N01, N11>
++      In1 = DAG.getBuildVector(argVT, DL, elements);
++  }
++
+   auto PMADDBuilder = [](SelectionDAG &DAG, const SDLoc &DL,
+                          ArrayRef<SDValue> Ops) {
+     EVT OpVT = Ops[0].getValueType();
+@@ -52787,14 +52872,14 @@ static SDValue matchPMADDWD_3(SelectionDAG &DAG, SDValue N0, SDValue N1,
+     return SDValue();
+ 
+   SDValue p000, p001, p010, p011, p100, p101, p110, p111;
+-  if (!(p000 = getExtMulOperand(ssatArg0.getOperand(0), 0, VT, DL, DAG))) return SDValue();
+-  if (!(p001 = getExtMulOperand(ssatArg0.getOperand(0), 1, VT, DL, DAG))) return SDValue();
+-  if (!(p010 = getExtMulOperand(ssatArg0.getOperand(1), 0, VT, DL, DAG))) return SDValue();
+-  if (!(p011 = getExtMulOperand(ssatArg0.getOperand(1), 1, VT, DL, DAG))) return SDValue();
+-  if (!(p100 = getExtMulOperand(ssatArg1.getOperand(0), 0, VT, DL, DAG))) return SDValue();
+-  if (!(p101 = getExtMulOperand(ssatArg1.getOperand(0), 1, VT, DL, DAG))) return SDValue();
+-  if (!(p110 = getExtMulOperand(ssatArg1.getOperand(1), 0, VT, DL, DAG))) return SDValue();
+-  if (!(p111 = getExtMulOperand(ssatArg1.getOperand(1), 1, VT, DL, DAG))) return SDValue();
++  if (!(p000 = getPMADDOperand(ssatArg0.getOperand(0), 0, VT, DL, DAG))) return SDValue();
++  if (!(p001 = getPMADDOperand(ssatArg0.getOperand(0), 1, VT, DL, DAG))) return SDValue();
++  if (!(p010 = getPMADDOperand(ssatArg0.getOperand(1), 0, VT, DL, DAG))) return SDValue();
++  if (!(p011 = getPMADDOperand(ssatArg0.getOperand(1), 1, VT, DL, DAG))) return SDValue();
++  if (!(p100 = getPMADDOperand(ssatArg1.getOperand(0), 0, VT, DL, DAG))) return SDValue();
++  if (!(p101 = getPMADDOperand(ssatArg1.getOperand(0), 1, VT, DL, DAG))) return SDValue();
++  if (!(p110 = getPMADDOperand(ssatArg1.getOperand(1), 0, VT, DL, DAG))) return SDValue();
++  if (!(p111 = getPMADDOperand(ssatArg1.getOperand(1), 1, VT, DL, DAG))) return SDValue();
+ 
+   SDValue zextArgs[4] = {p000, p010, p100, p110};
+   SDValue sextArgs[4] = {p001, p011, p101, p111};
+@@ -52982,6 +53067,87 @@ static SDValue combineAddOfPMADDWD(SelectionDAG &DAG, SDValue N0, SDValue N1,
+   return DAG.getNode(X86ISD::VPMADDWD, DL, VT, LHS, RHS);
+ }
+ 
++// Attempt to turn this pattern:
++//
++// (add 
++//      (add X,
++//           (mul (sext (build_vector)), (sext (build_vector))),
++//      (mul (sext (build_vector)), (sext (build_vector))))
++//
++// into:
++//
++// (add X,
++//      (add (mul (sext (build_vector)), (sext (build_vector))),
++//           (mul (sext (build_vector)), (sext (build_vector)))))
++//
++//  or, (X + a) + b --> X + (a + b), where a and b are (mul (sext (build_vector)))
++//
++// So that the inner add can be turned into a PMADDWD
++static SDValue rebalancePotentialPMADDWD(SelectionDAG &DAG, SDValue N0, SDValue N1,
++                              const SDLoc &DL, EVT VT,
++                              const X86Subtarget &Subtarget) {
++  if (!Subtarget.hasSSE2())
++    return SDValue();
++
++  if (!VT.isVector() || VT.getVectorElementType() != MVT::i32 ||
++      VT.getVectorNumElements() < 4 ||
++      !isPowerOf2_32(VT.getVectorNumElements()))
++    return SDValue();
++
++  // normalize N0 and N1 so N0 == (X + a) and N1 == b
++  if (N0.getOpcode() != ISD::ADD)
++    std::swap(N0, N1);
++  if (N0.getOpcode() != ISD::ADD || N1.getOpcode() != ISD::MUL)
++    return SDValue();
++  
++  // function to verify v is a valid argument for an add that gets converted to PMADDWD
++  auto isValidPMADDWDArg = [](SDValue v) { 
++    // get "a" and "b" operands
++    SDValue v0 = v.getOperand(0);
++    SDValue v1 = v.getOperand(1);
++
++    // All inputs need to be sign extends.
++    // TODO: Support ZERO_EXTEND from known positive?
++    if (v0.getOpcode() != ISD::SIGN_EXTEND ||
++        v1.getOpcode() != ISD::SIGN_EXTEND )
++      return false;
++
++    // Peek through the extends.
++    v0 = v0.getOperand(0);
++    v1 = v1.getOperand(0);
++
++    // Must be extending from vXi16.
++    EVT InVT = v0.getValueType();
++    if (InVT.getVectorElementType() != MVT::i16 || v1.getValueType() != InVT)
++      return false;
++
++    // All inputs should be build_vectors.
++    // TODO: also allow broadcast-A pattern
++    if ((v0.getOpcode() != ISD::BUILD_VECTOR && v0.getOpcode() != ISD::VECTOR_SHUFFLE) ||
++        (v1.getOpcode() != ISD::BUILD_VECTOR && v1.getOpcode() != ISD::VECTOR_SHUFFLE))
++      return false;
++
++    return true; 
++  };
++
++  // normalize N00 and N01 so N00 == X and N01 == b
++  SDValue N00 = N0.getOperand(0);
++  SDValue N01 = N0.getOperand(1);
++  if (isValidPMADDWDArg(N00))
++    std::swap(N00, N01);
++  // now N00 = X, N01 = a, and N1 = b
++
++  // verify everything is correct (that is, a and b )
++  if (!isValidPMADDWDArg(N01) || !isValidPMADDWDArg(N1))
++    return SDValue();
++  
++  // TODO: just turn this directly into X + vpmaddwd
++
++  // return new expression X + (a + b) == N00 + (N01 + N1)
++  auto pmaddTerm = DAG.getNode(ISD::ADD, DL, VT, N01, N1);
++  return DAG.getNode(ISD::ADD, DL, VT, N00, pmaddTerm);
++}
++
+ /// CMOV of constants requires materializing constant operands in registers.
+ /// Try to fold those constants into an 'add' instruction to reduce instruction
+ /// count. We do this with CMOV rather the generic 'select' because there are
+@@ -53064,6 +53230,8 @@ static SDValue combineAdd(SDNode *N, SelectionDAG &DAG,
+     return MAdd;
+   if (SDValue MAdd = combineAddOfPMADDWD(DAG, Op0, Op1, DL, VT))
+     return MAdd;
++  if (SDValue MAdd = rebalancePotentialPMADDWD(DAG, Op0, Op1, DL, VT, Subtarget))
++    return MAdd;
+ 
+   // Try to synthesize horizontal adds from adds of shuffles.
+   if (SDValue V = combineToHorizontalAddSub(N, DAG, Subtarget))
+-- 
+2.37.0 (Apple Git-136)
+

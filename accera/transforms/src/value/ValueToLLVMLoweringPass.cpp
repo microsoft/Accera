@@ -737,34 +737,8 @@ struct RawPointerAPIFnConversion : public ConvertOpToLLVMPattern<FuncOp>
         OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPointToStart(entryBlock);
 
-        std::vector<std::vector<int64_t>> dynArgSizeReferences;
-        if (auto dynArgSizeRefsArrayAttr = funcOp->getAttrOfType<mlir::ArrayAttr>(DynamicArgSizeReferencesAttrName))
-        {
-            for (auto dynArgSizeRefs : dynArgSizeRefsArrayAttr)
-            {
-                auto dynArgSizeRefsVec = util::ConvertArrayAttrToIntVector(dynArgSizeRefs.cast<mlir::ArrayAttr>());
-                dynArgSizeReferences.push_back(dynArgSizeRefsVec);
-            }
-            assert(dynArgSizeReferences.size() == blockArgs.size() && "Must have one dynamic arg size references entry for each function argument");
-        }
-        else
-        {
-            // No arg size references given, assume that all args are statically sized
-            const int64_t staticSentinelValue = -1;
-            for (auto argTy : oldArgTypes)
-            {
-                if (auto memrefTy = argTy.dyn_cast<MemRefType>())
-                {
-                    assert(memrefTy.getNumDynamicDims() == 0);
-                    std::vector<int64_t> rankSentinelValues(memrefTy.getRank(), staticSentinelValue);
-                    dynArgSizeReferences.push_back(rankSentinelValues);
-                }
-                else
-                {
-                    dynArgSizeReferences.push_back({ staticSentinelValue });
-                }
-            }
-        }
+        std::vector<mlir::Type> oldArgTypesVec(oldArgTypes.begin(), oldArgTypes.end());
+        std::vector<std::vector<int64_t>> dynArgSizeReferences = util::ParseDynamicArgSizeReferences(funcOp, oldArgTypesVec);
 
         for (auto [blockArg, dynArgSizeRefs, argTy] : llvm::zip(blockArgs, dynArgSizeReferences, oldArgTypes))
         {

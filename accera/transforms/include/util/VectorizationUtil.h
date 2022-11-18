@@ -7,6 +7,7 @@
 
 #include "VectorizedOp.h"
 
+#include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/IR/BlockAndValueMapping.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -40,6 +41,9 @@ private:
 
     std::map<void*, VectorizedOp> _vectorizedOps;
 };
+
+mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
+                                         mlir::PatternRewriter& rewriter);
 
 std::optional<VectorizedOp> VectorizeOp(mlir::PatternRewriter& rewriter,
                                         mlir::Operation* op,

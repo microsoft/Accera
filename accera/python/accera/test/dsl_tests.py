@@ -920,7 +920,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         # plan.vectorize(jjjj)
 
         package = Package()
-        function = package.add(plan, args=(A, B, C, K), base_name=test_name)
+        # BUGBUG: dim args ordered first due to issue with Debug mode
+        function = package.add(plan, args=(K, A, B, C), base_name=test_name)
 
         M_test = M
         N_test = N
@@ -929,8 +930,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         B_test = np.random.random((K_test, N_test)).astype(np.uint8)
         C_test = np.random.random((M_test, N_test)).astype(np.int32)
         correctness_check_values = {
-            "pre": [A_test, B_test, C_test, K_test],
-            "post": [A_test, B_test, C_test + A_test @ B_test, K_test],
+            "pre": [K_test, A_test, B_test, C_test],
+            "post": [K_test, A_test, B_test, C_test + A_test @ B_test],
         }
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)
@@ -965,7 +966,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         plan.unroll(jj)
 
         package = Package()
-        function = package.add(plan, args=(A, B, C, M, N, K), base_name=test_name)
+        # BUGBUG: dim args ordered first due to issue with Debug mode
+        function = package.add(plan, args=(M, N, K, A, B, C), base_name=test_name)
 
         M_test = np.int64(123)
         N_test = np.int64(234)
@@ -974,8 +976,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         B_test = np.random.random((K_test, N_test)).astype(np.float32)
         C_test = np.random.random((M_test, N_test)).astype(np.float32)
         correctness_check_values = {
-            "pre": [A_test, B_test, C_test, M_test, N_test, K_test],
-            "post": [A_test, B_test, C_test + A_test @ B_test, M_test, N_test, K_test],
+            "pre": [M_test, N_test, K_test, A_test, B_test, C_test],
+            "post": [M_test, N_test, K_test, A_test, B_test, C_test + A_test @ B_test],
         }
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)
@@ -1010,7 +1012,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         plan.vectorize(jj)
 
         package = Package()
-        function = package.add(plan, args=(A, B, C, M, N, K), base_name=test_name)
+        # BUGBUG: dim args ordered first due to issue with Debug mode
+        function = package.add(plan, args=(M, N, K, A, B, C), base_name=test_name)
 
         M_test = np.int64(123)
         N_test = np.int64(234)
@@ -1019,8 +1022,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         B_test = np.random.random((K_test, N_test)).astype(np.float32)
         C_test = np.random.random((M_test, N_test)).astype(np.float32)
         correctness_check_values = {
-            "pre": [A_test, B_test, C_test, M_test, N_test, K_test],
-            "post": [A_test, B_test, C_test + A_test @ B_test, M_test, N_test, K_test],
+            "pre": [M_test, N_test, K_test, A_test, B_test, C_test],
+            "post": [M_test, N_test, K_test, A_test, B_test, C_test + A_test @ B_test],
         }
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)
@@ -1068,7 +1071,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         plan.vectorize(jjjj)
 
         package = Package()
-        function = package.add(plan, args=(A, B, C, M, N, K), base_name=test_name)
+        # BUGBUG: dim args ordered first due to issue with Debug mode
+        function = package.add(plan, args=(M, N, K, A, B, C), base_name=test_name)
 
         M_test = np.int64(123)
         N_test = np.int64(234)
@@ -1077,8 +1081,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         B_test = np.random.random((K_test, N_test)).astype(np.float32)
         C_test = np.random.random((M_test, N_test)).astype(np.float32)
         correctness_check_values = {
-            "pre": [A_test, B_test, C_test, M_test, N_test, K_test],
-            "post": [A_test, B_test, C_test + A_test @ B_test, M_test, N_test, K_test],
+            "pre": [M_test, N_test, K_test, A_test, B_test, C_test],
+            "post": [M_test, N_test, K_test, A_test, B_test, C_test + A_test @ B_test],
         }
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)

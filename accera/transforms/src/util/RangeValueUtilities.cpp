@@ -41,19 +41,31 @@ namespace
 RangeValue resolveThreadIdRange(Operation* op, gpu::Dimension dimId)
 {
     auto upperBound = GetBlockDimSize(op, dimId);
-    return RangeValue(0, upperBound - 1); // -1 because RangeValue will add 1 to the upper bound and the thread id never takes on the upperBound value
+    if (upperBound.has_value())
+    {
+        return RangeValue(0, *upperBound - 1); // -1 because RangeValue will add 1 to the upper bound and the thread id never takes on the upperBound value
+    }
+    return RangeValue();
 }
 
 RangeValue resolveBlockIdRange(Operation* op, gpu::Dimension dimId)
 {
     auto upperBound = GetGridDimSize(op, dimId);
-    return RangeValue(0, upperBound - 1); // -1 because RangeValue will add 1 to the upper bound and the block id never takes on the upperBound value
+    if (upperBound.has_value())
+    {
+        return RangeValue(0, *upperBound - 1); // -1 because RangeValue will add 1 to the upper bound and the block id never takes on the upperBound value
+    }
+    return RangeValue();
 }
 
 RangeValue resolveGridDimRange(Operation* op, gpu::Dimension dimId)
 {
     auto upperBound = GetGridDimSize(op, dimId);
-    return RangeValue(upperBound, upperBound);
+    if (upperBound.has_value())
+    {
+        return RangeValue(*upperBound, *upperBound);
+    }
+    return RangeValue();
 }
 
 } // namespace
@@ -285,7 +297,12 @@ RangeValue RangeValueAnalysis::resolveRangeValue(mlir::gpu::GridDimOp op)
 RangeValue RangeValueAnalysis::resolveRangeValue(WarpIdOp op)
 {
     const mlir::gpu::Dimension dim{ op.dimension() };
-    auto upperBound = GetBlockDimSize(op, dim);
+    auto upperBoundOpt = GetBlockDimSize(op, dim);
+    if (!upperBoundOpt.has_value())
+    {
+        return RangeValue();
+    }
+    auto upperBound = *upperBoundOpt;
     if (dim == mlir::gpu::Dimension::x)
     {
         auto [warpSizeX, warpSizeY] = ResolveWarpSize(ResolveExecutionRuntime(op)).value();
@@ -298,11 +315,114 @@ RangeValue RangeValueAnalysis::resolveRangeValue(WarpIdOp op)
 RangeValue RangeValueAnalysis::resolveRangeValue(Instruction::BinaryOps binOp, mlir::Operation* op)
 {
     auto operands = resolveOperands(op);
+    return resolveRangeValue(binOp, operands);
+}
+
+RangeValue RangeValueAnalysis::resolveRangeValue(Instruction::BinaryOps binOp, const llvm::SmallVectorImpl<RangeValue>& operands)
+{
     return operands[0].binaryOp(binOp, operands[1]);
 }
+
+RangeValue RangeValueAnalysis::resolveRangeValue(AffineApplyOp op)
+{
+    auto affineValueMap = util::AffineApplyToAffineValueMap(op);
+    auto simplified = util::SimplifyAffineValueMap(affineValueMap);
+    auto map = simplified.getAffineMap();
+    assert(map.getNumResults() == 1 && "Affine apply can't have multiple expressions");
+    auto expr = map.getResult(0);
+    auto operands = simplified.getOperands();
+    for (auto operand : operands)
+    {
+        if (!hasRange(operand))
+        {
+            if (auto defOp = GetDefiningOpOrForLoop(operand))
+            {
+                addOperation(defOp);
+            }
+        }
+    }
+    std::vector<mlir::Value> dimOperands(operands.begin(), operands.begin() + map.getNumDims());
+    std::vector<mlir::Value> symbolOperands(operands.begin() + map.getNumDims(), operands.end());
+    mlir::DenseMap<mlir::AffineExpr, RangeValue> subExprRanges;
+    // Post-order traversal of the expression tree
+    expr.walk([&](mlir::AffineExpr subExpr) {
+        if (auto dimExpr = subExpr.dyn_cast<mlir::AffineDimExpr>())
+        {
+            auto idx = dimExpr.getPosition();
+            auto rv = getRange(dimOperands[idx]);
+            subExprRanges.insert({ subExpr, rv });
+        }
+        if (auto symExpr = subExpr.dyn_cast<mlir::AffineSymbolExpr>())
+        {
+            auto idx = symExpr.getPosition();
+            auto rv = getRange(symbolOperands[idx]);
+            subExprRanges.insert({ subExpr, rv });
+        }
+        if (auto constExpr = subExpr.dyn_cast<mlir::AffineConstantExpr>())
+        {
+            RangeValue rv(constExpr.getValue(), constExpr.getValue());
+            subExprRanges.insert({ subExpr, rv });
+        }
+        if (auto binOpExpr = subExpr.dyn_cast<mlir::AffineBinaryOpExpr>())
+        {
+            auto lhs = binOpExpr.getLHS();
+            auto rhs = binOpExpr.getRHS();
+            auto lhsIt = subExprRanges.find(lhs);
+            assert(lhsIt != subExprRanges.end());
+            auto lhsRv = lhsIt->second;
+            auto rhsIt = subExprRanges.find(rhs);
+            assert(rhsIt != subExprRanges.end());
+            auto rhsRv = rhsIt->second;
+
+            Instruction::BinaryOps llvmBinOp;
+            switch (binOpExpr.getKind())
+            {
+            case mlir::AffineExprKind::Add:
+                llvmBinOp = Instruction::BinaryOps::Add;            
+                break;
+            case mlir::AffineExprKind::Mul:
+                llvmBinOp = Instruction::BinaryOps::Mul;
+                break;
+            case mlir::AffineExprKind::Mod:
+                llvmBinOp = Instruction::BinaryOps::SRem;
+                break;
+            case mlir::AffineExprKind::FloorDiv:
+                llvmBinOp = Instruction::BinaryOps::SDiv;
+                break;
+            case mlir::AffineExprKind::CeilDiv:
+                assert(false); // Unsupported currently - no matching llvm bin op
+                break;
+            default:
+                assert(false);
+                break;
+            }
+            llvm::SmallVector<RangeValue, 2> operandRanges{ lhsRv, rhsRv };
+            auto rv = resolveRangeValue(llvmBinOp, operandRanges);
+            subExprRanges.insert({ subExpr, rv });
+        }
+    });
+
+    // Find the root expr in the map and return its computed RangeValue
+    auto it = subExprRanges.find(expr);
+    assert(it != subExprRanges.end());
+    return it->second;
+}
+
 RangeValue RangeValueAnalysis::resolveRangeValue(AffineForOp op)
 {
-    return op.hasConstantBounds() ? RangeValue(op.getConstantLowerBound(), op.getConstantUpperBound() - op.getStep()) : RangeValue();
+    if (op.hasConstantBounds())
+    {
+        auto lb = op.getConstantLowerBound();
+        auto ub = op.getConstantUpperBound();
+        auto step = op.getStep();
+
+        auto range = ub - lb;
+        auto remainder = range % step;
+        auto largestInductionVarValue = (remainder > 0) ? (ub - remainder) : (ub - step);
+
+        return RangeValue(lb, largestInductionVarValue);
+    }
+    return RangeValue();
 }
 RangeValue RangeValueAnalysis::resolveRangeValue(scf::ForOp op)
 {
@@ -314,7 +434,22 @@ RangeValue RangeValueAnalysis::resolveRangeValue(scf::ForOp op)
 
     RangeValue lowerBound = resolveRangeValue(op.getLowerBound().getDefiningOp());
     RangeValue upperBound = resolveRangeValue(op.getUpperBound().getDefiningOp());
-    return lowerBound.isConstant() && upperBound.isConstant() ? RangeValue(lowerBound.range.getLower(), upperBound.range.getUpper() - 1) : RangeValue();
+    RangeValue stepSize = resolveRangeValue(op.getStep().getDefiningOp());
+
+    bool isConstantRangeStep = lowerBound.isConstant() && upperBound.isConstant() && stepSize.isConstant();
+    if (isConstantRangeStep)
+    {
+        auto lb = lowerBound.range.getLower();
+        auto ub = upperBound.range.getUpper();
+        auto step = stepSize.range.getLower();
+
+        auto range = ub - lb;
+        auto remainder = range.srem(step);
+        auto largestInductionVarValue = (remainder.sgt(0)) ? (ub - remainder) : (ub - step);
+
+        return RangeValue(lb, largestInductionVarValue);
+    }
+    return RangeValue();
 }
 RangeValue RangeValueAnalysis::resolveRangeValue(mlir::Operation* op)
 {
@@ -335,6 +470,7 @@ RangeValue RangeValueAnalysis::resolveRangeValue(mlir::Operation* op)
         .Case([&](arith::DivUIOp op) { return resolveRangeValue(Instruction::BinaryOps::UDiv, op); })
         .Case([&](scf::ForOp op) { return resolveRangeValue(op); })
         .Case([&](AffineForOp op) { return resolveRangeValue(op); })
+        .Case([&](AffineApplyOp op) { return resolveRangeValue(op); })
         .Default([&](mlir::Operation*) { return RangeValue(); });
 }
 

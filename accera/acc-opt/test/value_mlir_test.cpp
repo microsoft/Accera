@@ -115,7 +115,7 @@ TEST_CASE("function_decl1")
             .Parameters(Value{ ValueType::Float, MemoryLayout{ { 10 } } })
             .Define([](Value) {});
     CHECK(f3);
-    // CHECK: accv.func nested @f4_{{[0-9]+}}(%arg0: memref<3x4xf64, #map{{[0-9]*}}>)
+    // CHECK: accv.func nested @f4_{{[0-9]+}}(%arg0: memref<3x4xf64>)
     // COM: CHECK: accv.func @f4_{{[0-9]+}}(%arg0: memref<3x4xf64>)
     // CHECK-NEXT: return
     // CHECK-NEXT: }
@@ -311,9 +311,9 @@ TEST_CASE("mlir_test3")
                 // COM: Doesn't result in emitted code
                 CHECK_NOTHROW(MakeScalar<int>());
 
-                // CHECK-NEXT: [[v0:%[a-z0-9_]+]] = "accv.alloc"() : () -> memref<100xf32, 3>
+                // CHECK-NEXT: [[v0:%[a-z0-9_]+]] = "accv.alloc"() {allocType = 0 : i64} : () -> memref<100xf32, 3>
                 CHECK_NOTHROW(MakeVector<float>(100));
-                // CHECK-NEXT: [[v1:%[a-z0-9_]+]] = "accv.alloc"() : () -> memref<2x3xi16
+                // CHECK-NEXT: [[v1:%[a-z0-9_]+]] = "accv.alloc"() {allocType = 0 : i64} : () -> memref<2x3xi16
                 CHECK_NOTHROW(MakeMatrix<int16_t>(2, 3));
                 // CHECK-NEXT: return
                 // CHECK-NEXT: }
@@ -325,7 +325,7 @@ TEST_CASE("mlir_test3")
 
 // CHECK-LABEL: module @mlir_test4 {
 // CHECK-NEXT: accv.module "mlir_test4" {
-// CHECK-NEXT: accv.func nested @foo_{{[0-9]+}}(%arg0: memref<10x10xi32, [[MAP:#map[0-9]*]]>)
+// CHECK-NEXT: accv.func nested @foo_{{[0-9]+}}(%arg0: memref<10x10xi32>)
 // COM: CHECK-NEXT: accv.func @foo_{{[0-9]+}}(%arg0: memref<10x10xi32>) attributes {args_symbol = ["{{[a-z0-9_]+}}"], exec_target = 0 : i64, sym_visibility = "nested"} {
 // CHECK-NEXT: [[c0:%c[0-9]+]] = arith.constant 0 : index
 // CHECK-NEXT: [[c10_1:%c[0-9_]+]] = arith.constant 10 : index
@@ -372,7 +372,7 @@ TEST_CASE("mlir_test5")
             .Define([](Scalar i) {
                 CHECK_NOTHROW(StaticAllocate<int>("foo", std::vector{ 1, 2, 3, 4 }));
 
-                // CHECK-NEXT: "accv.alloc"() : () -> memref<100xf32, 3>
+                // CHECK-NEXT: "accv.alloc"() {allocType = 0 : i64} : () -> memref<100xf32, 3>
                 CHECK_NOTHROW(MakeVector<float>(100));
 
                 // CHECK-NEXT: return
@@ -473,7 +473,7 @@ TEST_CASE("mlir_test11")
             // CHECK-NEXT:      [[c0_0:%c[0-9a-z_]+]] = arith.constant 0 : i32
             // CHECK-NEXT:      [[c4_0:%c[0-9a-z_]+]] = arith.constant 4
             // CHECK-NEXT:      [[c4_1:%c[0-9a-z_]+]] = arith.constant 4
-            // CHECK-NEXT:      [[v0:%[a-z0-9_]+]] = "accv.alloc"() {sym_name = "a"} : () -> memref<1xi32, 3>
+            // CHECK-NEXT:      [[v0:%[a-z0-9_]+]] = "accv.alloc"()  {allocType = 0 : i64, sym_name = "a"} : () -> memref<1xi32, 3>
             Scalar a = MakeVector<int>(1, "a")[0];
             Scalar c = 4;
             // CHECK-NEXT:      %[[v1:[a-z0-9_]+]] = arith.index_cast [[c0_0]] : i32 to index
@@ -844,10 +844,10 @@ TEST_CASE("mlir_schedule_test_4")
 // COM: CHECK: memref.subview %arg0[0, %{{[a-z0-9_]+}}] [10, 1] [10, 1] : memref<10x10xf32, #map0> to memref<10xf32, #map3>
 // COM: CHECK: memref.subview %arg0[%{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}] [3, 4] [1, 1] : memref<10x10xf32, #map0> to memref<3x4xf32, #map4>
 // COM: CHECK-NEXT: accv.func @MatrixView_{{[0-9]+}}(%arg0: memref<10x10xf32
-// CHECK: "accv.slice"(%arg0, %{{[0-9]+}}, %{{[0-9]+}}) {sliceDimensions = [0, 1]} : (memref<10x10xf32, #map0>, index, index) -> memref<f32>
-// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [0]} : (memref<10x10xf32, #map0>, index) -> memref<10xf32, #map1>
-// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [1]} : (memref<10x10xf32, #map0>, index) -> memref<10xf32, #map2>
-// CHECK: "accv.view"(%arg0, %{{[0-9]+}}, %{{[0-9]+}}) : (memref<10x10xf32, #map0>, !accv.range, !accv.range) -> memref<3x4xf32, #map3>
+// CHECK: "accv.slice"(%arg0, %{{[0-9]+}}, %{{[0-9]+}}) {sliceDimensions = [0, 1]} : (memref<10x10xf32>, index, index) -> memref<f32>
+// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [0]} : (memref<10x10xf32>, index) -> memref<10xf32, #map0>
+// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [1]} : (memref<10x10xf32>, index) -> memref<10xf32, #map1>
+// CHECK: "accv.view"(%arg0, %{{[0-9]+}}, %{{[0-9]+}}) : (memref<10x10xf32>, !accv.range, !accv.range) -> memref<3x4xf32, #map2>
 TEST_CASE("mlir_matrix_view_test")
 {
     DeclareFunction("MatrixView")
@@ -874,13 +874,13 @@ TEST_CASE("mlir_matrix_view_test")
 // COM: CHECK: memref.subview %arg0[0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}] [5, 1, 1] [150, 15, 1] : memref<5x10x15xf32, #map0> to memref<5xf32, #map7>
 // COM: CHECK: memref.subview %arg0[%{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}] [3, 2, 1] [1, 1, 1] : memref<5x10x15xf32, #map0> to memref<3x2x1xf32, #map8>
 // COM: CHECK-NEXT: accv.func @TensorView_{{[0-9]+}}(%arg0: memref<5x10x15xf32
-// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [0]} : (memref<5x10x15xf32, #map0>, index) -> memref<10x15xf32, #map1>
-// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [1]} : (memref<5x10x15xf32, #map0>, index) -> memref<5x15xf32, #map2>
-// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [2]} : (memref<5x10x15xf32, #map0>, index) -> memref<5x10xf32, #map3>
-// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [0, 1]} : (memref<5x10x15xf32, #map0>, index, index) -> memref<15xf32, #map4>
-// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [0, 2]} : (memref<5x10x15xf32, #map0>, index, index) -> memref<10xf32, #map5>
-// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [1, 2]} : (memref<5x10x15xf32, #map0>, index, index) -> memref<5xf32, #map6>
-// CHECK: "accv.view"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) : (memref<5x10x15xf32, #map0>, !accv.range, !accv.range, !accv.range) -> memref<3x2x1xf32, #map7>
+// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [0]} : (memref<5x10x15xf32>, index) -> memref<10x15xf32, #map0>
+// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [1]} : (memref<5x10x15xf32>, index) -> memref<5x15xf32, #map1>
+// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [2]} : (memref<5x10x15xf32>, index) -> memref<5x10xf32, #map2>
+// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [0, 1]} : (memref<5x10x15xf32>, index, index) -> memref<15xf32, #map3>
+// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [0, 2]} : (memref<5x10x15xf32>, index, index) -> memref<10xf32, #map4>
+// CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [1, 2]} : (memref<5x10x15xf32>, index, index) -> memref<5xf32, #map5>
+// CHECK: "accv.view"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) : (memref<5x10x15xf32>, !accv.range, !accv.range, !accv.range) -> memref<3x2x1xf32, #map6>
 TEST_CASE("mlir_tensor_view_test")
 {
     DeclareFunction("TensorView")
@@ -957,8 +957,8 @@ TEST_CASE("mlir_intrinsic_test")
 // COM: CHECK-NEXT: %[[v8:[0-9]+]] = "accv.get_element"(%[[v4]]) : (memref<f32, #map2>) -> f32
 // COM: CHECK-NEXT: "accv.copy"(%[[v8]], %[[v6]]) : (f32, memref<f32, #map2>) -> ()
 // CHECK-NEXT: [[v2:%[0-9]+]] = "accv.bin_op"([[v0]], %[[v1]]) {predicate = 0 : i64} : (index, index) -> index
-// CHECK-NEXT: [[v3:%[0-9]+]] = "accv.slice"(%arg0, [[v0]], [[v2]]) {sliceDimensions = [0, 1]} : (memref<8x18xf32, #map0>, index, index) -> memref<f32>
-// CHECK-NEXT: [[v4:%[0-9]+]] = "accv.slice"(%arg1, [[v0]], %[[v1]]) {sliceDimensions = [0, 1]} : (memref<8x10xf32, #map1>, index, index) -> memref<f32>
+// CHECK-NEXT: [[v3:%[0-9]+]] = "accv.slice"(%arg0, [[v0]], [[v2]]) {sliceDimensions = [0, 1]} : (memref<8x18xf32>, index, index) -> memref<f32>
+// CHECK-NEXT: [[v4:%[0-9]+]] = "accv.slice"(%arg1, [[v0]], %[[v1]]) {sliceDimensions = [0, 1]} : (memref<8x10xf32>, index, index) -> memref<f32>
 // CHECK-NEXT: [[v5:%[0-9]+]] = "accv.get_element"([[v3]]) : (memref<f32>) -> f32
 // CHECK-NEXT: "accv.copy"([[v5]], [[v4]]) : (f32, memref<f32>) -> ()
 TEST_CASE("mlir_index_arithmetic_test")
@@ -1024,7 +1024,7 @@ TEST_CASE("mlir_scalar_float_test")
             // COM: CHECK-NEXT: scf.if %[[v4]] {
             // CHECK-NEXT: [[v0:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // CHECK-NEXT: [[v1:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
-            // CHECK-NEXT: [[v2:%[0-9]+]] = "accv.slice"(%[[C]], [[v0]], [[v1]]) {sliceDimensions = [0, 1]} : (memref<100x100xf32, #map0>, index, index) -> memref<f32>
+            // CHECK-NEXT: [[v2:%[0-9]+]] = "accv.slice"(%[[C]], [[v0]], [[v1]]) {sliceDimensions = [0, 1]} : (memref<100x100xf32>, index, index) -> memref<f32>
             // CHECK-NEXT: [[v3:%[0-9]+]] = "accv.get_element"([[v2]]) : (memref<f32>) -> f32
             // CHECK-NEXT: [[v4:%[0-9]+]] = "accv.cmp"([[v3]], %[[A]]) {predicate = 1 : i64} : (f32, f32) -> i1
             // CHECK-NEXT: scf.if [[v4]] {
@@ -1045,7 +1045,7 @@ TEST_CASE("mlir_scalar_float_test")
                 // CHECK:      [[v3:%[0-9]+]] = "accv.bin_op"([[v2]], [[CST0]]) {predicate = 0 : i64} : (f32, f32) -> f32
                 // CHECK-NEXT: [[v0:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
                 // CHECK-NEXT: [[v1:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
-                // CHECK-NEXT: [[Cslice:%[0-9]+]] = "accv.slice"(%[[C]], [[v0]], [[v1]]) {sliceDimensions = [0, 1]} : (memref<100x100xf32, #map0>, index, index) -> memref<f32>
+                // CHECK-NEXT: [[Cslice:%[0-9]+]] = "accv.slice"(%[[C]], [[v0]], [[v1]]) {sliceDimensions = [0, 1]} : (memref<100x100xf32>, index, index) -> memref<f32>
                 // CHECK-NEXT: "accv.copy"([[v3]], [[Cslice]]) : (f32, memref<f32>) -> ()
                 C(idx, idx) = B[idx] + Cast(c, A.GetType());
 
@@ -1059,7 +1059,7 @@ TEST_CASE("mlir_scalar_float_test")
             // CHECK-NEXT: [[v0:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // CHECK-NEXT: [[v1:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // CHECK-NEXT: [[v2:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
-            // CHECK-NEXT: [[Dslice:%[0-9]+]] = "accv.slice"(%[[D]], [[v0]], [[v1]], [[v2]]) {sliceDimensions = [0, 1, 2]} : (memref<1000x1000x1000xf32, #map1>, index, index, index) -> memref<f32>
+            // CHECK-NEXT: [[Dslice:%[0-9]+]] = "accv.slice"(%[[D]], [[v0]], [[v1]], [[v2]]) {sliceDimensions = [0, 1, 2]} : (memref<1000x1000x1000xf32>, index, index, index) -> memref<f32>
             auto dVal = D(idx, idx, idx);
 
             // CHECK-NEXT: %[[v3:[0-9]+]] = "accv.get_element"([[Dslice]]) : (memref<f32>) -> f32
@@ -1077,7 +1077,7 @@ TEST_CASE("mlir_scalar_float_test")
                 // CHECK-NEXT:  [[v0:%[0-9]+]] = "accv.bin_op"(%[[IDX]], [[c2_0]]) {predicate = 0 : i64} : (i32, i32) -> i32
                 // CHECK-DAG:   [[v1:%[0-9]+]] = arith.index_cast [[v0]] : i32 to index
                 // CHECK-DAG:   [[v2:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
-                // CHECK:       [[v3:%[0-9]+]] = "accv.slice"(%[[C]], [[v1]], [[v2]]) {sliceDimensions = [0, 1]} : (memref<100x100xf32, #map0>, index, index) -> memref<f32>
+                // CHECK:       [[v3:%[0-9]+]] = "accv.slice"(%[[C]], [[v1]], [[v2]]) {sliceDimensions = [0, 1]} : (memref<100x100xf32>, index, index) -> memref<f32>
                 // CHECK-NEXT:  [[v4:%[0-9]+]] = "accv.get_element"([[v3]]) : (memref<f32>) -> f32
                 // CHECK-NEXT:  "accv.copy"([[v4]], [[Dslice]]) : (f32, memref<f32>) -> ()
                 dVal = C(idx + c, idx);
@@ -1100,7 +1100,7 @@ TEST_CASE("mlir_scalar_float_test")
             // CHECK-NEXT: [[v3:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // CHECK-NEXT: [[v4:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
             // CHECK-NEXT: [[v5:%[0-9]+]] = arith.index_cast %[[IDX]] : i32 to index
-            // CHECK-NEXT: [[Eslice:%[0-9]+]] = "accv.slice"(%[[E]], [[v2]], [[v3]], [[v4]], [[v5]]) {sliceDimensions = [0, 1, 2, 3]} : (memref<10000x10000x10000x10000xf32, #map2>, index, index, index, index) -> memref<f32>
+            // CHECK-NEXT: [[Eslice:%[0-9]+]] = "accv.slice"(%[[E]], [[v2]], [[v3]], [[v4]], [[v5]]) {sliceDimensions = [0, 1, 2, 3]} : (memref<10000x10000x10000x10000xf32>, index, index, index, index) -> memref<f32>
             auto eVal = E(idx, idx, idx, idx);
 
             // CHECK-NEXT: %[[v7:[0-9]+]] = "accv.get_element"([[Eslice]]) : (memref<f32>) -> f32
@@ -2287,11 +2287,11 @@ TEST_CASE("jit_float_cached_matrix_multiply_test")
 
             // JIT-LABEL: A*B:
             Print("A*B:\n"s);
-            // JIT-NEXT: 20832.000000 21328.000000 21824.000000 22320.000000 22816.000000 23312.000000 23808.000000 24304.000000
-            // JIT-NEXT: 21824.000000 22352.000000 22880.000000 23408.000000 23936.000000 24464.000000 24992.000000 25520.000000
-            // JIT-NEXT: 22816.000000 23376.000000 23936.000000 24496.000000 25056.000000 25616.000000 26176.000000 26736.000000
-            // JIT-NEXT: 23808.000000 24400.000000 24992.000000 25584.000000 26176.000000 26768.000000 27360.000000 27952.000000
-            // JIT-NEXT: 24800.000000 25424.000000 26048.000000 26672.000000 27296.000000 27920.000000 28544.000000 29168.000000
+            // JIT: 20832.000000 21328.000000 21824.000000 22320.000000 22816.000000 23312.000000 23808.000000 24304.000000
+            // JIT: 21824.000000 22352.000000 22880.000000 23408.000000 23936.000000 24464.000000 24992.000000 25520.000000
+            // JIT: 22816.000000 23376.000000 23936.000000 24496.000000 25056.000000 25616.000000 26176.000000 26736.000000
+            // JIT: 23808.000000 24400.000000 24992.000000 25584.000000 26176.000000 26768.000000 27360.000000 27952.000000
+            // JIT: 24800.000000 25424.000000 26048.000000 26672.000000 27296.000000 27920.000000 28544.000000 29168.000000
             Print(C);
         });
     SUCCEED();
@@ -2404,7 +2404,7 @@ TEST_CASE("jit_matrix_transpose_test")
         .Public(true)
         .Decorated(false)
         .Define([=]() {
-            // COM: CHECK: [[m:%[0-9]+]] = "accv.alloc"() : () -> memref<3x4xf32, #map0, 3>
+            // COM: CHECK: [[m:%[0-9]+]] = "accv.alloc"() {allocType = 0 : i64} : () -> memref<3x4xf32, #map0, 3>
             Matrix m = MakeMatrix<float>(M, N);
             CHECK(m.GetMatrixLayout() == Matrix::MatrixLayout::rowMajor);
 
@@ -2990,7 +2990,7 @@ TEST_CASE("jit_array_reorder_test1")
 // COM: CHECK: [[map1:#map[0-9]+]] = affine_map<(d0, d1, d2) ->
 // COM: CHECK-LABEL: module @jit_array_reorder_test2 {
 // COM: CHECK-NEXT: accv.module "jit_array_reorder_test2" {
-// COM: CHECK: %0 = "accv.alloc"()
+// COM: CHECK: %0 = "accv.alloc"() {allocType = 0 : i64}
 // COM: CHECK-SAME: () -> memref<2x3x4xi32, [[map0]], 3>
 // COM: CHECK: %1 = memref.transpose %0 (d0, d1, d2) -> (d1, d2, d0)
 // COM: JIT-LABEL: @jit_array_reorder_test2

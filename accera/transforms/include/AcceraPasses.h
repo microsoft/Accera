@@ -22,6 +22,7 @@
 #include "value/ValueToLLVMLoweringPass.h"
 #include "value/ValueToStandardLoweringPass.h"
 
+#include <ir/include/intrinsics/AcceraIntrinsicsDialect.h>
 #include <ir/include/exec/ExecutionPlanOps.h>
 #include <ir/include/nest/LoopNestOps.h>
 #include <ir/include/value/ValueDialect.h>

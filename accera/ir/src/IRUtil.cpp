@@ -313,6 +313,42 @@ namespace util
         return mlir::AffineValueMap(map, operandsVec);
     }
 
+    std::optional<int64_t> SimplifyAffineValueMapToConstant(mlir::AffineValueMap affineValueMap)
+    {
+        auto simplified = SimplifyAffineValueMap(affineValueMap);
+        auto map = simplified.getAffineMap();
+        if (map.isSingleConstant())
+        {
+            return map.getSingleConstantResult();
+        }
+        return std::nullopt;
+    }
+
+    template <typename ShapedTy>
+    mlir::Type CloneTypeWithNewElementType(ShapedTy type, mlir::Type newElementType)
+    {
+        typename ShapedTy::Builder builder(type);
+        builder.setElementType(newElementType);
+
+        return builder;
+    }
+
+    mlir::Type CloneTypeWithNewElementType(mlir::Type type, mlir::Type newElementType)
+    {
+        auto result =
+            mlir::TypeSwitch<mlir::Type, mlir::Type>(type)
+                .Case([&](mlir::MemRefType memrefType) {
+                    return CloneTypeWithNewElementType(memrefType, newElementType);
+                })
+                .Case([&](mlir::VectorType vectorType) {
+                    return CloneTypeWithNewElementType(vectorType, newElementType);
+                })
+                .Default([&](mlir::Type) {
+                    return newElementType;
+                });
+        return result;
+    }
+
     mlir::Type GetElementType(mlir::Type type)
     {
         auto result =
@@ -734,42 +770,42 @@ namespace util
         if (forOp.getLowerBoundMap().getNumResults() != 1)
             return mlir::failure();
 
+        mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+        rewriter.setInsertionPoint(forOp);
         // Replaces all IV uses to its single iteration value.
         auto iv = forOp.getInductionVar();
-        auto* parentBlock = forOp->getBlock();
+        mlir::Value ivValueReplacement;
         if (!iv.use_empty())
         {
             if (forOp.hasConstantLowerBound())
             {
-                mlir::OpBuilder topBuilder(forOp->getParentOfType<vir::ValueFuncOp>().getBody());
-                auto constOp = topBuilder.create<mlir::arith::ConstantIndexOp>(
+                ivValueReplacement = rewriter.create<mlir::arith::ConstantIndexOp>(
                     forOp.getLoc(), forOp.getConstantLowerBound());
-                iv.replaceAllUsesWith(constOp);
             }
             else
             {
                 auto lbOperands = forOp.getLowerBoundOperands();
                 auto lbMap = forOp.getLowerBoundMap();
-                mlir::OpBuilder builder(parentBlock, mlir::Block::iterator(forOp));
-                if (lbMap == builder.getDimIdentityMap())
+                if (lbMap == rewriter.getDimIdentityMap())
                 {
                     // No need of generating an affine.apply.
-                    iv.replaceAllUsesWith(lbOperands[0]);
+                    ivValueReplacement = lbOperands[0];
                 }
                 else
                 {
-                    auto affineApplyOp =
-                        builder.create<mlir::AffineApplyOp>(forOp.getLoc(), lbMap, lbOperands);
-                    iv.replaceAllUsesWith(affineApplyOp);
+                    ivValueReplacement =
+                        rewriter.create<mlir::AffineApplyOp>(forOp.getLoc(), lbMap, lbOperands);
                 }
             }
+            iv.replaceAllUsesWith(ivValueReplacement);
         }
+
         // Move the loop body operations, except for its terminator, to the loop's
         // containing block.
-        rewriter.eraseOp(forOp.getBody()->getTerminator());
 
-        parentBlock->getOperations().splice(mlir::Block::iterator(forOp),
-                                            forOp.getBody()->getOperations());
+        // Erase the terminator so we don't merge it into the parent block
+        rewriter.eraseOp(forOp.getBody()->getTerminator());
+        rewriter.mergeBlockBefore(forOp.getBody(), forOp, mlir::ValueRange{ ivValueReplacement });
 
         rewriter.eraseOp(forOp);
         return mlir::success();
@@ -900,6 +936,17 @@ namespace util
         return GetMemRefIndexToMemoryLocationMap(context, op);
     }
 
+    void EraseOps(std::stack<mlir::Operation*>& opStack, mlir::PatternRewriter& rewriter)
+    {
+        while (!opStack.empty())
+        {
+            auto eraseOp = opStack.top();
+            assert(eraseOp->use_empty());
+            rewriter.eraseOp(eraseOp);
+            opStack.pop();
+        }
+    }
+
     TempOpCleanupGuard::TempOpCleanupGuard(std::stack<mlir::Operation*>* opStack, mlir::PatternRewriter& rewriter) :
         _opStack(opStack),
         _rewriter(rewriter)
@@ -907,13 +954,7 @@ namespace util
 
     TempOpCleanupGuard::~TempOpCleanupGuard()
     {
-        while (!_opStack->empty())
-        {
-            auto eraseOp = _opStack->top();
-            assert(eraseOp->use_empty());
-            _rewriter.eraseOp(eraseOp);
-            _opStack->pop();
-        }
+        EraseOps(*_opStack, _rewriter);
     }
 
     mlir::Attribute MemorySpaceToAttribute(const value::MemorySpace& memorySpace, mlir::MLIRContext* context)
@@ -944,14 +985,25 @@ namespace util
 
     mlir::Type ToSignlessMLIRType(mlir::OpBuilder& builder, mlir::Type type)
     {
-        if (type.isIntOrFloat())
-        {
-            if (auto width = type.getIntOrFloatBitWidth(); type.isInteger(width))
-            {
-                return builder.getIntegerType(width);
-            }
-        }
-        return type; // pass-through, no signless change
+        auto result =
+            mlir::TypeSwitch<mlir::Type, mlir::Type>(type)
+                .Case([&](mlir::MemRefType memrefType) -> mlir::Type {
+                    return CloneTypeWithNewElementType(memrefType, ToSignlessMLIRType(builder, memrefType.getElementType()));
+                })
+                .Case([&](mlir::VectorType vectorType) -> mlir::Type {
+                    return CloneTypeWithNewElementType(vectorType, ToSignlessMLIRType(builder, vectorType.getElementType()));
+                })
+                .Default([&](mlir::Type t) -> mlir::Type {
+                    if (t.isIntOrFloat())
+                    {
+                        if (auto width = t.getIntOrFloatBitWidth(); t.isInteger(width))
+                        {
+                            return builder.getIntegerType(width);
+                        }
+                    }
+                    return t; // pass-through, no signless change
+                });
+        return result;
     }
 
     mlir::Value ToSignlessMLIRValue(mlir::OpBuilder& builder, mlir::Value value)
@@ -1067,7 +1119,7 @@ namespace util
             });
     }
 
-    int64_t GetBlockDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId)
+    std::optional<int64_t> GetBlockDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId)
     {
         if (auto gpuFunc = where->getParentOfType<mlir::gpu::GPUFuncOp>())
         {
@@ -1082,8 +1134,7 @@ namespace util
             mlir::Operation* vLambdaOp = where->getParentOfType<ir::value::ValueLambdaOp>();
             if (vFuncOp == nullptr && vLambdaOp == nullptr)
             {
-                assert(false && "Can only resolve block dim size inside of a gpu::GPUFuncOp, ir::value::ValueFuncOp, or ir::value::ValueLambdaOp");
-                return -1;
+                return std::nullopt;
             }
             // Prefer using the ValueLambdaOp as inner loopnests will be a ValueLambdaOp nested inside of a ValueFuncOp
             auto op = vLambdaOp != nullptr ? vLambdaOp : vFuncOp;
@@ -1094,7 +1145,7 @@ namespace util
         }
     }
 
-    int64_t GetGridDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId)
+    std::optional<int64_t> GetGridDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId)
     {
         if (auto gpuFunc = where->getParentOfType<mlir::gpu::GPUFuncOp>())
         {
@@ -1109,8 +1160,7 @@ namespace util
             mlir::Operation* vLambdaOp = where->getParentOfType<ir::value::ValueLambdaOp>();
             if (vFuncOp == nullptr && vLambdaOp == nullptr)
             {
-                assert(false && "Can only resolve grid dim size inside of a gpu::GPUFuncOp, ir::value::ValueFuncOp, or ir::value::ValueLambdaOp");
-                return -1;
+                return std::nullopt;
             }
             auto op = vLambdaOp != nullptr ? vLambdaOp : vFuncOp;
             auto gpuParams = GetGPUFuncLaunchInfo(op);
@@ -1120,12 +1170,12 @@ namespace util
         }
     }
 
-    int64_t GetBlockDimSize(mlir::gpu::BlockDimOp op)
+    std::optional<int64_t> GetBlockDimSize(mlir::gpu::BlockDimOp op)
     {
         return GetBlockDimSize(op, op.dimension());
     }
 
-    int64_t GetGridDimSize(mlir::gpu::GridDimOp op)
+    std::optional<int64_t> GetGridDimSize(mlir::gpu::GridDimOp op)
     {
         return GetGridDimSize(op, op.dimension());
     }
@@ -1147,9 +1197,9 @@ namespace util
         auto blockDimXOp = GetGPUIndex(vir::Processor::BlockDimX, builder, loc);
         auto blockDimYOp = GetGPUIndex(vir::Processor::BlockDimY, builder, loc);
         auto blockDimZOp = GetGPUIndex(vir::Processor::BlockDimZ, builder, loc);
-        if (GetBlockDimSize(blockDimZOp.getDefiningOp<mlir::gpu::BlockDimOp>()) == 1) // 2D or 1D block
+        if (*(GetBlockDimSize(blockDimZOp.getDefiningOp<mlir::gpu::BlockDimOp>())) == 1) // 2D or 1D block
         {
-            if (GetBlockDimSize(blockDimYOp.getDefiningOp<mlir::gpu::BlockDimOp>()) == 1)
+            if (*(GetBlockDimSize(blockDimYOp.getDefiningOp<mlir::gpu::BlockDimOp>())) == 1)
             {
                 // 1D block
                 auto flattenedTidMap = mlir::AffineMap::get(0, 1, threadXSym);

@@ -15,10 +15,10 @@ from .Constants import *
 from .Package import Package
 
 from .lang import *
-from ._lang_python import CompilerOptions, ScalarType, _GetTargetDeviceFromName
+from ._lang_python import CompilerOptions, ScalarType, _GetTargetDeviceFromName, AllocateFlags
 from ._lang_python import (
     abs, max, min, ceil, floor, sqrt, exp, log, log10, log2, sin, cos, tan, sinh, cosh, tanh, logical_and, logical_or,
-    logical_not, cast
+    logical_not, cast, round, remainderf
 )
 
 # Global initialization

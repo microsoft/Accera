@@ -203,7 +203,8 @@ namespace
             .def("emit_runtime_init_packing", py::overload_cast<value::ViewAdapter, const std::string&, const std::string&, value::CacheIndexing>(&value::Plan::EmitRuntimeInitPacking), "target"_a, "packing_func_name"_a, "packed_buf_size_func_name"_a, "indexing"_a = value::CacheIndexing::GlobalToPhysical)
             .def("pack_and_embed_buffer", py::overload_cast<value::ViewAdapter, value::ViewAdapter, const std::string&, const std::string&, value::CacheIndexing>(&value::Plan::PackAndEmbedBuffer), "target"_a, "constant_data_buffer"_a, "wrapper_fn_name"_a, "packed_buffer_name"_a, "indexing"_a = value::CacheIndexing::GlobalToPhysical)
             .def("vectorize", &value::Plan::Vectorize, "i"_a, "vectorization_info"_a)
-            .def("parallelize", &value::Plan::Parallelize, "indices"_a, "num_threads"_a, "policy"_a);
+            .def("parallelize", &value::Plan::Parallelize, "indices"_a, "num_threads"_a, "policy"_a)
+            .def("_erase_loop", &value::Plan::_EraseLoop, "index"_a);
 
         py::class_<value::GPUPlan>(module, "_GPUExecutionPlan")
             .def(py::init([](value::GPUPlan& plan) {

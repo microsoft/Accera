@@ -7,6 +7,7 @@
 #pragma once
 
 #include <mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h>
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -15,6 +16,7 @@
 #include <mlir/IR/TypeUtilities.h>
 #include <mlir/Interfaces/CallInterfaces.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
+#include <mlir/Interfaces/InferTypeOpInterface.h>
 #include <mlir/Interfaces/LoopLikeInterface.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
@@ -55,6 +57,7 @@ using mlir::FloatType;
 using mlir::FuncOp;
 using mlir::FunctionType;
 using mlir::IndexType;
+using mlir::InferTypeOpInterface;
 using mlir::IntegerAttr;
 using mlir::Location;
 using mlir::LogicalResult;
@@ -99,6 +102,7 @@ const mlir::StringRef RawPointerAPIAttrName = "accv.emit_raw_pointer_api";
 const mlir::StringRef HeaderDeclAttrName = "accv.emit_header_decl";
 const mlir::StringRef FunctionTagsAttrName = "accv.function_tags";
 const mlir::StringRef NoInlineAttrName = "accv.no_inline";
+const mlir::StringRef NoInlineIntoAttrName = "accv.no_inline_into";
 const mlir::StringRef BaseNameAttrName = "accv.base_name";
 const mlir::StringRef DynamicArgSizeReferencesAttrName = "accv.dyn_arg_size_refs";
 const mlir::StringRef UsagesAttrName = "accv.usages";

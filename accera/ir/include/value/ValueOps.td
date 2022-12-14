@@ -12,8 +12,11 @@ include "ir/include/value/ValueBase.td"
 include "ir/include/value/ValueAttrs.td"
 
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.td"
+
+include "mlir/Dialect/LLVMIR/LLVMOpBase.td"
 
 def accv_ValueLambdaOp : accv_Op<"lambda", [
     SymbolTable,
@@ -291,11 +294,15 @@ def accv_BINARY_OP_DIV : I64EnumAttrCase<"DIV", 3>;
 def accv_BINARY_OP_MOD : I64EnumAttrCase<"MOD", 4>;
 def accv_BINARY_OP_AND : I64EnumAttrCase<"LOGICAL_AND", 5>;
 def accv_BINARY_OP_OR : I64EnumAttrCase<"LOGICAL_OR", 6>;
+def accv_BINARY_OP_MAX : I64EnumAttrCase<"MAX", 7>;
+def accv_BINARY_OP_MIN : I64EnumAttrCase<"MIN", 8>;
 
 def accv_BinaryOpPredicateAttr : I64EnumAttr<
   "BinaryOpPredicate", "",
-  [accv_BINARY_OP_ADD, accv_BINARY_OP_SUB, accv_BINARY_OP_MUL, accv_BINARY_OP_DIV, accv_BINARY_OP_MOD,
-  accv_BINARY_OP_AND, accv_BINARY_OP_OR]> {
+  [accv_BINARY_OP_ADD, accv_BINARY_OP_SUB,
+  accv_BINARY_OP_MUL, accv_BINARY_OP_DIV, accv_BINARY_OP_MOD,
+  accv_BINARY_OP_AND, accv_BINARY_OP_OR,
+  accv_BINARY_OP_MAX, accv_BINARY_OP_MIN]> {
   let cppNamespace = "::accera::ir::value";
 }
 
@@ -370,6 +377,24 @@ def accv_CmpOp : accv_Op<"cmp",
     CmpOpPredicate getPredicate() {
       return (CmpOpPredicate)(*this)->getAttrOfType<IntegerAttr>(getPredicateAttrName())
           .getInt();
+    }
+  }];
+}
+
+// TODO : remove after the next llvm update. There is a new math::roundeven op that we can use
+// TODO : add more control for rounding modes other than "roundeven"
+def accv_RoundOp : accv_Op<"round", [NoSideEffect]> {
+  let description = [{
+    Rounds a given floating point value to an integer of the same bitwidth according to the currently set rounding mode.
+  }];
+
+  let arguments = (ins acc_FloatOrFloatVectorNumericType:$val);
+  let results = (outs acc_IntegerOrIntegerVectorNumericType:$result);
+
+  let extraClassDeclaration = [{
+    static bool SupportsVectorization(int count) {
+      // TODO : generalize this for more target types than AVX-2
+      return count == 8;
     }
   }];
 }
@@ -671,7 +696,7 @@ def accv_MemRefCastOp : accv_Op<"memref_cast", [SameOperandsAndResultShape]> {
   }];
 }
 
-def accv_CastOp : accv_Op<"cast"> {
+def accv_CastOp : accv_Op<"cast", [NoSideEffect]> {
   let summary = "casting operation";
   let description = [{
     The `accv.cast` operation converts an element to an element of another type.
@@ -1492,5 +1517,40 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
 
   let verifier = [{ return ::verify(*this); }];
 }
+
+// TODO : move to new dialect?
+def accv_vpmaddwd : accv_Op<"vpmaddwd", [NoSideEffect]>{
+  let summary = "vpmaddwd intrinsic operation";
+
+  let description = [{
+    The `accv.vpmaddwd` operation lowers to the vpmaddwd LLVM intrinsic.
+  }];
+
+  let arguments = (ins AnyVector:$lhs, AnyVector:$rhs); // TODO : shape verification
+  let results = (outs AnyVector:$result);
+}
+
+def accv_vmaxps : accv_Op<"vmaxps", [NoSideEffect]>{
+  let summary = "vmaxps intrinsic operation";
+
+  let description = [{
+    The `accv.vmaxps` operation lowers to the vmaxps LLVM intrinsic.
+  }];
+
+  let arguments = (ins AnyVector:$lhs, AnyVector:$rhs); // TODO : shape verification
+  let results = (outs AnyVector:$result);
+}
+
+def accv_vminps : accv_Op<"vminps", [NoSideEffect]>{
+  let summary = "vminps intrinsic operation";
+
+  let description = [{
+    The `accv.vminps` operation lowers to the vminps LLVM intrinsic.
+  }];
+
+  let arguments = (ins AnyVector:$lhs, AnyVector:$rhs); // TODO : shape verification
+  let results = (outs AnyVector:$result);
+}
+
 
 #endif // ACCERA_accv_OPS

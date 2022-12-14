@@ -38,8 +38,11 @@ namespace
             .value("float32", value::ValueType::Float, "4 byte floating point")
             .value("float64", value::ValueType::Double, "8 byte floating point");
 
-        py::enum_<value::AllocateFlags>(subModule, "AllocateFlags", "An enumeration of allocation flags")
+        py::enum_<value::AllocateFlags>(module, "AllocateFlags", "An enumeration of allocation flags")
             .value("NONE", value::AllocateFlags::None)
+            .value("GLOBAL", value::AllocateFlags::Global)
+            .value("STACK", value::AllocateFlags::Stack)
+            .value("HEAP", value::AllocateFlags::Heap)
             .value("THREAD_LOCAL", value::AllocateFlags::ThreadLocal);
     }
 
@@ -154,6 +157,8 @@ Args:
         module.def("cast", [](value::Scalar s, value::ValueType type) {
             return value::Cast(s, type);
         });
+        module.def("round", &value::Round);
+        module.def("remainderf", &value::Remainderf);
     }
 
     void DefineArrayClass(py::module& module)

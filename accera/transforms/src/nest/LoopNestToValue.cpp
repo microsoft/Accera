@@ -814,7 +814,19 @@ LogicalResult ScheduledLoopOpRewrite::matchAndRewrite(ScheduledLoopOp op, Patter
     auto scheduledLoopOpAttrs = op->getAttrs();
     for (auto& attr : scheduledLoopOpAttrs)
     {
-        bodyLoop->setAttr(attr.getName(), attr.getValue());
+        // HACK: Don't copy the domain attribute in case we later inline a dynamically-sized domain into a statically-sized region and the domain doesn't adjust correctly for serialization
+        //       (we also no longer need the domain after building out the loopnest)
+        if (attr.getName() != "domain")
+        {
+            bodyLoop->setAttr(attr.getName(), attr.getValue());
+        }
+    }
+    // Hack for erasing loops
+    if (bodyLoop->hasAttr("_erase"))
+    {
+        bodyLoop.setConstantLowerBound(0);
+        bodyLoop.setConstantUpperBound(1);
+        bodyLoop.setStep(1);
     }
 
     auto bodyLoopRegion = &bodyLoop.region();

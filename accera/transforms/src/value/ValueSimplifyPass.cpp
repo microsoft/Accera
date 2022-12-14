@@ -448,7 +448,7 @@ struct IndexCombinationBinOpLowering : public OpRewritePattern<ValueBinOp>
                 combinationExpr = lhsExpr % rhsExpr;
                 break;
             default:
-                assert(false);
+                return failure();
             }
             auto map = mlir::AffineMap::get(nextDimIdx, 0, combinationExpr);
             rewriter.replaceOpWithNewOp<mlir::AffineApplyOp>(op, map, exprInputs);

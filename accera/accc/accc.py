@@ -98,7 +98,7 @@ DEFAULT_RC_OPT_ARGS = ["--verify-each=false"]
 
 DEFAULT_ACC_TRANSLATE_ARGS = []
 
-DEFAULT_MLIR_TRANSLATE_ARGS = ["--mlir-print-op-on-diagnostic", "--mlir-to-llvmir"]
+DEFAULT_MLIR_TRANSLATE_ARGS = ["--mlir-print-op-on-diagnostic", "--acc-to-llvmir"]
 
 LLVM_TOOLING_OPTS = {
     SystemTarget.HOST.value: ["-O3", "-fp-contract=fast", "-mcpu=native"],
@@ -120,9 +120,17 @@ LLVM_TOOLING_OPTS = {
     ],
 }
 
-DEFAULT_OPT_ARGS = []
+DEFAULT_LLVM_TOOLING_OPTS = [
+    '--enable-unsafe-fp-math',
+    '--enable-no-infs-fp-math',
+    '--enable-no-nans-fp-math',
+    '--enable-no-signed-zeros-fp-math',
+    '--enable-no-trapping-fp-math'
+]
 
-DEFAULT_LLC_ARGS = ["-relocation-model=pic"]
+DEFAULT_OPT_ARGS = DEFAULT_LLVM_TOOLING_OPTS + []
+
+DEFAULT_LLC_ARGS = DEFAULT_LLVM_TOOLING_OPTS + ["-relocation-model=pic"]
 
 
 def get_default_deploy_shared_libraries(target=CPU_TARGET):
@@ -818,7 +826,7 @@ class AcceraProject:
             stdout = None
             stderr = None
         for module_file_set in self.module_file_sets:
-            mlir_translate_exe = os.path.abspath(ACCCConfig.mlir_translate)
+            mlir_translate_exe = os.path.abspath(ACCCConfig.acc_translate)
             full_mlir_translate_args = []    # empty list every iteration
             full_mlir_translate_args += mlir_translate_args or DEFAULT_MLIR_TRANSLATE_ARGS
             full_mlir_translate_args += [f'-o="{module_file_set.translated_ll_filepath}"']

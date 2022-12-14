@@ -17,6 +17,7 @@ class Dimension:
     class Role(Enum):
         "Defines the Dimension role"
         INPUT = (auto())   #:  An input dimension (immutable and provided as an Accera function argument).
+        INPUT_OUTPUT = auto()   #:  An input/output dimension (mutable and updated by an Accera function). 
         OUTPUT = auto()    #: An output dimension (mutable and updated by an Accera function).
 
     def __init__(
@@ -30,6 +31,7 @@ class Dimension:
         self._role = role
 
         if value:
+            self._value = value
             if self._role != Dimension.Role.OUTPUT:
                 raise ValueError("Only output dimension can accept the optional value to initialize itself")
             self._native_dim = value._native_dim if isinstance(value, Dimension) else Scalar(value)
@@ -39,6 +41,21 @@ class Dimension:
     @property
     def role(self):
         return self._role
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, val):
+        self._value = val
+        if self._role != Dimension.Role.OUTPUT:
+            raise ValueError("Only output dimension can accept the optional value to initialize itself")
+        self._native_dim = val._native_dim if isinstance(val, Dimension) else Scalar(val)
+
+    @role.setter
+    def role(self, val):
+        self._role = val
 
     def __eq__(self, other):
         return id(self) == id(other)

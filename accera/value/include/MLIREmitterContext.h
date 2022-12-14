@@ -176,6 +176,8 @@ namespace value
 
         Scalar CastImpl(Scalar value, ValueType type) override;
 
+        Scalar RoundImpl(Scalar value) override;
+
         bool IsImplicitlyCastableImpl(ValueType source, ValueType target) const override;
 
         Scalar BitcastImpl(Scalar value, ValueType type) override;

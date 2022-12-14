@@ -47,6 +47,8 @@ namespace value
         None = 0,
         ThreadLocal = 1 << 0,
         Stack = 1 << 1,
+        Heap = 1 << 2,
+        Global = 1 << 3,
     };
     ACCERA_DEFINE_ENUM_FLAG_OPERATORS(AllocateFlags);
 
@@ -361,6 +363,8 @@ namespace value
 
         Scalar Cast(Scalar value, ValueType type);
 
+        Scalar Round(Scalar value);
+
         bool IsImplicitlyCastable(ValueType source, ValueType target) const;
 
         Scalar Bitcast(Scalar value, ValueType type);
@@ -495,6 +499,8 @@ namespace value
         virtual Scalar SumImpl(Vector input) = 0;
 
         virtual Scalar CastImpl(Scalar value, ValueType type) = 0;
+
+        virtual Scalar RoundImpl(Scalar value) = 0;
 
         virtual bool IsImplicitlyCastableImpl(ValueType source, ValueType target) const = 0;
 

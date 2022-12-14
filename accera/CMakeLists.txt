@@ -4,6 +4,7 @@
 ####################################################################################################
 
 set(ACCERA_LIBRARIES_DIR ${CMAKE_CURRENT_LIST_DIR})
+set(ACCERA_BIN_DIR ${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${ACCERA_LIBRARIES_DIR})
 
 add_subdirectory(acc-opt)

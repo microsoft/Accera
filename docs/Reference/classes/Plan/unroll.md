@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.12)
+[//]: # (Version: v1.2.13)
 
-# Accera v1.2.12 Reference
+# Accera v1.2.13 Reference
 
 ## `accera.Plan.unroll(index)`
 Marks a dimension of the iteration-space for unrolling.

@@ -60,10 +60,12 @@ def ProcessorAttr : I64EnumAttr<"Processor", "processor for loop mapping", [
 
 def MEMORY_ALLOC_GLOBAL : I64EnumAttrCase<"Global", 0>;
 def MEMORY_ALLOC_STACK : I64EnumAttrCase<"Stack", 1>;
+def MEMORY_ALLOC_HEAP : I64EnumAttrCase<"Heap", 2>;
+def MEMORY_ALLOC_THREAD_LOCAL : I64EnumAttrCase<"ThreadLocal", 3>; // TODO : include in enum below and plumb through to python DSL and add appropriate lowering rewrite
 def MemoryAllocTypeAttr : I64EnumAttr<
         "MemoryAllocType",
         "Describes the memory type in which an allocation resides.",
-        [ MEMORY_ALLOC_GLOBAL, MEMORY_ALLOC_STACK]> {
+        [ MEMORY_ALLOC_GLOBAL, MEMORY_ALLOC_STACK, MEMORY_ALLOC_HEAP]> {
     let cppNamespace = "::accera::ir::value";
 }
 

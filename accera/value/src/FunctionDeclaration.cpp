@@ -114,6 +114,14 @@ namespace value
         return *this;
     }
 
+    FunctionDeclaration& FunctionDeclaration::InlineInto(FunctionInlining shouldInlineInto)
+    {
+        CheckNonEmpty();
+
+        _inlineIntoState = shouldInlineInto;
+        return *this;
+    }
+
     FunctionDeclaration& FunctionDeclaration::Target(ExecutionTarget target)
     {
         CheckNonEmpty();
@@ -301,6 +309,12 @@ namespace value
     {
         CheckNonEmpty();
         return _inlineState;
+    }
+
+    FunctionInlining FunctionDeclaration::InlineIntoState() const
+    {
+        CheckNonEmpty();
+        return _inlineIntoState;
     }
 
     void FunctionDeclaration::CheckNonEmpty() const

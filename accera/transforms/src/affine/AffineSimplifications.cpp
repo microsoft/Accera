@@ -7,11 +7,14 @@
 
 #include "affine/AffineSimplifications.h"
 #include "util/RangeValueUtilities.h"
+#include "nest/LoopNestToValue.h"
+#include "value/RangeValueOptimizePass.h"
 
 #include <ir/include/IRUtil.h>
 #include <ir/include/value/ValueDialect.h>
 
 #include <mlir/Conversion/AffineToStandard/AffineToStandard.h>
+#include <mlir/Dialect/Affine/Analysis/LoopAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/ROCDLDialect.h>
@@ -242,15 +245,30 @@ mlir::AffineExpr RunOnBinaryOpSubExpr(mlir::AffineExprKind exprKind, mlir::Affin
 
 mlir::AffineValueMap GetAffineValueMap(mlir::AffineStoreOp& storeOp)
 {
-    return mlir::AffineValueMap(storeOp.getAffineMap(), storeOp.getOperands());
+    return mlir::AffineValueMap(storeOp.getAffineMap(), storeOp.getMapOperands());
 }
 mlir::AffineValueMap GetAffineValueMap(mlir::AffineLoadOp& loadOp)
 {
-    return mlir::AffineValueMap(loadOp.getAffineMap(), loadOp.getOperands());
+    return mlir::AffineValueMap(loadOp.getAffineMap(), loadOp.getMapOperands());
 }
 mlir::AffineValueMap GetAffineValueMap(mlir::AffineApplyOp& applyOp)
 {
     return applyOp.getAffineValueMap();
+}
+
+template<typename AffineOpTy>
+bool AllOperandDefsAreInScope(AffineOpTy op)
+{
+    auto operands = op.getMapOperands();
+    for (auto operand : operands)
+    {
+        mlir::Operation* defOp = GetDefiningOpOrForLoop(operand);
+        if (defOp == nullptr)
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 void ReplaceOpUsingNewValueMap(PatternRewriter& rewriter, mlir::AffineLoadOp loadOp, mlir::AffineValueMap newAffineValueMap)
@@ -274,6 +292,11 @@ struct SmallNumeratorTermFloorDivSimplification : public OpRewritePattern<Affine
     LogicalResult matchAndRewrite(AffineOpTy affineOp, PatternRewriter& rewriter) const final
     {
         // See docs/Reference/gpu_caching_floor_divisions.md for a proof of the equivalence this simplification leverages
+
+        if (!AllOperandDefsAreInScope(affineOp))
+        {
+            return failure();
+        }
 
         AffineSimplifyHelper helper(affineOp);
         auto loc = affineOp.getLoc();
@@ -381,6 +404,11 @@ struct SmallNumeratorTermModSimplification : public OpRewritePattern<AffineOpTy>
     {
         // See docs/Reference/gpu_caching_mod.md for a proof of the equivalence this simplification leverages
 
+        if (!AllOperandDefsAreInScope(affineOp))
+        {
+            return failure();
+        }
+
         AffineSimplifyHelper helper(affineOp);
         auto loc = affineOp.getLoc();
 
@@ -487,6 +515,11 @@ struct PropagateGPUConstants : public OpRewritePattern<AffineOpTy>
 
     LogicalResult matchAndRewrite(AffineOpTy affineOp, PatternRewriter& rewriter) const final
     {
+        if (!AllOperandDefsAreInScope(affineOp))
+        {
+            return failure();
+        }
+
         auto loc = affineOp.getLoc();
 
         std::vector<mlir::Operation*> opsToErase;
@@ -499,15 +532,21 @@ struct PropagateGPUConstants : public OpRewritePattern<AffineOpTy>
             {
                 auto handleBlockDimOp = [&](gpu::BlockDimOp blockDimOp) {
                     auto dimSize = GetBlockDimSize(blockDimOp);
-                    mlir::Value dimSizeConstantOp = rewriter.create<mlir::arith::ConstantIntOp>(loc, dimSize, rewriter.getI64Type());
-                    affineOp->replaceUsesOfWith(operand, dimSizeConstantOp);
-                    replaced = true;
+                    if (dimSize.has_value())
+                    {
+                        mlir::Value dimSizeConstantOp = rewriter.create<mlir::arith::ConstantIntOp>(loc, *dimSize, rewriter.getI64Type());
+                        affineOp->replaceUsesOfWith(operand, dimSizeConstantOp);
+                        replaced = true;
+                    }
                 };
                 auto handleGridDimOp = [&](gpu::GridDimOp gridDimOp) {
                     auto dimSize = GetGridDimSize(gridDimOp);
-                    mlir::Value dimSizeConstantOp = rewriter.create<mlir::arith::ConstantIntOp>(loc, dimSize, rewriter.getI64Type());
-                    affineOp->replaceUsesOfWith(operand, dimSizeConstantOp);
-                    replaced = true;
+                    if (dimSize.has_value())
+                    {
+                        mlir::Value dimSizeConstantOp = rewriter.create<mlir::arith::ConstantIntOp>(loc, *dimSize, rewriter.getI64Type());
+                        affineOp->replaceUsesOfWith(operand, dimSizeConstantOp);
+                        replaced = true;
+                    }
                 };
                 mlir::TypeSwitch<mlir::Operation*>(definingOp)
                     .Case([&](gpu::BlockDimOp blockDimOp) {
@@ -542,6 +581,67 @@ struct PropagateGPUConstants : public OpRewritePattern<AffineOpTy>
     }
 };
 
+struct AffineForOpSimplifyBounds : public OpRewritePattern<AffineForOp>
+{
+    using OpRewritePattern<AffineForOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(AffineForOp affineForOp, PatternRewriter& rewriter) const final
+    {
+        RangeValueAnalysis rangeValue;
+
+        auto lowerBound = affineForOp.getLowerBound();
+        auto initLowerBoundMap = lowerBound.getMap();
+        std::vector<mlir::Value> lowerBoundOperands(lowerBound.operandBegin(), lowerBound.operandEnd());
+        mlir::AffineValueMap lowerBoundValueMap(initLowerBoundMap, lowerBoundOperands);
+        lowerBoundValueMap = SimplifyAffineValueMap(lowerBoundValueMap);
+        auto simplifiedLowerBoundMap = lowerBoundValueMap.getAffineMap();
+
+        auto upperBound = affineForOp.getUpperBound();
+        auto initUpperBoundMap = upperBound.getMap();
+        std::vector<mlir::Value> upperBoundOperands(upperBound.operandBegin(), upperBound.operandEnd());
+        mlir::AffineValueMap upperBoundValueMap(initUpperBoundMap, upperBoundOperands);
+        upperBoundValueMap = SimplifyAffineValueMap(upperBoundValueMap);
+        auto simplifiedUpperBoundMap = upperBoundValueMap.getAffineMap();
+
+        rewriter.updateRootInPlace(affineForOp, [&]()
+        {
+            if (simplifiedLowerBoundMap.isSingleConstant())
+            {
+                auto lowerBoundConst = simplifiedLowerBoundMap.getSingleConstantResult();
+                affineForOp.setConstantLowerBound(lowerBoundConst);
+            }
+            else
+            {
+                affineForOp.setUpperBound(upperBoundValueMap.getOperands(), upperBoundValueMap.getAffineMap());
+            }
+
+            if (simplifiedUpperBoundMap.isSingleConstant())
+            {
+                auto upperBoundConst = simplifiedUpperBoundMap.getSingleConstantResult();
+                affineForOp.setConstantUpperBound(upperBoundConst);
+            }
+            else
+            {
+                affineForOp.setLowerBound(lowerBoundValueMap.getOperands(), lowerBoundValueMap.getAffineMap());
+            }
+        });
+
+        if (affineForOp.hasConstantBounds())
+        {
+            auto constantTripCountOpt = mlir::getConstantTripCount(affineForOp);
+            if (constantTripCountOpt.getValue() == 0)
+            {
+                rewriter.eraseOp(affineForOp);
+                return success();
+            }
+            return PromoteIfSingleIteration(rewriter, affineForOp);
+        }
+
+        // Didn't remove the loop, but possibly modified it. Let another rewrite try to simplify it
+        return failure();
+    }
+};
+
 struct AffineSimplificationPass : public accera::transforms::AcceraAffineSimplificationBase<AffineSimplificationPass>
 {
     void runOnOperation() final
@@ -549,12 +649,24 @@ struct AffineSimplificationPass : public accera::transforms::AcceraAffineSimplif
         auto* context = &getContext();
         auto op = getOperation();
 
-        mlir::GreedyRewriteConfig singleIterationConfig;
-        singleIterationConfig.maxIterations = 1;
+        {
+            mlir::GreedyRewriteConfig singleIterationConfig;
+            singleIterationConfig.maxIterations = 1;
 
-        OwningRewritePatternList patterns(context);
-        accera::transforms::affine::populateAcceraAffineSimplificationPatterns(patterns);
-        (void)applyPatternsAndFoldGreedily(op, std::move(patterns), singleIterationConfig);
+            OwningRewritePatternList patterns(context);
+            accera::transforms::affine::populateAcceraAffineExprSimplificationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(op, std::move(patterns), singleIterationConfig);
+        }
+
+        // Apply RangeValueOptimize and affine value map simplification to try to simplify possibly-dynamic loop bounds
+        {
+            mlir::GreedyRewriteConfig topDownConfig;
+            topDownConfig.useTopDownTraversal = true;
+
+            OwningRewritePatternList patterns(context);
+            accera::transforms::affine::populateAcceraAffineLoopSimplificationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(op, std::move(patterns), topDownConfig);
+        }
     }
 };
 
@@ -562,7 +674,8 @@ struct AffineSimplificationPass : public accera::transforms::AcceraAffineSimplif
 
 namespace accera::transforms::affine
 {
-void populateAcceraAffineSimplificationPatterns(mlir::OwningRewritePatternList& patterns)
+
+void populateAcceraAffineExprSimplificationPatterns(mlir::OwningRewritePatternList& patterns)
 {
     patterns.insert<SmallNumeratorTermFloorDivSimplification<mlir::AffineLoadOp>>(patterns.getContext());
     patterns.insert<SmallNumeratorTermFloorDivSimplification<mlir::AffineStoreOp>>(patterns.getContext());
@@ -573,6 +686,12 @@ void populateAcceraAffineSimplificationPatterns(mlir::OwningRewritePatternList& 
     patterns.insert<PropagateGPUConstants<mlir::AffineLoadOp>>(patterns.getContext());
     patterns.insert<PropagateGPUConstants<mlir::AffineStoreOp>>(patterns.getContext());
     patterns.insert<PropagateGPUConstants<mlir::AffineApplyOp>>(patterns.getContext());
+}
+
+void populateAcceraAffineLoopSimplificationPatterns(mlir::OwningRewritePatternList& patterns)
+{
+    patterns.insert<AffineForOpSimplifyBounds>(patterns.getContext());
+    accera::transforms::value::populateRangeValueOptimizePatterns(patterns);
 }
 
 std::unique_ptr<mlir::Pass> createAffineSimplificationPass()

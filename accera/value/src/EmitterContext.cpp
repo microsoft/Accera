@@ -265,6 +265,11 @@ namespace value
         return CastImpl(value, type);
     }
 
+    Scalar EmitterContext::Round(Scalar value)
+    {
+        return RoundImpl(value);
+    }
+
     bool EmitterContext::IsImplicitlyCastable(ValueType source, ValueType target) const
     {
         return IsImplicitlyCastableImpl(source, target);

@@ -72,6 +72,10 @@ namespace value
         /// <param name="shouldInline"> A FunctionInlining value specifying whether this function should be inlined or not </param>
         FunctionDeclaration& Inlined(FunctionInlining shouldInline = FunctionInlining::always);
 
+        /// <summary> Sets whether other functions should be inlined into this function  </summary>
+        /// <param name="shouldInline"> A FunctionInlining value specifying whether this function should be inlined or not </param>
+        FunctionDeclaration& InlineInto(FunctionInlining shouldInlineInto = FunctionInlining::always);
+
         /// <summary> Sets the execution target for this function  </summary>
         /// <param name="target"> A ExecutionTarget value specifying where this function should execute </param>
         FunctionDeclaration& Target(ExecutionTarget target);
@@ -186,6 +190,9 @@ namespace value
         /// <summary> Returns true if the instance is inlined </summary>
         [[nodiscard]] FunctionInlining InlineState() const;
 
+        /// <summary> Returns true if the instance can be inlined into </summary>
+        [[nodiscard]] FunctionInlining InlineIntoState() const;
+
         [[nodiscard]] ExecutionTarget Target() const { return _execTarget; }
 
         [[nodiscard]] ExecutionRuntime Runtime() const { return _execRuntime; }
@@ -240,6 +247,7 @@ namespace value
         ExecutionTarget _execTarget;
         ExecutionRuntime _execRuntime = ExecutionRuntime::DEFAULT;
         FunctionInlining _inlineState = FunctionInlining::defaultInline;
+        FunctionInlining _inlineIntoState = FunctionInlining::defaultInline;
         bool _isDecorated = true;
         bool _isPublic = false;
         bool _isEmpty = true;

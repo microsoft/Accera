@@ -42,8 +42,10 @@ private:
     std::map<void*, VectorizedOp> _vectorizedOps;
 };
 
-mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
-                                         mlir::PatternRewriter& rewriter);
+
+mlir::LogicalResult TryVectorizeKnownSubgraph(mlir::AffineForOp affineForOp,
+                                              mlir::PatternRewriter& rewriter);
+
 
 std::optional<VectorizedOp> VectorizeOp(mlir::PatternRewriter& rewriter,
                                         mlir::Operation* op,

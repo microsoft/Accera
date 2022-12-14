@@ -472,22 +472,39 @@ struct AllocOpLowering : public OpRewritePattern<ValueAllocOp>
             auto memrefType = op.getType();
             auto allocType = op.allocType().getValueOr(vir::MemoryAllocType::Global);
 
+            OpBuilder::InsertionGuard guard(rewriter);
+            auto parentFuncOp = op->getParentOfType<mlir::FuncOp>();
+            mlir::memref::AllocOp allocOp;
+            mlir::Block* parentBlock;
+            mlir::Value allocatedMemref;
             switch (allocType)
             {
             case vir::MemoryAllocType::Global: {
-                    if (memrefType.getNumDynamicDims() == 0)
-                    {
-                        auto globalOp = irutil::CreateGlobalBufferOp(rewriter, op, MemRefType::Builder{ memrefType }.setLayout({}), kGlobalOpSymNameFormat);
-                        rewriter.replaceOpWithNewOp<vir::ReferenceGlobalOp>(op, memrefType, globalOp.sym_name());
-                    }
-                    else
-                    {
-                        rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType, op.getOperation()->getOperands(), op.alignmentAttr());
-                    }
+                if (memrefType.getNumDynamicDims() == 0)
+                {
+                    auto globalOp = irutil::CreateGlobalBufferOp(rewriter, op, MemRefType::Builder{ memrefType }.setLayout({}), kGlobalOpSymNameFormat);
+                    rewriter.replaceOpWithNewOp<vir::ReferenceGlobalOp>(op, memrefType, globalOp.sym_name());
                 }
-                break;
+                else
+                {
+                    rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType, op.getOperation()->getOperands(), op.alignmentAttr());
+                }
+            }
+            break;
             case vir::MemoryAllocType::Stack:
+                // Create the stack allocation at the beginning of the function
+                rewriter.setInsertionPointToStart(&parentFuncOp.front());
                 rewriter.replaceOpWithNewOp<memref::AllocaOp>(op, MemRefType::Builder{ memrefType }.setLayout({}), mlir::ValueRange{}, op.alignmentAttr());
+                break;
+            case vir::MemoryAllocType::Heap:
+                allocOp = rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType, op.getOperation()->getOperands(), op.alignmentAttr());
+
+                // Create a dealloc op at the end of the block containing this alloc op
+                parentBlock = allocOp->getBlock();
+                rewriter.setInsertionPoint(parentBlock->getTerminator());
+
+                allocatedMemref = allocOp.getResult();
+                rewriter.create<memref::DeallocOp>(allocOp.getLoc(), allocatedMemref);
                 break;
             default:
                 llvm_unreachable("Unknown alloc type");
@@ -506,19 +523,19 @@ struct AllocOpLowering : public OpRewritePattern<ValueAllocOp>
 using ValueCastOp = vir::CastOp;
 struct CastOpLowering : public OpRewritePattern<ValueCastOp>
 {
-#define CAST_FROM_TO_WITH_OP_IF(testFromType, testToType, castOp, conditional)                              \
-    if (fromType && toType && fromType.isa<testFromType>() && toType.isa<testToType>() && conditional)      \
-    {                                                                                                       \
-        mlir::Value castValue = rewriter.create<castOp>(op.getLoc(), signlessFromValue, signlessToType);    \
-        if (toType.isIntOrIndex())                                                                          \
-        {                                                                                                   \
-            rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(op, toType, castValue);           \
-        }                                                                                                   \
-        else                                                                                                \
-        {                                                                                                   \
-            rewriter.replaceOp(op, { castValue } );                                                         \
-        }                                                                                                   \
-        return success();                                                                                   \
+#define CAST_FROM_TO_WITH_OP_IF(testFromType, testToType, castOp, conditional)                                       \
+    if (fromType && toType && fromElementType.isa<testFromType>() && toElementType.isa<testToType>() && conditional) \
+    {                                                                                                                \
+        mlir::Value castValue = rewriter.create<castOp>(op.getLoc(), signlessFromValue, signlessToType);             \
+        if (toType.isIntOrIndex())                                                                                   \
+        {                                                                                                            \
+            rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(op, toType, castValue);                    \
+        }                                                                                                            \
+        else                                                                                                         \
+        {                                                                                                            \
+            rewriter.replaceOp(op, { castValue });                                                                   \
+        }                                                                                                            \
+        return success();                                                                                            \
     }
 
 #define CAST_FROM_TO_WITH_OP(testFromType, testToType, castOp) CAST_FROM_TO_WITH_OP_IF(testFromType, testToType, castOp, true);
@@ -532,10 +549,17 @@ struct CastOpLowering : public OpRewritePattern<ValueCastOp>
         auto fromType = op.source().getType();
         auto toType = op.result().getType();
 
-        assert(fromType.isIntOrIndexOrFloat() && "Can only cast from an int, index, or float type");
-        assert(toType.isIntOrIndexOrFloat() && "Can only cast to an int, index, or float type");
+        auto isFromTypeVector = fromType.isa<mlir::VectorType>();
+        auto isToTypeVector = toType.isa<mlir::VectorType>();
+        assert(isFromTypeVector == isToTypeVector && "Can only cast vectors to vectors or scalars to scalars");
 
-        if (fromType == toType)
+        auto fromElementType = util::GetElementType(fromType);
+        auto toElementType = util::GetElementType(toType);
+
+        assert(fromElementType.isIntOrIndexOrFloat() && "Can only cast from an int, index, or float type");
+        assert(toElementType.isIntOrIndexOrFloat() && "Can only cast to an int, index, or float type");
+
+        if (fromElementType == toElementType)
         {
             // No casting needed
             rewriter.replaceOp(op, { op.source() });
@@ -545,42 +569,43 @@ struct CastOpLowering : public OpRewritePattern<ValueCastOp>
         auto signlessFromValue = accera::ir::util::ToSignlessMLIRValue(rewriter, op.source());
         auto signlessToType = accera::ir::util::ToSignlessMLIRType(rewriter, toType);
 
-        auto unsignedFromType = fromType.isUnsignedInteger();
-        auto unsignedToType = toType.isUnsignedInteger();
+        auto unsignedFromElementType = fromElementType.isUnsignedInteger();
+        auto unsignedToElementType = toElementType.isUnsignedInteger();
 
         // Integer casts
-        CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::IntegerType, mlir::arith::TruncIOp, (fromType.getIntOrFloatBitWidth() > toType.getIntOrFloatBitWidth()));
-        CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::IntegerType, mlir::arith::ExtSIOp, (fromType.getIntOrFloatBitWidth() < toType.getIntOrFloatBitWidth() && !unsignedToType));
-        CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::IntegerType, mlir::arith::ExtUIOp, (fromType.getIntOrFloatBitWidth() < toType.getIntOrFloatBitWidth() && unsignedToType));
-        if (fromType.isa<mlir::IntegerType>() && toType.isa<mlir::IntegerType>() && (fromType.getIntOrFloatBitWidth() == toType.getIntOrFloatBitWidth()))
+        CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::IntegerType, mlir::arith::TruncIOp, (fromElementType.getIntOrFloatBitWidth() > toElementType.getIntOrFloatBitWidth()));
+        CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::IntegerType, mlir::arith::ExtSIOp, (fromElementType.getIntOrFloatBitWidth() < toElementType.getIntOrFloatBitWidth() && !unsignedFromElementType));
+        CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::IntegerType, mlir::arith::ExtUIOp, (fromElementType.getIntOrFloatBitWidth() < toElementType.getIntOrFloatBitWidth() && unsignedFromElementType));
+        if (fromElementType.isa<mlir::IntegerType>() && toElementType.isa<mlir::IntegerType>() && (fromElementType.getIntOrFloatBitWidth() == toElementType.getIntOrFloatBitWidth()))
         {
-            rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(op, toType, signlessFromValue);
+            rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(op, toElementType, signlessFromValue);
             return success();
         }
 
         // Float casts
-        CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::FloatType, mlir::arith::SIToFPOp, (!unsignedFromType));
-        CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::FloatType, mlir::arith::UIToFPOp, (unsignedFromType));
+        CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::FloatType, mlir::arith::SIToFPOp, (!unsignedFromElementType));
+        CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::FloatType, mlir::arith::UIToFPOp, (unsignedFromElementType));
 
-        CAST_FROM_TO_WITH_OP_IF(mlir::FloatType, mlir::IntegerType, mlir::arith::FPToSIOp, (!unsignedToType));
-        CAST_FROM_TO_WITH_OP_IF(mlir::FloatType, mlir::IntegerType, mlir::arith::FPToUIOp, (unsignedToType));
+        CAST_FROM_TO_WITH_OP_IF(mlir::FloatType, mlir::IntegerType, mlir::arith::FPToSIOp, (!unsignedToElementType));
+        CAST_FROM_TO_WITH_OP_IF(mlir::FloatType, mlir::IntegerType, mlir::arith::FPToUIOp, (unsignedToElementType));
 
-        CAST_FROM_TO_WITH_OP_IF(mlir::FloatType, mlir::FloatType, mlir::arith::TruncFOp, (fromType.getIntOrFloatBitWidth() > toType.getIntOrFloatBitWidth()));
-        CAST_FROM_TO_WITH_OP_IF(mlir::FloatType, mlir::FloatType, mlir::arith::ExtFOp, (fromType.getIntOrFloatBitWidth() < toType.getIntOrFloatBitWidth()));
+        CAST_FROM_TO_WITH_OP_IF(mlir::FloatType, mlir::FloatType, mlir::arith::TruncFOp, (fromElementType.getIntOrFloatBitWidth() > toElementType.getIntOrFloatBitWidth()));
+        CAST_FROM_TO_WITH_OP_IF(mlir::FloatType, mlir::FloatType, mlir::arith::ExtFOp, (fromElementType.getIntOrFloatBitWidth() < toElementType.getIntOrFloatBitWidth()));
 
         // Index casts
         CAST_FROM_TO_WITH_OP(mlir::IntegerType, mlir::IndexType, mlir::arith::IndexCastOp);
         CAST_FROM_TO_WITH_OP(mlir::IndexType, mlir::IntegerType, mlir::arith::IndexCastOp);
-        if (fromType.isa<mlir::IndexType>() && toType.isa<mlir::FloatType>())
+        auto i64IntermediateType = accera::ir::util::CloneTypeWithNewElementType(op.source().getType(), rewriter.getI64Type());
+        if (fromElementType.isa<mlir::IndexType>() && toElementType.isa<mlir::FloatType>())
         {
-            auto int64Value = rewriter.create<mlir::arith::IndexCastOp>(loc, op.source(), rewriter.getI64Type()); // index->int64
-            rewriter.replaceOpWithNewOp<mlir::arith::SIToFPOp>(op, int64Value, toType); // int64->fp
+            auto int64Value = rewriter.create<mlir::arith::IndexCastOp>(loc, op.source(), i64IntermediateType); // index->int64
+            rewriter.replaceOpWithNewOp<mlir::arith::SIToFPOp>(op, int64Value, toElementType); // int64->fp
             return success();
         }
-        if (fromType.isa<mlir::FloatType>() && toType.isa<mlir::IndexType>())
+        if (fromElementType.isa<mlir::FloatType>() && toElementType.isa<mlir::IndexType>())
         {
-            auto int64Value = rewriter.create<mlir::arith::FPToSIOp>(loc, op.source(), rewriter.getI64Type()); // fp->int64
-            rewriter.replaceOpWithNewOp<mlir::arith::IndexCastOp>(op, int64Value, toType); // int64->index
+            auto int64Value = rewriter.create<mlir::arith::FPToSIOp>(loc, op.source(), i64IntermediateType); // fp->int64
+            rewriter.replaceOpWithNewOp<mlir::arith::IndexCastOp>(op, int64Value, toElementType); // int64->index
             return success();
         }
 
@@ -948,7 +973,7 @@ struct ValueLaunchFuncOpRewritePattern : OpRewritePattern<vir::LaunchFuncOp>
         switch (target)
         {
         case vir::ExecutionTarget::CPU:
-            rewriter.replaceOpWithNewOp<mlir::CallOp>(op, callee, ArrayRef<mlir::Type>{}, ValueRange{ op.operands() });
+            rewriter.replaceOpWithNewOp<mlir::CallOp>(op, callee, op.getResultTypes(), ValueRange{ op.operands() });
             return success();
         case vir::ExecutionTarget::GPU:
             auto gpuSymRef = SymbolRefAttr::get(rewriter.getContext(), callee.str() + "_module", SymbolRefAttr::get(callee));
@@ -1034,6 +1059,10 @@ LogicalResult BinOpLowering::matchAndRewrite(
                 return rewriter.create<arith::MulFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
             case BinaryOpPredicate::SUB:
                 return rewriter.create<arith::SubFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
+            case BinaryOpPredicate::MAX:
+                return rewriter.create<arith::MaxFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
+            case BinaryOpPredicate::MIN:
+                return rewriter.create<arith::MinFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
             default:
                 assert(false);
                 return {};
@@ -1067,6 +1096,32 @@ LogicalResult BinOpLowering::matchAndRewrite(
                 return rewriter.create<arith::AndIOp>(loc, lhs, rhs);
             case BinaryOpPredicate::LOGICAL_OR:
                 return rewriter.create<arith::OrIOp>(loc, lhs, rhs);
+            case BinaryOpPredicate::MAX:
+                if (lhs == rhs)
+                {
+                    return lhs;
+                }
+                if (elementType.isUnsignedInteger())
+                {
+                    return rewriter.create<arith::MaxUIOp>(loc, ValueRange{ lhs, rhs });
+                }
+                else
+                {
+                    return rewriter.create<arith::MaxSIOp>(loc, ValueRange{ lhs, rhs });
+                }
+            case BinaryOpPredicate::MIN:
+                if (lhs == rhs)
+                {
+                    return lhs;
+                }
+                if (elementType.isUnsignedInteger())
+                {
+                    return rewriter.create<arith::MinUIOp>(loc, ValueRange{ lhs, rhs });
+                }
+                else
+                {
+                    return rewriter.create<arith::MinSIOp>(loc, ValueRange{ lhs, rhs });
+                }
             default:
                 assert(false);
                 return {};

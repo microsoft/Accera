@@ -87,8 +87,14 @@ namespace value
         divide,
         /// <summary> Remainder operation </summary>
         modulus,
+        /// <summary> Logical AND operation </summary>
         logicalAnd,
-        logicalOr
+        /// <summary> Logical OR operation </summary>
+        logicalOr,
+        /// <summary> Max operation </summary>
+        max,
+        /// <summary> Min operation </summary>
+        min
     };
 
     enum class ValueLogicalOperation

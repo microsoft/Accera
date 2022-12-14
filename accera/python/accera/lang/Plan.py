@@ -958,6 +958,18 @@ class Plan:
         block_size = block_dims[0] * block_dims[1] * block_dims[2]
         return block_size <= max_threads
 
+    def _erase_loops(self, indices: List[LoopIndex]):
+        for index in indices:
+            self._add_index_attr(index, "_erase")
+
+        self._commands.append(
+            partial(self._erase_loops_delayed, indices)
+        )
+
+    def _erase_loops_delayed(self, indices: List[LoopIndex], context: NativeLoopNestContext):
+        for index in indices:
+            context.plan._erase_loop(context.mapping[id(index)])
+
     def _build_native_context(self, context: NativeLoopNestContext):
         target = self._target
 
@@ -1067,7 +1079,7 @@ def _build_native_nest(plan: "Plan", nest_args: List[Array]):
 
 
 def _create_function(
-    plan: "Plan", args: List[Union[Array, Dimension]], public: bool = True, no_inline: bool = False
+    plan: "Plan", args: List[Union[Array, Dimension]], public: bool = True, **kwargs
 ) -> Function:
     from secrets import token_hex
 
@@ -1078,8 +1090,8 @@ def _create_function(
         args=args,
         public=public,
         definition=_build_native_nest(plan, args),
-        no_inline=no_inline,
         target=plan._target,
+        **kwargs
     )
 
 

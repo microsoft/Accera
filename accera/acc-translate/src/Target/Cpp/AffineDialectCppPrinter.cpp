@@ -47,7 +47,12 @@ void AffineMapVisitor::visit(Type type)
     }
     else if (auto memRefType = type.dyn_cast<MemRefType>())
     {
-        visit(AffineMapAttr::get(memRefType.getLayout().getAffineMap()));
+        // Flatten the memref layout map to a N-D -> 1-D map
+        // This will convert the map for an identity mapped layout like memref<16x16xf32>
+        // from (d0, d1) -> (d0, d1)
+        // to (d0, d1) -> (d0 * 16 + d1)
+        auto stridedLinearLayoutMap = mlir::getStridedLinearLayoutMap(memRefType);
+        visit(AffineMapAttr::get(stridedLinearLayoutMap));
     }
     else if (auto shapedType = type.dyn_cast<ShapedType>())
     {

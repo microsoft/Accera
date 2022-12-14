@@ -26,9 +26,11 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-from accera import ScalarType, Array, Function, Nest, Target, Package, algorithms
+from accera import ScalarType, Array, Function, Nest, Target, Package, algorithms, Dimension, cast, AllocateFlags
 from accera.test import verifiers
 from accera.test.test_utils import expectedFailure, FailedReason
+
+INTERNAL_FUNCTION_OPTS = { "no_inline_into": True, "public": False }
 
 TEST_MODE = Package.Mode.DEBUG if DEV_MODE else Package.Mode.RELEASE
 TEST_FORMAT = Package.Format.MLIR_DYNAMIC if DEV_MODE else Package.Format.HAT_DYNAMIC
@@ -450,6 +452,149 @@ class DSLTest_01Arrays(unittest.TestCase):
             "test_array_value_type_cast",
             correctness_check_values=correctness_check_values,
         )
+
+    def test_array_vectorize_cast(self) -> None:
+        A = Array(
+            shape=(256, 32),
+            role=Array.Role.INPUT,
+            layout=Array.Layout.FIRST_MAJOR,
+            element_type=ScalarType.uint8,
+        )
+        B = Array(
+            shape=(256, 32),
+            role=Array.Role.INPUT_OUTPUT,
+            layout=Array.Layout.FIRST_MAJOR,
+            element_type=ScalarType.int16,
+        )
+
+        nest = Nest(shape=(256, 32))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i, j] = A[i, j]
+
+        sched = nest.create_schedule()
+        ii = sched.split(i, 4)
+        jj = sched.split(j, 16)
+        sched.reorder(i, j, ii, jj)
+        plan = sched.create_plan()
+        plan.vectorize(ii) # ii to in-place-unroll ii and vectorize jj
+
+        A_test = np.random.random((256, 32)).astype(np.uint8)
+        B_test = np.random.random((256, 32)).astype(np.int16)
+        B_expected = np.ndarray((256, 32)).astype(np.int16)
+        B_expected[:,:] = A_test[:,:]
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_test, B_expected),
+        }
+        self._verify_nest(
+            plan,
+            (A, B),
+            "test_array_vectorize_cast",
+            correctness_check_values=correctness_check_values
+        )
+
+    def test_interleaved_vectorize_cast(self) -> None:
+        shape = (64, 32, 8, 2)
+        A = Array(
+            shape=shape,
+            role=Array.Role.INPUT,
+            layout=Array.Layout.FIRST_MAJOR,
+            element_type=ScalarType.uint8,
+        )
+        B = Array(
+            shape=shape,
+            role=Array.Role.INPUT_OUTPUT,
+            layout=Array.Layout.FIRST_MAJOR,
+            element_type=ScalarType.int16,
+        )
+
+        nest = Nest(shape=shape)
+        i, j, k, l = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i, j, k, l] = A[i, j, k, l]
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(k)
+
+        A_test = np.random.random(shape).astype(np.uint8)
+        B_test = np.random.random(shape).astype(np.int16)
+        B_expected = np.ndarray(shape).astype(np.int16)
+        B_expected[:,:,:,:] = A_test[:,:,:,:]
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_test, B_expected),
+        }
+        self._verify_nest(
+            plan,
+            (A, B),
+            "test_interleaved_vectorize_cast",
+            correctness_check_values=correctness_check_values
+        )
+
+
+    def test_interleaved_vectorize_store(self) -> None:
+        M = 32
+        N = 48
+        M_tile = 2
+        N_tile = 16
+        input_shape = (M, N)
+        output_shape = (M // M_tile, N // N_tile, N_tile, M_tile)
+        A = Array(
+            shape=input_shape,
+            role=Array.Role.INPUT,
+            layout=Array.Layout.FIRST_MAJOR,
+            element_type=ScalarType.uint8,
+        )
+        B = Array(
+            shape=output_shape,
+            role=Array.Role.INPUT_OUTPUT,
+            layout=Array.Layout.FIRST_MAJOR,
+            element_type=ScalarType.uint8,
+        )
+
+        nest = Nest(shape=output_shape)
+        i_outer, j_outer, j_inner, i_inner = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i_outer, j_outer, j_inner, i_inner] = A[i_outer*M_tile + i_inner, j_outer*N_tile + j_inner]
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(j_inner)
+
+        A_test = np.random.random(input_shape).astype(np.uint8)
+        B_test = np.random.random(output_shape).astype(np.uint8)
+        B_expected = np.ndarray(output_shape).astype(np.uint8)
+        for i_outer in range(0, M, M_tile):
+            i_outer_idx = i_outer // M_tile
+            for j_outer in range(0, N, N_tile):
+                j_outer_idx = j_outer // N_tile
+                for j_inner in range(0, N_tile):
+                    full_j = j_outer + j_inner
+                    for i_inner in range(0, M_tile):
+                        full_i = i_outer + i_inner
+                        B_expected[i_outer_idx, j_outer_idx, j_inner, i_inner] = A_test[full_i, full_j]
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_test, B_expected),
+        }
+        self._verify_nest(
+            plan,
+            (A, B),
+            "test_interleaved_vectorize_store",
+            correctness_check_values=correctness_check_values
+        )
+
 
     def test_subarray(self) -> None:
         package = Package()
@@ -1087,7 +1232,102 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)
 
+       
+    def test_output_array_range_node1(self) -> None:
+        from accera import Dimension, create_dimensions, floor, cast
+        from accera._lang_python._lang import Scalar
 
+        Start = Scalar(ScalarType.float32)
+        Limit = Scalar(ScalarType.float32)
+        Delta = Scalar(ScalarType.float32)
+
+        InputDim = create_dimensions()
+        InputDim.role = Dimension.Role.INPUT
+
+        OutputDims = Array(shape=(1,), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
+        Output = Array(shape=(InputDim, ), role=Array.Role.INPUT_OUTPUT)
+        Output_Start = Array(shape=(1,), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+
+        nest1 = Nest((1, ))
+        @nest1.iteration_logic
+        def _():      
+            OutputDims[0] = cast(floor((Limit - Start) / Delta), ScalarType.int64)
+
+        nest2 = Nest([InputDim])
+        i = nest2.get_indices()
+        @nest2.iteration_logic
+        def _():
+            Output[i] = Output_Start[0]
+            Output_Start[0] += Delta
+
+        # Generate a function like:
+        # range_get_size(float start, float limit, float delta, int64_t* output_dim);
+        # range_get_result(int64_t input_dim, float* output, float* start, float delta);
+        
+        package = Package()
+        # BUGBUG: dim args ordered first due to issue with Debug mode
+        package.add(nest1, args=(Start, Limit, Delta, OutputDims), base_name=f"range_get_size")
+        package.add(nest2, args=(InputDim, Output, Output_Start, Delta), base_name=f"range_get_result")
+
+        package.build("test_output_array_range_node1", format=TEST_FORMAT | Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+  
+        
+    def test_output_array_range_node2(self) -> None:
+        from accera import Dimension, create_dimensions, floor, cast
+        from accera._lang_python._lang import Scalar
+
+        Start = Scalar(ScalarType.float32)
+        Limit = Scalar(ScalarType.float32)
+        Delta = Scalar(ScalarType.float32)
+
+        InputDim = create_dimensions()
+        InputDim.role = Dimension.Role.INPUT
+
+        OutputDims = Array(shape=(1,), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
+        Output = Array(shape=(InputDim, ), role=Array.Role.INPUT_OUTPUT)
+        Output_Start = Array(shape=(1,), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        Output_Start_Tmp = Array(shape=(1,), element_type=ScalarType.float32, role=Array.Role.TEMP)
+
+        nest1 = Nest((1, ))
+        @nest1.iteration_logic
+        def _():      
+            OutputDims[0] = cast(floor((Limit - Start) / Delta), ScalarType.int64)
+
+        nest2 = Nest((1, ))
+        @nest2.iteration_logic
+        def _():      
+            Output_Start[0] = Start
+
+        nest3 = Nest([InputDim])
+        i = nest3.get_indices()
+        @nest3.iteration_logic
+        def _():
+            Output[i] = Output_Start[0]
+            Output_Start[0] += Delta
+
+        # Generate a function like:
+        # range_get_size(float start, float limit, float delta, int64_t* output_dim);
+        # ini_start(float* output_Start, float start);
+        # get_result(int64_t input_dim, float* output, float* start, float delta);
+        # range_get_output_array(int64_t input_dim, float* output, float start, float delta);
+        
+        package = Package()
+        # BUGBUG: dim args ordered first due to issue with Debug mode
+        package.add(nest1, args=(Start, Limit, Delta, OutputDims), base_name=f"range_get_size")
+        ini_start_fn = package.add(nest2, args=(Output_Start, Start), base_name=f"ini_start")
+        get_result_fn = package.add(nest3, args=(InputDim, Output, Output_Start, Delta), base_name=f"get_result")
+
+        nest4 = Nest((1, ))
+        @nest4.iteration_logic
+        def _():      
+            ini_start_fn(Output_Start_Tmp, Start)
+            get_result_fn(InputDim, Output, Output_Start_Tmp, Delta)
+        
+        # BUGBUG: dim args ordered first due to issue with Debug mode
+        package.add(nest4, args=(InputDim, Output, Start, Delta), base_name=f"range_get_output_array")
+
+        package.build("test_output_array_range_node2", format=TEST_FORMAT | Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+  
 
 class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
     def _create_nest(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
@@ -1100,19 +1340,21 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
         return Nest(shape=(M, N, S)), A, B, C
 
-    def _build_nest(self, nest, args: Tuple[Array], package_name, correctness_check_values=None) -> None:
+    def _build_nest(self, nest, args: Tuple[Array], package_name, correctness_check_values=None, quiet=True) -> None:
         # helper function to build a nest so that we can focus on the logic function
         # create a HAT package and add the nest to it
         package = Package()
         function = package.add(nest, args, base_name=package_name)
 
         # build the HAT package
-        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(
                 package_name,
                 format=TEST_FORMAT,
                 mode=TEST_MODE,
-                output_dir=TEST_PACKAGE_DIR,
+                output_dir=output_dir,
+                _quiet=quiet
             )
             if correctness_check_values:
                 v.check_correctness(
@@ -1317,6 +1559,324 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
             self._build_nest(nest, [A, B, C], f"test_intrinsics_{t.name}")
 
+
+    def test_round_intrinsic(self) -> None:
+        from accera import round as accround
+
+        M = 16
+        N = 8
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
+
+        nest = Nest((M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i, j] = accround(A[i, j])
+
+        A_test = np.random.uniform(low=-1000.0, high=1000.0, size=A.shape).astype(np.float32)
+        # Ensure there's at least one element which tests the roundeven behavior in both directions
+        A_test[0, 0] = 1.5 # Should round up to 2
+        A_test[0, 1] = 2.5 # Should round down to 2
+        B_test = np.zeros(B.shape).astype(np.int32)
+
+        B_ref = A_test.round().astype(np.int32)
+        self.assertEqual(B_ref[0, 0], 2)
+        self.assertEqual(B_ref[0, 1], 2)
+
+        correctness_check_values = {
+            "pre": [A_test, B_test],
+            "post": [A_test, B_ref]
+        }
+
+        self._build_nest(nest, [A, B], "test_round_intrinsic", correctness_check_values=correctness_check_values)
+
+
+    def test_round_intrinsic_vectorized(self) -> None:
+        from accera import round as accround
+
+        M = 256
+        N = 128
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
+
+        nest = Nest((M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i, j] = accround(A[i, j])
+        
+        sched = nest.create_schedule()
+        ii, jj = sched.tile({i: 4, j: 8})
+        sched.reorder(i, j, ii, jj)
+        plan = sched.create_plan()
+        plan.vectorize(ii)
+
+        A_test = np.random.uniform(low=-1000.0, high=1000.0, size=A.shape).astype(np.float32)
+        # Ensure there's at least one element which tests the roundeven behavior in both directions
+        A_test[0, 0] = 1.5 # Should round up to 2
+        A_test[0, 1] = 2.5 # Should round down to 2
+        B_test = np.zeros(B.shape).astype(np.int32)
+
+        B_ref = A_test.round().astype(np.int32)
+        self.assertEqual(B_ref[0, 0], 2)
+        self.assertEqual(B_ref[0, 1], 2)
+
+        correctness_check_values = {
+            "pre": [A_test, B_test],
+            "post": [A_test, B_ref]
+        }
+
+        self._build_nest(plan, [A, B], "test_round_intrinsic_vectorized", correctness_check_values=correctness_check_values)
+
+
+    # TODO : fix this test - it appears to abort on just the linux buddy build machine
+    # def test_remainderf_intrinsic_rounding(self) -> None:
+    #     from accera import remainderf, cast
+
+    #     M = 16
+    #     N = 8
+
+    #     A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+    #     B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
+
+    #     nest = Nest((M, N))
+    #     i, j = nest.get_indices()
+
+    #     @nest.iteration_logic
+    #     def _():
+    #         B[i, j] = cast(A[i, j] - remainderf(A[i, j], 1.0), ScalarType.int32)
+
+    #     A_test = np.random.uniform(low=-1000.0, high=1000.0, size=A.shape).astype(np.float32)
+    #     # Ensure there's at least one element which tests the roundeven behavior in both directions
+    #     A_test[0, 0] = 1.5 # Should round up to 2
+    #     A_test[0, 1] = 2.5 # Should round down to 2
+    #     B_test = np.zeros(B.shape).astype(np.int32)
+
+    #     B_ref = A_test.round().astype(np.int32)
+    #     self.assertEqual(B_ref[0, 0], 2)
+    #     self.assertEqual(B_ref[0, 1], 2)
+
+    #     correctness_check_values = {
+    #         "pre": [A_test, B_test],
+    #         "post": [A_test, B_ref]
+    #     }
+
+    #     self._build_nest(nest, [A, B], "test_remainderf_intrinsic_rounding", correctness_check_values=correctness_check_values)
+
+
+    def test_vectorized_max_min(self) -> None:
+        from accera import max, min
+
+        M = 128
+        N = 256
+
+        package = Package()
+        func_names = []
+        package_name = "test_vectorized_max_min"
+        correctness_check_values = {}
+        for t in [ScalarType.float32]:
+            fn_name = f"test_vectorized_max_min_{t.name}"
+            func_names.append(fn_name)
+
+            nest = Nest((M, N))
+            A = Array(role=Array.Role.INPUT, element_type=t, shape=(M, N))
+            B = Array(role=Array.Role.INPUT, element_type=t, shape=(M, N))
+            C_max = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(M, N))
+            C_min = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(M, N))
+
+            i, j = nest.get_indices()
+
+            @nest.iteration_logic
+            def _():
+                C_max[i, j] = max(A[i, j], B[i, j])
+                C_min[i, j] = min(A[i, j], B[i, j])
+
+            sched = nest.create_schedule()
+            ii, jj = sched.tile({i: 4, j: 8})
+            sched.reorder(i, j, ii, jj)
+            plan = sched.create_plan()
+            plan.vectorize(ii)
+            function = package.add(plan, args=(A, B, C_max, C_min), base_name=fn_name)
+
+            A_test = np.random.random(A.shape).astype(np.float32)
+            B_test = np.random.random(B.shape).astype(np.float32)
+            C_max_test = np.random.random(C_max.shape).astype(np.float32)
+            C_min_test = np.random.random(C_min.shape).astype(np.float32)
+
+            C_max_ref = np.maximum(A_test, B_test)
+            C_min_ref = np.minimum(A_test, B_test)
+
+            correctness_check_values[fn_name] = {
+                "pre": [A_test, B_test, C_max_test, C_min_test],
+                "post": [A_test, B_test, C_max_ref, C_min_ref]
+            }
+
+        # build the HAT package
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                package_name,
+                format=TEST_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+            for fn_name in func_names:
+                if fn_name in correctness_check_values:
+                    v.check_correctness(
+                        function.name,
+                        before=correctness_check_values[fn_name]["pre"],
+                        after=correctness_check_values[fn_name]["post"],
+                    )
+
+
+    def test_vectorized_single_max_min_block(self) -> None:
+        # In this test we're trying to find the single max and single min value of a 2-D array.
+        # To vectorize this, we'll want to compute several maxs and mins in paralle and then reduce them
+        # Note: This type of reduction can't be achieved with caching, so we manually construct a pattern similar to caching
+        from accera import max, min
+
+        M = 128
+        N = 256
+
+        M_outer_tile = 8
+        M_tile = 4
+        N_tile = 8
+
+        package = Package()
+        func_names = []
+        package_name = "test_vectorized_single_max_min_block"
+        correctness_check_values = {}
+        for t in [ScalarType.float32]:
+            fn_name = f"{package_name}_{t.name}"
+            func_names.append(fn_name)
+
+            A = Array(role=Array.Role.INPUT, element_type=t, shape=(M, N))
+            A_max = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(1, ))
+            A_min = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(1, ))
+
+            A_max_cache = Array(role=Array.Role.TEMP, element_type=t, shape=(M_tile, N_tile), flags=AllocateFlags.STACK)
+            A_min_cache = Array(role=Array.Role.TEMP, element_type=t, shape=(M_tile, N_tile), flags=AllocateFlags.STACK)
+
+            io_A_max_cache = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=A_max_cache.shape)
+            io_A_min_cache = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=A_min_cache.shape)
+
+            outer_i_dim = Dimension()
+            outer_j_dim = Dimension()
+
+            # inner compute nest
+
+            inner_nest = Nest((M_tile, N_tile))
+            inner_i, inner_j = inner_nest.get_indices()
+            @inner_nest.iteration_logic
+            def _():
+                i = outer_i_dim + inner_i
+                j = outer_j_dim + inner_j
+                io_A_max_cache[inner_i, inner_j] = max(io_A_max_cache[inner_i, inner_j], A[i, j])
+                io_A_min_cache[inner_i, inner_j] = min(io_A_min_cache[inner_i, inner_j], A[i, j])
+
+            inner_sched = inner_nest.create_schedule()
+            inner_plan = inner_sched.create_plan()
+            inner_plan.vectorize(inner_i)
+            inner_fn = package.add(inner_plan, args=(A, io_A_max_cache, io_A_min_cache, outer_i_dim, outer_j_dim), base_name=f"{fn_name}_inner", function_opts=INTERNAL_FUNCTION_OPTS)
+
+            # Outer nest
+            outer_nest = Nest((M, N))
+            outer_i, outer_j = outer_nest.get_indices()
+            @outer_nest.iteration_logic
+            def _():
+                inner_fn(A, io_A_max_cache, io_A_min_cache, outer_i, outer_j)
+
+            outer_sched = outer_nest.create_schedule()
+            outer_ii = outer_sched.split(outer_i, M_outer_tile)
+            outer_iii, outer_jj = outer_sched.tile({outer_ii: M_tile, outer_j: N_tile})
+            outer_sched.reorder(outer_i, outer_j, outer_ii, outer_iii, outer_jj)
+            outer_plan = outer_sched.create_plan()
+            outer_plan._erase_loops([outer_iii, outer_jj])
+            outer_fn = package.add(outer_plan, args=(A, io_A_max_cache, io_A_min_cache), base_name=f"{fn_name}_outer", function_opts=INTERNAL_FUNCTION_OPTS)
+
+
+            # Cache zeroing nests
+            
+            def _make_init_fn(package: Package, outer_arr: Array, arr: Array, base_name: str):
+                zero_nest = Nest(arr.shape)
+                indices = zero_nest.get_indices()
+                @zero_nest.iteration_logic
+                def _():
+                    arr[indices] = outer_arr[indices]
+
+                return package.add(zero_nest, args=(outer_arr, arr), base_name=base_name, function_opts=INTERNAL_FUNCTION_OPTS)
+
+            zero_max_cache_fn = _make_init_fn(package, A, io_A_max_cache, "max_cache_zeroing")
+            zero_min_cache_fn = _make_init_fn(package, A, io_A_min_cache, "min_cache_zeroing")
+
+            # Cache reducing nests
+
+            def _make_cache_reduce_fn(package: Package, cache: Array, outer_arr: Array, base_name: str, use_max):
+                reduce_nest = Nest(cache.shape)
+                indices = reduce_nest.get_indices()
+                if use_max:
+                    @reduce_nest.iteration_logic
+                    def _():
+                        outer_arr[0] = max(outer_arr[0], cache[indices])
+                else:
+                    @reduce_nest.iteration_logic
+                    def _():
+                        outer_arr[0] = min(outer_arr[0], cache[indices])
+
+                return package.add(reduce_nest, args=(cache, outer_arr), base_name=base_name, function_opts=INTERNAL_FUNCTION_OPTS)
+
+            reduce_max_cache_fn = _make_cache_reduce_fn(package, io_A_max_cache, A_max, "max_cache_reduce", True)
+            reduce_min_cache_fn = _make_cache_reduce_fn(package, io_A_min_cache, A_min, "min_cache_reduce", False)
+
+            # outer nest
+
+            top_nest = Nest((1,))
+
+            @top_nest.iteration_logic
+            def _():
+                zero_max_cache_fn(A, A_max_cache)
+                zero_min_cache_fn(A, A_min_cache)
+                outer_fn(A, A_max_cache, A_min_cache)
+                reduce_max_cache_fn(A_max_cache, A_max)
+                reduce_min_cache_fn(A_min_cache, A_min)
+
+            function = package.add(top_nest, args=(A, A_max, A_min), base_name=fn_name)
+
+            A_test = np.random.random(A.shape).astype(np.float32)
+            A_max_test = np.random.random(A_max.shape).astype(np.float32)
+            A_min_test = np.random.random(A_min.shape).astype(np.float32)
+
+            A_max_ref = np.max(A_test).reshape((1,))
+            A_min_ref = np.min(A_test).reshape((1,))
+
+            correctness_check_values[fn_name] = {
+                "pre": [A_test, A_max_test, A_min_test],
+                "post": [A_test, A_max_ref, A_min_ref]
+            }
+
+        # build the HAT package
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                package_name,
+                format=TEST_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+            for fn_name in func_names:
+                if fn_name in correctness_check_values:
+                    v.check_correctness(
+                        function.name,
+                        before=correctness_check_values[fn_name]["pre"],
+                        after=correctness_check_values[fn_name]["post"],
+                    )
+
+
     def test_intrinsics_float(self) -> None:
         from accera import (
             abs,
@@ -1461,11 +2021,11 @@ class DSLTest_03Schedules(unittest.TestCase):
 
         schedule = nest.create_schedule()
         ii = schedule.split(i, 4)
-        iii = schedule.split(i, 2)
-        iiii = schedule.split(ii, 2)
+        iii = schedule.split(ii, 2)
+        iiii = schedule.split(iii, 2)
         for index in [ii, iii, iiii]:
             self.assertIsNotNone(index)
-        self.assertEqual(schedule._indices, [i, iii, ii, iiii, j, k])
+        self.assertEqual(schedule._indices, [i, ii, iii, iiii, j, k])
         self._verify_schedule(schedule, [A, B, C], "test_schedule_split1")
 
         # split size does not divide the dimension size
@@ -1966,23 +2526,29 @@ class DSLTest_03Schedules(unittest.TestCase):
 
 
 class DSLTest_04Fusing(unittest.TestCase):
-    def _verify_schedule(
-        self, schedule, args: Tuple[Array], package_name, correctness_check_values, quiet=True
+    def _verify_func(
+        self, package, function, package_name, correctness_check_values, quiet=True, mode=TEST_MODE
     ) -> None:
-        # create a HAT package and add the function to it
-        package = Package()
-        function = package.add(schedule, args, base_name="fusing_test")
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir, _quiet=quiet)
+            package.build(package_name, format=TEST_FORMAT, mode=mode, output_dir=output_dir, _quiet=quiet)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
                     before=correctness_check_values["pre"],
                     after=correctness_check_values["post"],
                 )
+
+    def _verify_schedule(
+        self, schedule, args: Tuple[Array], package_name, correctness_check_values, quiet=True
+    ) -> None:
+        # create a HAT package and add the function to it
+        package = Package()
+        function = package.add(schedule, args, base_name="fusing_test")
+        self._verify_func(package, function, package_name, correctness_check_values, quiet)
+
 
     def test_full_iteration_space_fusing(self) -> None:
         from accera import fuse, Nest
@@ -2763,7 +3329,7 @@ class DSLTest_04Fusing(unittest.TestCase):
 
         @nest1.iteration_logic
         def _():
-            C[i1, j1] = C[i1, j1] * 0.2
+            C[i1, j1] = C[i1, j1] * 0.1
 
         schedule1 = nest1.create_schedule()
         ii1, jj1 = schedule1.tile({ i1: M_tile, j1: N_tile })
@@ -2814,6 +3380,298 @@ class DSLTest_04Fusing(unittest.TestCase):
         package.add(plan, args=(A, B, C), base_name="test_hierarchical_partial_fuse")
 
         self._verify_schedule(plan, (A, B, C), "test_hierarchical_partial_fuse", None)
+
+
+    def test_nested_nests_matmul(self):
+        test_name = "test_nested_nests_matmul"
+
+        M = 20
+        N = 32
+        K = 12
+        M_tile = 4
+        N_tile = 16
+        K_tile = 3
+
+        package = Package()
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        B_temp = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, shape=(K_tile, N_tile))
+        io_B_temp = Array(role=Array.Role.INPUT_OUTPUT, element_type=B_temp.element_type, shape=B_temp.shape)
+
+        i_tile_idx = Dimension()
+        j_tile_idx = Dimension()
+        k_tile_idx = Dimension()
+
+        pack_b_nest = Nest([K_tile, N_tile])
+        pb_k, pb_j = pack_b_nest.get_indices()
+
+        @pack_b_nest.iteration_logic
+        def _pack_b():
+            full_k = pb_k + k_tile_idx
+            full_j = pb_j + j_tile_idx
+            io_B_temp[pb_k, pb_j] = B[full_k, full_j]
+
+        pack_b_fn = package.add(pack_b_nest, args=(B, io_B_temp, j_tile_idx, k_tile_idx), base_name="pack_b_tile_fn")
+
+        matmul_nest = Nest([M_tile, N_tile, K_tile])
+        mm_i, mm_j, mm_k = matmul_nest.get_indices()
+
+        @matmul_nest.iteration_logic
+        def _matmul():
+            full_i = mm_i + i_tile_idx
+            full_j = mm_j + j_tile_idx
+            full_k = mm_k + k_tile_idx
+            C[full_i, full_j] += A[full_i, full_k] * io_B_temp[mm_k, mm_j]
+
+        matmul_sched = matmul_nest.create_schedule()
+        mm_jj = matmul_sched.split(mm_j, 8)
+        matmul_sched.reorder(mm_k, mm_i, mm_j, mm_jj)
+        matmul_plan = matmul_sched.create_plan()
+        matmul_plan.vectorize(mm_jj)
+        matmul_fn = package.add(matmul_plan, args=(A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx), base_name="matmul_tile_fn")
+
+        tile_nest = Nest([M, N, K])
+        i, j, k = tile_nest.get_indices()
+
+        @tile_nest.iteration_logic
+        def _tile_logic():
+            pack_b_fn(B, B_temp, j, k)
+            matmul_fn(A, B, C, B_temp, i, j, k)
+
+        tile_sched = tile_nest.create_schedule()
+        ii, jj, kk = tile_sched.tile(dict(zip([i, j, k], [M_tile, N_tile, K_tile])))
+        tile_sched.reorder(i, j, k, ii, jj, kk)
+        tile_plan = tile_sched.create_plan()
+        tile_plan._erase_loops([ii, jj, kk])
+        full_fn = package.add(tile_plan, args=(A, B, C), base_name="full_matmul_fn")
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+
+        A_ref = A_test
+        B_ref = B_test
+        C_ref = A_test @ B_test + C_test
+
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_ref, B_ref, C_ref],
+        }
+        self._verify_func(package, full_fn, test_name, correctness_check_values, quiet=False, mode=Package.Mode.RELEASE)
+
+
+    def test_nested_nests_matmul_boundary(self):
+        test_name = "test_nested_nests_matmul_boundary"
+        from accera import min, Dimension
+
+        M = 20
+        N = 32
+        K = 12
+        M_tile = 4
+        N_tile = 12 # 32 doesn't divide 12 so we should have an 8 element boundary in the N dimension
+        K_tile = 3
+
+        package = Package()
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        B_temp = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, shape=(K_tile, N_tile))
+        io_B_temp = Array(role=Array.Role.INPUT_OUTPUT, element_type=B_temp.element_type, shape=B_temp.shape)
+
+        i_tile_idx = Dimension()
+        j_tile_idx = Dimension()
+        k_tile_idx = Dimension()
+
+        n_tile_dim = Dimension()
+
+        pack_b_nest = Nest([K_tile, n_tile_dim])
+        pb_k, pb_j = pack_b_nest.get_indices()
+
+        @pack_b_nest.iteration_logic
+        def _pack_b():
+            full_k = pb_k + k_tile_idx
+            full_j = pb_j + j_tile_idx
+            io_B_temp[pb_k, pb_j] = B[full_k, full_j]
+
+        pack_b_fn = package.add(pack_b_nest, args=(n_tile_dim, B, io_B_temp, j_tile_idx, k_tile_idx), base_name="pack_b_tile_fn")
+
+        matmul_nest = Nest([M_tile, n_tile_dim, K_tile])
+        mm_i, mm_j, mm_k = matmul_nest.get_indices()
+
+        @matmul_nest.iteration_logic
+        def _matmul():
+            full_i = mm_i + i_tile_idx
+            full_j = mm_j + j_tile_idx
+            full_k = mm_k + k_tile_idx
+            C[full_i, full_j] += A[full_i, full_k] * io_B_temp[mm_k, mm_j]
+
+        matmul_sched = matmul_nest.create_schedule()
+        mm_jj = matmul_sched.split(mm_j, 8)
+        matmul_sched.reorder(mm_k, mm_i, mm_j, mm_jj)
+        matmul_plan = matmul_sched.create_plan()
+        matmul_fn = package.add(matmul_plan, args=(n_tile_dim, A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx), base_name="matmul_tile_fn")
+
+        tile_nest = Nest([M, N, K])
+        i, j, k = tile_nest.get_indices()
+
+        @tile_nest.iteration_logic
+        def _tile_logic():
+            n_tile_extent = min(cast(N_tile, ScalarType.index), cast(N, ScalarType.index) - j)
+            pack_b_fn(n_tile_extent, B, B_temp, j, k)
+            matmul_fn(n_tile_extent, A, B, C, B_temp, i, j, k)
+
+        tile_sched = tile_nest.create_schedule()
+        ii, jj, kk = tile_sched.tile(dict(zip([i, j, k], [M_tile, N_tile, K_tile])))
+        tile_sched.reorder(i, j, k, ii, jj, kk)
+        tile_plan = tile_sched.create_plan()
+        tile_plan._erase_loops([ii, jj, kk])
+        full_fn = package.add(tile_plan, args=(A, B, C), base_name="full_matmul_fn")
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+
+        A_ref = A_test
+        B_ref = B_test
+        C_ref = A_test @ B_test + C_test
+
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_ref, B_ref, C_ref],
+        }
+        self._verify_func(package, full_fn, test_name, correctness_check_values, quiet=False, mode=Package.Mode.RELEASE)
+
+
+    def test_double_nested_nests_matmul_boundary(self):
+        test_name = "test_double_nested_nests_matmul_boundary"
+        from accera import min, Dimension
+
+        M = 20
+        N = 32
+        K = 12
+        M_tile = 4
+        N_tile = 12 # 32 doesn't divide 12 so we should have an 8 element boundary in the N dimension
+        N_kernel_tile = 8 # Doesn't divide N_tile so we should have a 4 element boundary in the N dimension in the outer main loop and no inner boundary in the outer boundary loop
+        K_tile = 3
+
+        package = Package()
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        B_temp = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, shape=(K_tile, N_tile))
+        io_B_temp = Array(role=Array.Role.INPUT_OUTPUT, element_type=B_temp.element_type, shape=B_temp.shape)
+
+        n_tile_dim = Dimension()
+        n_kernel_dim = Dimension()
+
+        i_tile_idx = Dimension()
+        j_tile_idx = Dimension()
+        k_tile_idx = Dimension()
+
+        i_kernel_idx = Dimension()
+        j_kernel_idx = Dimension()
+        k_kernel_idx = Dimension()
+
+        pack_b_nest = Nest([K_tile, n_tile_dim])
+        pb_k, pb_j = pack_b_nest.get_indices()
+
+        @pack_b_nest.iteration_logic
+        def _pack_b():
+            full_k = pb_k + k_tile_idx
+            full_j = pb_j + i_tile_idx
+            io_B_temp[pb_k, pb_j] = B[full_k, full_j]
+
+        pack_b_fn = package.add(
+            pack_b_nest,
+            args=(n_tile_dim, B, io_B_temp, i_tile_idx, k_tile_idx),
+            base_name="pack_b_tile_fn",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+        matmul_kernel_nest = Nest((n_kernel_dim,))
+        mmk_j = matmul_kernel_nest.get_indices()
+
+        @matmul_kernel_nest.iteration_logic
+        def _matmul():
+            tile_j = mmk_j + j_kernel_idx
+
+            full_i = i_kernel_idx + i_tile_idx
+            full_j = tile_j + j_tile_idx
+            full_k = k_kernel_idx + k_tile_idx
+            C[full_i, full_j] += A[full_i, full_k] * io_B_temp[k_kernel_idx, tile_j]
+
+        matmul_kernel_sched = matmul_kernel_nest.create_schedule()
+        mmk_jj = matmul_kernel_sched.split(mmk_j, N_kernel_tile)
+        matmul_kernel_sched.reorder(mmk_j, mmk_jj)
+        matmul_kernel_plan = matmul_kernel_sched.create_plan()
+        matmul_kernel_fn = package.add(matmul_kernel_plan,
+            args=(n_kernel_dim,
+                    A, B, C, io_B_temp,
+                    i_tile_idx, j_tile_idx, k_tile_idx,
+                    i_kernel_idx, j_kernel_idx, k_kernel_idx),
+            base_name="matmul_kernel_fn",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+
+        matmul_tile_nest = Nest([M_tile, n_tile_dim, K_tile])
+        mm_i, mm_j, mm_k = matmul_tile_nest.get_indices()
+
+        @matmul_tile_nest.iteration_logic
+        def _matmul():
+            n_kernel_extent = min(cast(N_kernel_tile, ScalarType.index), n_tile_dim - mm_j)
+            matmul_kernel_fn(n_kernel_extent,
+                A, B, C, io_B_temp,
+                i_tile_idx, j_tile_idx, k_tile_idx,
+                mm_i, mm_j, mm_k)
+
+        matmul_tile_sched = matmul_tile_nest.create_schedule()
+        mm_jj = matmul_tile_sched.split(mm_j, N_tile)
+        mm_jjj = matmul_tile_sched.split(mm_jj, N_kernel_tile)
+        matmul_tile_sched.reorder(mm_k, mm_i, mm_j, mm_jj, mm_jjj)
+        matmul_tile_plan = matmul_tile_sched.create_plan()
+        matmul_tile_plan._erase_loops([mm_jjj])
+        matmul_tile_fn = package.add(
+            matmul_tile_plan,
+            args=(n_tile_dim, A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx),
+            base_name="matmul_tile_fn",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+
+        tile_nest = Nest([M, N, K])
+        i, j, k = tile_nest.get_indices()
+
+        @tile_nest.iteration_logic
+        def _tile_logic():
+            n_tile_extent = min(cast(N_tile, ScalarType.index), cast(N, ScalarType.index) - j)
+            pack_b_fn(n_tile_extent, B, B_temp, j, k)
+            matmul_tile_fn(n_tile_extent, A, B, C, B_temp, i, j, k)
+
+        tile_sched = tile_nest.create_schedule()
+        ii, jj, kk = tile_sched.tile(dict(zip([i, j, k], [M_tile, N_tile, K_tile])))
+        tile_sched.reorder(i, j, k, ii, jj, kk)
+        tile_plan = tile_sched.create_plan()
+        tile_plan._erase_loops([ii, jj, kk])
+        full_fn = package.add(tile_plan, args=(A, B, C), base_name="full_matmul_fn")
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+
+        A_ref = A_test
+        B_ref = B_test
+        C_ref = A_test @ B_test + C_test
+
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_ref, B_ref, C_ref],
+        }
+        self._verify_func(package, full_fn, test_name, correctness_check_values, quiet=False, mode=Package.Mode.RELEASE)
 
 
 class DSLTest_05Targets(unittest.TestCase):

@@ -179,6 +179,8 @@ namespace value
         /// <param name="policy"> The policy used to schedule work across the threads. </param>
         void Parallelize(std::vector<ScalarIndex> indices, int64_t numThreads, ParallelizationPolicy policy);
 
+        void _EraseLoop(const value::ScalarIndex& index);
+
     private:
         friend class Schedule;
         Plan(Schedule& sched, ExecutionRuntime execRuntime = ExecutionRuntime::DEFAULT);

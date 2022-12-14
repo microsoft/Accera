@@ -152,7 +152,7 @@ class Nest:
 
                     if v.role == Array.Role.TEMP:
                         temp_array = NativeArray(
-                            Allocate(type=v.element_type, layout=v.layout)
+                            Allocate(type=v.element_type, layout=v.layout, flags=v.flags)
                         )
                         captures_to_replace[k] = context.mapping[value_id] = temp_array
                     elif v.role == Array.Role.CONST:
@@ -208,6 +208,8 @@ class Nest:
             elif isinstance(x, Dimension):
                 x._native_dim = Scalar(y)
                 logic_args[id(x)] = x._native_dim
+            elif isinstance(x, Scalar):
+                logic_args[id(x)] = Scalar(y)   
             else:
                 logic_args[id(x)] = y              
         

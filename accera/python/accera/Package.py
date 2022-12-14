@@ -30,6 +30,11 @@ del _R_DIM3
 
 @singledispatch
 def _convert_arg(arg: _lang_python._lang._Valor):
+    if isinstance(arg, lang.Dimension):
+        arg._native_dim = _lang_python._lang.Scalar(arg)
+        return arg._native_dim
+    if isinstance(arg, _lang_python._lang.Scalar):
+        return _lang_python._lang.Scalar(arg)
     if arg.layout == _lang_python._MemoryLayout():
         return _lang_python._lang.Scalar(arg)
     else:
@@ -224,7 +229,7 @@ class Package:
         base_name: str = "",
         parameters: Union[dict, List[dict]] = {},
         function_opts: dict = {},
-        auxiliary: dict = {},
+        auxiliary: dict = {}
     ) -> Union["accera.Function", List["accera.Function"]]:
         """Adds a function to the package. If multiple parameters are provided,
         generates and adds them according to the parameter grid.
@@ -241,6 +246,16 @@ class Package:
             function_opts: A dictionary of advanced options to set on the function, e.g. {"no_inline" : True}
             auxiliary: A dictionary of auxiliary metadata to include in the HAT package.
         """
+
+        # TEMP arrays in the args list are a programming error because they are meant to be internally defined in a function
+        # Note: this does not prevent TEMP arrays from being passed as an argument to a function, but they cannot be the
+        #       api-defining arguments for the function
+        temp_array_pos = []
+        for idx, arg in enumerate(args):
+            if isinstance(arg, lang.Array) and arg.role == lang.Array.Role.TEMP:
+                temp_array_pos.append(idx)
+        if len(temp_array_pos) > 0:
+            raise ValueError(f"Error in package.add() for function {base_name}: args includes TEMP array at positions {temp_array_pos}")
 
         heuristic_parameters_dict = {}
         if isinstance(source, lang.Plan):
@@ -274,7 +289,7 @@ class Package:
         base_name: str = "",
         parameters: dict = {},
         function_opts: dict = {},
-        auxiliary: dict = {},
+        auxiliary: dict = {}
     ) -> "accera.Function":
         """Adds a function to the package.
 
@@ -385,7 +400,7 @@ class Package:
         if isinstance(source, lang.Plan):
             self._dynamic_dependencies.update(source._dynamic_dependencies)
             source = source._create_function(
-                args, public=True, no_inline=function_opts.get("no_inline", False)
+                args, **function_opts
             )
             # fall-through
 
@@ -395,9 +410,8 @@ class Package:
             # due to the fall-through, we only need to validate here
             validate_target(source.target)
 
-            native_array_dim_args = [arg._get_native_array() if isinstance(arg, lang.Array) else arg._native_dim for arg in args ]
+            native_array_dim_args = [arg._get_native_array() if isinstance(arg, lang.Array) else arg._native_dim if isinstance(arg, lang.Dimension) else arg for arg in args ]
 
-            assert source.public
             source.name = get_function_name(source.target)
             source.base_name = base_name
             source.auxiliary = auxiliary_metadata
@@ -422,15 +436,13 @@ class Package:
             wrapped_func = lang.Function(
                 name=name,
                 base_name=base_name,
-                public=True,
-                decorated=function_opts.get("decorated", False),
-                no_inline=function_opts.get("no_inline", False),
                 args=tuple(map(_convert_arg, args)),
                 arg_size_references=compute_arg_size_references(args),
                 requested_args=args,
                 definition=wrapper_fn,
                 auxiliary=auxiliary_metadata,
                 target=Target.HOST,
+                **function_opts
             )
 
             self._fns[name] = wrapped_func
@@ -599,11 +611,9 @@ class Package:
             if target.runtime in [Target.Runtime.CUDA, Target.Runtime.ROCM]:
                 format |= Package.Format.HAT_SOURCE
             else:
-                format |= (
-                    Package.Format.HAT_STATIC
-                    if cross_compile
-                    else Package.Format.HAT_DYNAMIC
-                )
+                format |= Package.Format.HAT_STATIC
+                if not cross_compile:
+                    format |= Package.Format.HAT_DYNAMIC
 
         dynamic_link = bool(format & Package.Format.DYNAMIC_LIBRARY)
         if cross_compile and dynamic_link:
@@ -805,14 +815,26 @@ class Package:
 
             hat_file.Serialize(header_path)
 
-            if dynamic_link and (format & Package.Format.DYNAMIC_LIBRARY):
-                dyn_hat_path = f"{path_root}_dyn{extension}"
-                hat.create_dynamic_package(header_path, dyn_hat_path)
-                shutil.move(dyn_hat_path, header_path)
-            elif not cross_compile and (format & Package.Format.STATIC_LIBRARY):
+            if not cross_compile and (format & Package.Format.STATIC_LIBRARY):
                 lib_hat_path = f"{path_root}_lib{extension}"
                 hat.create_static_package(header_path, lib_hat_path)
+                
+                lib_hat_file = hat_file.Deserialize(lib_hat_path)
+                lib_hat_file.dependencies.auxiliary["static"] = lib_hat_file.dependencies.link_target
+                lib_hat_file.Serialize()
+                
                 shutil.move(lib_hat_path, header_path)
+
+            if dynamic_link:
+                dyn_hat_path = f"{path_root}_dyn{extension}"
+                hat.create_dynamic_package(header_path, dyn_hat_path)
+
+                dyn_hat_file = hat_file.Deserialize(dyn_hat_path)
+                dyn_hat_file.dependencies.auxiliary["dynamic"] = dyn_hat_file.dependencies.link_target
+                dyn_hat_file.Serialize()
+
+                shutil.move(dyn_hat_path, header_path)
+            
             # TODO: plumb cross-compilation of static libs
 
         return proj.module_file_sets

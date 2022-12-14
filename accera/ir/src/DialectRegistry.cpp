@@ -9,6 +9,7 @@
 #include "nest/LoopNestOps.h"
 #include "accera/AcceraOps.h"
 #include "value/ValueDialect.h"
+#include "intrinsics/AcceraIntrinsicsDialect.h"
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
@@ -38,6 +39,7 @@ mlir::DialectRegistry& GetDialectRegistry()
         registry.insert<value::ValueDialect,
                         loopnest::LoopNestDialect,
                         executionPlan::ExecutionPlanDialect,
+                        intrinsics::AcceraIntrinsicsDialect,
                         rc::AcceraDialect,
 
                         // MLIR dialects

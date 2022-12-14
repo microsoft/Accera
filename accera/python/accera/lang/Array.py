@@ -8,7 +8,7 @@ from typing import *
 from enum import Enum, auto
 from functools import partial
 
-from .._lang_python import ScalarType, _MemoryLayout
+from .._lang_python import ScalarType, _MemoryLayout, AllocateFlags
 from .._lang_python._lang import Array as NativeArray
 from .Layout import Layout, MemoryMapLayout
 from ..Parameter import DelayedParameter
@@ -36,7 +36,8 @@ class Array:
         element_type: Union["accera.ScalarType", type] = None,
         layout: Union["accera.Array.Layout", Tuple[int]] = Layout.FIRST_MAJOR,
         offset: int = 0,
-        shape: Tuple[Union[int, DelayedParameter, Dimension]] = None
+        shape: Tuple[Union[int, DelayedParameter, Dimension]] = None,
+        flags: "accera.AllocateFlags" = AllocateFlags.NONE
     ):
         """Creates an Array
 
@@ -74,6 +75,7 @@ class Array:
         self._shape = shape
         self._native_array = None
         self._delayed_calls = {}
+        self._flags = flags
 
         if self._role == Array.Role.CONST:
             if self._data is None:
@@ -155,6 +157,10 @@ class Array:
     @property
     def element_type(self):
         return self._element_type
+
+    @property
+    def flags(self):
+        return self._flags
 
     @property
     def _value(self):
@@ -267,7 +273,7 @@ class Array:
             return    # already contains data
 
         # Note: we are blowing away the original Value and replacing with a new allocated Value
-        self._native_array = NativeArray(Allocate(type=self._element_type, layout=self._layout))
+        self._native_array = NativeArray(Allocate(type=self._element_type, layout=self._layout, flags=self._flags))
         assert (not self._value.is_empty)
 
 

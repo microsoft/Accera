@@ -9,5 +9,6 @@ add_subdirectory(nest)
 add_subdirectory(exec)
 add_subdirectory(accera)
 add_subdirectory(value)
+add_subdirectory(intrinsics)
 
 add_subdirectory(argo)

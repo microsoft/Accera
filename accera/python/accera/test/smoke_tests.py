@@ -42,8 +42,11 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-from accera import Package, ScalarType, Nest, Array, Constants, Scalar, fuse, create_parameters
+INTERNAL_FUNCTION_OPTS = { "no_inline_into": True, "public": False }
+
+from accera import Package, ScalarType, Nest, Array, Constants, Scalar, fuse, create_parameters, Dimension, cast
 from accera._lang_python._lang import _MemorySpace, _MMASchedulingPolicy, _MMAShape
+from accera import min as accmin
 from accera.samples import MatrixMultiplication
 from accera.test import verifiers
 from accera.test.test_utils import expectedFailure, FailedReason
@@ -2843,6 +2846,475 @@ class SmokeTest(unittest.TestCase):
         self._verify_matrix_multiplication_function(function, package, test_name, check_correctness=check_correctness)
 
 
+    # TODO : move vpmaddwd tests to a different test file
+    def test_signextend_int16_matmul_vpmaddwd(self):
+        from accera import AllocateFlags
+        test_name = "test_signextend_int16_matmul_vpmaddwd"
+
+        def inout_array(arr: Array):
+            # Copy the array info but change it to input-output role for use in an inner function declaration
+            return Array(role=Array.Role.INPUT_OUTPUT, element_type=arr.element_type, shape=arr.shape)
+
+        M = 240
+        N = 256
+        K = 256
+
+        M_tile = 24
+        N_tile = 128
+        K_tile = 128
+
+        M_kernel_tile = 6
+        N_kernel_tile = 16
+        
+        N_vector_tile = 8
+        K_vector_tile = 2
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.uint8, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+
+        A_cache = Array(role=Array.Role.TEMP,
+                        element_type=ScalarType.int16,
+                        shape=(M_tile, K_tile),
+                        layout=Array.Layout.FIRST_MAJOR,
+                        flags=AllocateFlags.HEAP)
+        B_cache = Array(role=Array.Role.TEMP,
+                        element_type=ScalarType.uint8,
+                        shape=(N_tile // N_kernel_tile, K_tile // K_vector_tile, N_kernel_tile, K_vector_tile),
+                        layout=Array.Layout.FIRST_MAJOR,
+                        flags=AllocateFlags.HEAP)
+
+        C_cache = Array(role=Array.Role.TEMP,
+                        element_type=ScalarType.int32,
+                        shape=(M_kernel_tile, N_kernel_tile),
+                        layout=Array.Layout.FIRST_MAJOR,
+                        flags=AllocateFlags.STACK) # Stack allocate the small accumulation cache
+
+        io_A_cache = inout_array(A_cache)
+        io_B_cache = inout_array(B_cache)
+        io_C_cache = inout_array(C_cache)
+
+        B_ext = Array(role=Array.Role.TEMP,
+                        element_type=ScalarType.int16,
+                        shape=(N_kernel_tile, K_vector_tile),
+                        layout=Array.Layout.FIRST_MAJOR,
+                        flags=AllocateFlags.STACK)
+
+        io_B_ext = inout_array(B_ext)
+
+        m_tile_dim = Dimension()
+        n_tile_dim = Dimension()
+        k_tile_dim = Dimension()
+        m_kernel_dim = Dimension()
+        n_kernel_dim = Dimension()
+        k_kernel_dim = Dimension()
+        m_vector_dim = Dimension()
+
+        i_tile_idx = Dimension()
+        j_tile_idx = Dimension()
+        k_tile_idx = Dimension()
+        i_kernel_idx = Dimension()
+        j_kernel_idx = Dimension()
+        k_kernel_idx = Dimension()
+        i_vector_idx = Dimension()
+
+        package = Package()
+
+        ### Matmul inner kernel tile
+        mmi_nest = Nest(shape=(n_kernel_dim, k_kernel_dim))
+        mmi_j, mmi_k = mmi_nest.get_indices()
+        @mmi_nest.iteration_logic
+        def _matmul_inner():
+            mmi_i = i_vector_idx
+            tile_i = i_kernel_idx + mmi_i
+            tile_j = j_kernel_idx + mmi_j
+            tile_k = k_kernel_idx + mmi_k
+            io_C_cache[mmi_i, mmi_j] += io_A_cache[tile_i, tile_k] * io_B_ext[mmi_j, mmi_k]
+
+        mmi_sched = mmi_nest.create_schedule()
+        mmi_jj, mmi_kk = mmi_sched.tile(dict(zip([mmi_j, mmi_k], [N_kernel_tile, K_vector_tile])))
+        mmi_jjj = mmi_sched.split(mmi_jj, N_vector_tile)
+        mmi_sched.reorder(mmi_j, mmi_k, mmi_jj, mmi_jjj, mmi_kk)
+        mmi_plan = mmi_sched.create_plan()
+        mmi_plan.vectorize(mmi_jjj)
+        mmi_fn = package.add(mmi_plan,
+            args=(n_kernel_dim, k_kernel_dim,
+                io_A_cache, io_B_ext, io_C_cache,
+                i_kernel_idx, j_kernel_idx, k_kernel_idx, i_vector_idx),
+            base_name="matmul_kernel",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+        ### B element zero extend
+        bext_nest = Nest((n_kernel_dim, k_kernel_dim))
+        bext_j, bext_k = bext_nest.get_indices()
+        @bext_nest.iteration_logic
+        def _bext():
+            tile_j = j_kernel_idx
+            tile_k = k_kernel_idx
+            io_B_ext[bext_j, bext_k] = io_B_cache[tile_j / N_kernel_tile, tile_k / K_vector_tile, bext_j, bext_k]
+
+        bext_sched = bext_nest.create_schedule()
+        bext_jj, bext_kk = bext_sched.tile(dict(zip([bext_j, bext_k], [N_kernel_tile, K_vector_tile])))
+        bext_jjj = bext_sched.split(bext_jj, N_vector_tile)
+        bext_sched.reorder(bext_j, bext_k, bext_jj, bext_jjj, bext_kk)
+        bext_plan = bext_sched.create_plan()
+        bext_plan.vectorize(bext_jjj)
+        bext_fn = package.add(bext_plan,
+            args=(n_kernel_dim, k_kernel_dim,
+                io_B_cache, io_B_ext,
+                j_kernel_idx, k_kernel_idx),
+            base_name="b_ext_kernel",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+
+        ### Matmul outer kernel tile
+        mmo_nest = Nest(shape=(m_kernel_dim, k_tile_dim))
+        mmo_i, mmo_k = mmo_nest.get_indices()
+        @mmo_nest.iteration_logic
+        def _matmul():
+
+            ### NOTE: The order of operands in this accmin is important
+            #           When we vectorize a min statement that is either always true or always false, we can simplify it better.
+            #           accmin internally uses "less-than" as the min operator, so here we order (k_tile_dim - mmo_k, K_vector_tile) because:
+            #           k_tile_dim - mmo_k < K_vector_tile
+            #           Is false for k_tile_dim - mmo_k >= K_vector_tile
+            #           And importantly for vectorization it is therefore false for the entire K_vector_tile inner split and gets simplified
+            k_kernel_extent = accmin(k_tile_dim - mmo_k, cast(K_vector_tile, ScalarType.index))
+
+            bext_fn(n_kernel_dim, k_kernel_extent, io_B_cache, B_ext, j_kernel_idx, mmo_k)
+            mmi_fn(n_kernel_dim, k_kernel_extent, io_A_cache, B_ext, io_C_cache, i_kernel_idx, j_kernel_idx, mmo_k, mmo_i)
+
+        mmo_sched = mmo_nest.create_schedule()
+        mmo_ii, mmo_kk = mmo_sched.tile(dict(zip([mmo_i, mmo_k], [M_kernel_tile, K_tile])))
+        mmo_kkk = mmo_sched.split(mmo_kk, K_vector_tile)
+        mmo_sched.reorder(mmo_k, mmo_i, mmo_kk, mmo_ii, mmo_kkk)
+        mmo_plan = mmo_sched.create_plan()
+        mmo_plan._erase_loops([mmo_kkk])
+        mmo_fn = package.add(mmo_plan,
+            args=(m_kernel_dim, n_kernel_dim, k_tile_dim,
+                io_A_cache, io_B_cache, io_C_cache,
+                i_kernel_idx, j_kernel_idx),
+            base_name="matmul_kernel",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+
+        ### C cache init
+        cci_nest = Nest(shape=(M_kernel_tile, N_kernel_tile))
+        cci_i, cci_j = cci_nest.get_indices()
+        @cci_nest.iteration_logic
+        def _cci():
+            io_C_cache[cci_i, cci_j] = 0
+
+        cci_sched = cci_nest.create_schedule()
+        cci_plan = cci_sched.create_plan()
+        cci_fn = package.add(cci_plan, args=(io_C_cache,), base_name="c_cache_init_kernel", function_opts=INTERNAL_FUNCTION_OPTS)
+
+        ### C cache reduce
+        ccr_nest = Nest(shape=(m_kernel_dim, n_kernel_dim))
+        ccr_i, ccr_j = ccr_nest.get_indices()
+        @ccr_nest.iteration_logic
+        def _ccr():
+            global_i = i_tile_idx + i_kernel_idx + ccr_i
+            global_j = j_tile_idx + j_kernel_idx + ccr_j
+            C[global_i, global_j] += io_C_cache[ccr_i, ccr_j]
+
+        ccr_sched = ccr_nest.create_schedule()
+        ccr_ii, ccr_jj = ccr_sched.tile(dict(zip([ccr_i, ccr_j], [M_kernel_tile, N_kernel_tile])))
+        ccr_sched.reorder(ccr_i, ccr_j, ccr_ii, ccr_jj)
+        ccr_plan = ccr_sched.create_plan()
+        ccr_plan.vectorize(ccr_ii)
+        ccr_fn = package.add(ccr_plan,
+            args=(m_kernel_dim, n_kernel_dim,
+                C, io_C_cache,
+                i_tile_idx, j_tile_idx,
+                i_kernel_idx, j_kernel_idx),
+            base_name="c_cache_reduce_kernel",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+        ### A cache pack
+        pa_nest = Nest(shape=(m_tile_dim, k_tile_dim))
+        pa_i, pa_k = pa_nest.get_indices()
+        @pa_nest.iteration_logic
+        def _pack_a():
+            global_i = i_tile_idx + pa_i
+            global_k = k_tile_idx + pa_k
+            io_A_cache[pa_i, pa_k] = A[global_i, global_k]
+
+        pa_sched = pa_nest.create_schedule()
+        pa_ii, pa_kk = pa_sched.tile(dict(zip([pa_i, pa_k], [M_tile, K_tile])))
+        pa_sched.reorder(pa_i, pa_k, pa_ii, pa_kk)
+        pa_plan = pa_sched.create_plan()
+        pa_fn = package.add(pa_plan,
+            args=(m_tile_dim, k_tile_dim,
+                A, io_A_cache,
+                i_tile_idx, k_tile_idx),
+            base_name="pack_a",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+
+        ### B cache pack
+        pb_nest = Nest(shape=(n_tile_dim, k_tile_dim))
+        pb_j, pb_k = pb_nest.get_indices()
+        @pb_nest.iteration_logic
+        def _pack_b():
+            global_j = j_tile_idx + pb_j
+            global_k = k_tile_idx + pb_k
+            io_B_cache[pb_j / N_kernel_tile, pb_k / K_vector_tile, pb_j % N_kernel_tile, pb_k % K_vector_tile] = B[global_k, global_j]
+
+        pb_sched = pb_nest.create_schedule()
+        pb_jj, pb_kk = pb_sched.tile(dict(zip([pb_j, pb_k], [N_tile, K_tile])))
+        pb_jjj, pb_kkk = pb_sched.tile(dict(zip([pb_jj, pb_kk], [N_vector_tile, K_vector_tile])))
+        pb_sched.reorder(pb_j, pb_k, pb_jj, pb_kk, pb_jjj, pb_kkk)
+        pb_plan = pb_sched.create_plan()
+        pb_plan.vectorize(pb_jjj)
+        pb_fn = package.add(pb_plan,
+            args=(n_tile_dim, k_tile_dim,
+                B, io_B_cache,
+                j_tile_idx, k_tile_idx),
+            base_name="pack_b",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+
+        compute_kernel_nest = Nest(shape=(1,))
+        @compute_kernel_nest.iteration_logic
+        def _hack():
+            cci_fn(C_cache) # Don't need to range-clamp this, we can just zero out the full buffer every time
+            mmo_fn(m_kernel_dim, n_kernel_dim, k_tile_dim, io_A_cache, io_B_cache, C_cache, i_kernel_idx, j_kernel_idx)
+            ccr_fn(m_kernel_dim, n_kernel_dim, C, C_cache, i_tile_idx, j_tile_idx, i_kernel_idx, j_kernel_idx)
+
+        compute_kernel_sched = compute_kernel_nest.create_schedule()
+        compute_kernel_plan = compute_kernel_sched.create_plan()
+        compute_kernel_fn = package.add(compute_kernel_plan,
+            args=(
+                m_kernel_dim, n_kernel_dim, k_tile_dim,
+                io_A_cache, io_B_cache, C,
+                i_tile_idx, j_tile_idx, k_tile_idx,
+                i_kernel_idx, j_kernel_idx),
+            base_name="compute_kernel_fn",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+        tile_nest = Nest(shape=(m_tile_dim, n_tile_dim))
+        tile_i, tile_j = tile_nest.get_indices()
+
+        @tile_nest.iteration_logic
+        def _tile():
+            m_kernel_extent = accmin(m_tile_dim - tile_i, cast(M_kernel_tile, ScalarType.index))
+            n_kernel_extent = accmin(n_tile_dim - tile_j, cast(N_kernel_tile, ScalarType.index))
+            compute_kernel_fn(m_kernel_extent, n_kernel_extent, k_tile_dim,
+                io_A_cache, io_B_cache, C,
+                i_tile_idx, j_tile_idx, k_tile_idx,
+                tile_i, tile_j)
+
+        tile_sched = tile_nest.create_schedule()
+        tile_ii, tile_jj = tile_sched.tile({ tile_i: M_tile, tile_j: N_tile })
+        tile_iii, tile_jjj = tile_sched.tile({ tile_ii: M_kernel_tile, tile_jj: N_kernel_tile })
+        tile_sched.reorder(tile_i, tile_j, tile_ii, tile_jj, tile_iii, tile_jjj)
+        tile_plan = tile_sched.create_plan()
+        tile_plan._erase_loops([tile_iii, tile_jjj])
+        tile_fn = package.add(tile_plan,
+            args=(m_tile_dim, n_tile_dim, k_tile_dim,
+                io_A_cache, io_B_cache, C,
+                i_tile_idx, j_tile_idx, k_tile_idx),
+            base_name="tile_fn",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+
+        global_nest = Nest(shape=(M, N, K))
+        global_i, global_j, global_k = global_nest.get_indices()
+
+        @global_nest.iteration_logic
+        def _tile():
+            m_tile_extent = accmin(M - global_i, cast(M_tile, ScalarType.index))
+            n_tile_extent = accmin(N - global_j, cast(N_tile, ScalarType.index))
+            k_tile_extent = accmin(K - global_k, cast(K_tile, ScalarType.index))
+
+            pa_fn(m_tile_extent, k_tile_extent, A, A_cache, global_i, global_k)
+            pb_fn(n_tile_extent, k_tile_extent, B, B_cache, global_j, global_k)
+            tile_fn(m_tile_extent, n_tile_extent, k_tile_extent, A_cache, B_cache, C, global_i, global_j, global_k)
+
+        global_sched = global_nest.create_schedule()
+        global_ii, global_jj, global_kk = global_sched.tile({ global_i: M_tile, global_j: N_tile, global_k: K_tile })
+        global_sched.reorder(global_i, global_j, global_k, global_ii, global_jj, global_kk)
+        global_plan = global_sched.create_plan()
+        global_plan._erase_loops([global_ii, global_jj, global_kk])
+
+        function = package.add(global_plan, args=(A, B, C), base_name=test_name)
+        
+        A_test = np.random.random((M, K)).astype(np.int16)
+        B_test = np.random.random((K, N)).astype(np.uint8)
+        C_test = np.random.random((M, N)).astype(np.int32)
+
+        correctness_check_values = {
+            "pre": (A_test, B_test, C_test),
+            "post": (A_test, B_test, C_test + A_test @ B_test),
+        }
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(test_name, format=Package.Format.DEFAULT | Package.Format.MLIR, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False)
+            v.check_correctness(
+                function.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
+
+    def test_int16_matmul_vpmaddwd(self):
+        test_name = "test_int16_matmul_vpmaddwd"
+        M = 240
+        N = 256
+        K = 256
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += A[i, k] * B[k, j]
+
+        schedule = nest.create_schedule()
+        ii, jj, kk = schedule.tile({ i: 24, j: 128, k: 128 })
+        iii, jjj, kkk = schedule.tile({ ii: 6, jj: 16, kk: 4 })
+        jjjj, kkkk = schedule.tile({ jjj: 8, kkk: 2 })
+
+        schedule.reorder(i, j, k,
+                         ii, jj, kk,
+                         kkk, iii, jjj,
+                         jjjj, kkkk)
+
+        plan = schedule.create_plan()
+        plan.cache(A, index = ii, element_type = ScalarType.int16, vectorize=False)
+        plan.cache(B, index = jjjj, trigger_index = jj, layout = Array.Layout.LAST_MAJOR, vectorize=False)
+        plan.cache(C, iii)
+        plan.vectorize(jjjj)
+
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+        
+        A_test = np.random.random((M, K)).astype(np.int16)
+        B_test = np.random.random((K, N)).astype(np.int16)
+        C_test = np.random.random((M, N)).astype(np.int32)
+
+        correctness_check_values = {
+            "pre": (A_test, B_test, C_test),
+            "post": (A_test, B_test, C_test + A_test @ B_test),
+        }
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False)
+            v.check_correctness(
+                function.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
+
+
+    def test_int32_horizontal_vector_add(self):
+        test_name = "test_int32_horizontal_vector_add"
+        M = 256
+        N = 16
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(M,), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i] += A[i, j]
+
+        schedule = nest.create_schedule()
+
+        plan = schedule.create_plan()
+        plan.vectorize(j)
+
+        package = Package()
+        function = package.add(plan, args=(A, B), base_name=test_name)
+        
+        A_test = np.random.random((M, N)).astype(np.int32)
+        B_test = np.random.random((M,)).astype(np.int32)
+
+        B_ref = np.zeros((M,)).astype(np.int32)
+        B_ref[:] = B_test[:]
+        for j in range(N):
+            B_ref[:] += A_test[:, j]
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_test, B_ref),
+        }
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False)
+            v.check_correctness(
+                function.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
+    def test_int16_to_int32_horizontal_vector_add_simple(self):
+        test_name = "test_int16_to_int32_horizontal_vector_add_simple"
+        M = 256
+        N = 16
+
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(M,), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i] += A[i, j]
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.reorder(i, ii, j)
+        plan = schedule.create_plan()
+        plan.vectorize(ii)
+
+        package = Package()
+        function = package.add(plan, args=(A, B), base_name=test_name)
+        
+        A_test = np.random.random((M, N)).astype(np.int16)
+        B_test = np.random.random((M,)).astype(np.int32)
+
+        B_ref = np.zeros((M,)).astype(np.int32)
+        B_ref[:] = B_test[:]
+        for j in range(N):
+            B_ref[:] += A_test[:, j]
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_test, B_ref),
+        }
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False)
+            v.check_correctness(
+                function.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
+
     # Cache widening the type
     def test_matmul_input_cache_element_type_widen(self) -> None:
         test_name = "test_matmul_input_cache_element_type_widen"
@@ -4165,13 +4637,13 @@ class SmokeTest(unittest.TestCase):
             # Function decl
             checker.check_label('accv.func nested @test_gpu_cache_different_input_layouts_')
             checker.check_same(
-                '%[[Array_A:[a-z0-9_]+]]: memref<4x2560x2048xf32, affine_map<(d0, d1, d2) -> (d0 * 5242880 + d1 * 2048 + d2)>>'
+                '%[[Array_A:[a-z0-9_]+]]: memref<4x2560x2048xf32>'
             )
             checker.check_same(
                 '%[[Array_B:[a-z0-9_]+]]: memref<4x2048x1536xf32, affine_map<(d0, d1, d2) -> (d0 + d1 * 4 + d2 * 8192)>>'
             )
             checker.check_same(
-                '%[[Array_C:[a-z0-9_]+]]: memref<4x2560x1536xf32, affine_map<(d0, d1, d2) -> (d0 * 3932160 + d1 * 1536 + d2)>>'
+                '%[[Array_C:[a-z0-9_]+]]: memref<4x2560x1536xf32>'
             )
 
             # Block X/Y
@@ -4184,8 +4656,6 @@ class SmokeTest(unittest.TestCase):
 
             # Loops outside of cache regions
             checker.check('affine.for %[[b_iv:[a-z0-9_]+]] = 0 to 4 {')
-            checker.check('affine.for %[[Block_X_iv:[a-z0-9_]+]] = 0 to 1 {')
-            checker.check('affine.for %[[Block_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check('affine.for %[[k_iv:[a-z0-9_]+]] = 0 to 2048 step 512 {')
             checker.check('affine.for %[[kk_iv:[a-z0-9_]+]] = 0 to 512 step 32 {')
 
@@ -4194,10 +4664,8 @@ class SmokeTest(unittest.TestCase):
             checker.check('%[[Thread_X:[0-9_]+]] = gpu.thread_id x')
             checker.check('%[[Thread_Y:[0-9_]+]] = gpu.thread_id y')
             checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
-            checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
-            checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check(
-                '%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][%[[b_iv]], symbol(%[[Block_X]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Block_X]]) floordiv 160) * 2560, %[[lpt_iv]] * 16 + %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]])] : memref<4x2560x2048xf32, affine_map<(d0, d1, d2) -> (d0 * 5242880 + d1 * 2048 + d2)>>'
+                '%[[Loaded_A_Val:[0-9_]+]] = affine.load %[[Array_A]][%[[b_iv]], symbol(%[[Block_X]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Block_X]]) floordiv 160) * 2560, %[[lpt_iv]] * 16 + %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]])] : memref<4x2560x2048xf32>'
             )
             checker.check(
                 'affine.store %[[Loaded_A_Val]], %[[Cache_A]][0, symbol(%[[Thread_X]]), %[[lpt_iv]] * 16 + symbol(%[[Thread_Y]])] : memref<1x16x32xf32, 3>'
@@ -4208,8 +4676,6 @@ class SmokeTest(unittest.TestCase):
             checker.check('%[[Thread_X:[0-9_]+]] = gpu.thread_id x')
             checker.check('%[[Thread_Y:[0-9_]+]] = gpu.thread_id y')
             checker.check('affine.for %[[lpt_iv:[a-z0-9_]+]] = 0 to 2 {')
-            checker.check('affine.for %[[Thread_X_iv:[a-z0-9_]+]] = 0 to 1 {')
-            checker.check('affine.for %[[Thread_Y_iv:[a-z0-9_]+]] = 0 to 1 {')
             checker.check(
                 '%[[Loaded_B_Val:[0-9_]+]] = affine.load %[[Array_B]][%[[b_iv]], %[[k_iv]] + %[[kk_iv]] + symbol(%[[Thread_Y]]) * 16 + symbol(%[[Thread_X]]) - (symbol(%[[Thread_Y]]) floordiv 2) * 32, %[[lpt_iv]] * 8 + symbol(%[[Block_Y]]) * 16 - (symbol(%[[Block_Y]]) floordiv 96) * 1536 + symbol(%[[Thread_Y]]) floordiv 2 - ((%[[lpt_iv]] * 8 + symbol(%[[Thread_Y]]) floordiv 2) floordiv 16) * 16] : memref<4x2048x1536xf32, affine_map<(d0, d1, d2) -> (d0 + d1 * 4 + d2 * 8192)>>'
             )
@@ -5057,6 +5523,103 @@ class SmokeTest(unittest.TestCase):
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
 
+
+    def test_loop_erase_hack(self) -> None:
+        # We want to fuse two nests along at least one dimension that only one of them should actually have, but for positioning reasons
+        # it must exist in both. We therefore fuse along all the dimensions and erase the inner unfused loops that we don't actually need
+
+        M = 256
+        N = 128
+        K = 512
+        M_tile = 32
+        N_tile = 16
+        K_tile = 8
+        A = Array(role=Array.Role.INPUT, shape=(M, K))
+        B = Array(role=Array.Role.INPUT, shape=(K, N))
+        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+
+        # Create nest0 and schedule
+        nest0 = Nest(shape=(M, N, K))
+        i0, j0, k0 = nest0.get_indices()
+
+        @nest0.iteration_logic
+        def _():
+            C[i0, j0] += A[i0, k0] * B[k0, j0]
+
+        schedule0 = nest0.create_schedule()
+        ii0, jj0, kk0 = schedule0.tile({ i0: M_tile, j0: N_tile, k0: K_tile })
+        schedule0.reorder(i0, j0, k0, ii0, jj0, kk0)
+
+        # Create nest1 and schedule1
+        nest1 = Nest(shape=(M, N, K))
+        i1, j1, k1 = nest1.get_indices()
+
+        @nest1.iteration_logic
+        def _():
+            C[i1, j1] = C[i1, j1] * Scalar(0.2)
+
+        schedule1 = nest1.create_schedule()
+        ii1, jj1, kk1 = schedule1.tile({ i1: M_tile, j1: N_tile, k1: K_tile })
+        schedule1.reorder(i1, j1, k1, ii1, jj1, kk1)
+
+        schedule = fuse((schedule0, schedule1), partial=3)
+        f, i, j, k, ii0, jj0, kk0, ii1, jj1, kk1 = schedule.get_indices()
+        schedule.reorder(i, j, k, f, ii0, jj0, kk0, ii1, jj1, kk1)
+        plan = schedule.create_plan()
+        plan._erase_loops([kk1])
+
+        # Create a package and add our function definition to it
+        package_name = "test_loop_erase_hack"
+        package = Package()
+        package.add(plan, args=(A, B, C), base_name="test_loop_erase_hack")
+
+        # Build the HAT package
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
+
+    def test_dynamic_size_redundant_split(self) -> None:
+        package_name = "test_dynamic_size_redundant_split"
+        split_size = 32
+
+        m_extent = Dimension()
+        input_arr = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        output_arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+
+        nest = Nest((m_extent,))
+        i = nest.get_indices()
+        @nest.iteration_logic
+        def _():
+            output_arr[i] += input_arr[i]
+
+        sched = nest.create_schedule()
+        ii = sched.split(i, split_size)
+        iii = sched.split(ii, split_size)
+        sched.reorder(i, ii, iii)
+        plan = sched.create_plan()
+
+        # Create a package and add our function definition to it
+        package = Package()
+
+        fn = package.add(plan, args=(m_extent, input_arr, output_arr), base_name=package_name)
+
+        M_test = np.int64(67)
+        input_test = np.random.random((M_test,)).astype(np.float32)
+        output_test = np.random.random((M_test,)).astype(np.float32)
+        correctness_check_values = {
+            "pre": [M_test, input_test, output_test],
+            "post": [M_test, input_test, output_test + input_test],
+        }
+
+        # Build the HAT package
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+
+            v.check_correctness(
+                fn.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
 
 if __name__ == '__main__':
     unittest.main(verbosity=10)

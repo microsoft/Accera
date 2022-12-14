@@ -281,7 +281,7 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
 
         {
             RewritePatternSet patterns(context);
-            affinetr::populateAcceraAffineSimplificationPatterns(patterns);
+            affinetr::populateAcceraAffineExprSimplificationPatterns(patterns);
             (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns), singleIterationConfig);
             snapshotter.Snapshot("AcceraAffineSimplification", vFuncOp);
         }
@@ -306,6 +306,21 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
             utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
             (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
             snapshotter.Snapshot("ExecutionPlanVectorize_Canonicalize", vFuncOp);
+        }
+
+        {
+            RewritePatternSet patterns(context);
+            tr::populateLoopSimplificationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            snapshotter.Snapshot("LoopSimplification", vFuncOp);
+        }
+
+        {
+            RewritePatternSet patterns(context);
+            xptr::populateExecutionPlanVectorizeUnrollPatterns(printVecOpDetails, patterns);
+            utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
+            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
+            snapshotter.Snapshot("ExecutionPlanVectorizeUnroll_Canonicalize", vFuncOp);
         }
 
         {

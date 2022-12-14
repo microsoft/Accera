@@ -16,6 +16,7 @@ using OwningRewritePatternList = RewritePatternSet;
 
 namespace accera::transforms::affine
 {
-void populateAcceraAffineSimplificationPatterns(mlir::OwningRewritePatternList& patterns);
+void populateAcceraAffineExprSimplificationPatterns(mlir::OwningRewritePatternList& patterns);
+void populateAcceraAffineLoopSimplificationPatterns(mlir::OwningRewritePatternList& patterns);
 std::unique_ptr<mlir::Pass> createAffineSimplificationPass();
 } // namespace accera::transforms::affine

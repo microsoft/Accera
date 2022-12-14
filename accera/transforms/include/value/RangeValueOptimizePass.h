@@ -12,9 +12,12 @@
 namespace mlir
 {
 class Pass;
+class RewritePatternSet;
 } // namespace mlir
 
 namespace accera::transforms::value
 {
+void populateRangeValueOptimizePatterns(mlir::RewritePatternSet& patterns);
+
 std::unique_ptr<mlir::Pass> createRangeValueOptimizePass();
 } // namespace accera::transforms::value

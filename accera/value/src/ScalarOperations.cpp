@@ -10,6 +10,8 @@
 #include "Scalar.h"
 #include "ValueType.h"
 
+#include "ir/include/value/ValueDialect.h"
+
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <stdexcept>
@@ -158,6 +160,24 @@ namespace value
         }
     }
 
+    Scalar Round(Scalar s)
+    {
+        return GetContext().Round(s);
+    }
+
+    Scalar Remainderf(Scalar numer, Scalar denom)
+    {
+        static auto remainderfFunction = [&]() {
+            FunctionDeclaration remainderfDecl("remainderf");
+            remainderfDecl.External(true)
+                            .Decorated(false)
+                            .Parameters(Value(ValueType::Float, ScalarLayout), Value(ValueType::Float, ScalarLayout))
+                            .Returns(Value(ValueType::Float, ScalarLayout));
+            return GetContext().DeclareExternalFunction(remainderfDecl);
+        }();
+        return Scalar(*remainderfFunction(std::vector<Value>{Wrap(UnwrapScalar(numer)), Wrap(UnwrapScalar(denom))})); // TODO : fix this Wrap(Unwrap(...)) pattern... it's currently needed to invoke GetElement on a sliced array
+    }
+
     Scalar Ceil(Scalar s)
     {
         return ScalarOpBuilder<mlir::math::CeilOp>(s);
@@ -200,16 +220,12 @@ namespace value
 
     Scalar Max(Scalar s1, Scalar s2)
     {
-        std::tie(s1, s2) = Scalar::MakeTypeCompatible(s1, s2);
-        
-        return Select(s1 > s2, s1, s2);
+        return GetContext().BinaryOperation(ValueBinaryOperation::max, s1.GetValue(), s2.GetValue());
     }
 
     Scalar Min(Scalar s1, Scalar s2)
     {
-        std::tie(s1, s2) = Scalar::MakeTypeCompatible(s1, s2);
-
-        return Select(s1 < s2, s1, s2);
+        return GetContext().BinaryOperation(ValueBinaryOperation::min, s1.GetValue(), s2.GetValue());
     }
 
     Scalar Clamp(Scalar s, Scalar min, Scalar max)

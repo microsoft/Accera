@@ -84,6 +84,12 @@ def acc_NumericType :
 def acc_ScalarOrVectorNumericType :
     AnyTypeOf<[acc_NumericType, VectorOf<[acc_NumericType]>]>;
 
+def acc_IntegerOrIntegerVectorNumericType :
+    AnyTypeOf<[AnyInteger, VectorOf<[AnyInteger]>]>;
+
+def acc_FloatOrFloatVectorNumericType :
+    AnyTypeOf<[AnyFloat, VectorOf<[AnyFloat]>]>;
+
 class acc_Scalarlike<Type type> :
     AnyTypeOf<[type, acc_ContainerOfTypeWithNumElements<[type], 1>]>;
 

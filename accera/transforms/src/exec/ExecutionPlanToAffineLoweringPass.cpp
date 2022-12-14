@@ -5910,12 +5910,12 @@ LogicalResult VectorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         return failure();
     }
 
-    // First, match and rewrite the special case for vectorizing int16 matmul
-    auto result = vectorizeInt16MatMul(affineForOp, rewriter);
-    if (succeeded(result))
+    // First, check if we have a custom match and rewrite pattern for this exact subgraph
+    auto knownSubgraphResult = TryVectorizeKnownSubgraph(affineForOp, rewriter);
+    if (succeeded(knownSubgraphResult))
     {
         RemoveVectorizationInfo(affineForOp);
-        return result;
+        return knownSubgraphResult;
     }
 
     auto vectorInfo = GetVectorizationInfo(affineForOp);
@@ -5933,6 +5933,23 @@ LogicalResult VectorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
         // Discard loops that never run
         rewriter.eraseOp(affineForOp);
         return success();
+    }
+
+    // If this isn't the innermost loop in the nest and we don't have custom handling for this pattern,
+    // then in-place unroll the loops between this loop and the innermost loop and vectorize the innermost loop
+    SmallVector<AffineForOp, 4> nestedLoops;
+    mlir::getPerfectlyNestedLoops(nestedLoops, affineForOp);
+    if (nestedLoops.size() > 1)
+    {
+        RemoveVectorizationInfo(affineForOp);
+        for (unsigned loopIdx = 0; loopIdx < nestedLoops.size() - 1; loopIdx++)
+        {
+            InPlaceUnrollInfo inPlaceUnrollInfo{ 0 }; // 0 for full unroll
+            SetInPlaceUnrollInfo(nestedLoops[loopIdx], inPlaceUnrollInfo);
+        }
+        auto vecInfoAttr = VectorizationInfoAttr::get(vectorInfo, rewriter.getContext());
+        nestedLoops[nestedLoops.size() - 1]->setAttr(VectorizationInfoAttr::getKeyName(), vecInfoAttr);
+        return failure();
     }
 
     auto affineForOpIV = affineForOp.getInductionVar();
@@ -7850,6 +7867,7 @@ void ExecutionPlanVectorizationPass::runOnOperation()
 
     RewritePatternSet patterns(&getContext());
     accera::transforms::executionPlan::populateExecutionPlanVectorizePatterns(printVecOpDetails, patterns);
+    accera::transforms::executionPlan::populateExecutionPlanVectorizeUnrollPatterns(printVecOpDetails, patterns);
 
     (void)applyPatternsAndFoldGreedily(operation, std::move(patterns));
 }
@@ -8073,8 +8091,12 @@ void populateExecutionPlanAdjustCacheMappingPositionPatterns(mlir::RewritePatter
 
 void populateExecutionPlanVectorizePatterns(bool printVectorizationDetails, mlir::RewritePatternSet& patterns)
 {
-    patterns.insert<VectorizeAffineForOpConversion,
-                    InPlaceUnrollAffineForOpConversion>(patterns.getContext(), printVectorizationDetails);
+    patterns.insert<VectorizeAffineForOpConversion>(patterns.getContext(), printVectorizationDetails);
+}
+
+void populateExecutionPlanVectorizeUnrollPatterns(bool printVectorizationDetails, mlir::RewritePatternSet& patterns)
+{
+    patterns.insert<InPlaceUnrollAffineForOpConversion>(patterns.getContext(), printVectorizationDetails);
 }
 
 void populateExecutionPlanTensorizePatterns(mlir::RewritePatternSet& patterns)

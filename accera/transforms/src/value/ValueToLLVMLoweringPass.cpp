@@ -8,6 +8,7 @@
 
 #include <ir/include/IRUtil.h>
 #include <ir/include/value/ValueDialect.h>
+#include <ir/include/intrinsics/AcceraIntrinsicsDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Types.h>
@@ -554,6 +555,89 @@ struct MemrefAllocOpLowering : public ConvertOpToLLVMPattern<memref::AllocOp>
         rewriter.replaceOp(op, { memRefDescriptor });
     }
 };
+
+// TODO : de-dupe these lowerings, all 2-arg-1-result vector intrinsics appear to have the same lowering
+struct VpmaddwdOpLowering : public ValueLLVMOpConversionPattern<vpmaddwd>
+{
+    using ValueLLVMOpConversionPattern::ValueLLVMOpConversionPattern;
+
+    LogicalResult matchAndRewrite(
+        vpmaddwd op,
+        OpAdaptor adaptor,
+        ConversionPatternRewriter& rewriter) const override
+    {
+        LLVMTypeConverter llvmTypeConverter(rewriter.getContext());
+        auto outputVecType = op.getType().cast<mlir::VectorType>();
+        auto outputVecLLVMType = llvmTypeConverter.convertType(outputVecType);
+        rewriter.replaceOpWithNewOp<intrinsics::VpmaddwdOp>(op, outputVecLLVMType, op.lhs(), op.rhs());
+        return success();
+    }
+};
+
+struct VmaxpsOpLowering : public ValueLLVMOpConversionPattern<vmaxps>
+{
+    using ValueLLVMOpConversionPattern::ValueLLVMOpConversionPattern;
+
+    LogicalResult matchAndRewrite(
+        vmaxps op,
+        OpAdaptor adaptor,
+        ConversionPatternRewriter& rewriter) const override
+    {
+        LLVMTypeConverter llvmTypeConverter(rewriter.getContext());
+        auto outputVecType = op.getType().cast<mlir::VectorType>();
+        auto outputVecLLVMType = llvmTypeConverter.convertType(outputVecType);
+        rewriter.replaceOpWithNewOp<intrinsics::VmaxpsOp>(op, outputVecLLVMType, op.lhs(), op.rhs());
+        return success();
+    }
+};
+
+struct VminpsOpLowering : public ValueLLVMOpConversionPattern<vminps>
+{
+    using ValueLLVMOpConversionPattern::ValueLLVMOpConversionPattern;
+
+    LogicalResult matchAndRewrite(
+        vminps op,
+        OpAdaptor adaptor,
+        ConversionPatternRewriter& rewriter) const override
+    {
+        LLVMTypeConverter llvmTypeConverter(rewriter.getContext());
+        auto outputVecType = op.getType().cast<mlir::VectorType>();
+        auto outputVecLLVMType = llvmTypeConverter.convertType(outputVecType);
+        rewriter.replaceOpWithNewOp<intrinsics::VminpsOp>(op, outputVecLLVMType, op.lhs(), op.rhs());
+        return success();
+    }
+};
+
+struct RoundOpLowering : public ValueLLVMOpConversionPattern<RoundOp>
+{
+    using ValueLLVMOpConversionPattern::ValueLLVMOpConversionPattern;
+
+    LogicalResult matchAndRewrite(
+        RoundOp op,
+        OpAdaptor adaptor,
+        ConversionPatternRewriter& rewriter) const override
+    {
+        LLVMTypeConverter llvmTypeConverter(rewriter.getContext());
+        auto outputType = llvmTypeConverter.convertType(op.getType());
+
+        auto inputType = op.val().getType();
+        if (inputType.isa<mlir::VectorType>())
+        {
+            rewriter.replaceOpWithNewOp<intrinsics::RoundF32VecAVX2>(op, outputType, op.val());
+        }
+        else
+        {
+            mlir::Value roundedFPVal = rewriter.create<intrinsics::RoundEvenOp>(op.getLoc(), op.val());
+
+            // Create arithmetic dialect cast ops with the expectation that other arithmetic dialect ops are getting lowered as part of this pass
+            auto signlessOutputType = util::ToSignlessMLIRType(rewriter, op.getType());
+            mlir::Value roundedSIVal = rewriter.create<mlir::arith::FPToSIOp>(op.getLoc(), roundedFPVal, signlessOutputType);
+            rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(op, op.getType(), roundedSIVal);
+        }
+        return success();
+    }
+};
+
 
 struct ValueToLLVMLoweringPass : public ConvertValueToLLVMBase<ValueToLLVMLoweringPass>
 {
@@ -1281,6 +1365,7 @@ void ValueToLLVMLoweringPass::runOnModule()
     snapshotter.Snapshot("Initial", moduleOp);
 
     target.addLegalOp<ModuleOp>();
+    target.addLegalDialect<intrinsics::AcceraIntrinsicsDialect>();
 
     // Set pass parameter values with command line options inherited from ConvertValueToLLVMBase
     mlir::LowerToLLVMOptions options(&getContext());
@@ -1328,16 +1413,28 @@ void ValueToLLVMLoweringPass::runOnModule()
     snapshotter.Snapshot("BarePtrConversion", moduleOp);
 
     {
+        auto intermediateTarget = target;
+        intermediateTarget.addLegalDialect<mlir::arith::ArithmeticDialect>();
+        intermediateTarget.addLegalDialect<mlir::BuiltinDialect>();
+
         RewritePatternSet patterns(&getContext());
         populateValueToLLVMPatterns(llvmTypeConverter, patterns);
 
         populateLinalgToLLVMConversionPatterns(llvmTypeConverter, patterns);
 
         populateVectorToLLVMConversionPatterns(llvmTypeConverter, patterns, /*reassociateFPReductions*/ true);
+
+        // Subset of LowerVectorToLLVMPass patterns
+        vector::populateVectorToVectorCanonicalizationPatterns(patterns);
+        vector::populateVectorBroadcastLoweringPatterns(patterns);
+        vector::populateVectorMaskOpLoweringPatterns(patterns);
+        vector::populateVectorShapeCastLoweringPatterns(patterns);
+        vector::populateVectorTransposeLoweringPatterns(patterns);
+        vector::populateVectorTransferLoweringPatterns(patterns, /*maxTransferRank=*/1);
         vector::populateVectorContractLoweringPatterns(patterns, vector::VectorTransformsOptions{}.setVectorTransferSplit(mlir::vector::VectorTransferSplit::VectorTransfer));
         vector::populateVectorMaskMaterializationPatterns(patterns, true);
 
-        if (failed(applyPartialConversion(moduleOp, target, std::move(patterns))))
+        if (failed(applyPartialConversion(moduleOp, intermediateTarget, std::move(patterns))))
         {
             signalPassFailure();
         }
@@ -1353,6 +1450,15 @@ void ValueToLLVMLoweringPass::runOnModule()
         populateMemRefToLLVMConversionPatterns(llvmTypeConverter, patterns);
         populateStdToLLVMConversionPatterns(llvmTypeConverter, patterns);
         arith::populateArithmeticToLLVMConversionPatterns(llvmTypeConverter, patterns);
+        arith::populateArithmeticExpandOpsPatterns(patterns);
+
+        // Subset of LowerVectorToLLVMPass patterns
+        vector::populateVectorToVectorCanonicalizationPatterns(patterns);
+        vector::populateVectorBroadcastLoweringPatterns(patterns);
+        vector::populateVectorMaskOpLoweringPatterns(patterns);
+        vector::populateVectorShapeCastLoweringPatterns(patterns);
+        vector::populateVectorTransposeLoweringPatterns(patterns);
+        vector::populateVectorTransferLoweringPatterns(patterns, /*maxTransferRank=*/1);
 
         populateVectorToLLVMConversionPatterns(llvmTypeConverter, patterns, /*reassociateFPReductions*/ true);
         vector::populateVectorContractLoweringPatterns(patterns, vector::VectorTransformsOptions{}.setVectorTransferSplit(mlir::vector::VectorTransferSplit::VectorTransfer));
@@ -1413,6 +1519,10 @@ void populateLocalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, ml
         PrintFOpLowering,
         GetTimeOpLowering,
         RangeOpLowering,
+        VpmaddwdOpLowering,
+        VmaxpsOpLowering,
+        VminpsOpLowering,
+        RoundOpLowering,
         MemrefAllocOpLowering>(typeConverter, context);
 }
 

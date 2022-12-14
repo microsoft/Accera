@@ -203,7 +203,7 @@ namespace cpp_printer
         const auto srcMemSpace = srcMemrefType.getMemorySpaceAsInt();
         auto elementType = srcMemrefType.getElementType();
         AffineDialectCppPrinter* affineDialectPrinter = dynamic_cast<AffineDialectCppPrinter*>(printer->getDialectPrinter("Affine"));
-        auto srcMap = srcMemrefType.getLayout().getAffineMap();
+        auto srcMap = mlir::getStridedLinearLayoutMap(srcMemrefType);
         const auto srcRowMajor = mlir::canonicalizeStridedLayout(srcMemrefType).getLayout().isIdentity();
 
         auto dstMemrefType = blockLoadOp.dest().getType().cast<MemRefType>();

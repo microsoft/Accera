@@ -52,7 +52,8 @@ namespace value
     Scalar Tanh(Scalar s);
     Scalar Square(Scalar s);
 
-    Scalar Round(Scalar s); // Note: not implemented
+    Scalar Round(Scalar s);
+    Scalar Remainderf(Scalar numer, Scalar denom);
     Scalar Floor(Scalar s);
     Scalar Ceil(Scalar s);
     Scalar CopySign(Scalar s1, Scalar s2); // Note: not implemented

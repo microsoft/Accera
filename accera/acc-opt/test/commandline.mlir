@@ -1,6 +1,7 @@
 // RUN: acc-opt --show-dialects | FileCheck %s
 // CHECK: Registered Dialects:
 // CHECK: accera
+// CHECK-NEXT: accintr
 // CHECK-NEXT: accln
 // CHECK-NEXT: accv
 // CHECK-NEXT: accxp

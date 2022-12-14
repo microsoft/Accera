@@ -95,11 +95,11 @@ struct SplitLoopInfo
     IdWrapper largestMainLoopIVId;
 };
 
-SplitLoopInfo AddSplitPartitionHelper(LoopNestAffineConstraints& cst,
-                                      const Index& loopIndex,
-                                      mlir::OpBuilder& builder,
-                                      mlir::Location loc,
-                                      int64_t stepSize)
+std::optional<SplitLoopInfo> AddSplitPartitionHelper(LoopNestAffineConstraints& cst,
+                                                     const Index& loopIndex,
+                                                     mlir::OpBuilder& builder,
+                                                     mlir::Location loc,
+                                                     int64_t stepSize)
 {
     // Get the [begin, end) range for this loop id
     LoopNestAffineConstraints resolveRangeCst = cst.Clone();
@@ -107,8 +107,20 @@ SplitLoopInfo AddSplitPartitionHelper(LoopNestAffineConstraints& cst,
     auto [beginValueMap, endValueMap] = resolveRangeCst.GetLowerAndUpperBound(loopIndex, builder, loc);
 
     // Produce a begin and end value using affine apply ops
-    mlir::Value beginVal = mlir::makeComposedAffineApply(builder, loc, beginValueMap.getAffineMap(), beginValueMap.getOperands());
-    mlir::Value endVal = mlir::makeComposedAffineApply(builder, loc, endValueMap.getAffineMap(), endValueMap.getOperands());
+    auto beginApplyOp = mlir::makeComposedAffineApply(builder, loc, beginValueMap.getAffineMap(), beginValueMap.getOperands());
+    auto endApplyOp = mlir::makeComposedAffineApply(builder, loc, endValueMap.getAffineMap(), endValueMap.getOperands());
+
+    // If either the begin or end values are empty, then we've recursed into an empty part of the space and we should bail out without creating a loop
+    auto beginMap = beginApplyOp.getAffineMap();
+    auto endMap = endApplyOp.getAffineMap();
+
+    if (beginMap.isEmpty() || endMap.isEmpty())
+    {
+        return std::nullopt;
+    }
+
+    mlir::Value beginVal = beginApplyOp.getResult();
+    mlir::Value endVal = endApplyOp.getResult();
 
     auto partitionInfo = MakeSplitPartition(builder, beginVal, endVal, stepSize);
 
@@ -300,14 +312,19 @@ namespace loopnest
         auto levelScopedConstraints = Clone();
         auto loopId = levelScopedConstraints.GetId(index);
 
-        auto partitionInfo = AddSplitPartitionHelper(levelScopedConstraints,
-                                                     index,
-                                                     builder,
-                                                     loc,
-                                                     splitSize);
-
+        auto partitionInfoOpt = AddSplitPartitionHelper(levelScopedConstraints,
+                                                        index,
+                                                        builder,
+                                                        loc,
+                                                        splitSize);
 
         std::vector<LoopPartitionConstraints> partitionedLoopConstraints;
+        if (!partitionInfoOpt.has_value())
+        {
+            return partitionedLoopConstraints;
+        }
+        auto partitionInfo = *partitionInfoOpt;
+
         // Main loop partition
         {
             // Fork the constraints for inside the main loop
@@ -338,8 +355,7 @@ namespace loopnest
             // Set loop id equal to partition value inside the cleanup loop
             cleanupScopedConstraints.SetEqual(loopId, partitionInfo.partitionValueId);
 
-            // Bound loopId >= partition value. This is a looser constraint than we put on the mainScopedConstraints, but it is helpful
-            // for getting a simpler loop bound
+            // Bound loopId >= partition value.
             cleanupResolveConstraints.AddLowerBound(loopId, partitionInfo.partitionValueId);
 
             LoopPartitionConstraints cleanupPartitionConstraints(cleanupResolveConstraints, cleanupScopedConstraints);

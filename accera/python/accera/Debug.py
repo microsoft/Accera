@@ -37,8 +37,6 @@ def add_check_allclose(package: Package, array: Array, atol: float = 1e-5, targe
     resolved_shape = [0 if isinstance(s, Dimension) else s for s in shape]
     shape_str = '_'.join(map(str, resolved_shape))
 
-    shape = [Dimension(role=Dimension.Role.OUTPUT, value=x) if isinstance(x, Dimension) else x for x in shape]
-
     # placeholders
     actual = Array(role=Array.Role.INPUT, element_type=element_type, shape=shape, layout=layout)
     desired = Array(role=Array.Role.INPUT, element_type=element_type, shape=shape, layout=layout)

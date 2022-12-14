@@ -15,4 +15,4 @@ from .Cache import Cache
 from .Function import Function
 from .LogicFunction import logic_function, LogicFunction
 from .LoopIndex import LoopIndex
-from .Dimension import Dimension
+from .Dimension import Dimension, create_dimensions

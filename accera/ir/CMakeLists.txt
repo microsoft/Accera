@@ -32,6 +32,12 @@ set(include
     include/TranslateToHeader.h
     )
 
+set(intrinsics_src
+    src/intrinsics/AcceraIntrinsicsDialect.cpp
+    )
+set(intrinsics_include
+    include/intrinsics/AcceraIntrinsicsDialect.h)
+
 set(accvalue_src
     src/value/ValueDialect.cpp
     src/value/ValueCanonicalization.cpp
@@ -113,6 +119,21 @@ set(argo_include
     include/argo/Utils.h
     )
 
+add_mlir_dialect_library(MLIRAcceraIntrinsics # This is an accera dialect, but the add_mlir_dialect() cmake function prepends "MLIR"
+    ${intrinsics_src}
+
+    ADDITIONAL_HEADER_DIRS
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+
+    DEPENDS
+    MLIRAcceraIntrinsicsIncGen
+
+    LINK_LIBS PUBLIC
+    MLIRIR
+    )
+
+InstallAcceraLibrary(MLIRAcceraIntrinsics)
+
 # This is supposed to be overriden on the command line As of LLVM 8.0.1, the
 # possible values within the list are: AArch64 AMDGPU ARM BPF Hexagon Lanai Mips
 # MSP430 NVPTX PowerPC Sparc SystemZ WebAssembly X86 XCore
@@ -160,6 +181,7 @@ set(src
     ${accexec_src}
     ${accera_src}
     ${argo_src}
+    ${intrinsics_src}
     )
 
 set(include
@@ -169,12 +191,22 @@ set(include
     ${accexec_include}
     ${accera_include}
     ${argo_include}
+    ${intrinsics_include}
     build/LLVMEmitterTargets.h
     )
 
 add_library(${library_name} ${src} ${include})
 target_include_directories(
     ${library_name} PRIVATE ${CMAKE_CURRENT_BINARY_DIR} include
+    PUBLIC
+    $<BUILD_INTERFACE:${ACCERA_LIBRARIES_DIR}>
+    $<INSTALL_INTERFACE:include/accera>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:include/accera/ir/include>
+)
+
+target_include_directories(
+    MLIRAcceraIntrinsics PRIVATE ${CMAKE_CURRENT_BINARY_DIR} include
     PUBLIC
     $<BUILD_INTERFACE:${ACCERA_LIBRARIES_DIR}>
     $<INSTALL_INTERFACE:include/accera>
@@ -207,6 +239,8 @@ add_dependencies(
     AcceraOpsIncGen
     ValueAttrsIncGen
     ValueOpsIncGen
+    MLIRAcceraIntrinsicsIncGen
+    MLIRAcceraIntrinsics
 
     ArgoOpsIncGen
     ArgoStructuredOpsIncGen

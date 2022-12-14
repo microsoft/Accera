@@ -5,8 +5,12 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <mlir/InitAllDialects.h>
+#include <mlir/InitAllTranslations.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Translation.h>
+
+#include <mlir/Target/LLVMIR/Dialect/All.h>
+#include <mlir/Target/LLVMIR/Export.h>
 
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/InitLLVM.h>
@@ -19,6 +23,8 @@
 #include <ir/include/argo/ArgoOps.h>
 
 #include "Target/Cpp/TranslateToCpp.h"
+
+#include "Target/LLVMIR/IntrinsicToLLVMIRTranslation.h"
 
 
 
@@ -50,11 +56,33 @@ inline void registerArgoTranslations()
         return true;
     }();
 }
+
+void registerAcceraToLLVMIRTranslation() {
+  TranslateFromMLIRRegistration registration(
+      "acc-to-llvmir",
+      [](ModuleOp module, llvm::raw_ostream &output) {
+        llvm::LLVMContext llvmContext;
+        auto llvmModule = translateModuleToLLVMIR(module, llvmContext);
+        if (!llvmModule)
+          return failure();
+
+        llvmModule->print(output, nullptr);
+        return success();
+      },
+      [](DialectRegistry &registry) {
+        registerAllDialects(registry);
+        accera::ir::GetDialectRegistry().appendTo(registry);
+        accera::transforms::intrinsics::registerIntrinsicsDialectTranslation(registry);
+        registerAllToLLVMIRTranslations(registry);
+      });
+}
 } // namespace
 
 int main(int argc, char** argv)
 {
     registerArgoTranslations();
+    registerAcceraToLLVMIRTranslation();
+    mlir::registerAllTranslations();
 
     return failed(mlirTranslateMain(argc, argv, "acc-translate"));
 }

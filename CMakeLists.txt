@@ -123,7 +123,7 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 set(CMAKE_PLATFORM_NO_VERSIONED_SONAME ON)
 if(MSVC)
   # Set Visual Studio-specific options
-  add_definitions(-DUNICODE -D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
+  add_definitions(-DUNICODE -D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS -D_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
   add_compile_options(/utf-8)
   add_compile_options(/MP)
   add_compile_options(/bigobj)

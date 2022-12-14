@@ -459,6 +459,7 @@ KNOWN_CPUS = [
     ["Intel E5-1650 v3",  "Haswell", "Xeon E5", 3.5, 3.8, 6, 12, [48, 256, 15 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["Intel E5-1660 v3",  "Haswell", "Xeon E5", 3.0, 3.5, 8, 16, [48, 256, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["Intel E5-1680 v3",  "Haswell", "Xeon E5", 3.2, 3.8, 8, 16, [48, 256, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel E5-2620 v3",  "Haswell", "Xeon E5", 2.4, 3.2, 6, 12, [48, 256, 15 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
 
     # AMD Zen
     # ref: https://en.wikipedia.org/wiki/Zen_(first_generation)

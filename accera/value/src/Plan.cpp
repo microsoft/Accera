@@ -278,6 +278,14 @@ namespace value
             }
         }
 
+        void _EraseLoop(const value::ScalarIndex& scalarIndex)
+        {
+            auto builder = GetBuilder();
+            auto symbolicIndexOp = GetIndexOp(scalarIndex);
+            auto index = symbolicIndexOp.getValue();
+            _scheduleOp.addLoopAttribute(index, builder.getStringAttr("_erase"), builder.getUnitAttr());
+        }
+
     private:
         mlir::OpBuilder& GetBuilder()
         {
@@ -406,6 +414,11 @@ namespace value
     void Plan::Parallelize(std::vector<ScalarIndex> indices, int64_t numThreads, ParallelizationPolicy policy)
     {
         _impl->Parallelize(indices, numThreads, policy);
+    }
+
+    void Plan::_EraseLoop(const value::ScalarIndex& index)
+    {
+        _impl->_EraseLoop(index);
     }
 
     //

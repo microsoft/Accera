@@ -44,21 +44,25 @@ Did you specify role=Array.Role.TEMP?"""
             )
     return arg._get_native_array()    # unpack
 
-
-def role_to_usage(role):
+def role_to_usage(arg):
     from .._lang_python import _FunctionParameterUsage
 
-    if role == Array.Role.INPUT or role == Dimension.Role.INPUT:
-        return _FunctionParameterUsage.INPUT
+    if isinstance(arg, Array) or isinstance(arg, Dimension): 
+        role = arg.role
+        if role == Array.Role.INPUT or role == Dimension.Role.INPUT:
+            return _FunctionParameterUsage.INPUT
+        elif role == Dimension.Role.OUTPUT:
+            return _FunctionParameterUsage.OUTPUT
+        else:
+            return _FunctionParameterUsage.INPUT_OUTPUT                             
     else:
-        return _FunctionParameterUsage.INPUT_OUTPUT
-
+        return _FunctionParameterUsage.INPUT
 
 @dataclass
 class Function:
     name: str = ""    # base_name + _ + generated unique_id
     base_name: str = ""
-    public: bool = False
+    public: bool = True
     external: bool = False
     decorated: bool = True    # do we want to expose this?
     requested_args: tuple = ()    # args as provided into Package.add
@@ -66,7 +70,8 @@ class Function:
     arg_size_references: tuple = () # references from array args to dimension arg positions for dynamically sized arrays
     param_overrides: dict = field(default_factory=dict)    # overrides for constants
     definition: Callable = None
-    no_inline: bool = False
+    no_inline: bool = False # no_inline == True means that this function cannot be inlined into other functions
+    no_inline_into: bool = False # no_inline_into == True means that this function cannot have other functions inlined into it
     auxiliary: dict = field(default_factory=dict)
     target: Target = Target.HOST
     output_verifiers: list = field(default_factory=list)
@@ -87,13 +92,14 @@ class Function:
             delayed_param.set_value(value)
 
         if self.args:
-            usages = [role_to_usage(arg.role) for arg in self.requested_args]
+            usages = [role_to_usage(arg) for arg in self.requested_args]
             self._native_fn.parameters(self.args, usages, self.arg_size_references)
 
             if self.output_verifiers:
                 self._native_fn.outputVerifiers(self.output_verifiers)
 
         self._native_fn.inlinable(not self.no_inline)
+        self._native_fn.inlinable_into(not self.no_inline_into)
 
         sig = signature(self.definition)
 

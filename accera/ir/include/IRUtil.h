@@ -259,6 +259,7 @@ namespace util
     std::vector<mlir::AffineApplyOp> AffineValueMapToAffineApplyOps(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineValueMap affineValueMap);
     mlir::AffineValueMap SimplifyAffineValueMap(mlir::AffineValueMap affineValueMap);
 
+    mlir::Type CloneTypeWithNewElementType(mlir::Type type, mlir::Type newElementType);
     mlir::Type GetElementType(mlir::Type type);
 
     int64_t GetUniqueId(mlir::Operation* where);
@@ -358,6 +359,8 @@ namespace util
     mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::memref::StoreOp op);
     mlir::AffineMap GetIndexToMemoryLocationMap(mlir::MLIRContext* context, mlir::memref::LoadOp op);
 
+    void EraseOps(std::stack<mlir::Operation*>& opStack, mlir::PatternRewriter& rewriter);
+
     struct TempOpCleanupGuard
     {
         TempOpCleanupGuard(std::stack<mlir::Operation*>* opStack, mlir::PatternRewriter& rewriter);
@@ -400,11 +403,11 @@ namespace util
 
     mlir::Value GetGPUIndex(value::Processor idxType, mlir::OpBuilder& builder, mlir::Location& loc, ir::value::ExecutionRuntime execRuntime = ir::value::ExecutionRuntime::CUDA);
 
-    int64_t GetBlockDimSize(mlir::gpu::BlockDimOp op);
-    int64_t GetGridDimSize(mlir::gpu::GridDimOp op);
+    std::optional<int64_t> GetBlockDimSize(mlir::gpu::BlockDimOp op);
+    std::optional<int64_t> GetGridDimSize(mlir::gpu::GridDimOp op);
 
-    int64_t GetBlockDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId);
-    int64_t GetGridDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId);
+    std::optional<int64_t> GetBlockDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId);
+    std::optional<int64_t> GetGridDimSize(mlir::Operation* where, mlir::gpu::Dimension dimId);
 
     // Gets the flattened thread ID of the current GPU thread within the context of the current block
     mlir::Value GetCurrentGPUBlockThreadID(mlir::OpBuilder& builder, mlir::Location loc);

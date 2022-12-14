@@ -106,12 +106,13 @@ ARM: fp16, neon, vfp3, d16, vfp4, hwdiv-arm, hwdiv
             .def(py::init<const std::string&, const value::CompilerOptions&>(), "name"_a, "options"_a = value::CompilerOptions{})
             .def(
                 "Allocate",
-                [](value::MLIRContext& c, value::ValueType type, const util::MemoryLayout& layout, size_t alignment) {
-                    return c.Allocate(type, layout, alignment);
+                [](value::MLIRContext& c, value::ValueType type, const util::MemoryLayout& layout, size_t alignment, value::AllocateFlags flags) {
+                    return c.Allocate(type, layout, alignment, flags);
                 },
                 "type"_a,
                 "layout"_a,
-                "alignment"_a = 0)
+                "alignment"_a = 0,
+                "_flags"_a = value::AllocateFlags::None)
             .def("Print", &value::MLIRContext::print, "Prints the module")
             .def("Save", &value::MLIRContext::save, "filename"_a)
             .def("Verify", &value::MLIRContext::verify)
@@ -160,6 +161,14 @@ Args:
                 "inlinable"_a,
                 py::return_value_policy::reference_internal,
                 "Sets whether the function is allowed to be inlined.")
+            .def(
+                "inlinable_into", [](value::FunctionDeclaration& fn, bool inlinable_into) {
+                    (void)fn.InlineInto(inlinable_into ? value::FunctionInlining::always : value::FunctionInlining::never);
+                    return fn;
+                },
+                "inlinable_into"_a,
+                py::return_value_policy::reference_internal,
+                "Sets whether other functions are allowed to be inlined into this function.")
             .def("addTag", &value::FunctionDeclaration::AddTag, "addTag"_a, py::return_value_policy::reference_internal, "A tag to add to a function as an attribute.")
             .def("baseName", &value::FunctionDeclaration::BaseName, "baseName"_a, py::return_value_policy::reference_internal, "Sets the base name for this function to use as an alias in the generated header file.")
             .def("outputVerifiers", &value::FunctionDeclaration::OutputVerifiers, "outputVerifiers"_a, py::return_value_policy::reference_internal, "Sets the verification functions for output checking, one per output argument.")

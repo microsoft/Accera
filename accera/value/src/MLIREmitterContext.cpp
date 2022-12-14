@@ -150,6 +150,9 @@ mlir::MemRefType MemoryLayoutToMemRefType(mlir::OpBuilder& builder, const Memory
     // strided maps and memory spaces are not supported for variable-sized layouts
     auto type = layout.IsVariableSized() ? mlir::MemRefType::get(size, mlirElemType) : mlir::MemRefType::get(size, mlirElemType, stridedMap, (unsigned)layout.GetMemorySpace());
 
+    // Canonicalize and simplify the memref map
+    type = mlir::canonicalizeStridedLayout(type);
+
     // represent pointers as memrefs of memrefs (memrefs start at pointer level 1)
     return (pointerLevel > 1) ? mlir::MemRefType::get(MemRefPointerShape, type) : type;
 }
@@ -942,6 +945,27 @@ GPUIndex MLIRContext::GetGPUIndex()
     }
 }
 
+static accera::ir::value::MemoryAllocType AllocateFlagToAllocateType(accera::value::AllocateFlags flags)
+{
+#define MAP_FLAGS(fromFlag, toFlag)     \
+    case accera::value::AllocateFlags::fromFlag: \
+        return accera::ir::value::MemoryAllocType::toFlag
+
+    switch (flags)
+    {
+        MAP_FLAGS(None, Global);
+        MAP_FLAGS(Global, Global);
+        MAP_FLAGS(Stack, Stack);
+        MAP_FLAGS(Heap, Heap);
+        // MAP_FLAGS(ThreadLocal, ThreadLocal); // Not implemented
+    default:
+        assert(false);
+    }
+
+#undef MAP_PREDICATE
+}
+
+
 Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t alignment, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes)
 {
     auto& b = _impl->builder;
@@ -975,6 +999,7 @@ Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t
     std::transform(runtimeSizes.cbegin(), runtimeSizes.cend(), std::back_inserter(sizes), [](ScalarDimension d) { return Unwrap(d); });
     
     mlir::Value result;
+
     if (layout.IsVariableSized())
     {
         result = b.create<ir::value::AllocOp>(loc,
@@ -982,9 +1007,7 @@ Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t
                                             alignment
                                                 ? llvm::Optional{ static_cast<uint64_t>(alignment) }
                                                 : llvm::None,
-                                            static_cast<bool>(flags & AllocateFlags::Stack)
-                                                ? llvm::Optional{ accera::ir::value::MemoryAllocType::Stack }
-                                                : llvm::None,
+                                            AllocateFlagToAllocateType(flags),
                                             mlir::ValueRange{ sizes});
     }
     else
@@ -994,9 +1017,7 @@ Value MLIRContext::AllocateImpl(ValueType valueType, MemoryLayout layout, size_t
                                             alignment
                                                 ? llvm::Optional{ static_cast<uint64_t>(alignment) }
                                                 : llvm::None,
-                                            static_cast<bool>(flags & AllocateFlags::Stack)
-                                                ? llvm::Optional{ accera::ir::value::MemoryAllocType::Stack }
-                                                : llvm::None);
+                                            AllocateFlagToAllocateType(flags));
     }
 
     EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { valueType, 1 } });
@@ -1145,6 +1166,10 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
             if (decl.InlineState() == FunctionInlining::never)
             {
                 fnOp->setAttr(ir::NoInlineAttrName, b.getUnitAttr());
+            }
+            if (decl.InlineIntoState() == FunctionInlining::never)
+            {
+                fnOp->setAttr(ir::NoInlineIntoAttrName, b.getUnitAttr());
             }
 
             // Set dynamic arg size references. This is a vector<vector<int>>, where each entry is either a reference to another
@@ -2008,22 +2033,22 @@ namespace
     auto Convert(ValueBinaryOperation op)
     {
         using namespace accera::ir::value;
+
+#define MAP_BIN_OP(fromEnum, toEnum)     \
+    case ValueBinaryOperation::fromEnum: \
+        return BinaryOpPredicate::toEnum
+
         switch (op)
         {
-        case ValueBinaryOperation::add:
-            return BinaryOpPredicate::ADD;
-        case ValueBinaryOperation::divide:
-            return BinaryOpPredicate::DIV;
-        case ValueBinaryOperation::logicalAnd:
-            return BinaryOpPredicate::LOGICAL_AND;
-        case ValueBinaryOperation::logicalOr:
-            return BinaryOpPredicate::LOGICAL_OR;
-        case ValueBinaryOperation::modulus:
-            return BinaryOpPredicate::MOD;
-        case ValueBinaryOperation::multiply:
-            return BinaryOpPredicate::MUL;
-        case ValueBinaryOperation::subtract:
-            return BinaryOpPredicate::SUB;
+            MAP_BIN_OP(add, ADD);
+            MAP_BIN_OP(subtract, SUB);
+            MAP_BIN_OP(multiply, MUL);
+            MAP_BIN_OP(divide, DIV);
+            MAP_BIN_OP(modulus, MOD);
+            MAP_BIN_OP(logicalAnd, LOGICAL_AND);
+            MAP_BIN_OP(logicalOr, LOGICAL_OR);
+            MAP_BIN_OP(max, MAX);
+            MAP_BIN_OP(min, MIN);
         }
         llvm_unreachable("Unknown binary operation");
     }
@@ -2219,6 +2244,20 @@ Scalar MLIRContext::BitcastImpl(Scalar value, ValueType type)
     }
 
     throw utilities::InputException(utilities::InputExceptionErrors::invalidArgument, "Can only bitcast between types of the same size");
+}
+
+Scalar MLIRContext::RoundImpl(Scalar value)
+{
+    auto& builder = _impl->builder;
+    mlir::Value mlirValue = ResolveMLIRScalar(builder, ToMLIRValue(builder, value));
+    auto loc = mlirValue.getLoc();
+
+    auto floatType = mlirValue.getType();
+    auto width = floatType.getIntOrFloatBitWidth();
+    auto intType = builder.getIntegerType(width);
+
+    mlir::Value roundedVal = builder.create<ir::value::RoundOp>(loc, intType, mlirValue);
+    return Scalar(Wrap(roundedVal));
 }
 
 namespace

@@ -627,7 +627,7 @@ namespace loopnest
         // --> (0..1: S1), (0..N-1: S2), (N1-..N: S2, S3)
         // prefix of last partition matches entirety of second: move
         // --> (0..1: S1), (0..N: S2), (N1-..N: S3)
-        if (schedule.IsDone())
+        if (schedule.IsDone() || loops.empty())
         {
             return;
         }

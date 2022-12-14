@@ -220,7 +220,8 @@ struct ValueLambdaRewritePattern : mlir::OpRewritePattern<vir::ValueLambdaOp>
         // gpu functions fail since hiprtc does not call the host launcher function
         // but instead calls the kernel directly.
         llvm::SetVector<Value> capturedValuesSet;
-        for (auto&& v : op->getParentOfType<vir::ValueFuncOp>().getArguments())
+        auto parentFuncOp = op->getParentOfType<vir::ValueFuncOp>();
+        for (auto&& v : parentFuncOp.getArguments())
         {
             capturedValuesSet.insert(v);
         }
@@ -306,6 +307,11 @@ struct ValueLambdaRewritePattern : mlir::OpRewritePattern<vir::ValueLambdaOp>
 
         mapValueTypeAttr<vir::ValueFuncOp>(vFuncOp, valueMapper);
 
+        if (parentFuncOp->hasAttr(ir::NoInlineIntoAttrName))
+        {
+            vFuncOp->setAttr(ir::NoInlineIntoAttrName, rewriter.getUnitAttr());
+        }
+
         rewriter.eraseOp(op);
     }
 };
@@ -322,6 +328,13 @@ struct ValueLaunchFuncOpInlinerPattern : OpRewritePattern<vir::LaunchFuncOp>
         if (parentFnOp->getAttr(ir::RawPointerAPIAttrName))
         {
             // Don't inline calls from RawPointerAPI functions
+            return failure();
+        }
+        if (parentFnOp->getAttr(ir::NoInlineIntoAttrName))
+        {
+            // If this launch op is inside of a function that is not inlinable-into, then don't inline the function we're calling
+            // By doing this, only the outer publically-visible function will have its internal calls inlined and we won't
+            // wind up bloating our module with function contents that will never be invoked
             return failure();
         }
 

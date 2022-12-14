@@ -257,6 +257,7 @@ def ConvertValueToLLVM : accModulePass<"value-to-llvm"> {
   let constructor = "accera::transforms::value::createValueToLLVMPass()";
   let dependentDialects = [
     "mlir::StandardOpsDialect",
+    "accera::ir::intrinsics::AcceraIntrinsicsDialect",
     "mlir::LLVM::LLVMDialect"
   ];
   // Match std-to-llvm options so we can pass through arguments

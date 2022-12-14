@@ -69,8 +69,8 @@ module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "
 // CHECK:             affine.for %arg6 = 0 to 16 {
 // CHECK:               %1 = affine.load %arg1[%arg5, %arg4 + %arg6] : memref<32x32xf32, #map0>
 // CHECK:               affine.store %1, %0[%arg5, %arg6] : memref<32x16xf32, 3>
-// CHECK:             } {accxp.access_bounds_check, beginMap = #map1, domain = #xdomain, endMap = #map2, index = #accln<"index{j,7}">, kernels = ["cache_internal_loopnest_kernel_active_block_copy"], operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi32>, scheduledIndex = #accln<"index{j,7}">, subdomainIndexOrder = [#accln<"index{i,6}">, #accln<"index{j,7}">], subdomainSize = [32, 16]}
-// CHECK:           } {accxp.access_bounds_check, beginMap = #map1, domain = #xdomain, endMap = #map3, index = #accln<"index{i,6}">, operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi32>, scheduledIndex = #accln<"index{i,6}">, subdomainIndexOrder = [#accln<"index{i,6}">, #accln<"index{j,7}">], subdomainSize = [32, 16]}
+// CHECK:             } {accxp.access_bounds_check, beginMap = #map1, endMap = #map2, index = #accln<"index{j,7}">, kernels = ["cache_internal_loopnest_kernel_active_block_copy"], operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi32>, scheduledIndex = #accln<"index{j,7}">, subdomainIndexOrder = [#accln<"index{i,6}">, #accln<"index{j,7}">], subdomainSize = [32, 16]}
+// CHECK:           } {accxp.access_bounds_check, beginMap = #map1, endMap = #map3, index = #accln<"index{i,6}">, operand_segment_sizes = dense<[0, 0, 1]> : vector<3xi32>, scheduledIndex = #accln<"index{i,6}">, subdomainIndexOrder = [#accln<"index{i,6}">, #accln<"index{j,7}">], subdomainSize = [32, 16]}
 // CHECK:           affine.for %arg5 = 0 to 4 {
 // CHECK:             affine.for %arg6 = 0 to 16 {
 // CHECK:               affine.for %arg7 = 0 to 32 {

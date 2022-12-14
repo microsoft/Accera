@@ -3,6 +3,15 @@
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 ####################################################################################################
 
+# setup for using LLVM and MLIR
+list(APPEND CMAKE_MODULE_PATH "${LLVM_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
+include(TableGen)
+include(AddLLVM)
+include(AddMLIR)
+
+add_subdirectory(src)
+
 set(util_name acc-translate)
 
 set(target_src
@@ -18,6 +27,7 @@ set(target_src
     src/Target/Cpp/AMDGPU.cpp
     src/Target/Cpp/VectorDialectCppPrinter.cpp
     src/Target/Cpp/LLVMDialectCppPrinter.cpp
+    src/Target/LLVMIR/IntrinsicToLLVMIRTranslation.cpp
     )
 
 set(target_include
@@ -33,6 +43,7 @@ set(target_include
     src/Target/Cpp/AMDGPU.h
     src/Target/Cpp/VectorDialectCppPrinter.h
     src/Target/Cpp/LLVMDialectCppPrinter.h
+    src/Target/LLVMIR/IntrinsicToLLVMIRTranslation.h
     )
 
 
@@ -45,6 +56,9 @@ source_group("include" FILES ${util_include})
 add_executable(${util_name} ${util_src} ${util_include})
 target_include_directories(${util_name} PRIVATE ${ACCERA_ROOT}/accera)
 
+get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
+get_property(translation_libs GLOBAL PROPERTY MLIR_TRANSLATION_LIBS)
+
 target_link_libraries(
   ${util_name}
   PRIVATE MLIROptLib
@@ -53,6 +67,8 @@ target_link_libraries(
           transforms
           value
           mlirHelpers
+          ${translation_libs}
+          ${dialect_libs}
 )
 copy_shared_libraries(${util_name})
 

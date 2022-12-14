@@ -74,7 +74,9 @@ private:
     RangeValue resolveRangeValue(mlir::gpu::GridDimOp op);
     RangeValue resolveRangeValue(accera::ir::value::WarpIdOp op);
     RangeValue resolveRangeValue(llvm::Instruction::BinaryOps binOp, mlir::Operation* op);
+    RangeValue resolveRangeValue(llvm::Instruction::BinaryOps binOp, const llvm::SmallVectorImpl<RangeValue>& operandRanges);
     RangeValue resolveRangeValue(mlir::AffineForOp op);
+    RangeValue resolveRangeValue(mlir::AffineApplyOp op);
     RangeValue resolveRangeValue(mlir::scf::ForOp op);
     RangeValue resolveRangeValue(mlir::Operation* op);
 };

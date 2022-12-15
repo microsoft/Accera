@@ -8,7 +8,6 @@
 # python -m unittest discover -k "test_input_array" path_to_accera/test dsl_tests.py
 # python -m unittest discover -k "DSLTest_01" path_to_accera/test dsl_tests.py
 
-from ast import If
 import logging
 import sys
 import unittest
@@ -16,8 +15,7 @@ import os
 import pathlib
 import shutil
 import numpy as np
-from enum import Enum
-from typing import Callable, Tuple
+from typing import Tuple
 
 DEV_MODE = False
 if "@CMAKE_INSTALL_PREFIX@"[1:-1] != "CMAKE_INSTALL_PREFIX":
@@ -30,7 +28,10 @@ from accera import ScalarType, Array, Function, Nest, Target, Package, algorithm
 from accera.test import verifiers
 from accera.test.test_utils import expectedFailure, FailedReason
 
-INTERNAL_FUNCTION_OPTS = { "no_inline_into": True, "public": False }
+INTERNAL_FUNCTION_OPTS = {
+    "no_inline_into": True,
+    "public": False
+}
 
 TEST_MODE = Package.Mode.DEBUG if DEV_MODE else Package.Mode.RELEASE
 TEST_FORMAT = Package.Format.MLIR_DYNAMIC if DEV_MODE else Package.Format.HAT_DYNAMIC
@@ -52,7 +53,6 @@ FLOAT_TYPES = [ScalarType.float16, ScalarType.float32, ScalarType.float64]
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 os.environ["OMP_DISPLAY_AFFINITY"] = "TRUE"
-
 
 # TODO: Remove all @expectedFailure decorators as implementation converges with spec
 
@@ -479,23 +479,18 @@ class DSLTest_01Arrays(unittest.TestCase):
         jj = sched.split(j, 16)
         sched.reorder(i, j, ii, jj)
         plan = sched.create_plan()
-        plan.vectorize(ii) # ii to in-place-unroll ii and vectorize jj
+        plan.vectorize(ii)    # ii to in-place-unroll ii and vectorize jj
 
         A_test = np.random.random((256, 32)).astype(np.uint8)
         B_test = np.random.random((256, 32)).astype(np.int16)
         B_expected = np.ndarray((256, 32)).astype(np.int16)
-        B_expected[:,:] = A_test[:,:]
+        B_expected[:, :] = A_test[:, :]
 
         correctness_check_values = {
             "pre": (A_test, B_test),
             "post": (A_test, B_expected),
         }
-        self._verify_nest(
-            plan,
-            (A, B),
-            "test_array_vectorize_cast",
-            correctness_check_values=correctness_check_values
-        )
+        self._verify_nest(plan, (A, B), "test_array_vectorize_cast", correctness_check_values=correctness_check_values)
 
     def test_interleaved_vectorize_cast(self) -> None:
         shape = (64, 32, 8, 2)
@@ -526,19 +521,15 @@ class DSLTest_01Arrays(unittest.TestCase):
         A_test = np.random.random(shape).astype(np.uint8)
         B_test = np.random.random(shape).astype(np.int16)
         B_expected = np.ndarray(shape).astype(np.int16)
-        B_expected[:,:,:,:] = A_test[:,:,:,:]
+        B_expected[:, :, :, :] = A_test[:, :, :, :]
 
         correctness_check_values = {
             "pre": (A_test, B_test),
             "post": (A_test, B_expected),
         }
         self._verify_nest(
-            plan,
-            (A, B),
-            "test_interleaved_vectorize_cast",
-            correctness_check_values=correctness_check_values
+            plan, (A, B), "test_interleaved_vectorize_cast", correctness_check_values=correctness_check_values
         )
-
 
     def test_interleaved_vectorize_store(self) -> None:
         M = 32
@@ -565,7 +556,7 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         @nest.iteration_logic
         def _():
-            B[i_outer, j_outer, j_inner, i_inner] = A[i_outer*M_tile + i_inner, j_outer*N_tile + j_inner]
+            B[i_outer, j_outer, j_inner, i_inner] = A[i_outer * M_tile + i_inner, j_outer * N_tile + j_inner]
 
         sched = nest.create_schedule()
         plan = sched.create_plan()
@@ -589,12 +580,8 @@ class DSLTest_01Arrays(unittest.TestCase):
             "post": (A_test, B_expected),
         }
         self._verify_nest(
-            plan,
-            (A, B),
-            "test_interleaved_vectorize_store",
-            correctness_check_values=correctness_check_values
+            plan, (A, B), "test_interleaved_vectorize_store", correctness_check_values=correctness_check_values
         )
-
 
     def test_subarray(self) -> None:
         package = Package()
@@ -707,15 +694,14 @@ class DSLTest_01Arrays(unittest.TestCase):
                     after=correctness_check_values["post"],
                 )
 
-
     def test_runtimesizes_vector_add(self) -> None:
         from accera import Dimension
         N = Dimension()
 
-        A = Array(shape=(N,), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        B = Array(shape=(N,), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(N, ), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        B = Array(shape=(N, ), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
 
-        nest = Nest((N,))
+        nest = Nest((N, ))
 
         i = nest.get_indices()
 
@@ -726,8 +712,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         package = Package()
 
         N_test = np.int64(128)
-        A_test = np.random.random((N_test,)).astype(np.float32)
-        B_test = np.random.random((N_test,)).astype(np.float32)
+        A_test = np.random.random((N_test, )).astype(np.float32)
+        B_test = np.random.random((N_test, )).astype(np.float32)
         correctness_check_values = {
             "pre": [N_test, A_test, B_test],
             "post": [N_test, A_test, B_test + A_test],
@@ -737,14 +723,13 @@ class DSLTest_01Arrays(unittest.TestCase):
         function = package.add(nest, args=(N, A, B), base_name="test_runtimesizes_vector_add")
         self._verify_helper(package, test_name, function.name, correctness_check_values)
 
-
     def _simple_runtimesize_loopnest_common(self, name, splits=[]) -> None:
         from accera import Dimension
         M = Dimension()
 
-        A = Array(shape=(M,), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        A = Array(shape=(M, ), element_type=ScalarType.float32, role=Array.Role.INPUT)
 
-        nest = Nest((M,))
+        nest = Nest((M, ))
 
         i = nest.get_indices()
 
@@ -761,7 +746,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         package.add(sched, args=(A, M), base_name=name)
         self._verify_helper(package, name)
 
-
     def test_runtimesizes_simple(self) -> None:
         self._simple_runtimesize_loopnest_common("test_runtimesizes_simple")
 
@@ -774,10 +758,9 @@ class DSLTest_01Arrays(unittest.TestCase):
     def test_runtimesizes_two_static_split_boundary(self) -> None:
         self._simple_runtimesize_loopnest_common("test_runtimesizes_two_static_split_boundary", splits=[60, 8])
 
-
-    def _test_runtimesizes_matmul_common(self, name, M, N, K,
-                                         sizes_first=True, splits=None,
-                                         level_caches=None, max_element_caches=None) -> None:
+    def _test_runtimesizes_matmul_common(
+        self, name, M, N, K, sizes_first=True, splits=None, level_caches=None, max_element_caches=None
+    ) -> None:
         from accera import Dimension
 
         A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
@@ -796,38 +779,43 @@ class DSLTest_01Arrays(unittest.TestCase):
         if splits:
             if len(splits) != 3:
                 raise ValueError("Must have one split list per loopnest dimension")
-            
-            split_indices = [ [i], [j], [k] ]
+
+            split_indices = [[i], [j], [k]]
             for idx, dimSplits in enumerate(splits):
                 for split in dimSplits:
                     split_indices[idx].append(sched.split(split_indices[idx][-1], split))
-            
+
             # Collate the splits into a schedule order by taking one index from each dimension
             #   in turn as long as that dimension has more split indices
             # E.g suppose we have split indices:
-            # [ 
+            # [
             #   [i, ii, iii],
             #   [j, jj, jjj, jjjj],
             #   [k, kk]
             # ]
             # Then produce the order:
             # [ i, j, k, ii, jj, kk, iii, jjj, jjjj]
-            
+
             # First, pad the dimensions with `None` until they all have the same number of entries
             max_splits = max([len(dim_split_indices) for dim_split_indices in split_indices])
             for idx in range(len(split_indices)):
                 num_padding_entries = max_splits - len(split_indices[idx])
-                split_indices[idx] = split_indices[idx] + [None]*num_padding_entries
+                split_indices[idx] = split_indices[idx] + [None] * num_padding_entries
 
             # Now collate the entries and skip the `None` padding entries
-            order = [split_index for split_level in zip(*split_indices) for split_index in split_level if split_index is not None]
+            order = [
+                split_index for split_level in zip(*split_indices) for split_index in split_level
+                if split_index is not None
+            ]
             sched.reorder(order)
-        
+
         plan = sched.create_plan()
         if level_caches is not None and max_element_caches is not None:
-            raise ValueError("Test code only supports either level caches or max element caches but not both at this time")
+            raise ValueError(
+                "Test code only supports either level caches or max element caches but not both at this time"
+            )
 
-        arrays_and_caches = [ [A], [B], [C] ]
+        arrays_and_caches = [[A], [B], [C]]
         if level_caches:
             if len(level_caches) != 3:
                 raise ValueError("Must have one level cache entry per array (even if it is empty)")
@@ -843,7 +831,7 @@ class DSLTest_01Arrays(unittest.TestCase):
                     arrays_and_caches[idx].append(plan.cache(arrays_and_caches[idx][-1], max_elements=element_budget))
 
         package = Package()
-        
+
         size_test_args = []
         size_args = []
         if isinstance(M, Dimension):
@@ -852,14 +840,14 @@ class DSLTest_01Arrays(unittest.TestCase):
             size_args.append(M)
         else:
             M_test = M
-            
+
         if isinstance(N, Dimension):
             N_test = np.int64(234)
             size_test_args.append(N_test)
             size_args.append(N)
         else:
             N_test = N
-            
+
         if isinstance(K, Dimension):
             K_test = np.int64(345)
             size_test_args.append(K_test)
@@ -874,7 +862,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         array_pre_args = [A_test, B_test, C_test]
         array_post_args = [A_test, B_test, C_test + A_test @ B_test]
         pre_args = (size_test_args + array_pre_args) if sizes_first else (array_pre_args + size_test_args)
-        post_args = (size_test_args + array_post_args) if sizes_first else (array_post_args + size_test_args) 
+        post_args = (size_test_args + array_post_args) if sizes_first else (array_post_args + size_test_args)
 
         correctness_check_values = {
             "pre": pre_args,
@@ -887,52 +875,50 @@ class DSLTest_01Arrays(unittest.TestCase):
         function = package.add(plan, args=args, base_name=name)
         self._verify_helper(package, name, function.name, correctness_check_values)
 
-
     # 1/3 dynamic
     def test_matmul_partial_runtimesizes_M(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_M", 
-                                                Dimension(), 128, 32,
-                                                sizes_first=True)
+        self._test_runtimesizes_matmul_common(
+            "test_matmul_partial_runtimesizes_M", Dimension(), 128, 32, sizes_first=True
+        )
 
     def test_matmul_partial_runtimesizes_K(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_K",
-                                                64, 128, Dimension(),
-                                                sizes_first=True)
+        self._test_runtimesizes_matmul_common(
+            "test_matmul_partial_runtimesizes_K", 64, 128, Dimension(), sizes_first=True
+        )
 
     def test_matmul_partial_runtimesizes_N(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_N",
-                                                64, Dimension(), 32,
-                                                sizes_first=True)
-
+        self._test_runtimesizes_matmul_common(
+            "test_matmul_partial_runtimesizes_N", 64, Dimension(), 32, sizes_first=True
+        )
 
     # 2/3 dynamic
     def test_matmul_partial_runtimesizes_MN(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_MN",
-                                                Dimension(), Dimension(), 32,
-                                                sizes_first=True)
+        self._test_runtimesizes_matmul_common(
+            "test_matmul_partial_runtimesizes_MN", Dimension(), Dimension(), 32, sizes_first=True
+        )
 
     def test_matmul_partial_runtimesizes_MK(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_MK",
-                                                Dimension(), 128, Dimension(),
-                                                sizes_first=True)
+        self._test_runtimesizes_matmul_common(
+            "test_matmul_partial_runtimesizes_MK", Dimension(), 128, Dimension(), sizes_first=True
+        )
 
     def test_matmul_partial_runtimesizes_NK(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_matmul_partial_runtimesizes_NK",
-                                                64, Dimension(), Dimension(),
-                                                sizes_first=True)
+        self._test_runtimesizes_matmul_common(
+            "test_matmul_partial_runtimesizes_NK", 64, Dimension(), Dimension(), sizes_first=True
+        )
 
     # 3/3 dynamic
     def test_matmul_all_runtimesizes(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_matmul_all_runtimesizes",
-                                                Dimension(), Dimension(), Dimension(),
-                                                sizes_first=True)
+        self._test_runtimesizes_matmul_common(
+            "test_matmul_all_runtimesizes", Dimension(), Dimension(), Dimension(), sizes_first=True
+        )
 
     # Fails because debug mode expects all the arguments first
     # def test_matmul_partial_runtimesizes_MNK_size_last(self) -> None:
@@ -944,71 +930,105 @@ class DSLTest_01Arrays(unittest.TestCase):
     #         Dimension(),
     #         sizes_first=False)
 
-
     def test_partial_runtimesizes_static_splits_matmul(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_partial_runtimesizes_static_splits_matmul",
-                                                256, Dimension(), 128,
-                                                splits=[[],[8],[]])
+        self._test_runtimesizes_matmul_common(
+            "test_partial_runtimesizes_static_splits_matmul", 256, Dimension(), 128, splits=[[], [8], []]
+        )
 
     def test_all_runtimesizes_matmul_single_static_split(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_single_static_split",
-                                                Dimension(), Dimension(), Dimension(),
-                                                splits=[[],[8],[]])
+        self._test_runtimesizes_matmul_common(
+            "test_all_runtimesizes_matmul_single_static_split",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            splits=[[], [8], []]
+        )
 
     def test_all_runtimesizes_matmul_single_dim_two_static_split(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_single_dim_two_static_split",
-                                                Dimension(), Dimension(), Dimension(),
-                                                splits=[[],[64, 8],[]])
+        self._test_runtimesizes_matmul_common(
+            "test_all_runtimesizes_matmul_single_dim_two_static_split",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            splits=[[], [64, 8], []]
+        )
 
     def test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_1(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_1",
-                                                Dimension(), Dimension(), Dimension(),
-                                                splits=[[],[60, 8],[]])
+        self._test_runtimesizes_matmul_common(
+            "test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_1",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            splits=[[], [60, 8], []]
+        )
 
     def test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_2(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_2",
-                                                Dimension(), Dimension(), Dimension(),
-                                                splits=[[],[64, 6],[]])
+        self._test_runtimesizes_matmul_common(
+            "test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_2",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            splits=[[], [64, 6], []]
+        )
 
     def test_all_runtimesizes_matmul_two_dim_single_static_split(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_two_dim_single_static_split",
-                                                Dimension(), Dimension(), Dimension(),
-                                                splits=[[],[8],[16]])
+        self._test_runtimesizes_matmul_common(
+            "test_all_runtimesizes_matmul_two_dim_single_static_split",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            splits=[[], [8], [16]]
+        )
 
     def test_all_runtimesizes_matmul_two_dim_two_static_split(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_two_dim_two_static_split",
-                                                Dimension(), Dimension(), Dimension(),
-                                                splits=[[32, 4],[64, 8],[]])
+        self._test_runtimesizes_matmul_common(
+            "test_all_runtimesizes_matmul_two_dim_two_static_split",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            splits=[[32, 4], [64, 8], []]
+        )
 
     def test_all_runtimesizes_matmul_three_dim_two_static_split_boundary(self) -> None:
         from accera import Dimension
-        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_three_dim_two_static_split_boundary",
-                                                Dimension(), Dimension(), Dimension(),
-                                                splits=[[32, 3],[64, 7],[128, 15]])
-
+        self._test_runtimesizes_matmul_common(
+            "test_all_runtimesizes_matmul_three_dim_two_static_split_boundary",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            splits=[[32, 3], [64, 7], [128, 15]]
+        )
 
     def test_all_runtimesizes_matmul_two_dim_single_static_split_static_cache(self) -> None:
         from accera import Dimension
         # Creates a cache in the statically sized main loop, but no cache in the dynamically sized cleanup loops as dynamically-sized caches are not supported yet
-        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_two_dim_single_static_split_static_cache",
-                                                Dimension(), Dimension(), Dimension(),
-                                                splits=[[],[8],[16]],
-                                                level_caches=[[],[2],[]]) # Cache B at level 2, which will be the jj index in a (i, j, k, jj, kk) schedule
+        self._test_runtimesizes_matmul_common(
+            "test_all_runtimesizes_matmul_two_dim_single_static_split_static_cache",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            splits=[[], [8], [16]],
+            level_caches=[[], [2], []]
+        )    # Cache B at level 2, which will be the jj index in a (i, j, k, jj, kk) schedule
 
     def test_all_runtimesizes_matmul_two_dim_two_static_split_static_cache(self) -> None:
         from accera import Dimension
         # Creates a cache in the statically sized main loop, but no cache in the dynamically sized cleanup loops as dynamically-sized caches are not supported yet
-        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_two_dim_two_static_split_static_cache",
-                                                Dimension(), Dimension(), Dimension(),
-                                                splits=[[],[64, 8],[32, 4]],
-                                                level_caches=[[],[4],[]]) # Cache B at level 4, which will be the jj index in a (i, j, k, jj, kk, jjj, kkk) schedule
+        self._test_runtimesizes_matmul_common(
+            "test_all_runtimesizes_matmul_two_dim_two_static_split_static_cache",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            splits=[[], [64, 8], [32, 4]],
+            level_caches=[[], [4], []]
+        )    # Cache B at level 4, which will be the jj index in a (i, j, k, jj, kk, jjj, kkk) schedule
 
     def test_all_runtimesizes_matmul_two_dim_two_static_split_static_max_element_cache(self) -> None:
         from accera import Dimension
@@ -1016,10 +1036,14 @@ class DSLTest_01Arrays(unittest.TestCase):
         j_inner_split = 8
         k_outer_split = 32
         k_inner_split = 4
-        self._test_runtimesizes_matmul_common("test_all_runtimesizes_matmul_two_dim_two_static_split_static_max_element_cache",
-                                                Dimension(), Dimension(), Dimension(),
-                                                splits=[[],[j_outer_split, j_inner_split],[k_outer_split, k_inner_split]],
-                                                max_element_caches=[[],[k_outer_split * j_inner_split],[]])
+        self._test_runtimesizes_matmul_common(
+            "test_all_runtimesizes_matmul_two_dim_two_static_split_static_max_element_cache",
+            Dimension(),
+            Dimension(),
+            Dimension(),
+            splits=[[], [j_outer_split, j_inner_split], [k_outer_split, k_inner_split]],
+            max_element_caches=[[], [k_outer_split * j_inner_split], []]
+        )
 
     def test_partial_dynamic_sized_uint8_matmul(self) -> None:
         from accera import Dimension
@@ -1052,10 +1076,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         iii, jjj, kkk = sched.tile(dict(zip([ii, jj, kk], compute_kernel_shape)))
         iiii, jjjj, kkkk = sched.tile(dict(zip([iii, jjj, kkk], vector_kernel_shape)))
 
-        sched.reorder(i, j, k,
-                      ii, jj, kk,
-                      iii, jjj, kkk,
-                      iiii, jjjj, kkkk)
+        sched.reorder(i, j, k, ii, jj, kk, iii, jjj, kkk, iiii, jjjj, kkkk)
 
         plan = sched.create_plan()
         plan.cache(A, index=kkkk, trigger_index=iii, element_type=ScalarType.int16, layout=Array.Layout.FIRST_MAJOR)
@@ -1080,7 +1101,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         }
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)
-
 
     def test_all_dynamic_sizes_static_unroll_matmul(self) -> None:
         from accera import Dimension
@@ -1127,7 +1147,6 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)
 
-
     def test_all_dynamic_sizes_static_vectorize_matmul(self) -> None:
         from accera import Dimension
 
@@ -1172,7 +1191,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         }
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)
-
 
     def test_all_dynamic_sized_fp32_mlas_matmul(self) -> None:
         from accera import Dimension
@@ -1232,7 +1250,6 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)
 
-       
     def test_output_array_range_node1(self) -> None:
         from accera import Dimension, create_dimensions, floor, cast
         from accera._lang_python._lang import Scalar
@@ -1244,17 +1261,19 @@ class DSLTest_01Arrays(unittest.TestCase):
         InputDim = create_dimensions()
         InputDim.role = Dimension.Role.INPUT
 
-        OutputDims = Array(shape=(1,), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
+        OutputDims = Array(shape=(1, ), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
         Output = Array(shape=(InputDim, ), role=Array.Role.INPUT_OUTPUT)
-        Output_Start = Array(shape=(1,), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        Output_Start = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
 
         nest1 = Nest((1, ))
+
         @nest1.iteration_logic
-        def _():      
+        def _():
             OutputDims[0] = cast(floor((Limit - Start) / Delta), ScalarType.int64)
 
         nest2 = Nest([InputDim])
         i = nest2.get_indices()
+
         @nest2.iteration_logic
         def _():
             Output[i] = Output_Start[0]
@@ -1263,15 +1282,19 @@ class DSLTest_01Arrays(unittest.TestCase):
         # Generate a function like:
         # range_get_size(float start, float limit, float delta, int64_t* output_dim);
         # range_get_result(int64_t input_dim, float* output, float* start, float delta);
-        
+
         package = Package()
         # BUGBUG: dim args ordered first due to issue with Debug mode
         package.add(nest1, args=(Start, Limit, Delta, OutputDims), base_name=f"range_get_size")
         package.add(nest2, args=(InputDim, Output, Output_Start, Delta), base_name=f"range_get_result")
 
-        package.build("test_output_array_range_node1", format=TEST_FORMAT | Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
-  
-        
+        package.build(
+            "test_output_array_range_node1",
+            format=TEST_FORMAT | Package.Format.MLIR_VERBOSE,
+            mode=TEST_MODE,
+            output_dir=TEST_PACKAGE_DIR
+        )
+
     def test_output_array_range_node2(self) -> None:
         from accera import Dimension, create_dimensions, floor, cast
         from accera._lang_python._lang import Scalar
@@ -1283,23 +1306,26 @@ class DSLTest_01Arrays(unittest.TestCase):
         InputDim = create_dimensions()
         InputDim.role = Dimension.Role.INPUT
 
-        OutputDims = Array(shape=(1,), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
+        OutputDims = Array(shape=(1, ), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
         Output = Array(shape=(InputDim, ), role=Array.Role.INPUT_OUTPUT)
-        Output_Start = Array(shape=(1,), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
-        Output_Start_Tmp = Array(shape=(1,), element_type=ScalarType.float32, role=Array.Role.TEMP)
+        Output_Start = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        Output_Start_Tmp = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.TEMP)
 
         nest1 = Nest((1, ))
+
         @nest1.iteration_logic
-        def _():      
+        def _():
             OutputDims[0] = cast(floor((Limit - Start) / Delta), ScalarType.int64)
 
         nest2 = Nest((1, ))
+
         @nest2.iteration_logic
-        def _():      
+        def _():
             Output_Start[0] = Start
 
         nest3 = Nest([InputDim])
         i = nest3.get_indices()
+
         @nest3.iteration_logic
         def _():
             Output[i] = Output_Start[0]
@@ -1310,7 +1336,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         # ini_start(float* output_Start, float start);
         # get_result(int64_t input_dim, float* output, float* start, float delta);
         # range_get_output_array(int64_t input_dim, float* output, float start, float delta);
-        
+
         package = Package()
         # BUGBUG: dim args ordered first due to issue with Debug mode
         package.add(nest1, args=(Start, Limit, Delta, OutputDims), base_name=f"range_get_size")
@@ -1318,16 +1344,22 @@ class DSLTest_01Arrays(unittest.TestCase):
         get_result_fn = package.add(nest3, args=(InputDim, Output, Output_Start, Delta), base_name=f"get_result")
 
         nest4 = Nest((1, ))
+
         @nest4.iteration_logic
-        def _():      
+        def _():
             ini_start_fn(Output_Start_Tmp, Start)
             get_result_fn(InputDim, Output, Output_Start_Tmp, Delta)
-        
+
         # BUGBUG: dim args ordered first due to issue with Debug mode
         package.add(nest4, args=(InputDim, Output, Start, Delta), base_name=f"range_get_output_array")
 
-        package.build("test_output_array_range_node2", format=TEST_FORMAT | Package.Format.MLIR_VERBOSE, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
-  
+        package.build(
+            "test_output_array_range_node2",
+            format=TEST_FORMAT | Package.Format.MLIR_VERBOSE,
+            mode=TEST_MODE,
+            output_dir=TEST_PACKAGE_DIR
+        )
+
 
 class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
     def _create_nest(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
@@ -1349,13 +1381,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
         # build the HAT package
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(
-                package_name,
-                format=TEST_FORMAT,
-                mode=TEST_MODE,
-                output_dir=output_dir,
-                _quiet=quiet
-            )
+            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir, _quiet=quiet)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -1559,7 +1585,6 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
             self._build_nest(nest, [A, B, C], f"test_intrinsics_{t.name}")
 
-
     def test_round_intrinsic(self) -> None:
         from accera import round as accround
 
@@ -1578,8 +1603,8 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
         A_test = np.random.uniform(low=-1000.0, high=1000.0, size=A.shape).astype(np.float32)
         # Ensure there's at least one element which tests the roundeven behavior in both directions
-        A_test[0, 0] = 1.5 # Should round up to 2
-        A_test[0, 1] = 2.5 # Should round down to 2
+        A_test[0, 0] = 1.5    # Should round up to 2
+        A_test[0, 1] = 2.5    # Should round down to 2
         B_test = np.zeros(B.shape).astype(np.int32)
 
         B_ref = A_test.round().astype(np.int32)
@@ -1592,7 +1617,6 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
         }
 
         self._build_nest(nest, [A, B], "test_round_intrinsic", correctness_check_values=correctness_check_values)
-
 
     def test_round_intrinsic_vectorized(self) -> None:
         from accera import round as accround
@@ -1609,17 +1633,20 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
         @nest.iteration_logic
         def _():
             B[i, j] = accround(A[i, j])
-        
+
         sched = nest.create_schedule()
-        ii, jj = sched.tile({i: 4, j: 8})
+        ii, jj = sched.tile({
+            i: 4,
+            j: 8
+        })
         sched.reorder(i, j, ii, jj)
         plan = sched.create_plan()
         plan.vectorize(ii)
 
         A_test = np.random.uniform(low=-1000.0, high=1000.0, size=A.shape).astype(np.float32)
         # Ensure there's at least one element which tests the roundeven behavior in both directions
-        A_test[0, 0] = 1.5 # Should round up to 2
-        A_test[0, 1] = 2.5 # Should round down to 2
+        A_test[0, 0] = 1.5    # Should round up to 2
+        A_test[0, 1] = 2.5    # Should round down to 2
         B_test = np.zeros(B.shape).astype(np.int32)
 
         B_ref = A_test.round().astype(np.int32)
@@ -1631,8 +1658,9 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             "post": [A_test, B_ref]
         }
 
-        self._build_nest(plan, [A, B], "test_round_intrinsic_vectorized", correctness_check_values=correctness_check_values)
-
+        self._build_nest(
+            plan, [A, B], "test_round_intrinsic_vectorized", correctness_check_values=correctness_check_values
+        )
 
     # TODO : fix this test - it appears to abort on just the linux buddy build machine
     # def test_remainderf_intrinsic_rounding(self) -> None:
@@ -1668,7 +1696,6 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
     #     self._build_nest(nest, [A, B], "test_remainderf_intrinsic_rounding", correctness_check_values=correctness_check_values)
 
-
     def test_vectorized_max_min(self) -> None:
         from accera import max, min
 
@@ -1697,7 +1724,10 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 C_min[i, j] = min(A[i, j], B[i, j])
 
             sched = nest.create_schedule()
-            ii, jj = sched.tile({i: 4, j: 8})
+            ii, jj = sched.tile({
+                i: 4,
+                j: 8
+            })
             sched.reorder(i, j, ii, jj)
             plan = sched.create_plan()
             plan.vectorize(ii)
@@ -1732,7 +1762,6 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                         before=correctness_check_values[fn_name]["pre"],
                         after=correctness_check_values[fn_name]["post"],
                     )
-
 
     def test_vectorized_single_max_min_block(self) -> None:
         # In this test we're trying to find the single max and single min value of a 2-D array.
@@ -1801,7 +1830,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
 
             # Cache zeroing nests
-            
+
             def _make_init_fn(package: Package, outer_arr: Array, arr: Array, base_name: str):
                 zero_nest = Nest(arr.shape)
                 indices = zero_nest.get_indices()
@@ -3460,7 +3489,7 @@ class DSLTest_04Fusing(unittest.TestCase):
             "pre": [A_test, B_test, C_test],
             "post": [A_ref, B_ref, C_ref],
         }
-        self._verify_func(package, full_fn, test_name, correctness_check_values, quiet=False, mode=Package.Mode.RELEASE)
+        self._verify_func(package, full_fn, test_name, correctness_check_values, mode=Package.Mode.RELEASE)
 
 
     def test_nested_nests_matmul_boundary(self):
@@ -3544,7 +3573,7 @@ class DSLTest_04Fusing(unittest.TestCase):
             "pre": [A_test, B_test, C_test],
             "post": [A_ref, B_ref, C_ref],
         }
-        self._verify_func(package, full_fn, test_name, correctness_check_values, quiet=False, mode=Package.Mode.RELEASE)
+        self._verify_func(package, full_fn, test_name, correctness_check_values, mode=Package.Mode.RELEASE)
 
 
     def test_double_nested_nests_matmul_boundary(self):
@@ -3671,7 +3700,7 @@ class DSLTest_04Fusing(unittest.TestCase):
             "pre": [A_test, B_test, C_test],
             "post": [A_ref, B_ref, C_ref],
         }
-        self._verify_func(package, full_fn, test_name, correctness_check_values, quiet=False, mode=Package.Mode.RELEASE)
+        self._verify_func(package, full_fn, test_name, correctness_check_values, mode=Package.Mode.RELEASE)
 
 
 class DSLTest_05Targets(unittest.TestCase):

@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.13)
+[//]: # (Version: v1.2.14)
 
-# Accera v1.2.13 Reference
+# Accera v1.2.14 Reference
 ## `accera.Target.Architecture`
 
 Defines the supported target architectures.

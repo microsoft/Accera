@@ -12,7 +12,6 @@ import logging
 import pathlib
 import shutil
 import numpy as np
-from enum import Enum
 from typing import Callable, List
 
 try:
@@ -2847,6 +2846,7 @@ class SmokeTest(unittest.TestCase):
 
 
     # TODO : move vpmaddwd tests to a different test file
+    @expectedFailure(FailedReason.INVALID, "vpmaddwd not supported on MacOS", sys.platform == "darwin")
     def test_signextend_int16_matmul_vpmaddwd(self):
         from accera import AllocateFlags
         test_name = "test_signextend_int16_matmul_vpmaddwd"
@@ -3153,7 +3153,7 @@ class SmokeTest(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
-            package.build(test_name, format=Package.Format.DEFAULT | Package.Format.MLIR, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False)
+            package.build(test_name, format=Package.Format.DEFAULT | Package.Format.MLIR, mode=Package.Mode.RELEASE, output_dir=output_dir)
             v.check_correctness(
                 function.name,
                 before=correctness_check_values["pre"],
@@ -3161,6 +3161,7 @@ class SmokeTest(unittest.TestCase):
             )
 
 
+    @expectedFailure(FailedReason.INVALID, "vpmaddwd not supported on MacOS", sys.platform == "darwin")
     def test_int16_matmul_vpmaddwd(self):
         test_name = "test_int16_matmul_vpmaddwd"
         M = 240
@@ -3210,14 +3211,69 @@ class SmokeTest(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
-            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False)
+            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir)
             v.check_correctness(
                 function.name,
                 before=correctness_check_values["pre"],
                 after=correctness_check_values["post"],
             )
 
+    @expectedFailure(FailedReason.INVALID, "vpmaddwd not supported on MacOS", sys.platform == "darwin")
+    def test_int16_matmul_vpmaddwd_cast_input(self):
+        test_name = "test_int16_matmul_vpmaddwd_cast_input"
+        M = 240
+        N = 256
+        K = 256
 
+        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N, K))
+        i, j, k = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            C[i, j] += cast(A[i, k], ScalarType.int32) * cast(B[k, j], ScalarType.int32)
+
+        schedule = nest.create_schedule()
+        ii, jj, kk = schedule.tile({ i: 24, j: 128, k: 128 })
+        iii, jjj, kkk = schedule.tile({ ii: 6, jj: 16, kk: 4 })
+        jjjj, kkkk = schedule.tile({ jjj: 8, kkk: 2 })
+
+        schedule.reorder(i, j, k,
+                         ii, jj, kk,
+                         kkk, iii, jjj,
+                         jjjj, kkkk)
+
+        plan = schedule.create_plan()
+        plan.cache(A, index = ii, element_type = ScalarType.int16, vectorize=False)
+        plan.cache(B, index = jjjj, trigger_index = jj, layout = Array.Layout.LAST_MAJOR, vectorize=False)
+        plan.cache(C, iii)
+        plan.vectorize(jjjj)
+
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+        
+        A_test = np.random.random((M, K)).astype(np.int16)
+        B_test = np.random.random((K, N)).astype(np.int16)
+        C_test = np.random.random((M, N)).astype(np.int32)
+
+        correctness_check_values = {
+            "pre": (A_test, B_test, C_test),
+            "post": (A_test, B_test, C_test + A_test @ B_test),
+        }
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir)
+            v.check_correctness(
+                function.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
 
     def test_int32_horizontal_vector_add(self):
         test_name = "test_int32_horizontal_vector_add"
@@ -3259,7 +3315,7 @@ class SmokeTest(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
-            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False)
+            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir)
             v.check_correctness(
                 function.name,
                 before=correctness_check_values["pre"],
@@ -3307,7 +3363,7 @@ class SmokeTest(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
-            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False)
+            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir)
             v.check_correctness(
                 function.name,
                 before=correctness_check_values["pre"],
@@ -5613,7 +5669,7 @@ class SmokeTest(unittest.TestCase):
         # Build the HAT package
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
             v.check_correctness(
                 fn.name,

@@ -1202,7 +1202,7 @@ mlir::LogicalResult vectorizeHorizontalReduction(mlir::AffineForOp affineForOp, 
 
     // Implement the matcher
     auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
-        llvm::dbgs() << "While processing " << *op << ". " << message << "\n";
+        llvm::dbgs() << "[vectorizeHorizontalReduction] While processing " << *op << ". " << message << "\n";
         return rewriter.notifyMatchFailure(op, message);
     };
 
@@ -1608,7 +1608,7 @@ mlir::LogicalResult vectorizeSequentialCast(mlir::AffineForOp affineForOp, mlir:
 
     // Implement the matcher
     auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
-        llvm::dbgs() << "While processing " << *op << ". " << message << "\n";
+        llvm::dbgs() << "[vectorizeSequentialCast] While processing " << *op << ". " << message << "\n";
         return rewriter.notifyMatchFailure(op, message);
     };
 
@@ -1814,7 +1814,7 @@ mlir::LogicalResult vectorizeTwoRowInterleavedPack(mlir::AffineForOp affineForOp
 
     // Implement the matcher
     auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
-        llvm::dbgs() << "While processing " << *op << ". " << message << "\n";
+        llvm::dbgs() << "[vectorizeTwoRowInterleavedPack] While processing " << *op << ". " << message << "\n";
         return rewriter.notifyMatchFailure(op, message);
     };
 
@@ -2016,8 +2016,20 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
 {
     // Implement the matcher
     auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
-        llvm::dbgs() << "While processing " << *op << ". " << message << "\n";
+        llvm::dbgs() << "[vectorizeInt16MatMul] While processing " << *op << ". " << message << "\n";
         return rewriter.notifyMatchFailure(op, message);
+    };
+
+    std::vector<mlir::Type> supportedBaseInputElementTypes { rewriter.getIntegerType(8), rewriter.getIntegerType(8, false /* isSigned */), rewriter.getIntegerType(16) };
+    std::vector<mlir::Type> supportedCastInputElementTypes { rewriter.getIntegerType(16), rewriter.getIntegerType(32) };
+    auto isInputTypeSupported = [&supportedBaseInputElementTypes, &supportedCastInputElementTypes](const mlir::Type& type, bool baseInputType) {
+        if (baseInputType)
+            return std::find(supportedBaseInputElementTypes.begin(), supportedBaseInputElementTypes.end(), type) != supportedBaseInputElementTypes.end();
+        else
+            return std::find(supportedCastInputElementTypes.begin(), supportedCastInputElementTypes.end(), type) != supportedCastInputElementTypes.end();
+    };
+    auto inputTypeNeedsCast = [&supportedCastInputElementTypes](const mlir::Type& type) {
+        return std::find(supportedCastInputElementTypes.begin(), supportedCastInputElementTypes.end(), type) == supportedCastInputElementTypes.end();
     };
 
     std::stack<Operation*> matchedOps;
@@ -2109,66 +2121,71 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
     {
         return reportMatchFailure(affineForOp, "Failed to match the load from the first array");
     }
-    auto firstLoad = cast<mlir::AffineLoadOp>(*innerLoopBodyIter);
+    auto firstLoad = cast<mlir::AffineLoadOp>(*innerLoopBodyIter++);
     auto firstElementType = firstLoad.getMemRefType().getElementType();
     matchedOps.push(firstLoad);
 
     // 1a. Optionally allow casting the A value to an int16 if it is not an int16 already
     bool castFirstLoad = false;
     mlir::Value firstLoadVal = firstLoad.getResult();
-    if (firstElementType != rewriter.getIntegerType(16))
+
+    if (!isInputTypeSupported(firstElementType, true /* baseInput */))
     {
-        innerLoopBodyIter++;
-        if (innerLoopBodyIter != innerLoopBodyEnd && isa<v::CastOp>(*innerLoopBodyIter))
+        return reportMatchFailure(affineForOp, "First load array element type is not a supported type");
+    }
+
+    // Check if there's a cast after the load
+    if (innerLoopBodyIter != innerLoopBodyEnd && isa<v::CastOp>(*innerLoopBodyIter))
+    {
+        castFirstLoad = true;
+        auto castOp = cast<v::CastOp>(*innerLoopBodyIter++);
+        firstLoadVal = castOp.result();
+        auto castResultType = firstLoadVal.getType();
+        matchedOps.push(castOp);
+        if (!isInputTypeSupported(castResultType, false /* baseInput = false because this is a cast */))
         {
-            castFirstLoad = true;
-            auto castOp = cast<v::CastOp>(*innerLoopBodyIter);
-            firstLoadVal = castOp.result();
-            auto castResultType = firstLoadVal.getType();
-            matchedOps.push(castOp);
-            if (castResultType != rewriter.getIntegerType(16))
-            {
-                return reportMatchFailure(affineForOp, "First load element is not an int16 or cast to an int16");
-            }
+            return reportMatchFailure(affineForOp, "First load element is cast to an unsupported type");
         }
-        else
-        {
-            return reportMatchFailure(affineForOp, "First load is not from an int16 array");
-        }
+    }
+    else if (inputTypeNeedsCast(firstElementType))
+    {
+        return reportMatchFailure(affineForOp, "First load element is not cast to supported type");
     }
 
     // 2. load from second matrix
-    innerLoopBodyIter++;
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<mlir::AffineLoadOp>(*innerLoopBodyIter))
     {
         return reportMatchFailure(affineForOp, "Failed to match the load from the second array");
     }
-    auto secondLoad = cast<mlir::AffineLoadOp>(innerLoopBodyIter);
+    auto secondLoad = cast<mlir::AffineLoadOp>(innerLoopBodyIter++);
     auto secondElementType = secondLoad.getMemRefType().getElementType();
     matchedOps.push(secondLoad);
 
     // 2a. Optionally allow casting the B value to an int16 if it is not an int16 already
     bool castSecondLoad = false;
     mlir::Value secondLoadVal = secondLoad.getResult();
-    if (secondElementType != rewriter.getIntegerType(16))
+
+    if (!isInputTypeSupported(secondElementType, true /* baseInput */))
     {
-        innerLoopBodyIter++;
-        if (innerLoopBodyIter != innerLoopBodyEnd && isa<v::CastOp>(*innerLoopBodyIter))
+        return reportMatchFailure(affineForOp, "Second load array element type is not a supported type");
+    }
+
+    // Check if there's a cast after the load
+    if (innerLoopBodyIter != innerLoopBodyEnd && isa<v::CastOp>(*innerLoopBodyIter))
+    {
+        castSecondLoad = true;
+        auto castOp = cast<v::CastOp>(*innerLoopBodyIter++);
+        secondLoadVal = castOp.result();
+        auto castResultType = secondLoadVal.getType();
+        matchedOps.push(castOp);
+        if (!isInputTypeSupported(castResultType, false /* baseInput = false because this is a cast */))
         {
-            castSecondLoad = true;
-            auto castOp = cast<v::CastOp>(*innerLoopBodyIter);
-            secondLoadVal = castOp.result();
-            auto castResultType = secondLoadVal.getType();
-            matchedOps.push(castOp);
-            if (castResultType != rewriter.getIntegerType(16))
-            {
-                return reportMatchFailure(affineForOp, "Second load element is not an int16 or cast to an int16");
-            }
+            return reportMatchFailure(affineForOp, "Second load element is cast to an unsupported type");
         }
-        else
-        {
-            return reportMatchFailure(affineForOp, "Second load is not from an int16 array");
-        }
+    }
+    else if (inputTypeNeedsCast(secondElementType))
+    {
+        return reportMatchFailure(affineForOp, "Second load element is not cast to supported type");
     }
 
     // If a load is sequential wrt the inner loop and constant wrt the outer loop, then we want to load the elements and broadcast them to fill a 16-element buffer
@@ -2181,12 +2198,11 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
     int64_t secondLoadVecSize = vectorSize;
 
     // 3. muliply A * B
-    innerLoopBodyIter++;
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<v::BinOp>(*innerLoopBodyIter))
     {
         return reportMatchFailure(affineForOp, "Failed to match the binary A*B multiplication op");
     }
-    auto mulAB = cast<v::BinOp>(*innerLoopBodyIter);
+    auto mulAB = cast<v::BinOp>(*innerLoopBodyIter++);
     if (mulAB.predicate() != v::BinaryOpPredicate::MUL)
     {
         return reportMatchFailure(mulAB, "Failed to match the multiplication op");
@@ -2197,24 +2213,28 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
         return reportMatchFailure(mulAB, "Failed to match the multiplication operands");
     }
     matchedOps.push(mulAB);
+    auto mulABVal = mulAB.getResult();
+    auto mulABValType = mulABVal.getType();
 
-    // 4. sign-extend / cast result of A * B
-    innerLoopBodyIter++;
-    if (innerLoopBodyIter == innerLoopBodyEnd || !isa<v::CastOp>(*innerLoopBodyIter))
+    // 4. sign-extend / cast result of A * B if it is not int32
+    if (mulABValType != rewriter.getIntegerType(32))
     {
-        return reportMatchFailure(affineForOp, "Failed to match the sign extend op");
+        if (innerLoopBodyIter == innerLoopBodyEnd || !isa<v::CastOp>(*innerLoopBodyIter))
+        {
+            return reportMatchFailure(affineForOp, "Failed to match the sign extend op");
+        }
+        auto castMulABOp = cast<v::CastOp>(*innerLoopBodyIter++);
+        matchedOps.push(castMulABOp);
+        mulABVal = castMulABOp.getResult();
     }
-    auto castMulABOp = cast<v::CastOp>(*innerLoopBodyIter);
-    matchedOps.push(castMulABOp);
     // TODO: match the type of `from` and `to` operand of sign extend op
 
     // 5. load from C matrix
-    innerLoopBodyIter++;
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<mlir::AffineLoadOp>(*innerLoopBodyIter))
     {
         return reportMatchFailure(affineForOp, "Failed to match the load from C Op");
     }
-    auto loadCOp = cast<mlir::AffineLoadOp>(innerLoopBodyIter);
+    auto loadCOp = cast<mlir::AffineLoadOp>(innerLoopBodyIter++);
     auto elementBitWidthC = loadCOp.getMemRefType().getElementTypeBitWidth();
     if (elementBitWidthC != 32)
     {
@@ -2228,30 +2248,28 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
     matchedOps.push(loadCOp);
 
     // 6. add C + (A * B)
-    innerLoopBodyIter++;
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<v::BinOp>(*innerLoopBodyIter))
     {
         return reportMatchFailure(affineForOp, "Failed to match the binary add op");
     }
-    auto accOp = cast<v::BinOp>(*innerLoopBodyIter);
+    auto accOp = cast<v::BinOp>(*innerLoopBodyIter++);
     if (accOp.predicate() != v::BinaryOpPredicate::ADD)
     {
         return reportMatchFailure(accOp, "Failed to match the addition op");
     }
     // Check that the operands for the add op are load from C, and multiplication result of A and B
-    if (!((accOp.lhs() == loadCOp && accOp.rhs() == castMulABOp) || (accOp.rhs() == loadCOp && accOp.lhs() == castMulABOp)))
+    if (!((accOp.lhs() == loadCOp && accOp.rhs() == mulABVal) || (accOp.rhs() == loadCOp && accOp.lhs() == mulABVal)))
     {
         return reportMatchFailure(accOp, "Failed to match the accumulation operands");
     }
     matchedOps.push(accOp);
 
     // 7. store result of accumulation op to cache of C matrix
-    innerLoopBodyIter++;
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<mlir::AffineStoreOp>(*innerLoopBodyIter))
     {
         return reportMatchFailure(affineForOp, "Failed to match the store into C");
     }
-    auto storeCOp = cast<mlir::AffineStoreOp>(*innerLoopBodyIter);
+    auto storeCOp = cast<mlir::AffineStoreOp>(*innerLoopBodyIter++);
     // Check that we are in fact storing the (A*B)+C value, and that we're storing back to the same array
     if (storeCOp.getValueToStore() != accOp || storeCOp.getMemRef() != loadCOp.getMemRef())
     {
@@ -2264,16 +2282,14 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
     matchedOps.push(storeCOp);
 
     // 8. match the final pair of redundant load and store ops
-    (void)innerLoopBodyIter++;
     // for some reason there sometimes is an extra AffineLoadOp / AffineStoreOp pair being redundantly generated, we need to ignore those
     if (innerLoopBodyIter != innerLoopBodyEnd && isa<mlir::AffineLoadOp>(*innerLoopBodyIter))
     {
-        auto loadOp = cast<mlir::AffineLoadOp>(*innerLoopBodyIter);
+        auto loadOp = cast<mlir::AffineLoadOp>(*innerLoopBodyIter++);
         matchedOps.push(loadOp);
-        (void)innerLoopBodyIter++;
         if (innerLoopBodyIter != innerLoopBodyEnd && isa<mlir::AffineStoreOp>(*innerLoopBodyIter))
         {
-            auto storeOp = cast<mlir::AffineStoreOp>(*innerLoopBodyIter);
+            auto storeOp = cast<mlir::AffineStoreOp>(*innerLoopBodyIter++);
             if (storeOp.getMemRef() != loadOp.getMemRef())
             {
                 return reportMatchFailure(storeOp, "Failed to match extraneous load/store");

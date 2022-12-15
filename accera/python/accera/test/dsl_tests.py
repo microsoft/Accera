@@ -1618,6 +1618,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
         self._build_nest(nest, [A, B], "test_round_intrinsic", correctness_check_values=correctness_check_values)
 
+    @expectedFailure(FailedReason.INVALID, "x86 round intrinsic not supported on MacOS", sys.platform == "darwin")
     def test_round_intrinsic_vectorized(self) -> None:
         from accera import round as accround
 
@@ -1696,6 +1697,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
     #     self._build_nest(nest, [A, B], "test_remainderf_intrinsic_rounding", correctness_check_values=correctness_check_values)
 
+    @expectedFailure(FailedReason.INVALID, "x86 max min intrinsics not supported on MacOS", sys.platform == "darwin")
     def test_vectorized_max_min(self) -> None:
         from accera import max, min
 
@@ -1763,6 +1765,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                         after=correctness_check_values[fn_name]["post"],
                     )
 
+    @expectedFailure(FailedReason.INVALID, "x86 max min intrinsics not supported on MacOS", sys.platform == "darwin")
     def test_vectorized_single_max_min_block(self) -> None:
         # In this test we're trying to find the single max and single min value of a 2-D array.
         # To vectorize this, we'll want to compute several maxs and mins in paralle and then reduce them
@@ -1801,6 +1804,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
             inner_nest = Nest((M_tile, N_tile))
             inner_i, inner_j = inner_nest.get_indices()
+
             @inner_nest.iteration_logic
             def _():
                 i = outer_i_dim + inner_i
@@ -1811,34 +1815,50 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             inner_sched = inner_nest.create_schedule()
             inner_plan = inner_sched.create_plan()
             inner_plan.vectorize(inner_i)
-            inner_fn = package.add(inner_plan, args=(A, io_A_max_cache, io_A_min_cache, outer_i_dim, outer_j_dim), base_name=f"{fn_name}_inner", function_opts=INTERNAL_FUNCTION_OPTS)
+            inner_fn = package.add(
+                inner_plan,
+                args=(A, io_A_max_cache, io_A_min_cache, outer_i_dim, outer_j_dim),
+                base_name=f"{fn_name}_inner",
+                function_opts=INTERNAL_FUNCTION_OPTS
+            )
 
             # Outer nest
             outer_nest = Nest((M, N))
             outer_i, outer_j = outer_nest.get_indices()
+
             @outer_nest.iteration_logic
             def _():
                 inner_fn(A, io_A_max_cache, io_A_min_cache, outer_i, outer_j)
 
             outer_sched = outer_nest.create_schedule()
             outer_ii = outer_sched.split(outer_i, M_outer_tile)
-            outer_iii, outer_jj = outer_sched.tile({outer_ii: M_tile, outer_j: N_tile})
+            outer_iii, outer_jj = outer_sched.tile({
+                outer_ii: M_tile,
+                outer_j: N_tile
+            })
             outer_sched.reorder(outer_i, outer_j, outer_ii, outer_iii, outer_jj)
             outer_plan = outer_sched.create_plan()
             outer_plan._erase_loops([outer_iii, outer_jj])
-            outer_fn = package.add(outer_plan, args=(A, io_A_max_cache, io_A_min_cache), base_name=f"{fn_name}_outer", function_opts=INTERNAL_FUNCTION_OPTS)
-
+            outer_fn = package.add(
+                outer_plan,
+                args=(A, io_A_max_cache, io_A_min_cache),
+                base_name=f"{fn_name}_outer",
+                function_opts=INTERNAL_FUNCTION_OPTS
+            )
 
             # Cache zeroing nests
 
             def _make_init_fn(package: Package, outer_arr: Array, arr: Array, base_name: str):
                 zero_nest = Nest(arr.shape)
                 indices = zero_nest.get_indices()
+
                 @zero_nest.iteration_logic
                 def _():
                     arr[indices] = outer_arr[indices]
 
-                return package.add(zero_nest, args=(outer_arr, arr), base_name=base_name, function_opts=INTERNAL_FUNCTION_OPTS)
+                return package.add(
+                    zero_nest, args=(outer_arr, arr), base_name=base_name, function_opts=INTERNAL_FUNCTION_OPTS
+                )
 
             zero_max_cache_fn = _make_init_fn(package, A, io_A_max_cache, "max_cache_zeroing")
             zero_min_cache_fn = _make_init_fn(package, A, io_A_min_cache, "min_cache_zeroing")
@@ -1849,22 +1869,26 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 reduce_nest = Nest(cache.shape)
                 indices = reduce_nest.get_indices()
                 if use_max:
+
                     @reduce_nest.iteration_logic
                     def _():
                         outer_arr[0] = max(outer_arr[0], cache[indices])
                 else:
+
                     @reduce_nest.iteration_logic
                     def _():
                         outer_arr[0] = min(outer_arr[0], cache[indices])
 
-                return package.add(reduce_nest, args=(cache, outer_arr), base_name=base_name, function_opts=INTERNAL_FUNCTION_OPTS)
+                return package.add(
+                    reduce_nest, args=(cache, outer_arr), base_name=base_name, function_opts=INTERNAL_FUNCTION_OPTS
+                )
 
             reduce_max_cache_fn = _make_cache_reduce_fn(package, io_A_max_cache, A_max, "max_cache_reduce", True)
             reduce_min_cache_fn = _make_cache_reduce_fn(package, io_A_min_cache, A_min, "min_cache_reduce", False)
 
             # outer nest
 
-            top_nest = Nest((1,))
+            top_nest = Nest((1, ))
 
             @top_nest.iteration_logic
             def _():
@@ -1880,8 +1904,8 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             A_max_test = np.random.random(A_max.shape).astype(np.float32)
             A_min_test = np.random.random(A_min.shape).astype(np.float32)
 
-            A_max_ref = np.max(A_test).reshape((1,))
-            A_min_ref = np.min(A_test).reshape((1,))
+            A_max_ref = np.max(A_test).reshape((1, ))
+            A_min_ref = np.min(A_test).reshape((1, ))
 
             correctness_check_values[fn_name] = {
                 "pre": [A_test, A_max_test, A_min_test],
@@ -1904,7 +1928,6 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                         before=correctness_check_values[fn_name]["pre"],
                         after=correctness_check_values[fn_name]["post"],
                     )
-
 
     def test_intrinsics_float(self) -> None:
         from accera import (
@@ -2577,7 +2600,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         package = Package()
         function = package.add(schedule, args, base_name="fusing_test")
         self._verify_func(package, function, package_name, correctness_check_values, quiet)
-
 
     def test_full_iteration_space_fusing(self) -> None:
         from accera import fuse, Nest
@@ -3328,7 +3350,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         }
         self._verify_schedule(fused, (A, B, C), "test_multi_partial_fusion_2", correctness_check_values)
 
-
     def test_hierarchical_partial_fuse(self) -> None:
         from accera import fuse
 
@@ -3336,8 +3357,8 @@ class DSLTest_04Fusing(unittest.TestCase):
         N = 128
         M_tile = 32
         N_tile = 16
-        A = Array(role=Array.Role.INPUT, shape=(M,))
-        B = Array(role=Array.Role.INPUT, shape=(N,))
+        A = Array(role=Array.Role.INPUT, shape=(M, ))
+        B = Array(role=Array.Role.INPUT, shape=(N, ))
         C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
 
         # Create nest0 and schedule
@@ -3349,7 +3370,10 @@ class DSLTest_04Fusing(unittest.TestCase):
             C[i0, j0] += A[i0] * B[j0]
 
         schedule0 = nest0.create_schedule()
-        ii0, jj0 = schedule0.tile({ i0: M_tile, j0: N_tile })
+        ii0, jj0 = schedule0.tile({
+            i0: M_tile,
+            j0: N_tile
+        })
         schedule0.reorder(i0, j0, ii0, jj0)
 
         # Create nest1 and schedule1
@@ -3361,13 +3385,15 @@ class DSLTest_04Fusing(unittest.TestCase):
             C[i1, j1] = C[i1, j1] * 0.1
 
         schedule1 = nest1.create_schedule()
-        ii1, jj1 = schedule1.tile({ i1: M_tile, j1: N_tile })
+        ii1, jj1 = schedule1.tile({
+            i1: M_tile,
+            j1: N_tile
+        })
         schedule1.reorder(i1, j1, ii1, jj1)
 
         schedule_01 = fuse((schedule0, schedule1), partial=2)
         f, i, j, ii0, jj0, ii1, jj1 = schedule_01.get_indices()
         schedule_01.reorder(i, j, f, ii0, jj0, ii1, jj1)
-
 
         # Create nest2 and schedule2
         nest2 = Nest(shape=(M, N))
@@ -3378,7 +3404,10 @@ class DSLTest_04Fusing(unittest.TestCase):
             C[i2, j2] = C[i2, j2] + 0.2
 
         schedule2 = nest2.create_schedule()
-        ii2, jj2 = schedule2.tile({ i2: M_tile, j2: N_tile })
+        ii2, jj2 = schedule2.tile({
+            i2: M_tile,
+            j2: N_tile
+        })
         schedule2.reorder(i2, j2, ii2, jj2)
 
         # Create nest3 and schedule3
@@ -3390,7 +3419,10 @@ class DSLTest_04Fusing(unittest.TestCase):
             C[i3, j3] = C[i3, j3] + 0.3
 
         schedule3 = nest3.create_schedule()
-        ii3, jj3 = schedule3.tile({ i3: M_tile, j3: N_tile })
+        ii3, jj3 = schedule3.tile({
+            i3: M_tile,
+            j3: N_tile
+        })
         schedule3.reorder(i3, j3, ii3, jj3)
 
         schedule_23 = fuse((schedule2, schedule3), partial=2)
@@ -3409,7 +3441,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         package.add(plan, args=(A, B, C), base_name="test_hierarchical_partial_fuse")
 
         self._verify_schedule(plan, (A, B, C), "test_hierarchical_partial_fuse", None)
-
 
     def test_nested_nests_matmul(self):
         test_name = "test_nested_nests_matmul"
@@ -3460,7 +3491,9 @@ class DSLTest_04Fusing(unittest.TestCase):
         matmul_sched.reorder(mm_k, mm_i, mm_j, mm_jj)
         matmul_plan = matmul_sched.create_plan()
         matmul_plan.vectorize(mm_jj)
-        matmul_fn = package.add(matmul_plan, args=(A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx), base_name="matmul_tile_fn")
+        matmul_fn = package.add(
+            matmul_plan, args=(A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx), base_name="matmul_tile_fn"
+        )
 
         tile_nest = Nest([M, N, K])
         i, j, k = tile_nest.get_indices()
@@ -3491,7 +3524,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         }
         self._verify_func(package, full_fn, test_name, correctness_check_values, mode=Package.Mode.RELEASE)
 
-
     def test_nested_nests_matmul_boundary(self):
         test_name = "test_nested_nests_matmul_boundary"
         from accera import min, Dimension
@@ -3500,7 +3532,7 @@ class DSLTest_04Fusing(unittest.TestCase):
         N = 32
         K = 12
         M_tile = 4
-        N_tile = 12 # 32 doesn't divide 12 so we should have an 8 element boundary in the N dimension
+        N_tile = 12    # 32 doesn't divide 12 so we should have an 8 element boundary in the N dimension
         K_tile = 3
 
         package = Package()
@@ -3527,7 +3559,9 @@ class DSLTest_04Fusing(unittest.TestCase):
             full_j = pb_j + j_tile_idx
             io_B_temp[pb_k, pb_j] = B[full_k, full_j]
 
-        pack_b_fn = package.add(pack_b_nest, args=(n_tile_dim, B, io_B_temp, j_tile_idx, k_tile_idx), base_name="pack_b_tile_fn")
+        pack_b_fn = package.add(
+            pack_b_nest, args=(n_tile_dim, B, io_B_temp, j_tile_idx, k_tile_idx), base_name="pack_b_tile_fn"
+        )
 
         matmul_nest = Nest([M_tile, n_tile_dim, K_tile])
         mm_i, mm_j, mm_k = matmul_nest.get_indices()
@@ -3543,7 +3577,11 @@ class DSLTest_04Fusing(unittest.TestCase):
         mm_jj = matmul_sched.split(mm_j, 8)
         matmul_sched.reorder(mm_k, mm_i, mm_j, mm_jj)
         matmul_plan = matmul_sched.create_plan()
-        matmul_fn = package.add(matmul_plan, args=(n_tile_dim, A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx), base_name="matmul_tile_fn")
+        matmul_fn = package.add(
+            matmul_plan,
+            args=(n_tile_dim, A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx),
+            base_name="matmul_tile_fn"
+        )
 
         tile_nest = Nest([M, N, K])
         i, j, k = tile_nest.get_indices()
@@ -3575,7 +3613,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         }
         self._verify_func(package, full_fn, test_name, correctness_check_values, mode=Package.Mode.RELEASE)
 
-
     def test_double_nested_nests_matmul_boundary(self):
         test_name = "test_double_nested_nests_matmul_boundary"
         from accera import min, Dimension
@@ -3584,8 +3621,8 @@ class DSLTest_04Fusing(unittest.TestCase):
         N = 32
         K = 12
         M_tile = 4
-        N_tile = 12 # 32 doesn't divide 12 so we should have an 8 element boundary in the N dimension
-        N_kernel_tile = 8 # Doesn't divide N_tile so we should have a 4 element boundary in the N dimension in the outer main loop and no inner boundary in the outer boundary loop
+        N_tile = 12    # 32 doesn't divide 12 so we should have an 8 element boundary in the N dimension
+        N_kernel_tile = 8    # Doesn't divide N_tile so we should have a 4 element boundary in the N dimension in the outer main loop and no inner boundary in the outer boundary loop
         K_tile = 3
 
         package = Package()
@@ -3621,9 +3658,10 @@ class DSLTest_04Fusing(unittest.TestCase):
             pack_b_nest,
             args=(n_tile_dim, B, io_B_temp, i_tile_idx, k_tile_idx),
             base_name="pack_b_tile_fn",
-            function_opts=INTERNAL_FUNCTION_OPTS)
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
-        matmul_kernel_nest = Nest((n_kernel_dim,))
+        matmul_kernel_nest = Nest((n_kernel_dim, ))
         mmk_j = matmul_kernel_nest.get_indices()
 
         @matmul_kernel_nest.iteration_logic
@@ -3639,14 +3677,15 @@ class DSLTest_04Fusing(unittest.TestCase):
         mmk_jj = matmul_kernel_sched.split(mmk_j, N_kernel_tile)
         matmul_kernel_sched.reorder(mmk_j, mmk_jj)
         matmul_kernel_plan = matmul_kernel_sched.create_plan()
-        matmul_kernel_fn = package.add(matmul_kernel_plan,
-            args=(n_kernel_dim,
-                    A, B, C, io_B_temp,
-                    i_tile_idx, j_tile_idx, k_tile_idx,
-                    i_kernel_idx, j_kernel_idx, k_kernel_idx),
+        matmul_kernel_fn = package.add(
+            matmul_kernel_plan,
+            args=(
+                n_kernel_dim, A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx, i_kernel_idx, j_kernel_idx,
+                k_kernel_idx
+            ),
             base_name="matmul_kernel_fn",
-            function_opts=INTERNAL_FUNCTION_OPTS)
-
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         matmul_tile_nest = Nest([M_tile, n_tile_dim, K_tile])
         mm_i, mm_j, mm_k = matmul_tile_nest.get_indices()
@@ -3654,10 +3693,7 @@ class DSLTest_04Fusing(unittest.TestCase):
         @matmul_tile_nest.iteration_logic
         def _matmul():
             n_kernel_extent = min(cast(N_kernel_tile, ScalarType.index), n_tile_dim - mm_j)
-            matmul_kernel_fn(n_kernel_extent,
-                A, B, C, io_B_temp,
-                i_tile_idx, j_tile_idx, k_tile_idx,
-                mm_i, mm_j, mm_k)
+            matmul_kernel_fn(n_kernel_extent, A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx, mm_i, mm_j, mm_k)
 
         matmul_tile_sched = matmul_tile_nest.create_schedule()
         mm_jj = matmul_tile_sched.split(mm_j, N_tile)
@@ -3669,8 +3705,8 @@ class DSLTest_04Fusing(unittest.TestCase):
             matmul_tile_plan,
             args=(n_tile_dim, A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx),
             base_name="matmul_tile_fn",
-            function_opts=INTERNAL_FUNCTION_OPTS)
-
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         tile_nest = Nest([M, N, K])
         i, j, k = tile_nest.get_indices()

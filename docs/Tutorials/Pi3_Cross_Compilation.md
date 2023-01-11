@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.14)
+[//]: # (Version: v1.2)
 
 # Cross Compiling for the Raspberry Pi 3
 

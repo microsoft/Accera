@@ -2454,6 +2454,129 @@ TEST_CASE_METHOD(Fixture, "fused_unequal_shapes_tiled", "[cpu][nest][pad]")
                          << debugString(module));
 }
 
+accera::value::Schedule getTiledSchedule(accera::value::Array& A, accera::value::Array& B)
+{
+    accera::value::Nest nest({ 16, 16 });
+    auto indices = nest.GetIndices();
+    auto i = indices[0];
+    auto j = indices[1];
+    nest.Set([&]() {
+        A(i, j) += B(i, j);
+    });
+    auto sched = nest.CreateSchedule();
+    auto [i_, ii] = sched.Split(i, 8);
+    auto [j_, jj] = sched.Split(j, 8);
+    auto [ii_, iii] = sched.Split(ii, 4);
+    auto [jj_, jjj] = sched.Split(jj, 4);
+    sched.SetOrder({i_, j_, ii_, jj_, iii, jjj});
+
+    return sched;
+}
+
+
+TEST_CASE_METHOD(Fixture, "full_fuse_tiled_shapes", "[cpu][nest][split]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    const int M = 16;
+    const int N = 16;
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    std::string testName = "full_fuse_tiled_shapes_";
+
+    DeclareFunction("FullFuseTiledShapes")
+        .Public(true)
+        .Parameters(
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+        .Define([=](Array A, Array B) {
+            auto sched0 = getTiledSchedule(A, B);
+            auto indices0 = sched0.GetIndices();
+
+            auto sched1 = getTiledSchedule(A, B);
+            auto indices1 = sched1.GetIndices();
+
+            assert(indices0.size() == indices1.size());
+
+            std::vector<Schedule> otherScheds{ sched1 };
+            std::vector<std::vector<ScalarIndex>> correspondence;
+            for (auto [idx0, idx1] : llvm::zip(indices0, indices1))
+            {
+                correspondence.push_back({idx0, idx1});
+            }
+
+            sched0.Fuse(otherScheds, correspondence);
+
+            assert(sched0.GetIndices().size() == 7); // f, i, j, ii, jj, iii, jjj
+        });
+
+    accera::transforms::AcceraPassPipelineOptions options;
+    options.dumpPasses = true;
+    options.dumpIntraPassIR = true;
+    // options.printLoops = true;
+
+    RunConversionPasses(target, testName + stringify(target), options);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
+TEST_CASE_METHOD(Fixture, "partial_fuse_tiled_shapes", "[cpu][nest][split]")
+{
+    auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);
+
+    const int M = 16;
+    const int N = 16;
+
+    using namespace accera::value;
+    using namespace accera::utilities;
+    using accera::value::Value;
+
+    std::string testName = "partial_fuse_tiled_shapes_";
+
+    DeclareFunction("PartialFuseTiledShapes")
+        .Public(true)
+        .Parameters(
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }),
+            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+        .Define([=](Array A, Array B) {
+            auto sched0 = getTiledSchedule(A, B);
+            auto indices0 = sched0.GetIndices();
+
+            auto sched1 = getTiledSchedule(A, B);
+            auto indices1 = sched1.GetIndices();
+
+            assert(indices0.size() == indices1.size());
+
+            // Introduce an additional split in the 2nd schedule
+            auto jjj1 = indices1[5];
+            auto [jjj1_, jjjj1] = sched1.Split(jjj1, 2);
+
+            // Partial fuse of indices i, j, ii, jj, iii.
+            std::vector<Schedule> otherScheds{ sched1 };
+            std::vector<std::vector<ScalarIndex>> correspondence;
+            for (int i = 0; i < 5; ++i)
+            {
+                correspondence.push_back({indices0[i], indices1[i]});
+            }
+
+            sched0.Fuse(otherScheds, correspondence);
+
+            assert(sched0.GetIndices().size() == 9); // f, i, j, ii, jj, iii, jjj0, jjj1, jjjj1
+        });
+
+    accera::transforms::AcceraPassPipelineOptions options;
+    options.dumpPasses = true;
+    options.dumpIntraPassIR = true;
+    // options.printLoops = true;
+
+    RunConversionPasses(target, testName + stringify(target), options);
+    SUCCEED("targeting " << stringify(target) << ":\n\n"
+                         << debugString(module));
+}
+
 TEST_CASE_METHOD(Fixture, "parallelize_gemm", "[cpu][nest][parallel]")
 {
     auto target = GENERATE(ConversionTarget::accera, ConversionTarget::mlir, ConversionTarget::llvm);

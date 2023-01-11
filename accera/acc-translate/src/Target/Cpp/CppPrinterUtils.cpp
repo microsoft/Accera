@@ -178,7 +178,7 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult printConstantMatrixOp(PrinterState& state, CppPrinter* printer, const std::tuple<int, int, int>& matrixShape, Value dest, Value value)
+    LogicalResult printConstantMatrixOp(PrinterState& state, CppPrinter* printer, Value dest, Value value)
     {
         auto fragName = state.nameState.getName(dest);
         auto val = state.nameState.getOrCreateName(value, SSANameState::SSANameKind::Variable, "mmaFillValue_");
@@ -187,8 +187,48 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, const std::tuple<int, int, int>& matrixShape, Value src, Value dest, const vir::MMAOperandType operandType, mlir::Operation::operand_range indices, bool rowMajor, Value blockTid, const bool useStaticOffsets)
+    LogicalResult printFragmentOp(CppPrinter* printer, Type elementType, const StringRef& fragName, const vir::MMAFragmentOp mmaFragmentOp, const StringRef& mmaFragmentArg)
     {
+        auto&& os = printer->getOStream();
+        auto fragDataName = fragName + "_data";
+
+        os << "{\n"; // Additional scope required to avoid name collisions
+        RETURN_IF_FAILED(printer->printType(elementType));
+        os << "* " << fragDataName << " = reinterpret_cast<";
+        RETURN_IF_FAILED(printer->printType(elementType));
+        os << "*>(&" << fragName << ");\n";
+        os << "for (int i = 0; i < sizeof(" << fragName << ") / sizeof(";
+        RETURN_IF_FAILED(printer->printType(elementType));
+        os << "); ++i) { ";
+        switch (mmaFragmentOp)
+        {
+        case vir::MMAFragmentOp::ReLU:
+            os << "relu(" << fragDataName << "[i]);";
+            break;
+        case vir::MMAFragmentOp::ReLU_NoConditional:
+            os << "relu_no_conditional(" << fragDataName << "[i]);";
+            break;
+        case vir::MMAFragmentOp::Set:
+            os << "set(" << fragDataName << "[i], " << mmaFragmentArg << ");";
+            break;
+        case vir::MMAFragmentOp::Scale:
+            os << "scale(" << fragDataName << "[i], " << mmaFragmentArg << ");";
+            break;
+        default:
+            break;
+        }
+        os << " }\n}\n";
+
+        return success();
+    }
+
+    LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, const vir::MMAOperandType operandType, mlir::Operation::operand_range indices, bool rowMajor, Value blockTid, const bool useStaticOffsets, const vir::MMAFragmentOp mmaPrologueOp, Value mmaPrologueArg)
+    {
+        if (mmaPrologueOp == vir::MMAFragmentOp::Set)
+        {
+            return printConstantMatrixOp(state, printer, dest, mmaPrologueArg);
+        }
+
         const auto ns = getWmmaNamespace(state);
         auto&& os = printer->getOStream();
         int64_t offset;
@@ -224,10 +264,19 @@ namespace cpp_printer
         }
         os << ")";
 
+        if (mmaPrologueOp != vir::MMAFragmentOp::None)
+        {
+            os << ";\n";
+
+            auto dstElementType = dest.getType().cast<MemRefType>().getElementType();
+            auto mmaPrologueArgName = state.nameState.getOrCreateName(mmaPrologueArg, SSANameState::SSANameKind::Variable, "mmaPrologueArg_");
+            RETURN_IF_FAILED(printFragmentOp(printer, dstElementType, resName, mmaPrologueOp, mmaPrologueArgName));
+        }
+
         return success();
     }
 
-    LogicalResult printComputeMatrixOp(PrinterState& state, CppPrinter* printer, const std::tuple<int, int, int>& resultShape, Value A, Value B, Value C, Value D, const int cbsz, const int abid, const int blgp)
+    LogicalResult printComputeMatrixOp(PrinterState& state, CppPrinter* printer, Value A, Value B, Value C, Value D, const int cbsz, const int abid, const int blgp)
     {
         auto opA = state.nameState.getName(A);
         auto opB = state.nameState.getName(B);
@@ -243,7 +292,7 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult printStoreMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, mlir::Operation::operand_range indices, Value blockTid, const bool useStaticOffsets)
+    LogicalResult printStoreMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, mlir::Operation::operand_range indices, Value blockTid, const bool useStaticOffsets, const vir::MMAFragmentOp mmaEpilogueOp, Value mmaEpilogueArg)
     {
         auto fragName = state.nameState.getName(src);
 
@@ -260,10 +309,18 @@ namespace cpp_printer
         const auto ns = getWmmaNamespace(state);
         const auto dstMemrefStr = getMemrefAccessStr(printer, sharedMem, memRefType, state.nameState.getName(dest).str(), indices);
         auto&& os = printer->getOStream();
+
+        if (mmaEpilogueOp != vir::MMAFragmentOp::None)
+        {
+            auto srcElementType = src.getType().cast<MemRefType>().getElementType();
+            auto mmaEpilogueArgName = state.nameState.getOrCreateName(mmaEpilogueArg, SSANameState::SSANameKind::Variable, "mmaEpilogueArg_");
+            RETURN_IF_FAILED(printFragmentOp(printer, srcElementType, fragName, mmaEpilogueOp, mmaEpilogueArgName));
+        }
+
         os << ns << "::store_matrix_sync";
         if (state.hasRuntime(Runtime::ROCM))
         {
-            os << "<" << useStaticOffsets<< ", " << getMmaLayout(ns, rowMajor) << ", " << ld << ">(" << state.nameState.getName(blockTid) << ", " << dstMemrefStr << ", " << fragName;
+            os << "<" << useStaticOffsets << ", " << getMmaLayout(ns, rowMajor) << ", " << ld << ">(" << state.nameState.getName(blockTid) << ", " << dstMemrefStr << ", " << fragName;
         }
         else
         {

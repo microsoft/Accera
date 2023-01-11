@@ -1,7 +1,7 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.14)
+[//]: # (Version: v1.2)
 
-# Accera v1.2.14 Reference
+# Accera v1.2 Reference
 
 ## `accera.Package.add_description([author, license, other, version])`
 Adds descriptive metadata to the HAT package.

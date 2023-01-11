@@ -1253,6 +1253,7 @@ def accv_GPUBlockCacheOp : accv_Op<"gpu_block_cache",
     acc_Indexlike:$srcOffsetRows,
     acc_Indexlike:$srcOffsetCols,
     Arg<MemRefOf<[UI8, I8, I32, F16, BF16, F32]>, "", [MemWrite]>:$dest,
+    BoolAttr:$srcToDst,
     BoolAttr:$dstRowMajor,
     ArrayAttr:$tileShape,
     CacheStrategyAttr:$strategy,
@@ -1267,7 +1268,7 @@ def accv_GPUBlockCacheOp : accv_Op<"gpu_block_cache",
   let results = (outs MemRefOf<[UI8, I8, I32, F16, BF16, F32]>:$result);
 
   let builders = [
-    OpBuilder<(ins "Type":$resultType, "Value":$blockThreadId, "CacheStrategy":$strategy, "Value":$memref, "Value":$srcOffsetRows, "Value":$srcOffsetCols, "Value":$dest, "bool":$dstRowMajor, "ArrayAttr":$tileShape, "int32_t":$vecWidth, "const std::array<int64_t, 3>&":$blockDim, "int32_t":$workPerThread), [{
+    OpBuilder<(ins "Type":$resultType, "Value":$blockThreadId, "CacheStrategy":$strategy, "Value":$memref, "Value":$srcOffsetRows, "Value":$srcOffsetCols, "Value":$dest, "bool":$srcToDst, "bool":$dstRowMajor, "ArrayAttr":$tileShape, "int32_t":$vecWidth, "const std::array<int64_t, 3>&":$blockDim, "int32_t":$workPerThread), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> () for zero-dimensional memrefs.
@@ -1279,6 +1280,7 @@ def accv_GPUBlockCacheOp : accv_Op<"gpu_block_cache",
         $_state.addOperands(dest);
         $_state.addAttribute("strategy", CacheStrategyAttr::get($_builder.getContext(), strategy));
         $_state.addAttribute("tileShape", tileShape);
+        $_state.addAttribute("srcToDst", $_builder.getBoolAttr(srcToDst));
         $_state.addAttribute("dstRowMajor", $_builder.getBoolAttr(dstRowMajor));
         $_state.addAttribute("vecWidth", $_builder.getI32IntegerAttr(vecWidth));
         $_state.addAttribute("blockDimX", $_builder.getI32IntegerAttr(blockDim[0]));
@@ -1343,7 +1345,6 @@ def accv_MMAComputeSyncOp: accv_Op<"wmma_compute_sync", [NoSideEffect, MemoryEff
                   Arg<MemRefRankOf<[UI8, I8, F16, BF16, F32], [2]>>:$opA,
                   Arg<MemRefRankOf<[UI8, I8, F16, BF16, F32], [2]>>:$opB,
                   Arg<MemRefRankOf<[I8, I16, I32, F16, BF16, F32], [2]>>:$opC,
-                  I32Attr:$mmaShapeType,
                   I32Attr:$cbsz,
                   I32Attr:$abid,
                   I32Attr:$blgp);
@@ -1356,7 +1357,7 @@ def accv_MMAComputeSyncOp: accv_Op<"wmma_compute_sync", [NoSideEffect, MemoryEff
 }
 
 
-def accv_MMAFillSyncOp : accv_Op<"wmma_fill_sync",
+/*def accv_MMAFillSyncOp : accv_Op<"wmma_fill_sync",
   [
     NoSideEffect,
     TypesMatchWith<"value type matches element type of mfma_matrix",
@@ -1374,16 +1375,15 @@ def accv_MMAFillSyncOp : accv_Op<"wmma_fill_sync",
   }];
 
   let arguments = (ins
-    Arg<MemRefRankOf<[I8, I32, F16, F32], [2]>, "", [MemWrite]>:$dest,
-    AnyTypeOf<[I8, I32, F16, F32]>:$value,
-    I32Attr:$mmaShapeType
+    Arg<MemRefRankOf<[I8, I16, I32, F16, BF16, F32], [2]>, "", [MemWrite]>:$dest,
+    AnyTypeOf<[I8, I16, I32, F16, BF16, F32]>:$value
   );
 
   let assemblyFormat = [{
     $dest `,` $value `,` attr-dict `:` type($dest) `,` type($value)
   }]; 
   let verifier = [{ return ::verify(*this); }];
-}
+}*/
 
 // load and store submatrix
 
@@ -1406,17 +1406,18 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
   let arguments = (ins
     Arg<MemRefOf<[UI8, I8, I16, I32, F16, BF16, F32]>, "", [MemRead]>:$memref,
     Arg<MemRefRankOf<[UI8, I8, I16, I32, F16, BF16, F32], [2]>, "", [MemWrite]>:$dest,
-    UI32Attr:$mmaShapeType,
     I8Attr:$operandType,
     BoolAttr:$rowMajor,
     Variadic<acc_Indexlike>:$indices,
     acc_Indexlike:$blockThreadId,
     AffineMapAttr:$map,
-    BoolAttr:$staticOffsets
+    BoolAttr:$staticOffsets,
+    UI32Attr:$mmaPrologueOp,
+    AnyTypeOf<[I8, I16, I32, F16, BF16, F32]>:$mmaPrologueArg
   );
 
   let builders = [
-    OpBuilder<(ins "Value":$blockThreadId, "Value":$memref, "Value":$dest, "MMAShape":$mmaShapeType, "MMAOperandType":$operandType, "bool":$rowMajor, "ValueRange":$indices, "bool":$staticOffsets), [{
+    OpBuilder<(ins "Value":$blockThreadId, "Value":$memref, "Value":$dest, "MMAOperandType":$operandType, "bool":$rowMajor, "ValueRange":$indices, "bool":$staticOffsets, "MMAFragmentOp":$mmaPrologueOp, "Value":$mmaPrologueArg), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> () for zero-dimensional memrefs.
@@ -1426,11 +1427,12 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
         $_state.addOperands(dest);
         $_state.addOperands(indices);
         $_state.addOperands(blockThreadId);
-        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
+        $_state.addOperands(mmaPrologueArg);
         $_state.addAttribute("operandType", $_builder.getI8IntegerAttr((int8_t)operandType));
         $_state.addAttribute("rowMajor", $_builder.getBoolAttr(rowMajor));
         $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
         $_state.addAttribute("staticOffsets", $_builder.getBoolAttr(staticOffsets));
+        $_state.addAttribute("mmaPrologueOp", $_builder.getUI32IntegerAttr((uint32_t)mmaPrologueOp));
     }]>
   ];
 
@@ -1449,7 +1451,7 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
   }];
 
   let assemblyFormat = [{
-    $blockThreadId `,` $memref `,` $dest `[` $indices `]` attr-dict `:` type($blockThreadId) `,` type($memref) `,` type($dest) `[` type($indices) `]`
+    $blockThreadId `,` $memref `,` $mmaPrologueArg `,` $dest `[` $indices `]` attr-dict `:` type($blockThreadId) `,` type($memref) `,` type($mmaPrologueArg) `,` type($dest) `[` type($indices) `]`
   }]; 
   let verifier = [{ return ::verify(*this); }];
 }
@@ -1472,14 +1474,15 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
   let arguments = (ins
     Arg<MemRefRankOf<[I8, I16, I32, F16, BF16, F32], [2]>, "",[MemRead]>:$src,
     Arg<MemRefOf<[I8, I16, I32, F16, BF16, F32]>, "",[MemWrite]>:$memref,
-    UI32Attr:$mmaShapeType,
     Variadic<acc_Indexlike>:$indices,
     acc_Indexlike:$blockThreadId,
     AffineMapAttr:$map,
-    BoolAttr:$staticOffsets);
+    BoolAttr:$staticOffsets,
+    UI32Attr:$mmaEpilogueOp,
+    AnyTypeOf<[I8, I16, I32, F16, BF16, F32]>:$mmaEpilogueArg);
 
   let builders = [
-    OpBuilder<(ins "Value":$blockThreadId, "Value":$src, "Value":$memref, "MMAShape":$mmaShapeType, "ValueRange":$indices, "bool":$staticOffsets), [{
+    OpBuilder<(ins "Value":$blockThreadId, "Value":$src, "Value":$memref, "ValueRange":$indices, "bool":$staticOffsets, "MMAFragmentOp":$mmaEpilogueOp, "Value":$mmaEpilogueArg), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> ()
@@ -1490,9 +1493,10 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
         $_state.addOperands(memref);
         $_state.addOperands(indices);
         $_state.addOperands(blockThreadId);
-        $_state.addAttribute("mmaShapeType", $_builder.getUI32IntegerAttr((uint32_t)mmaShapeType));
+        $_state.addOperands(mmaEpilogueArg);
         $_state.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
         $_state.addAttribute("staticOffsets", $_builder.getBoolAttr(staticOffsets));
+        $_state.addAttribute("mmaEpilogueOp", $_builder.getUI32IntegerAttr((uint32_t)mmaEpilogueOp));
     }]>
   ];
 
@@ -1512,7 +1516,7 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
   }];
 
   let assemblyFormat = [{
-    $blockThreadId `,` $src`,` $memref `[` $indices `]` attr-dict `:` type($blockThreadId) `,` type($src) `,` type($memref) `[` type($indices) `]`
+    $blockThreadId `,` $src `,` $mmaEpilogueArg `,` $memref `[` $indices `]` attr-dict `:` type($blockThreadId) `,` type($src) `,` type($mmaEpilogueArg) `,` type($memref) `[` type($indices) `]`
   }];
 
   let verifier = [{ return ::verify(*this); }];

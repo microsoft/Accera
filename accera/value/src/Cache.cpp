@@ -506,9 +506,12 @@ namespace value
         void AddCacheZero(mlir::OpBuilder& builder, mlir::Value cache)
         {
             auto loc = builder.getUnknownLoc();
-            [[maybe_unused]] auto cacheZero = builder.create<CacheZeroOp>(loc,
+            auto innerElementType = cache.getType().cast<mlir::MemRefType>().getElementType();
+            auto valType = accera::ir::util::ToSignlessMLIRType(builder, innerElementType);
+            [[maybe_unused]] auto cacheZero = builder.create<CacheFillOp>(loc,
                                                                           cache,
                                                                           false, // thrifty
+                                                                          builder.create<mlir::arith::ConstantOp>(loc, builder.getZeroAttr(valType)),
                                                                           TensorizationInfoAttr{});
         }
 

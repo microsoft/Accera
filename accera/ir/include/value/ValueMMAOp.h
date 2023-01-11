@@ -61,6 +61,15 @@ enum class MMASchedulingPolicy
     PassOrder
 };
 
+enum class MMAFragmentOp
+{
+    None,
+    ReLU,
+    ReLU_NoConditional,
+    Set,
+    Scale
+};
+
 class MMAOp
 {
 public:

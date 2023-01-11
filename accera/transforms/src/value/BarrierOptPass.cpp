@@ -804,13 +804,14 @@ private:
         };
 
         auto getBlockLoadAccessInfo = [](GPUBlockCacheOp op, MemoryAccessType accessType) -> llvm::Optional<MemoryAccessInfo> {
-            auto memRefType = op.dest().getType().cast<MemRefType>();
+            auto memref = op.srcToDst() ? op.dest() : op.memref();
+            auto memRefType = memref.getType().cast<MemRefType>();
             auto memSpace = memRefType.getMemorySpaceAsInt();
             if (memSpace == gpu::GPUDialect::getWorkgroupAddressSpace())
             {
                 MemoryAccessInfo info;
                 info.op = op.getOperation();
-                info.baseMemRef = GetBaseMemRef(op.dest());
+                info.baseMemRef = GetBaseMemRef(memref);
                 info.accessType = accessType;
                 return info;
             }

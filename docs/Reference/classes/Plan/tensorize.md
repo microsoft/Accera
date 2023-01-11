@@ -1,9 +1,9 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.14)
+[//]: # (Version: v1.2)
 
-# Accera v1.2.14 Reference
+# Accera v1.2 Reference
 
-## `accera.Plan.tensorize(indices, mma_shape [, use_static_offsets, num_total_passes, num_fused_passes, scheduling_policy])`
+## `accera.Plan.tensorize(indices, mma_shape [, use_static_offsets, num_total_passes, num_fused_passes, scheduling_policy, prologue_op, epilogue_op])`
 Only available for targets with native matrix multiplication instruction (tensor core) support. Marks the dimensions of the iteration-space for tensorization. Only perfectly nested loops of the following form can be tensorized:
 
 ```python
@@ -23,10 +23,14 @@ argument | description | type/default
 `num_total_passes` | This controls the total number of passes to run. Defaults to 1. | positive integer
 `num_fused_passes` | This controls the number of passes for which register allocation is done, higher the value more the number of registers that are allocated. Defaults to `None` which will fuse all the passes as specified by `num_total_passes`. | positive integer
 `scheduling_policy` | For multi-block MMA operations, this controls whether matrix multiplication is done block-by-block or pass-by-pass (affects register usage). Default value is `accera.MMASchedulingPolicy.PASS_ORDER` | `accera.MMASchedulingPolicy`
+`prologue_op` | The element-wise operation to apply on matrix fragment data as a part of initialization (pre-tensorization). Default value is `accera.MMAFragmentOp.NONE` | `accera.MMAFragmentOp`
+`epilogue_op` | The element-wise operation to apply on matrix fragment data as a part of the final store (post-tensorization). Default value is `accera.MMAFragmentOp.NONE` | `accera.MMAFragmentOp`
+
+The different values of the enum `MMAShape` are explained here: [`accera.MMAShape`](<../../enumerations/MMAShape.md>)
 
 The different values of the enum `MMASchedulingPolicy` (applicable only for AMD targets supporting MFMA ops, such as `accera.Target.Model.AMD_MI100`) are mentioned here: [`accera.MMASchedulingPolicy`](<../../enumerations/MMASchedulingPolicy.md>)
 
-The different values of the enum `MMAShape` are explained here: [`accera.MMAShape`](<../../enumerations/MMAShape.md>)
+The different values of the enum `MMAFragmentOp` are explained here: [`accera.MMAFragmentOp`](<../../enumerations/MMAFragmentOp.md>)
 
 ## Examples
 

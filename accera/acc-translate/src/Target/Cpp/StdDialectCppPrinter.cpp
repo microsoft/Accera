@@ -115,7 +115,7 @@ namespace cpp_printer
                 os << "(*" << varName << ")" << idxAccess;
                 os << " = reinterpret_cast<";
                 RETURN_IF_FAILED(printer->printType(elemType));
-                os <<"(*)" << idxAccess << ">(reinterpret_cast<";
+                os << "(*)" << idxAccess << ">(reinterpret_cast<";
                 RETURN_IF_FAILED(printer->printType(elemType));
                 os << "*>(sharedMemBaseAddr) + " << *allocOp.alignment() << ")";
             }
@@ -185,6 +185,16 @@ namespace cpp_printer
             if (failed(printer->printAttribute(constOp.getValue())))
                 return constOp.emitOpError("<<unable to print constant value>>");
         }
+        return success();
+    }
+
+    LogicalResult StdDialectCppPrinter::printMaxFOp(arith::MaxFOp maxfOp)
+    {
+        auto lhs = state.nameState.getOrCreateName(maxfOp.getLhs(), SSANameState::SSANameKind::Variable);
+        auto rhs = state.nameState.getOrCreateName(maxfOp.getRhs(), SSANameState::SSANameKind::Variable);
+        RETURN_IF_FAILED(printer->printType(maxfOp.getType()));
+        os << " " << state.nameState.getOrCreateName(maxfOp.getResult(), SSANameState::SSANameKind::Variable);
+        os << " = " << lhs << " > " << rhs << " ? " << lhs << " : " << rhs;
         return success();
     }
 
@@ -667,6 +677,9 @@ namespace cpp_printer
 
         if (auto constOp = dyn_cast<arith::ConstantOp>(op))
             return printConstantOp(constOp);
+
+        if (auto maxFOp = dyn_cast<arith::MaxFOp>(op))
+            return printMaxFOp(maxFOp);
 
         if (auto deallocOp = dyn_cast<memref::DeallocOp>(op))
             return printDeallocOp(deallocOp, skipped);

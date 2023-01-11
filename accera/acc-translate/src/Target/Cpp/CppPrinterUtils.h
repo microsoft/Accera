@@ -23,10 +23,10 @@ namespace cpp_printer
     int getIntTypeBitCount(int width);
 
     LogicalResult printMMAMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value dest, vir::MMAOperandType operandType, int totalBlocks, int blocks, bool rowMajor);
-    LogicalResult printConstantMatrixOp(PrinterState& state, CppPrinter* printer, const std::tuple<int, int, int>& matrixShape, Value dest, Value value);
-    LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, const std::tuple<int, int, int>& matrixShape, Value src, Value dest, vir::MMAOperandType operandType, mlir::Operation::operand_range indices, bool rowMajor, Value blockTid = {}, bool useStaticOffsets = {});
-    LogicalResult printComputeMatrixOp(PrinterState& state, CppPrinter* printer, const std::tuple<int, int, int>& matrixShape, Value A, Value B, Value C, Value D, int cbsz = 0, int abid = 0, int blgp = 0);
-    LogicalResult printStoreMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, mlir::Operation::operand_range indices, Value blockTid = {}, bool useStaticOffsets = {});
+    LogicalResult printConstantMatrixOp(PrinterState& state, CppPrinter* printer, Value dest, Value value);
+    LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, vir::MMAOperandType operandType, mlir::Operation::operand_range indices, bool rowMajor, Value blockTid = {}, bool useStaticOffsets = {}, vir::MMAFragmentOp mmaPrologueOp = vir::MMAFragmentOp::None, Value mmaPrologueArg = {});
+    LogicalResult printComputeMatrixOp(PrinterState& state, CppPrinter* printer, Value A, Value B, Value C, Value D, int cbsz = 0, int abid = 0, int blgp = 0);
+    LogicalResult printStoreMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, mlir::Operation::operand_range indices, Value blockTid = {}, bool useStaticOffsets = {}, vir::MMAFragmentOp mmaEpilogueOp = vir::MMAFragmentOp::None, Value mmaEpilogueArg = {});
 
     constexpr auto HipIncludesAndTypes = R"ROCM(
 #if defined(__HIP_PLATFORM_HCC__)
@@ -180,6 +180,17 @@ namespace rocwmma {
     template<int M> __device__ __forceinline__ int getOffset(const int r, const int c);
     template<> __device__ __forceinline__ int getOffset<32>(const int r, const int c) { return threadGroupOffsets_32[r][c]; }
     template<> __device__ __forceinline__ int getOffset<16>(const int r, const int c) { return threadGroupOffsets_16[r][c]; }
+
+    template<int M, int N, int K, int TOTAL_BLOCKS, int BLOCKS, typename _Ty>
+    __device__ __forceinline__ void fill_fragment(fragment<accumulator, M, N, K, TOTAL_BLOCKS, BLOCKS, _Ty>& dest, const _Ty val)
+    {
+        constexpr auto elems = sizeof(dest) / sizeof(_Ty);
+        _Ty* dest_data = reinterpret_cast<_Ty*>(&dest);
+        for (int i = 0; i < elems; ++i)
+        {
+            dest_data[i] = val;
+        }
+    }
 
     template<bool STATIC_OFFSETS, int M, int N, int TOTAL_BLOCKS, int BLOCKS, int FragSize, layout_t layout, unsigned int LD, typename _Ty, typename Action>
     __device__ __forceinline__ void load_store_acc(const unsigned int block_tid, Action&& do_fn)
@@ -364,25 +375,36 @@ enum class MemSpace
     Private = 5
 };
 
-template<bool SRC_ROW_MAJOR, bool DST_ROW_MAJOR, int STRIDE, int TILE_R, typename _vTy, typename _Ty>
+template<bool SRC_ROW_MAJOR, bool DST_ROW_MAJOR, bool FORWARD, int STRIDE, int TILE_R, typename _vTy, typename _Ty>
 struct StrideCopyHelper{};
 
 template<int STRIDE, int TILE_R, typename _vTy, typename _Ty>
-struct StrideCopyHelper<true, true, STRIDE, TILE_R, _vTy, _Ty>
+struct StrideCopyHelper<true, true, true, STRIDE, TILE_R, _vTy, _Ty>
 {
     template<typename AccessMap>
-    static __device__ __forceinline__ void copy(const _Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, const int idx, int, int, AccessMap&& srcAccessMap)
+    static __device__ __forceinline__ void copy(_Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, const int idx, int, int, AccessMap&& srcAccessMap)
     {
         const auto srcOffset = srcAccessMap(src_r, src_c);
-        *reinterpret_cast<_vTy*>(&dst[idx]) = *reinterpret_cast<const _vTy*>(&src[srcOffset]);
+        *reinterpret_cast<_vTy*>(&dst[idx]) = *reinterpret_cast<_vTy*>(&src[srcOffset]);
     }
 };
 
 template<int STRIDE, int TILE_R, typename _vTy, typename _Ty>
-struct StrideCopyHelper<false, true, STRIDE, TILE_R, _vTy, _Ty>
+struct StrideCopyHelper<true, true, false, STRIDE, TILE_R, _vTy, _Ty>
 {
     template<typename AccessMap>
-    static __device__ __forceinline__ void copy(const _Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, const int idx, int, int, AccessMap&& srcAccessMap)
+    static __device__ __forceinline__ void copy(_Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, const int idx, int, int, AccessMap&& srcAccessMap)
+    {
+        const auto srcOffset = srcAccessMap(src_r, src_c);
+        *reinterpret_cast<_vTy*>(&src[srcOffset]) = *reinterpret_cast<_vTy*>(&dst[idx]);
+    }
+};
+
+template<int STRIDE, int TILE_R, typename _vTy, typename _Ty>
+struct StrideCopyHelper<false, true, true, STRIDE, TILE_R, _vTy, _Ty>
+{
+    template<typename AccessMap>
+    static __device__ __forceinline__ void copy(_Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, const int idx, int, int, AccessMap&& srcAccessMap)
     {
         _vTy val;
         const auto pVal = reinterpret_cast<_Ty*>(&val);
@@ -396,10 +418,26 @@ struct StrideCopyHelper<false, true, STRIDE, TILE_R, _vTy, _Ty>
 };
 
 template<int STRIDE, int TILE_R, typename _vTy, typename _Ty>
-struct StrideCopyHelper<true, false, STRIDE, TILE_R, _vTy, _Ty>
+struct StrideCopyHelper<false, true, false, STRIDE, TILE_R, _vTy, _Ty>
 {
     template<typename AccessMap>
-    static __device__ __forceinline__ void copy(const _Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, int, const int dst_r, const int dst_c, AccessMap&& srcAccessMap)
+    static __device__ __forceinline__ void copy(_Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, const int idx, int, int, AccessMap&& srcAccessMap)
+    {
+        _vTy val = *reinterpret_cast<_vTy*>(&dst[idx]);
+        const auto pVal = reinterpret_cast<_Ty*>(&val);
+        for (int i = 0; i < STRIDE; ++i)
+        {
+            const auto srcOffset = srcAccessMap(src_r, src_c + i);
+            src[srcOffset] = pVal[i];
+        }
+    }
+};
+
+template<int STRIDE, int TILE_R, typename _vTy, typename _Ty>
+struct StrideCopyHelper<true, false, true, STRIDE, TILE_R, _vTy, _Ty>
+{
+    template<typename AccessMap>
+    static __device__ __forceinline__ void copy(_Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, int, const int dst_r, const int dst_c, AccessMap&& srcAccessMap)
     {
         const auto srcOffset = srcAccessMap(src_r, src_c);
         const auto val = *reinterpret_cast<const _vTy*>(&src[srcOffset]);
@@ -412,15 +450,46 @@ struct StrideCopyHelper<true, false, STRIDE, TILE_R, _vTy, _Ty>
 };
 
 template<int STRIDE, int TILE_R, typename _vTy, typename _Ty>
-struct StrideCopyHelper<false, false, STRIDE, TILE_R, _vTy, _Ty>
+struct StrideCopyHelper<true, false, false, STRIDE, TILE_R, _vTy, _Ty>
 {
     template<typename AccessMap>
-    static __device__ __forceinline__ void copy(const _Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, int, const int dst_r, const int dst_c, AccessMap&& srcAccessMap)
+    static __device__ __forceinline__ void copy(_Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, int, const int dst_r, const int dst_c, AccessMap&& srcAccessMap)
+    {
+        const auto srcOffset = srcAccessMap(src_r, src_c);
+        _vTy val;
+        const auto pVal = reinterpret_cast<_Ty*>(&val);
+        for (int i = 0, p = dst_c * TILE_R + dst_r; i < STRIDE; ++i, p += TILE_R)
+        {
+            pVal[i] = dst[p];
+        }
+        *reinterpret_cast<_vTy*>(&src[srcOffset]) = val;
+    }
+};
+
+template<int STRIDE, int TILE_R, typename _vTy, typename _Ty>
+struct StrideCopyHelper<false, false, true, STRIDE, TILE_R, _vTy, _Ty>
+{
+    template<typename AccessMap>
+    static __device__ __forceinline__ void copy(_Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, int, const int dst_r, const int dst_c, AccessMap&& srcAccessMap)
     {
         for (int i = 0, p = dst_c * TILE_R + dst_r; i < STRIDE; ++i, p += TILE_R)
         {
             const auto srcOffset = srcAccessMap(src_r, src_c + i);
             dst[p] = src[srcOffset];
+        }
+    }
+};
+
+template<int STRIDE, int TILE_R, typename _vTy, typename _Ty>
+struct StrideCopyHelper<false, false, false, STRIDE, TILE_R, _vTy, _Ty>
+{
+    template<typename AccessMap>
+    static __device__ __forceinline__ void copy(_Ty* __restrict__ src, const int src_r, const int src_c, _Ty* __restrict__ dst, int, const int dst_r, const int dst_c, AccessMap&& srcAccessMap)
+    {
+        for (int i = 0, p = dst_c * TILE_R + dst_r; i < STRIDE; ++i, p += TILE_R)
+        {
+            const auto srcOffset = srcAccessMap(src_r, src_c + i);
+            src[srcOffset] = dst[p];
         }
     }
 };
@@ -500,10 +569,10 @@ template<CopyMode MODE, int BLOCK_SIZE, bool SRC_ROW_MAJOR, bool DST_ROW_MAJOR, 
 struct ThreadCopyHelper<MemSpace::Private, MemSpace::Shared, MODE, BLOCK_SIZE, SRC_ROW_MAJOR, DST_ROW_MAJOR, STRIDE, WPT, TILE_R, TILE_C, _vTy, _Ty>
 {
     template<typename AccessMap>
-    static __device__ __forceinline__ void copy(const int blockTid, const _Ty* __restrict__ src, const int srcOffsetRows, const int srcOffsetCols, _Ty* __restrict__ dst, AccessMap&&)
+    static __device__ __forceinline__ void copy(const int blockTid, _Ty* __restrict__ src, int, int, _Ty* __restrict__ dst, AccessMap&&)
     {
         CopyModeHelper<MODE, BLOCK_SIZE, WPT, STRIDE, TILE_C>::copy(blockTid, [=](const int i, const int p, const int r, const int c){
-            StrideCopyHelper</*SRC_ROW_MAJOR*/ true, DST_ROW_MAJOR, STRIDE, TILE_R, _vTy, _Ty>::copy(src, -1, -1, dst, p, r, c, [=](int, int){ return i; });
+            StrideCopyHelper<SRC_ROW_MAJOR, /*DST_ROW_MAJOR*/ true, /*FORWARD*/ false, STRIDE, TILE_R, _vTy, _Ty>::copy(src, r, c, dst, i, -1, -1, [=](int y, int x){ return SRC_ROW_MAJOR ? p : x * TILE_R + y; });
         });
     }
 };
@@ -512,10 +581,22 @@ template<CopyMode MODE, int BLOCK_SIZE, bool SRC_ROW_MAJOR, bool DST_ROW_MAJOR, 
 struct ThreadCopyHelper<MemSpace::None, MemSpace::Private, MODE, BLOCK_SIZE, SRC_ROW_MAJOR, DST_ROW_MAJOR, STRIDE, WPT, TILE_R, TILE_C, _vTy, _Ty>
 {
     template<typename AccessMap>
-    static __device__ __forceinline__ void copy(const int blockTid, const _Ty* __restrict__ src, const int srcOffsetRows, const int srcOffsetCols, _Ty* __restrict__ dst, AccessMap&& srcAccessMap)
+    static __device__ __forceinline__ void copy(const int blockTid, _Ty* __restrict__ src, const int srcOffsetRows, const int srcOffsetCols, _Ty* __restrict__ dst, AccessMap&& srcAccessMap)
     {
         CopyModeHelper<MODE, BLOCK_SIZE, WPT, STRIDE, TILE_C>::copy(blockTid, [=](const int i, const int p, const int r, const int c){
-            StrideCopyHelper<SRC_ROW_MAJOR, /*DST_ROW_MAJOR*/ true, STRIDE, TILE_R, _vTy, _Ty>::copy(src, srcOffsetRows + r, srcOffsetCols + c, dst, i, -1, -1, srcAccessMap);
+            StrideCopyHelper<SRC_ROW_MAJOR, /*DST_ROW_MAJOR*/ true, /*FORWARD*/ true, STRIDE, TILE_R, _vTy, _Ty>::copy(src, srcOffsetRows + r, srcOffsetCols + c, dst, i, -1, -1, srcAccessMap);
+        });
+    }
+};
+
+template<CopyMode MODE, int BLOCK_SIZE, bool SRC_ROW_MAJOR, bool DST_ROW_MAJOR, int STRIDE, int WPT, int TILE_R, int TILE_C, typename _vTy, typename _Ty>
+struct ThreadCopyHelper<MemSpace::Private, MemSpace::None, MODE, BLOCK_SIZE, SRC_ROW_MAJOR, DST_ROW_MAJOR, STRIDE, WPT, TILE_R, TILE_C, _vTy, _Ty>
+{
+    template<typename AccessMap>
+    static __device__ __forceinline__ void copy(const int blockTid, _Ty* __restrict__ src, const int srcOffsetRows, const int srcOffsetCols, _Ty* __restrict__ dst, AccessMap&& srcAccessMap)
+    {
+        CopyModeHelper<MODE, BLOCK_SIZE, WPT, STRIDE, TILE_C>::copy(blockTid, [=](const int i, const int p, const int r, const int c){
+            StrideCopyHelper<SRC_ROW_MAJOR, /*DST_ROW_MAJOR*/ true, /*FORWARD*/ false, STRIDE, TILE_R, _vTy, _Ty>::copy(src, srcOffsetRows + r, srcOffsetCols + c, dst, i, -1, -1, srcAccessMap);
         });
     }
 };
@@ -524,16 +605,16 @@ template<CopyMode MODE, int BLOCK_SIZE, bool SRC_ROW_MAJOR, bool DST_ROW_MAJOR, 
 struct ThreadCopyHelper<MemSpace::None, MemSpace::Shared, MODE, BLOCK_SIZE, SRC_ROW_MAJOR, DST_ROW_MAJOR, STRIDE, WPT, TILE_R, TILE_C, _vTy, _Ty>
 {
     template<typename AccessMap>
-    static __device__ __forceinline__ void copy(const int blockTid, const _Ty* __restrict__ src, const int srcOffsetRows, const int srcOffsetCols, _Ty* __restrict__ dst, AccessMap&& srcAccessMap)
+    static __device__ __forceinline__ void copy(const int blockTid, _Ty* __restrict__ src, const int srcOffsetRows, const int srcOffsetCols, _Ty* __restrict__ dst, AccessMap&& srcAccessMap)
     {
         CopyModeHelper<MODE, BLOCK_SIZE, WPT, STRIDE, TILE_C>::copy(blockTid, [=](const int i, const int p, const int r, const int c){
-            StrideCopyHelper<SRC_ROW_MAJOR, DST_ROW_MAJOR, STRIDE, TILE_R, _vTy, _Ty>::copy(src, srcOffsetRows + r, srcOffsetCols + c, dst, p, r, c, srcAccessMap);
+            StrideCopyHelper<SRC_ROW_MAJOR, DST_ROW_MAJOR, /*FORWARD*/ true, STRIDE, TILE_R, _vTy, _Ty>::copy(src, srcOffsetRows + r, srcOffsetCols + c, dst, p, r, c, srcAccessMap);
         });
     }
 };
 
 template<CopyMode MODE, bool SRC_ROW_MAJOR, bool DST_ROW_MAJOR, int STRIDE, int WPT, int TILE_R, int TILE_C, int BLOCK_DIM_X, int BLOCK_DIM_Y, int BLOCK_DIM_Z, MemSpace SRC_MEMSPACE, MemSpace DST_MEMSPACE, typename _vTy, typename _Ty, typename AccessMap>
-__device__ __forceinline__ void block_copy(const int blockThreadId, const _Ty* __restrict__ src, const int srcOffsetRows, const int srcOffsetCols, AccessMap&& srcAccessMap, _Ty* __restrict__ dst)
+__device__ __forceinline__ void block_copy(const int blockThreadId, _Ty* __restrict__ src, const int srcOffsetRows, const int srcOffsetCols, AccessMap&& srcAccessMap, _Ty* __restrict__ dst)
 {
     constexpr auto BLOCK_SIZE = BLOCK_DIM_X * BLOCK_DIM_Y * BLOCK_DIM_Z;
     constexpr auto TOTAL_WORK = WPT * BLOCK_SIZE;
@@ -542,6 +623,33 @@ __device__ __forceinline__ void block_copy(const int blockThreadId, const _Ty* _
     static_assert(SRC_MEMSPACE != MemSpace::Shared, "Source should not be Shared memory.");
 
     ThreadCopyHelper<SRC_MEMSPACE, DST_MEMSPACE, MODE, BLOCK_SIZE, SRC_ROW_MAJOR, DST_ROW_MAJOR, STRIDE, WPT, TILE_R, TILE_C, _vTy, _Ty>::copy(blockThreadId, src, srcOffsetRows, srcOffsetCols, dst, srcAccessMap);
+}
+
+)CUDA";
+
+    constexpr auto FragmentHelpers = R"CUDA(
+template<typename _Ty>
+__device__ __forceinline__ void relu(_Ty& val)
+{
+    val = val > _Ty{} ? val : _Ty{};
+}
+
+template<typename _Ty>
+__device__ __forceinline__ void relu_no_conditional(_Ty& val)
+{
+    val *= bool{val > _Ty{}};
+}
+
+template<typename _Ty>
+__device__ __forceinline__ void set(_Ty& val, const _Ty arg)
+{
+    val = arg;
+}
+
+template<typename _Ty>
+__device__ __forceinline__ void scale(_Ty& val, const _Ty arg)
+{
+    val *= arg;
 }
 
 )CUDA";

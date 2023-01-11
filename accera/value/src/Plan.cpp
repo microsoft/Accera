@@ -211,11 +211,11 @@ namespace value
             }
         }
 
-        void Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy, bool _useRocWMMA)
+        void Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy, MMAFragmentOp prologueOp, double prologueArg, MMAFragmentOp epilogueOp, double epilogueArg, bool _useRocWMMA)
         {
             auto& builder = GetBuilder();
 
-            TensorizationInfo tensorizationInfo{ static_cast<accera::ir::value::MMAShape>(dims), numTotalPasses, useStaticOffsets, numFusedPasses, static_cast<accera::ir::value::MMASchedulingPolicy>(schedulingPolicy), _useRocWMMA };
+            TensorizationInfo tensorizationInfo{ static_cast<accera::ir::value::MMAShape>(dims), numTotalPasses, useStaticOffsets, numFusedPasses, static_cast<accera::ir::value::MMASchedulingPolicy>(schedulingPolicy), static_cast<accera::ir::value::MMAFragmentOp>(prologueOp), prologueArg, static_cast<accera::ir::value::MMAFragmentOp>(epilogueOp), epilogueArg, _useRocWMMA };
             auto tensorizationInfoIdentifier = builder.getStringAttr(TensorizationInfoAttr::getKeyName());
             auto tensorizationInfoAttr = TensorizationInfoAttr::get(tensorizationInfo, builder.getContext());
 
@@ -455,9 +455,9 @@ namespace value
         return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace, sharedMemOffset, strategy);
     }
 
-    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy, bool _useRocWMMA)
+    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy, MMAFragmentOp prologueOp, double prologueArg, MMAFragmentOp epilogueOp, double epilogueArg, bool _useRocWMMA)
     {
-        _impl->Tensorize(indices, dims, numTotalPasses, useStaticOffsets, numFusedPasses, schedulingPolicy, _useRocWMMA);
+        _impl->Tensorize(indices, dims, numTotalPasses, useStaticOffsets, numFusedPasses, schedulingPolicy, prologueOp, prologueArg, epilogueOp, epilogueArg, _useRocWMMA);
     }
 
     void GPUPlan::MapIndicesToProcessor(std::vector<ScalarIndex> indices, Processor proc)

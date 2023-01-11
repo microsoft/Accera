@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import hatlib
 from accera import Array, Nest, Constants, ScalarType, Target, Package
-from accera._lang_python._lang import _MMASchedulingPolicy, _MMAShape, _CacheStrategy
+from accera._lang_python._lang import _MMASchedulingPolicy, _MMAShape, _MMAFragmentOp, _CacheStrategy
 import cosmosdb
 from gemm_opts import GemmOpts
 import math
@@ -188,7 +188,7 @@ def create_gemm_nest_args(M: int, N: int, K: int, transA: bool, transB: bool, dt
 def benchmark_kernel(
     target: Target, M: int, N: int, K: int, transA: bool, transB: bool, dtype, outer_tile_m: int, outer_tile_n: int,
     outer_tile_k: int, cacheA_layout, cacheB_layout, cache_C: bool, cacheA_strategy: _CacheStrategy, cacheB_strategy: _CacheStrategy,
-    mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy, thread_coarsening_factor):
+    mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy, thread_coarsening_factor, relu):
     nest, (A, B, C) = create_gemm_nest_args(M, N, K, transA, transB, dtype)
     schedule = nest.create_schedule()
 
@@ -221,9 +221,10 @@ def benchmark_kernel(
     shared_mem_usage_bytes = elem_bytes * (outer_tile_m + outer_tile_n) * outer_tile_k
     use_dynamic_shared_mem = shared_mem_usage_bytes > target.max_static_shared_memory_per_block
     dynamic_shared_mem_usage_bytes = shared_mem_usage_bytes if use_dynamic_shared_mem else 0
+    epilogue_op = _MMAFragmentOp.ReLU if relu else _MMAFragmentOp.NONE
 
     plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=block_indices, warp_indices=warp_indices, tensor_indices=tensor_indices, outer_nest_order=outer_nest_order, dynamic_shared_memory_size=dynamic_shared_mem_usage_bytes)
-    plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy)
+    plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy, epilogue_op=epilogue_op)
 
     plan.cache(
         A,
@@ -348,7 +349,7 @@ def get_variants(opts: GemmOpts, dtype, target):
                                                                                     thread_coarsening_factor_r, thread_coarsening_factor_c)))
 
 
-def benchmark_gemm(opts: GemmOpts, dtype, batch_size: int, output_prefix: str, category: str, available_gpus, container_name, verbose_logs, compiler_ver, commit_id, commit_datetime: str, commit_branch, target_name, check_result, dev_props):
+def benchmark_gemm(opts: GemmOpts, dtype, batch_size: int, output_prefix: str, category: str, available_gpus, container_name, verbose_logs, compiler_ver, commit_id, commit_datetime: str, commit_branch, target_name, check_result, relu, dev_props):
     """
     Architecture Overview:
     --------------------------------------------------------------------------------------------
@@ -478,7 +479,7 @@ def benchmark_gemm(opts: GemmOpts, dtype, batch_size: int, output_prefix: str, c
             for i in range(wave, min(wave + waveSize, len(variants))):
                 gpu_idx = i % total_gpus
                 gpu_id = gpu_devices[gpu_idx]
-                p = multiprocessing.Process(name=f"builder{i}", target=run_variant, args=(variants[i], gpu_id, device_q[gpu_idx], opts, dtype, target, output_prefix, category, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props[gpu_id], verbose_logs, check_result))
+                p = multiprocessing.Process(name=f"builder{i}", target=run_variant, args=(variants[i], gpu_id, device_q[gpu_idx], opts, dtype, target, output_prefix, category, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props[gpu_id], verbose_logs, check_result, relu))
                 p.start()
 
             time.sleep(5)
@@ -516,7 +517,7 @@ def benchmark_gemm(opts: GemmOpts, dtype, batch_size: int, output_prefix: str, c
                 cosmosdb.upsert_benchmark_results(result_rows, container_name, verbose_logs)
 
 
-def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, category, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props, verbose_logs, check_result):
+def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, category, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, dev_props, verbose_logs, check_result, relu):
     try:
         assert float(opts.alpha) == 1., "alpha must be 1"
 
@@ -546,7 +547,7 @@ def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, c
             result.target_rt = 'CUDA'
 
         plan, A, B, C = benchmark_kernel(target, opts.m, opts.n, opts.k, opts.transA, opts.transB, dtype, outer_tile_m, outer_tile_n, k_split, cacheA_layout, cacheB_layout, result.cache_C,
-                                        cacheA_strategy, cacheB_strategy, mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy, result.thread_coarsening_factor)
+                                        cacheA_strategy, cacheB_strategy, mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy, result.thread_coarsening_factor, relu)
         fn_name = f"{result.target_rt}_GEMM_{result.get_partition_key().replace('.', '_')}_{result.get_id().replace('.', '_')}"
         block_dims, grid_dims = plan._calc_block_grid_dim()
         is_valid_plan = plan._is_valid_block_dim(block_dims) and plan._is_valid_block_size(block_dims)

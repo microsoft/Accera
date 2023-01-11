@@ -599,16 +599,16 @@ static LogicalResult verify(MMAComputeSyncOp op)
     return success();
 }
 
-static LogicalResult verify(MMAFillSyncOp op)
-{
-    auto value = op.value();
-    auto valueType = value.getType();
+// static LogicalResult verify(MMAFillSyncOp op)
+// {
+//     auto value = op.value();
+//     auto valueType = value.getType();
 
-    if (valueType != op.dest().getType().cast<MemRefType>().getElementType())
-        return op.emitError("value type must match matrix element type");
+//     if (valueType != op.dest().getType().cast<MemRefType>().getElementType())
+//         return op.emitError("value type must match matrix element type");
 
-    return success();
-}
+//     return success();
+// }
 
 static LogicalResult verify(MMALoadSyncOp op)
 {
@@ -624,6 +624,9 @@ static LogicalResult verify(MMALoadSyncOp op)
     if (operand != MMAOperandType::A && operand != MMAOperandType::B &&
         operand != MMAOperandType::Acc)
         return op.emitError("only AOp, BOp and COp can be loaded");
+
+    if (operand != MMAOperandType::Acc && op.mmaPrologueOp() != static_cast<uint32_t>(MMAFragmentOp::None))
+        return op.emitError("only COp can have a prologueOp");
 
     return success();
 }
@@ -650,7 +653,6 @@ static LogicalResult verify(GPUBlockCacheOp op)
     }
 
     auto dstMemrefType = op.dest().getType().cast<MemRefType>();
-    const MemorySpace destMemSpace{ dstMemrefType.getMemorySpaceAsInt() };
     const auto dstShape = dstMemrefType.getShape();
     if (dstShape.size() != 2)
     {
@@ -663,6 +665,7 @@ static LogicalResult verify(GPUBlockCacheOp op)
     }
 
     const auto tileShapeVec = accera::ir::util::ConvertArrayAttrToIntVector(tileShape);
+    [[maybe_unused]] const MemorySpace destMemSpace{ dstMemrefType.getMemorySpaceAsInt() };
     assert(!(destMemSpace == MemorySpace::Shared && op.dstRowMajor()) || (dstShape[0] == tileShapeVec[0] && dstShape[1] == tileShapeVec[1]));
     assert(!(destMemSpace == MemorySpace::Shared && !op.dstRowMajor()) || (dstShape[0] == tileShapeVec[1] && dstShape[1] == tileShapeVec[0]));
 

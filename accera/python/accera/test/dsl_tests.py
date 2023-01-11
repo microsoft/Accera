@@ -1250,108 +1250,146 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)
 
+
+    #
+    # This test is the implementation of range node that generates two functions
+    # One is for getting the size of the output array, e.g. range_get_size()
+    # another is for getting the output array, e.g. range_get_result()
+    # The user may want to call the fucntions in the following way:
+    # Step 1, call range_get_size to get the array size
+    # Step 2, allocate the memory for the output array
+    # Step 3, call range_get_result to fill in the result of output array
+    #
     def test_output_array_range_node1(self) -> None:
         from accera import Dimension, create_dimensions, floor, cast
         from accera._lang_python._lang import Scalar
 
-        Start = Scalar(ScalarType.float32)
-        Limit = Scalar(ScalarType.float32)
-        Delta = Scalar(ScalarType.float32)
+        start = Scalar(ScalarType.float32)
+        limit = Scalar(ScalarType.float32)
+        delta = Scalar(ScalarType.float32)
 
-        InputDim = create_dimensions()
-        InputDim.role = Dimension.Role.INPUT
+        inputDim = create_dimensions()
+        inputDim.role = Dimension.Role.INPUT
 
-        OutputDims = Array(shape=(1, ), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
-        Output = Array(shape=(InputDim, ), role=Array.Role.INPUT_OUTPUT)
-        Output_Start = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        outputDims = Array(shape=(1, ), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
+        output = Array(shape=(inputDim, ), role=Array.Role.INPUT_OUTPUT)
+        output_start = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
 
         nest1 = Nest((1, ))
 
         @nest1.iteration_logic
         def _():
-            OutputDims[0] = cast(floor((Limit - Start) / Delta), ScalarType.int64)
+            outputDims[0] = cast(floor((limit - start) / delta), ScalarType.int64)
 
-        nest2 = Nest([InputDim])
+        nest2 = Nest([inputDim])
         i = nest2.get_indices()
 
         @nest2.iteration_logic
         def _():
-            Output[i] = Output_Start[0]
-            Output_Start[0] += Delta
+            output[i] = output_start[0]
+            output_start[0] += delta
 
         # Generate a function like:
         # range_get_size(float start, float limit, float delta, int64_t* output_dim);
         # range_get_result(int64_t input_dim, float* output, float* start, float delta);
 
         package = Package()
-        # BUGBUG: dim args ordered first due to issue with Debug mode
-        package.add(nest1, args=(Start, Limit, Delta, OutputDims), base_name=f"range_get_size")
-        package.add(nest2, args=(InputDim, Output, Output_Start, Delta), base_name=f"range_get_result")
+        get_size_fn_name = f"get_size"
+        get_result_fn_name = f"get_result"
+        get_size_fn = package.add(nest1, args=(start, limit, delta, outputDims), base_name=get_size_fn_name)
+        get_result_fn = package.add(nest2, args=(inputDim, output, output_start, delta), base_name=get_result_fn_name)
 
-        package.build(
-            "test_output_array_range_node1",
-            format=TEST_FORMAT | Package.Format.MLIR_VERBOSE,
-            mode=TEST_MODE,
-            output_dir=TEST_PACKAGE_DIR
-        )
+        start_test = np.float32(1.0)
+        limit_test = np.float32(5.0)
+        delta_test = np.float32(0.5)
+        size_test = np.floor((limit_test - start_test) / delta_test).astype(np.int64)
+        x_ref = np.random.random((size_test,)).astype(np.float32)
+        y_ref = np.arange(start_test, limit_test, delta_test, dtype=np.float32)
 
+        outputDims_post_test = np.random.random((1,)).astype(np.int64)
+        outputDims_post_test[0] = size_test
+        outputDims_pre_test = np.random.random((1,)).astype(np.int64)
+        start_array_pre_test = np.random.random((1,)).astype(np.float32)
+        start_array_post_test = np.random.random((1,)).astype(np.float32)
+        start_array_pre_test[0] = start_test
+        start_array_post_test[0] = start_test
+
+        for _ in range(0, size_test):
+            start_array_post_test[0] += delta_test
+
+        correctness_check_values = {
+            "pre": [start_test, limit_test, delta_test, outputDims_pre_test],
+            "post": [start_test, limit_test, delta_test, outputDims_post_test],
+        }
+
+        self._verify_helper(package, get_size_fn_name, get_size_fn.name, correctness_check_values)
+
+        correctness_check_values = {
+            "pre": [size_test, x_ref, start_array_pre_test, delta_test],
+            "post": [size_test, y_ref, start_array_post_test, delta_test],
+        }
+
+        self._verify_helper(package, get_result_fn_name, get_result_fn.name, correctness_check_values)
+
+
+    # This test is another implementation of range node using nested function calls
     def test_output_array_range_node2(self) -> None:
         from accera import Dimension, create_dimensions, floor, cast
         from accera._lang_python._lang import Scalar
 
-        Start = Scalar(ScalarType.float32)
-        Limit = Scalar(ScalarType.float32)
-        Delta = Scalar(ScalarType.float32)
+        start = Scalar(ScalarType.float32)
+        limit = Scalar(ScalarType.float32)
+        delta = Scalar(ScalarType.float32)
 
-        InputDim = create_dimensions()
-        InputDim.role = Dimension.Role.INPUT
+        inputDim = create_dimensions()
+        inputDim.role = Dimension.Role.INPUT
 
-        OutputDims = Array(shape=(1, ), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
-        Output = Array(shape=(InputDim, ), role=Array.Role.INPUT_OUTPUT)
-        Output_Start = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
-        Output_Start_Tmp = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.TEMP)
+        outputDims = Array(shape=(1, ), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
+        output = Array(shape=(inputDim, ), role=Array.Role.INPUT_OUTPUT)
+        output_start = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        output_start_Tmp = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.TEMP)
 
         nest1 = Nest((1, ))
 
         @nest1.iteration_logic
         def _():
-            OutputDims[0] = cast(floor((Limit - Start) / Delta), ScalarType.int64)
+            outputDims[0] = cast(floor((limit - start) / delta), ScalarType.int64)
 
         nest2 = Nest((1, ))
 
         @nest2.iteration_logic
         def _():
-            Output_Start[0] = Start
+            output_start[0] = start
 
-        nest3 = Nest([InputDim])
+        nest3 = Nest([inputDim])
         i = nest3.get_indices()
 
         @nest3.iteration_logic
         def _():
-            Output[i] = Output_Start[0]
-            Output_Start[0] += Delta
+            output[i] = output_start[0]
+            output_start[0] += delta
 
         # Generate a function like:
         # range_get_size(float start, float limit, float delta, int64_t* output_dim);
-        # ini_start(float* output_Start, float start);
+        # ini_start(float* output_start, float start);
         # get_result(int64_t input_dim, float* output, float* start, float delta);
         # range_get_output_array(int64_t input_dim, float* output, float start, float delta);
 
         package = Package()
         # BUGBUG: dim args ordered first due to issue with Debug mode
-        package.add(nest1, args=(Start, Limit, Delta, OutputDims), base_name=f"range_get_size")
-        ini_start_fn = package.add(nest2, args=(Output_Start, Start), base_name=f"ini_start")
-        get_result_fn = package.add(nest3, args=(InputDim, Output, Output_Start, Delta), base_name=f"get_result")
+        package.add(nest1, args=(start, limit, delta, outputDims), base_name=f"range_get_size")
+        ini_start_fn = package.add(nest2, args=(output_start, start), base_name=f"ini_start")
+        get_result_fn = package.add(nest3, args=(inputDim, output, output_start, delta), base_name=f"get_result")
 
         nest4 = Nest((1, ))
 
         @nest4.iteration_logic
         def _():
-            ini_start_fn(Output_Start_Tmp, Start)
-            get_result_fn(InputDim, Output, Output_Start_Tmp, Delta)
+            ini_start_fn(output_start_Tmp, start)
+            get_result_fn(inputDim, output, output_start_Tmp, delta)
 
         # BUGBUG: dim args ordered first due to issue with Debug mode
-        package.add(nest4, args=(InputDim, Output, Start, Delta), base_name=f"range_get_output_array")
+        package.add(nest4, args=(inputDim, output, start, delta), base_name=f"range_get_output_array")
 
         package.build(
             "test_output_array_range_node2",

@@ -607,17 +607,17 @@ class FusedSchedule(Schedule):
 
                 # convert the common indices for transformations that involve index params
                 orig_xf = s.get_index_transform(idx)
+                xf = None
                 if orig_xf:
-                    xf = (
-                        orig_to_common_map[p] if isinstance(p, LoopIndex) else p
-                        for p in orig_xf
-                    )
+                    xf = tuple()
+                    for p in orig_xf:
+                        xf = xf + (orig_to_common_map[p] if isinstance(p, LoopIndex) else p,)
                 index_map[new_idx] = IndexEntry(
                     start=start,
                     stop=stop,
                     step=step,
                     parent=(orig_to_common_map[orig_parent]) if orig_parent else None,
-                    transform=xf if orig_xf else None,
+                    transform=xf,
                 )
                 unfused_idx_to_orig_sched_map[new_idx] = s
                 unfused_idx_to_orig_map[new_idx] = idx

@@ -4,8 +4,8 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "IRUtil.h"
-#include "value/ValueEnums.h"
 #include "value/ValueDialect.h"
+#include "value/ValueEnums.h"
 
 #include <llvm/ADT/APFloat.h>
 
@@ -232,6 +232,22 @@ struct ValueBinOpSimplification : public mlir::OpRewritePattern<v::BinOp>
     {
         auto zeroish = constant_float_value_matcher(0.0);
         auto oneish = constant_float_value_matcher(1.0);
+
+        auto isFloat = [](mlir::Type type) {
+            return type.isIntOrIndexOrFloat() && !type.isIntOrIndex();
+        };
+
+        auto lhsTypeIsFloat = isFloat(op.lhs().getType());
+        auto rhsTypeIsFloat = isFloat(op.rhs().getType());
+
+        // Disable the following optimizations for floating types as it is causing
+        // correctness issues with the precision of epsilon used in the pattern matcher.
+        // e.g. values <1e-5 are getting treated as 0 and is producing incorrect results.
+        // TODO: Enable these optimizations when we can configure the value of epsilon from the DSL.
+        if (lhsTypeIsFloat || rhsTypeIsFloat)
+        {
+            return mlir::failure();
+        }
 
         switch (op.predicate())
         {

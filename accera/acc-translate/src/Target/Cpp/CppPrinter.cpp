@@ -67,7 +67,7 @@ namespace cpp_printer
         {
             SmallString<128> nameStr("");
             llvm::raw_svector_ostream strm(nameStr);
-            CppPrinter cppPrinter(strm, -1);
+            CppPrinter cppPrinter(strm, parentState);
             (void)cppPrinter.printAttribute(constant->second);
             return StringRef(nameStr).copy(nameAllocator);
         }
@@ -150,7 +150,7 @@ namespace cpp_printer
 
     // The function taken from AsmPrinter
     // TODO: decouple this function from CppPrinter
-    LogicalResult CppPrinter::printFloatValue(const APFloat& apValue)
+    LogicalResult CppPrinter::printFloatValue(const APFloat& apValue, mlir::Type floatType)
     {
         // We would like to output the FP constant value in exponential notation,
         // but we cannot do this if doing so will lose precision.  Check here to
@@ -163,6 +163,7 @@ namespace cpp_printer
             // For 0 values just print something like: "{}"
             if (apValue.isZero())
             {
+                RETURN_IF_FAILED(printType(floatType));
                 os << "{}";
                 return success();
             }
@@ -183,7 +184,8 @@ namespace cpp_printer
             // (i.e., there is no precision loss).
             if (APFloat(apValue.getSemantics(), strValue).bitwiseIsEqual(apValue))
             {
-                os << strValue;
+                RETURN_IF_FAILED(printType(floatType));
+                os << "{" << strValue << "}";
                 return success();
             }
 
@@ -195,7 +197,8 @@ namespace cpp_printer
             // Make sure that we can parse the default form as a float.
             if (StringRef(strValue).contains('.'))
             {
-                os << strValue;
+                RETURN_IF_FAILED(printType(floatType));
+                os << "{" << strValue << "}";
                 return success();
             }
         }
@@ -257,7 +260,7 @@ namespace cpp_printer
         }
         else if (auto floatAttr = attr.dyn_cast<FloatAttr>())
         {
-            (void)printFloatValue(floatAttr.getValue());
+            (void)printFloatValue(floatAttr.getValue(), floatAttr.getType());
         }
         else if (auto intAttr = attr.dyn_cast<IntegerAttr>())
         {
@@ -644,7 +647,7 @@ namespace cpp_printer
         {
             SmallString<128> nameStr("");
             llvm::raw_svector_ostream strm(nameStr);
-            CppPrinter cppPrinter(strm, getPrinterState().indexBitwidth);
+            CppPrinter cppPrinter(strm, getPrinterState());
             (void)cppPrinter.printType(targetOrSrc.getType());
             vectorTypeName = strm.str().str();
         }

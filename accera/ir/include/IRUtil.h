@@ -234,6 +234,25 @@ namespace util
         }
     }
 
+    template <typename _Ty>
+    mlir::Attribute GetValAttr(mlir::OpBuilder& builder, mlir::Type type, _Ty val){
+        if (type.isa<mlir::FloatType>())
+            return builder.getFloatAttr(type, val);
+        if (type.isa<mlir::IndexType>())
+            return builder.getIndexAttr(val);
+        if (auto integerType = type.dyn_cast<mlir::IntegerType>())
+            return builder.getIntegerAttr(type, mlir::APInt(type.cast<mlir::IntegerType>().getWidth(), val));
+        if (type.isa<mlir::RankedTensorType, mlir::VectorType>())
+        {
+            auto vtType = type.cast<mlir::ShapedType>();
+            auto element = GetValAttr(builder, vtType.getElementType(), val);
+            if (!element)
+                return {};
+            return mlir::DenseElementsAttr::get(vtType, element);
+        }
+        return {};
+    }
+
     mlir::Attribute GetOneAttr(mlir::OpBuilder& builder, mlir::Type type);
 
     mlir::OpBuilder MakeBodyBuilder(mlir::AffineForOp forOp);

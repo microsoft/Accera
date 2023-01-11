@@ -243,10 +243,7 @@ namespace cpp_printer
             return constantMatrixOp.emitError("non-cuda version is not supported.");
         }
 
-        auto mmaMatrix = constantMatrixOp.res().getType().cast<MMAMatrixType>();
-        auto&& shape = mmaMatrix.getShape();
-        const auto mmaShape = std::make_tuple(shape[0], shape[1], inferK(shape[0], shape[1]));
-        return printConstantMatrixOp(state, printer, mmaShape, constantMatrixOp.res(), constantMatrixOp.value());
+        return printConstantMatrixOp(state, printer, constantMatrixOp.res(), constantMatrixOp.value());
     }
 
     LogicalResult GpuDialectCppPrinter::printOp(SubgroupMmaLoadMatrixOp loadMatrixOp)
@@ -258,29 +255,13 @@ namespace cpp_printer
 
         const auto mmaMatrix = loadMatrixOp.res().getType().cast<MMAMatrixType>();
         const auto operandType = convertToOperandType(mmaMatrix.getOperand());
-        auto&& shape = mmaMatrix.getShape();
-        std::tuple<int, int, int> mmaShape;
-        switch (operandType)
-        {
-        case vir::MMAOperandType::A:
-            mmaShape = std::make_tuple(/*M*/ shape[0], inferN(shape[0], shape[1]), /*K*/ shape[1]);
-            break;
-        case vir::MMAOperandType::B:
-            mmaShape = std::make_tuple(inferM(shape[0], shape[1]), /*N*/ shape[1], /*K*/ shape[0]);
-            break;
-        case vir::MMAOperandType::Acc:
-            mmaShape = std::make_tuple(/*M*/ shape[0], /*N*/ shape[1], inferK(shape[0], shape[1]));
-            break;
-        default:
-            return failure("Unsupported matrix used for MMA.");
-        }
 
         int64_t offset;
         SmallVector<int64_t, 2> strides;
         RETURN_IF_FAILED(mlir::getStridesAndOffset(loadMatrixOp.srcMemref().getType().cast<MemRefType>(), strides, offset));
         const bool row_major = strides[1] == 1;
 
-        return printLoadMatrixOp(state, printer, mmaShape, loadMatrixOp.srcMemref(), loadMatrixOp.res(), operandType, loadMatrixOp.indices(), row_major);
+        return printLoadMatrixOp(state, printer, loadMatrixOp.srcMemref(), loadMatrixOp.res(), operandType, loadMatrixOp.indices(), row_major);
     }
 
     LogicalResult GpuDialectCppPrinter::printOp(gpu::SubgroupMmaComputeOp computeMatrixOp)
@@ -290,10 +271,7 @@ namespace cpp_printer
             return computeMatrixOp.emitError("non-cuda version is not supported.");
         }
 
-        auto mmaMatrix = computeMatrixOp.res().getType().cast<MMAMatrixType>();
-        auto&& shape = mmaMatrix.getShape();
-        const auto mmaShape = std::make_tuple(shape[0], shape[1], inferK(shape[0], shape[1]));
-        return printComputeMatrixOp(state, printer, mmaShape, computeMatrixOp.opA(), computeMatrixOp.opB(), computeMatrixOp.opC(), computeMatrixOp.res());
+        return printComputeMatrixOp(state, printer, computeMatrixOp.opA(), computeMatrixOp.opB(), computeMatrixOp.opC(), computeMatrixOp.res());
     }
 
     LogicalResult GpuDialectCppPrinter::printOp(gpu::SubgroupMmaStoreMatrixOp storeMatrixOp)
@@ -434,11 +412,11 @@ namespace cpp_printer
     {
         if (state.hasRuntime(Runtime::ROCM))
         {
-            os << HipIncludesAndTypes << VectorTypes << ForceinlineMacro << BFloatCast << RocWmma << BlockCacheCopy;
+            os << HipIncludesAndTypes << VectorTypes << ForceinlineMacro << BFloatCast << RocWmma << BlockCacheCopy << FragmentHelpers;
         }
         else if (state.hasRuntime(Runtime::CUDA))
         {
-            os << CudaIncludesAndTypes << BlockCacheCopy;
+            os << CudaIncludesAndTypes << BlockCacheCopy << FragmentHelpers;
         }
 
         return success();

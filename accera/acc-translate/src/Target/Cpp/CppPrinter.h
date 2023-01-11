@@ -42,10 +42,16 @@ namespace cpp_printer
     // Forward declarations
     struct CppPrinter;
     struct DialectCppPrinter;
+    struct PrinterState;
 
     struct SSANameState
     {
         // friend struct CppPrinter;
+
+        SSANameState(PrinterState& parentState_) :
+            parentState{ parentState_ }
+        {
+        }
 
         /// Differentiate names
         enum SSANameKind : unsigned
@@ -123,6 +129,8 @@ namespace cpp_printer
 
         /// allocator for name StringRef
         mutable llvm::BumpPtrAllocator nameAllocator;
+
+        PrinterState& parentState;
     };
 
     // This is a bitmask flag because right now, the printer goes through the module as a whole and "discovers" the runtimes
@@ -143,7 +151,13 @@ namespace cpp_printer
     /// Holding the states for the printer such as SSA names, type alias, etc
     struct PrinterState
     {
-        explicit PrinterState() {}
+        explicit PrinterState() :
+            nameState{ *this } {}
+
+        PrinterState(PrinterState& other) :
+            nameState{ *this },
+            runtimesDetected{ other.runtimesDetected },
+            indexBitwidth{ other.indexBitwidth } {}
 
         bool hasRuntime(Runtime runtime)
         {
@@ -199,6 +213,11 @@ namespace cpp_printer
             getPrinterState().indexBitwidth = indexBitwidth;
         }
 
+        CppPrinter(llvm::raw_ostream& os_, PrinterState& state_) :
+            os(os_), state(state_)
+        {
+        }
+
         // Begin processing top-level operation
         LogicalResult process(mlir::Operation*);
 
@@ -215,7 +234,7 @@ namespace cpp_printer
 
         /// Print a floating point value in a way that the parser will be able to
         /// round-trip losslessly.
-        LogicalResult printFloatValue(const llvm::APFloat& apValue);
+        LogicalResult printFloatValue(const llvm::APFloat& apValue, mlir::Type floatType);
 
         /// A helper function that prints a variable declaration based on
         /// the return type of the op. If the op returns nothing (i.e.
@@ -403,7 +422,7 @@ namespace cpp_printer
             }
         }
 
-        const char* pragmaUnroll() { return "#pragma unroll"; }
+        static const char* pragmaUnroll() { return "#pragma unroll"; }
 
         llvm::raw_ostream& getOStream() { return os; }
 

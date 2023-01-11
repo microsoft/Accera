@@ -102,21 +102,7 @@ namespace util
 
     mlir::Attribute GetOneAttr(mlir::OpBuilder& builder, mlir::Type type)
     {
-        if (type.isa<mlir::FloatType>())
-            return builder.getFloatAttr(type, 1.0);
-        if (type.isa<mlir::IndexType>())
-            return builder.getIndexAttr(1);
-        if (auto integerType = type.dyn_cast<mlir::IntegerType>())
-            return builder.getIntegerAttr(type, mlir::APInt(type.cast<mlir::IntegerType>().getWidth(), 1));
-        if (type.isa<mlir::RankedTensorType, mlir::VectorType>())
-        {
-            auto vtType = type.cast<mlir::ShapedType>();
-            auto element = GetOneAttr(builder, vtType.getElementType());
-            if (!element)
-                return {};
-            return mlir::DenseElementsAttr::get(vtType, element);
-        }
-        return {};
+        return GetValAttr(builder, type, 1);
     }
 
     mlir::OpBuilder MakeBodyBuilder(mlir::AffineForOp forOp)

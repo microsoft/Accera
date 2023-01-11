@@ -298,25 +298,6 @@ struct ValueBarrierToGPUBarrierConversion final : public OpRewritePattern<vir::B
     }
 };
 
-struct ValueMMAFillSyncOpToRocDLConversion final : public OpRewritePattern<vir::MMAFillSyncOp>
-{
-    using OpRewritePattern<vir::MMAFillSyncOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(vir::MMAFillSyncOp op, PatternRewriter& rewriter) const final
-    {
-        auto loc = op.getLoc();
-        auto memRefType = op.dest().getType().cast<MemRefType>();
-        auto memRefShape = memRefType.getShape();
-        const auto vecSize = std::accumulate(memRefShape.begin(), memRefShape.end(), 1, std::multiplies<int64_t>());
-        auto loop = rewriter.replaceOpWithNewOp<AffineForOp>(op, 0, vecSize);
-        auto loopBuilder = utilir::MakeBodyBuilder(loop);
-        auto inductionVar = loop.getInductionVar();
-        loopBuilder.create<memref::StoreOp>(loc, op.value(), op.dest(), inductionVar);
-
-        return success();
-    }
-};
-
 LogicalResult BlockDimMatchAndRewrite(Operation* op, PatternRewriter& rewriter, const gpu::Dimension blockDimIdx, const bool indexType)
 {
     auto gpuFunc = op->getParentOfType<gpu::GPUFuncOp>();
@@ -511,7 +492,6 @@ struct AcceraToROCDLPass : public accera::transforms::ConvertAcceraToROCDLBase<A
         target.addLegalOp<ModuleOp>();
         target.addIllegalOp<
             vir::EarlyReturnOp,
-            vir::MMAFillSyncOp,
             vir::BarrierOp,
             gpu::BlockDimOp,
             ROCDL::BlockDimXOp,
@@ -670,8 +650,7 @@ void populateAcceraToROCDLPatterns(mlir::RewritePatternSet& patterns)
     patterns.insert<
         ResolveBlockDimPattern,
         EarlyReturnToGPUReturnPattern,
-        ValueBarrierToGPUBarrierConversion,
-        ValueMMAFillSyncOpToRocDLConversion>(patterns.getContext());
+        ValueBarrierToGPUBarrierConversion>(patterns.getContext());
 }
 
 void populateGPUToROCDLPatterns(mlir::LLVMTypeConverter& converter, mlir::RewritePatternSet& patterns)

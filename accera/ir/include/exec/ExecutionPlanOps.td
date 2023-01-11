@@ -188,6 +188,7 @@ def accxp_ActiveBlockCacheCopyOp : accxp_Op<"active_block_cache_copy", [AttrSize
                         AffineMapAttr:$activeBlockToCacheMap,
                         UnitAttr:$toCache,
                         UnitAttr:$thrifty,
+                        UnitAttr:$readOnlyCache,
                         CacheStrategyAttr:$strategy,
                         UnitAttr:$skipBarriers, // TODO : remove this once barrier analysis hoists barriers out of loops 
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo,
@@ -216,6 +217,7 @@ def accxp_MultiCacheCopyOp : accxp_Op<"multi_cache_copy"> {
                         AffineMapAttr:$externalSymbolsPermutationMap,
                         AffineMapAttr:$activeBlockToCacheMap,
                         UnitAttr:$thrifty,
+                        UnitAttr:$readOnlyCache,
                         CacheStrategyAttr:$strategy,
                         UnitAttr:$toCache,
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo,
@@ -223,16 +225,17 @@ def accxp_MultiCacheCopyOp : accxp_Op<"multi_cache_copy"> {
 }
 
 //
-// CacheZeroOp
+// CacheFillOp
 //
-def accxp_CacheZeroOp : accxp_Op<"cache_zero"> {
+def accxp_CacheFillOp : accxp_Op<"cache_zero"> {
   let summary = "cache zeroing operation";
   let description = [{
-    The "accxp.cacheZeroOp" operation zeros out a cache
+    The "accxp.cacheFillOp" operation fill a cache with a constant value
   }];
 
   let arguments = (ins AnyMemRef:$cache,
                        UnitAttr:$thrifty,
+                       AnyTypeOf<[I8, I16, I32, F16, BF16, F32]>:$value,
                        OptionalAttr<accxp_TensorizationInfoAttr>:$tensorizationInfo);
 }
 
@@ -369,7 +372,7 @@ def accxp_BeginCreateCacheOp : accxp_Op<"begin_create_cache",
     It is an error for there not to be a symmetric accxp.end_cache_region op in the same block as accxp.begin_create_cache
   }];
 
-  // Requires most of arguments for CacheCopyOp, CacheReduceOp, CacheZeroOp, and CacheMappingOp since it will lower to
+  // Requires most of arguments for CacheCopyOp, CacheReduceOp, CacheFillOp, and CacheMappingOp since it will lower to
   // different subsets of those ops
   let arguments = (ins  AnyMemRef:$input,
                         AnyMemRef:$cache,
@@ -469,7 +472,7 @@ def accxp_BeginCreateMaxElementCacheOp : accxp_Op<"begin_create_max_element_cach
     It is an error for there not to be a symmetric accxp.end_cache_region op in the same block as accxp.begin_create_max_element_cache
   }];
 
-  // Requires most of arguments for CacheCopyOp, CacheReduceOp, CacheZeroOp, and CacheMappingOp since it will lower to
+  // Requires most of arguments for CacheCopyOp, CacheReduceOp, CacheFillOp, and CacheMappingOp since it will lower to
   // different subsets of those ops
   let arguments = (ins  AnyMemRef:$input,
                         AnyMemRef:$cache,

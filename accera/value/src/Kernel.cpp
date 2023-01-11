@@ -61,7 +61,7 @@ namespace value
 
         std::vector<ScalarIndex> MakeScalarIndices(std::vector<SymbolicIndexOp> indices)
         {
-            auto context = dynamic_cast<MLIRContext*>(&GetContext());
+            [[maybe_unused]] auto context = dynamic_cast<MLIRContext*>(&GetContext());
             assert(context && "Nest only works with MLIRContext");
             std::vector<ScalarIndex> scalarIndices;
             scalarIndices.reserve(indices.size());

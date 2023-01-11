@@ -42,7 +42,7 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-from accera._lang_python._lang import _MMAShape, _MMASchedulingPolicy, _MemorySpace, _CacheStrategy
+from accera._lang_python._lang import _MMAShape, _MMASchedulingPolicy, _MemorySpace, _CacheStrategy, _MMAFragmentOp
 from accera.test import verifiers
 from accera.test.test_utils import expectedFailure, FailedReason, get_type_str
 from accera import Array, Nest, Package, ScalarType, Target, Constants
@@ -52,6 +52,51 @@ TEST_PACKAGE_DIR = "test_mfma"
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
+
+
+def _matmul_nest(M, N, K, A, B, C):
+    nest = Nest(shape=(M, N, K))
+    i, j, k = nest.get_indices()
+
+    @nest.iteration_logic
+    def _():
+        C[i, j] += A[i, k] * B[k, j]
+
+    return nest
+
+def _relu_nest(M, N, C):
+    import accera as acc
+
+    nest = Nest(shape=(M, N))
+    i, j = nest.get_indices()
+
+    @nest.iteration_logic
+    def _():
+        C[i, j] = acc.max(0.0, C[i, j])
+
+    return nest
+
+def _matmul_tensor_schedule(M, N, K, A, B, C, block_tile, outer_tile_k, thread_coarsening_tile, tensor_splits):
+    matmul_nest = _matmul_nest(M, N, K, A, B, C)
+    matmul_sched = matmul_nest.create_schedule()
+    i, j, k = matmul_sched.get_indices()
+    ii, jj, kk = matmul_sched.tile({
+        i: block_tile[0],
+        j: block_tile[1],
+        k: outer_tile_k
+    })
+    iii, jjj = matmul_sched.tile({
+        ii: tensor_splits[0] * thread_coarsening_tile[0],
+        jj: tensor_splits[1] * thread_coarsening_tile[1]
+    })
+    iiii, jjjj, kkk = matmul_sched.tile({
+        iii: tensor_splits[0],
+        jjj: tensor_splits[1],
+        kk: tensor_splits[2]
+    })
+    matmul_sched.reorder(i, j, ii, jj, iii, jjj, k, kk, iiii, jjjj, kkk)
+
+    return matmul_sched
 
 
 class TensorizeTest(unittest.TestCase):
@@ -112,6 +157,8 @@ class TensorizeTest(unittest.TestCase):
         package_format: Package.Format = None,
         package_mode: Package.Mode = None,
         fail_on_error: bool = True,
+        alpha = 1,
+        beta = 1,
         quiet=True
     ) -> None:
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
@@ -143,7 +190,7 @@ class TensorizeTest(unittest.TestCase):
                 B_test[:] = B_test_data
                 C_test[:] = C_test_data
 
-                C_ref = C_test + A_test @ B_test
+                C_ref = alpha * (A_test @ B_test) + (beta * C_test)
 
                 v.check_correctness(function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref), tolerance=tolerance)
 
@@ -171,12 +218,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=array_layouts[1])
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=array_layouts[2])
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
 
         schedule = nest.create_schedule()
 
@@ -259,6 +302,132 @@ class TensorizeTest(unittest.TestCase):
             file_check_fn=file_check_fn,
             file_list=[f"{test_name}.cu", f"{test_name}.hat"],
             package_format=Package.Format.MLIR | Package.Format.DEFAULT
+        )
+
+
+    def _matmul_relu_plan(self, M, N, K, block_tile, thread_tile, outer_tile_k, inner_tile_k, thread_coarsening_tile, bind_order, target, A, B, C):
+        import accera as acc
+
+        matmul_nest = _matmul_nest(M, N, K, A, B, C)
+        relu_nest = _relu_nest(M, N, C)
+
+        matmul_sched = matmul_nest.create_schedule()
+        relu_sched = relu_nest.create_schedule()
+        schedule = acc.fuse(matmul_sched, relu_sched, partial = 2)
+        f, i, j, k = schedule.get_indices()
+
+        ii, jj, kk = schedule.tile({
+            i: block_tile[0],
+            j: block_tile[1],
+            k: outer_tile_k
+        })
+
+        if thread_tile is None:
+            thread_tile = block_tile
+
+        if inner_tile_k is None:
+            inner_tile_k = outer_tile_k
+
+        iii, jjj, kkk = schedule.tile({
+            ii: thread_tile[0],
+            jj: thread_tile[1],
+            kk: inner_tile_k
+        })
+        iiii, jjjj = schedule.tile({
+            iii: thread_coarsening_tile[0],
+            jjj: thread_coarsening_tile[1]
+        })
+        schedule.reorder(i, j, ii, jj, iii, jjj, f, k, kk, iiii, jjjj, kkk)
+
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            mapping={
+                i: bind_order[0],
+                j: bind_order[1],
+                iii: bind_order[2],
+                jjj: bind_order[3]
+            }
+        )
+
+        out_cache_idx = jjj
+        in_cache_idx = ii
+
+        return plan, in_cache_idx, out_cache_idx
+
+
+    def _matmul_relu_tensor_plan(self, M, N, K, block_tile, outer_tile_k, thread_coarsening_tile, mma_shape, num_total_passes, use_static_offsets, num_fused_passes, scheduling_policy, target, A, B, C, prologue_op, epilogue_op):
+        tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes)
+        schedule = _matmul_tensor_schedule(M, N, K, A, B, C, block_tile, outer_tile_k, thread_coarsening_tile, tensor_splits)
+        i, j, ii, jj, iii, jjj, k, kk, iiii, jjjj, kkk = schedule.get_indices()
+
+        plan = schedule.create_plan(target=target)
+        plan.bind(
+            mapping={
+                i: target.GridUnit.BLOCK_Y,
+                j: target.GridUnit.BLOCK_X,
+                ii: target.GridUnit.WARP_Y,
+                jj: target.GridUnit.WARP_X
+            }
+        )
+        plan.tensorize(indices=(iiii, jjjj, kkk), mma_shape=mma_shape, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy, prologue_op=prologue_op, prologue_arg=0.0, epilogue_op=epilogue_op)
+        out_cache_idx = jj if thread_coarsening_tile == (1, 1) else k
+        in_cache_idx = ii
+
+        return plan, in_cache_idx, out_cache_idx
+
+
+    def _matmul_relu(self, test_name, M, N, K, block_tile, outer_tile_k, thread_tile=None, thread_coarsening_tile=(1, 1), inner_tile_k=None,
+                    cache=(True, True, True), cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
+                    double_buffer=False, double_buffer_location=Constants.AUTO, vectorize=False, prologue_op=_MMAFragmentOp.SET, epilogue_op=_MMAFragmentOp.ReLU,
+                    tensorize=True, mma_shape=_MMAShape.M16xN16xK4_B1, num_total_passes=1, num_fused_passes=None, use_static_offsets=False,
+                    scheduling_policy=_MMASchedulingPolicy.PASS_ORDER, model=Target.Model.AMD_MI100,
+                    bind_order=[GridUnits.BLOCK_Y, GridUnits.BLOCK_X, GridUnits.THREAD_Y, GridUnits.THREAD_X],
+                    array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
+                    array_element_types=[ScalarType.float32, ScalarType.float32, ScalarType.float32],
+                    file_check_fn=None, tolerance=1e-5) -> None:
+        from accera import Array, Package, Target
+
+        target = Target(model)
+
+        if thread_tile is not None and tensorize:
+            raise ValueError("Can't specify both a thread_tile shape and tensorize")
+
+        A = Array(role=Array.Role.INPUT, element_type=array_element_types[0], shape=(M, K), layout=array_layouts[0])
+        B = Array(role=Array.Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=array_layouts[1])
+        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=array_layouts[2])
+
+        if tensorize:
+            plan, in_cache_idx, out_cache_idx = self._matmul_relu_tensor_plan(M, N, K, block_tile, outer_tile_k, thread_coarsening_tile, mma_shape, num_total_passes, use_static_offsets, num_fused_passes, scheduling_policy, target, A, B, C, prologue_op, epilogue_op)
+        else:
+            plan, in_cache_idx, out_cache_idx = self._matmul_relu_plan(M, N, K, block_tile, thread_tile, outer_tile_k, inner_tile_k, thread_coarsening_tile, bind_order, target, A, B, C)
+
+        if cache[0]:
+            plan.cache(
+                A, index=in_cache_idx, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[0], strategy=_CacheStrategy.BLOCKED
+            )
+        if cache[1]:
+            plan.cache(
+                B, index=in_cache_idx, double_buffer=double_buffer, double_buffer_location=double_buffer_location, vectorize=vectorize, location=target.MemorySpace.SHARED, layout=cache_layouts[1], strategy=_CacheStrategy.STRIPED
+            )
+        if cache[2]:
+            acc_loc = target.MemorySpace.MMA_FRAGMENT if tensorize else target.MemorySpace.PRIVATE
+            plan.cache(
+                C, index=out_cache_idx, vectorize=vectorize, location=acc_loc, layout=cache_layouts[2]
+            )
+
+        package = Package()
+        function = package.add(plan, args=(A, B, C), base_name=test_name)
+
+        self._verify_matrix_multiplication_function(
+            function,
+            package,
+            test_name,
+            check_correctness=ROCM_AVAILABLE if model == Target.Model.AMD_MI100 else CUDA_AVAILABLE,
+            tolerance=tolerance,
+            file_check_fn=file_check_fn,
+            file_list=[f"{test_name}.cu", f"{test_name}.hat"],
+            package_format=Package.Format.MLIR_VERBOSE | Package.Format.DEFAULT,
+            beta = 0 if tensorize and cache[2] else 1
         )
 
 
@@ -393,13 +562,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -457,13 +621,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -521,13 +680,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -585,13 +739,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -650,13 +799,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -717,13 +861,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -781,13 +920,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -845,13 +979,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -910,13 +1039,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -975,13 +1099,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -1039,13 +1158,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -1417,13 +1531,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=intype, shape=(K, N))
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=outtype, shape=(M, N))
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj = schedule.tile({
@@ -1589,7 +1698,7 @@ class TensorizeTest(unittest.TestCase):
                               tensorize=True,
                               mma_shape=_MMAShape.M16xN16xK16_B1, num_total_passes=1, cache=False, cache_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
                               double_buffer=False, double_buffer_location=Constants.AUTO, vectorize=False,
-                              scheduling_policy=_MMASchedulingPolicy.PASS_ORDER,
+                              scheduling_policy=_MMASchedulingPolicy.PASS_ORDER, epilogue_op=_MMAFragmentOp.NONE,
                               bind_order=[GridUnits.BLOCK_Y, GridUnits.BLOCK_X, GridUnits.THREAD_Y, GridUnits.THREAD_X],
                               array_layouts=[Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR, Array.Layout.FIRST_MAJOR],
                               element_type=ScalarType.float16, output_type=ScalarType.float16) -> None:
@@ -1599,13 +1708,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=element_type, shape=(K, N), layout=array_layouts[1])
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=output_type, shape=(M, N), layout=array_layouts[2])
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj, kk = schedule.tile({
@@ -1630,7 +1734,7 @@ class TensorizeTest(unittest.TestCase):
 
             outer_nest_order = (i, j, k, ii, jj, kk)
             plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=(i, j), warp_indices=(ii, jj), tensor_indices=(iii, jjj, kkk), outer_nest_order=outer_nest_order, dynamic_shared_memory_size=dynamic_shared_mem_usage_bytes, blocks_per_SM=blocks_per_SM)
-            plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, scheduling_policy=scheduling_policy)
+            plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, scheduling_policy=scheduling_policy, epilogue_op=epilogue_op)
         else:
             # TODO : split this case into a different helper function as this is a tensorize helper
             default_thread_splits = (16, 16, 16)
@@ -1780,6 +1884,11 @@ class TensorizeTest(unittest.TestCase):
     def test_cuda_vectorized_cache_double_buffering_tensorize_non_square(self) -> None:
         self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64,
                                     test_name="test_cuda_vectorized_cache_double_buffering_tensorize_non_square", tensorize=True, cache=True,
+                                    double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True)
+
+    def test_cuda_vectorized_cache_double_buffering_tensorize_non_square_relu(self) -> None:
+        self._cuda_cache_tensorize(M=1280, N=768, K=1024, outer_tile_m=64, outer_tile_n=64, outer_tile_k=64, epilogue_op=_MMAFragmentOp.ReLU,
+                                    test_name="test_cuda_vectorized_cache_double_buffering_tensorize_non_square_relu", tensorize=True, cache=True,
                                     double_buffer=True, double_buffer_location=_MemorySpace.PRIVATE, vectorize=True)
 
     def test_cuda_vectorized_cache_double_buffering_tensorize_non_square_blockorder(self) -> None:
@@ -2466,6 +2575,31 @@ class TensorizeTest(unittest.TestCase):
                                    vectorize=True, mma_shape=_MMAShape.M16xN16xK16_B1, scheduling_policy=_MMASchedulingPolicy.BLOCK_ORDER,
                                    array_element_types=[ScalarType.float16, ScalarType.float16, ScalarType.float32], tolerance=1e-3)
 
+    def test_rocm_matmul_relu_vectorized(self) -> None:
+        self._matmul_relu(M=16, N=16, K=16, block_tile=(16, 16), outer_tile_k=16,
+                                test_name="test_rocm_matmul_relu_vectorized",
+                                vectorize=True, cache=(True, True, False), tensorize=False)
+
+    def test_rocm_matmul_relu_vectorized_cache(self) -> None:
+        self._matmul_relu(M=16, N=16, K=16, block_tile=(16, 16), outer_tile_k=16,
+                                test_name="test_rocm_matmul_relu_vectorized_cache",
+                                vectorize=True, cache=(True, True, True), tensorize=False)
+
+    def test_rocm_matmul_relu_vectorized_tensorize(self) -> None:
+        self._matmul_relu(M=16, N=16, K=16, block_tile=(16, 16), outer_tile_k=16,
+                                test_name="test_rocm_matmul_relu_vectorized_tensorize",
+                                vectorize=True, cache=(True, True, False), tensorize=True, prologue_op=_MMAFragmentOp.NONE)
+
+    def test_rocm_matmul_relu_vectorized_tensorize_cache(self) -> None:
+        self._matmul_relu(M=128, N=128, K=16, block_tile=(16, 16), outer_tile_k=16, epilogue_op=_MMAFragmentOp.ReLU_NoConditional,
+                                test_name="test_rocm_matmul_relu_vectorized_tensorize_cache",
+                                vectorize=True, cache=(True, True, True), tensorize=True)
+
+    def test_rocm_matmul_relu_vectorized_tensorize_cache_thread_coarsening(self) -> None:
+        self._matmul_relu(M=128, N=128, K=16, block_tile=(64, 64), outer_tile_k=16, thread_coarsening_tile=(2, 2),
+                                test_name="test_rocm_matmul_relu_vectorized_tensorize_cache_thread_coarsening",
+                                vectorize=True, cache=(True, True, True), tensorize=True)
+
     def _test_cache_memory_order_helper(self, a_layout, a_cache_layout, double_buffer, vectorize, tensorize, element_type = ScalarType.float32,
                                         mma_shape = _MMAShape.M16xN16xK4_B1, num_total_passes = 4, model = Target.Model.AMD_MI100) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -2485,13 +2619,8 @@ class TensorizeTest(unittest.TestCase):
         B = Array(role=Array.Role.INPUT, element_type=element_type, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(role=Array.Role.INPUT_OUTPUT, element_type=output_type, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
 
-        nest = Nest(shape=(M, N, K))
+        nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
-
-        @nest.iteration_logic
-        def _():
-            C[i, j] += A[i, k] * B[k, j]
-
         schedule = nest.create_schedule()
 
         ii, jj, kk = schedule.tile({

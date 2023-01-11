@@ -27,6 +27,7 @@ from .._lang_python._lang import (
     _MMASchedulingPolicy,
     _MMAShape,
     _CacheStrategy,
+    _MMAFragmentOp
 )
 from ..algorithms import *
 
@@ -212,6 +213,10 @@ class Plan:
         use_static_offsets: bool = False,
         num_fused_passes: int = None,
         scheduling_policy: _MMASchedulingPolicy = _MMASchedulingPolicy.PASS_ORDER,
+        prologue_op: _MMAFragmentOp = _MMAFragmentOp.NONE,
+        prologue_arg: float = 0.0,
+        epilogue_op: _MMAFragmentOp = _MMAFragmentOp.NONE,
+        epilogue_arg: float = 0.0,
         _use_rocWMMA: bool = False,
     ):
         """Only available for targets with native matrix multiplication instruction (tensor core) support.
@@ -230,6 +235,8 @@ class Plan:
             use_static_offsets: This is an optimization flag, which when enabled will use precomputed offset maps stored in device constant memory.
             num_fused_passes: This controls the number of passes for which register allocation is done, higher the value more the number of registers that are allocated.
             scheduling_policy: For multi-block MMA operations, this controls whether matrix multiplication is done block-by-block or pass-by-pass (affects register usage).
+            prologue_op: The pre-tensorization operation to run on matrix fragment data as a part of load, e.g. 0-init (CLEAR).
+            epilogue_op: The post-tensorization operation to run on matrix fragment data as a part of store, e.g. ReLU.
         """
         if self._target.category != Target.Category.GPU:
             raise ValueError("tensorization currently only supported on GPU targets")
@@ -251,6 +258,10 @@ class Plan:
                 use_static_offsets,
                 num_fused_passes,
                 scheduling_policy,
+                prologue_op,
+                prologue_arg,
+                epilogue_op,
+                epilogue_arg,
                 _use_rocWMMA,
             )
         )
@@ -263,6 +274,10 @@ class Plan:
         use_static_offsets,
         num_fused_passes,
         scheduling_policy,
+        prologue_op,
+        prologue_arg,
+        epilogue_op,
+        epilogue_arg,
         _use_rocWMMA,
         context: NativeLoopNestContext,
     ):
@@ -356,6 +371,10 @@ class Plan:
             useStaticOffsets=use_static_offsets,
             numFusedPasses=num_fused_passes,
             schedulingPolicy=scheduling_policy,
+            prologueOp=prologue_op,
+            prologueArg=prologue_arg,
+            epilogueOp=epilogue_op,
+            epilogueArg=epilogue_arg,
             _useRocWMMA=_use_rocWMMA,
         )
 
@@ -863,12 +882,12 @@ class Plan:
         nest = sched._nest
 
         # lookup the split factors for each loop index
-        index_to_splitfactor_map = {
-            i: self._sched.get_index_transform(i)[1]
-            for i in self._sched.get_indices()
-            if self._sched.get_index_transform(i)
-            and self._sched.get_index_transform(i)[0] is IndexTransform.SPLIT
-        }
+        index_to_splitfactor_map = {}
+
+        for i in self._sched.get_indices():
+            transform = self._sched.get_index_transform(i)
+            if transform and transform[0] is IndexTransform.SPLIT:
+                index_to_splitfactor_map[i] = transform[1]
 
         def units_to_dim(units, dims):
             def compute_index_itercount(idx):
@@ -916,9 +935,6 @@ class Plan:
             units_to_dim(warp_units, warp_dims)
 
             warp_dim_set = any(item != 0 for item in warp_dims)
-            thread_dim_set = any(item != 1 for item in block_dims)
-            if warp_dim_set and thread_dim_set:
-                raise ValueError("Cannot bind both thread and warp dimensions")
 
             if warp_dim_set:
                 block_dims = [warp_dims[0] * target.warp_size, warp_dims[1], 1]

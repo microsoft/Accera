@@ -41,13 +41,17 @@ def exec_ext_benchmarker(gpu_id: int, gemm: gemm_opts.GemmOpts, datatype, benchm
     proc.check_returncode()
     return proc.stdout
 
-def run_pytorch_matmul(gemm: gemm_opts.GemmOpts, dtype, gpu_id: int):
+def pytorch_gemm_kernel(alpha, beta, a, b, c):
+    return (alpha * torch.matmul(a, b)) + (beta * c)
+
+def run_pytorch_matmul(gemm: gemm_opts.GemmOpts, dtype, gpu_id: int, do_relu: bool = False):
     cuda = torch.device('cuda')
     type = torch.float32 if dtype == "s" else torch.float16
     with torch.cuda.device(gpu_id):
         a = torch.randn(gemm.m, gemm.k, dtype=type, device=cuda)
         b = torch.randn(gemm.k, gemm.n, dtype=type, device=cuda)
         c = torch.randn(gemm.m, gemm.n, dtype=type, device=cuda)
+        relu = torch.nn.ReLU()
         if gemm.transA:
             a = a.t().contiguous().t()
 
@@ -58,11 +62,13 @@ def run_pytorch_matmul(gemm: gemm_opts.GemmOpts, dtype, gpu_id: int):
         end = torch.cuda.Event(enable_timing=True)
 
         # Warmup
-        c = (gemm.alpha * torch.matmul(a, b)) + (gemm.beta * c)
+        c = pytorch_gemm_kernel(gemm.alpha, gemm.beta, a, b, c)
 
         # Under timer
         start.record()
-        c = (gemm.alpha * torch.matmul(a, b)) + (gemm.beta * c)
+        c = pytorch_gemm_kernel(gemm.alpha, gemm.beta, a, b, c)
+        if do_relu:
+            c = relu(c)
         end.record()
 
         torch.cuda.synchronize()
@@ -70,7 +76,7 @@ def run_pytorch_matmul(gemm: gemm_opts.GemmOpts, dtype, gpu_id: int):
         throughput_tflops = 2 * gemm.m * gemm.n * gemm.k * 1.0e-9 / time_taken_ms
     return time_taken_ms, throughput_tflops, f"Total time taken: {time_taken_ms} ms, {throughput_tflops} TFlops"
 
-def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int, git_branch: str, target_name: str, output_prefix: str, category: str, rocblas: str, composable_kernel: str, cublas: str, cutlass: str, pytorch: str, available_gpus, container_name, verbose, check, compiler_ver, deviceProperties):
+def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int, git_branch: str, target_name: str, output_prefix: str, category: str, rocblas: str, composable_kernel: str, cublas: str, cutlass: str, pytorch: str, relu, available_gpus, container_name, verbose, check, compiler_ver, deviceProperties):
     result_dir = os.path.split(output_prefix)[0] or '.'
     if not os.path.isdir(result_dir):
         os.makedirs(result_dir)
@@ -94,7 +100,7 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int
                 if available_gpus[gpu_id]:
                     print(f"Processing input: {gemm} on GPU {gpu_id}")
                     if pytorch:
-                        time_taken_ms, throughput, output = run_pytorch_matmul(gemm, dtype, gpu_id)
+                        time_taken_ms, throughput, output = run_pytorch_matmul(gemm, dtype, gpu_id, relu)
                     else:
                         output = exec_ext_benchmarker(gpu_id, gemm, dtype, benchmark_tool)
                         tokens = output.split(",")
@@ -198,7 +204,7 @@ def benchmark_gemm_shapes(data: List[gemm_opts.GemmOpts], dtype, batch_size: int
     else:
         for gemm in data:
             print(f"\nProcessing input: {gemm}")
-            accera_gemm.benchmark_gemm(gemm, dtype, batch_size, output_prefix, category, available_gpus, container_name, verbose, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, check, deviceProperties)
+            accera_gemm.benchmark_gemm(gemm, dtype, batch_size, output_prefix, category, available_gpus, container_name, verbose, compiler_ver, commit_id, commit_datetime, commit_branch, target_name, check, relu, deviceProperties)
         # else:
         #     if container_name:
         #         cosmosdb.show_benchmark_summary(container_name)
@@ -275,6 +281,7 @@ def main(args=[]):
     parser.add_argument('-v', '--verbose', action="store_true", help="Enable verbose logging", required=False)
     parser.add_argument('-c', '--check', action="store_true", help="Verify correctness of the generated kernels", required=False)
     parser.add_argument('-j', '--no_janitor', action="store_false", help="Don't cleanup the output dir after running benchmark", required=False)
+    parser.add_argument('-r', '--relu', action="store_true", help="Run ReLU after GEMM", required=False)
 
     args = parser.parse_args(args)
 
@@ -286,6 +293,10 @@ def main(args=[]):
 
     if not args.type:
         raise RuntimeError("No type argument passed")
+
+    category = args.category
+    if args.relu:
+        category += " (gemm + relu)"
 
     f = None
     if args.string:
@@ -319,8 +330,8 @@ def main(args=[]):
 
     deviceProperties, compiler_ver = prepare_system_for_benchmark(args.target, available_gpus)
 
-    benchmark_gemm_shapes(gemm_inputs, args.type, args.batch_size, args.branch, args.target, args.output, args.category,
-                            args.rocblas, args.composable_kernel, args.cublas, args.cutlass, args.pytorch,
+    benchmark_gemm_shapes(gemm_inputs, args.type, args.batch_size, args.branch, args.target, args.output, category,
+                            args.rocblas, args.composable_kernel, args.cublas, args.cutlass, args.pytorch, args.relu,
                             available_gpus, args.upload, args.verbose, args.check, compiler_ver, deviceProperties)
 
     print("Cleaning up output directory after benchmark")

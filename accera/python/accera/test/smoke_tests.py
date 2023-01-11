@@ -44,7 +44,7 @@ else:
 INTERNAL_FUNCTION_OPTS = { "no_inline_into": True, "public": False }
 
 from accera import Package, ScalarType, Nest, Array, Constants, Scalar, fuse, create_parameters, Dimension, cast
-from accera._lang_python._lang import _MemorySpace, _MMASchedulingPolicy, _MMAShape
+from accera._lang_python._lang import _MemorySpace, _MMAShape
 from accera import min as accmin
 from accera.samples import MatrixMultiplication
 from accera.test import verifiers

@@ -33,7 +33,7 @@ namespace cpp_printer
         std::string getName() override { return "Accera"; }
 
         LogicalResult printOp(accera::ir::value::MMAAllocSyncOp op);
-        LogicalResult printOp(accera::ir::value::MMAFillSyncOp op);
+        //LogicalResult printOp(accera::ir::value::MMAFillSyncOp op);
         LogicalResult printOp(accera::ir::value::MMALoadSyncOp op);
         LogicalResult printOp(accera::ir::value::MMAComputeSyncOp op);
         LogicalResult printOp(accera::ir::value::MMAStoreSyncOp op);

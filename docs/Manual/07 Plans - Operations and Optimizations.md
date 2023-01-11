@@ -1,5 +1,5 @@
 [//]: # (Project: Accera)
-[//]: # (Version: v1.2.14)
+[//]: # (Version: v1.2)
 
 # Section 7: Plans - Operations and Optimizations
 We can control target-specific operations and optimizations using a plan. Examples include instruction pipelining, applying SIMD vector instructions, and so on.

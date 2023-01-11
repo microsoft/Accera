@@ -90,6 +90,8 @@ namespace cpp_printer
 
         /// print ReinterpretCastOp
         LogicalResult printReinterpretCastOp(memref::ReinterpretCastOp reinterpretCastop);
+
+        LogicalResult printMaxFOp(arith::MaxFOp maxfOp);
     };
 
 } // namespace cpp_printer

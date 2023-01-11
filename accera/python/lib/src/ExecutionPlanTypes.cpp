@@ -94,6 +94,13 @@ namespace
         py::enum_<ir::value::MMASchedulingPolicy>(module, "_MMASchedulingPolicy", "Used for configuring scheduling policy of MMA ops")
             .value("PASS_ORDER", ir::value::MMASchedulingPolicy::PassOrder)
             .value("BLOCK_ORDER", ir::value::MMASchedulingPolicy::BlockOrder);
+
+        py::enum_<ir::value::MMAFragmentOp>(module, "_MMAFragmentOp", "This op is performed after the MMA op")
+            .value("NONE", ir::value::MMAFragmentOp::None)
+            .value("ReLU", ir::value::MMAFragmentOp::ReLU)
+            .value("ReLU_NoConditional", ir::value::MMAFragmentOp::ReLU_NoConditional)
+            .value("SET", ir::value::MMAFragmentOp::Set)
+            .value("SCALE", ir::value::MMAFragmentOp::Scale);
     }
 
     void DefineExecutionPlanStructs(py::module& module)
@@ -262,7 +269,7 @@ namespace
                 "vectorization_info"_a,
                 "element_type"_a,
                 "strategy"_a)
-            .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a, "numTotalPasses"_a, "useStaticOffsets"_a, "numFusedPasses"_a, "schedulingPolicy"_a, "_useRocWMMA"_a)
+            .def("tensorize", &value::GPUPlan::Tensorize, "indices"_a, "dims"_a, "numTotalPasses"_a, "useStaticOffsets"_a, "numFusedPasses"_a, "schedulingPolicy"_a, "prologueOp"_a, "prologueArg"_a, "epilogueOp"_a, "epilogueArg"_a, "_useRocWMMA"_a)
             .def("_map_index_to_processor", &value::GPUPlan::MapIndicesToProcessor, "indices"_a, "proc"_a);
     }
 

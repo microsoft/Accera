@@ -100,7 +100,7 @@ std::vector<int64_t> GetMatMulDimensions(ShapedType aType, ShapedType bType, Sha
     assert(aShape[1] == bShape[0]);
     assert(bShape[1] == cShape[1]);
 
-    return { aShape[0], bShape[1], aShape[1] }; // M, N, K
+    return { aShape[0], cShape[1], bShape[0] }; // M, N, K
 }
 
 NestOp MakeNest(ArrayRef<int64_t> sizes, std::function<void(mlir::OpBuilder&, mlir::Location, NestOp&)> body)

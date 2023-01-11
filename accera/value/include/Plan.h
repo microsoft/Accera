@@ -237,7 +237,7 @@ namespace value
         /// <param name="useStaticOffsets"> Use precomputed index offsets for address calculation (potential optimization). </param>
         /// <param name="numFusedPasses"> Number of passes of the tensor operation for which to allocate register, higher value indicates higher register allocation. </param>
         /// <param name="schedulingPolicy"> Determines whether we iterate over blocks or passes. </param>
-        void Tensorize(std::vector<ScalarIndex> indices, ir::value::MMAShape dims, int numTotalPasses = 1, bool useStaticOffsets = false, int numFusedPasses = -1, ir::value::MMASchedulingPolicy schedulingPolicy = ir::value::MMASchedulingPolicy::PassOrder, bool _useRocWMMA=false);
+        void Tensorize(std::vector<ScalarIndex> indices, ir::value::MMAShape dims, int numTotalPasses = 1, bool useStaticOffsets = false, int numFusedPasses = -1, ir::value::MMASchedulingPolicy schedulingPolicy = ir::value::MMASchedulingPolicy::PassOrder, ir::value::MMAFragmentOp prologueOp = ir::value::MMAFragmentOp::None, double prologueArg = {}, ir::value::MMAFragmentOp epilogueOp = ir::value::MMAFragmentOp::None, double epilogueArg = {}, bool _useRocWMMA=false);
 
     private:
         friend class Schedule;

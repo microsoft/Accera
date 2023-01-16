@@ -22,9 +22,9 @@ class Dimension:
 
     def __init__(
         self,
-        name: str = None,
+        name: str = "",
         role: "accera.Dimension.Role"=Role.INPUT,
-        value: Union["Dimension", int] = None
+        value: Union["Dimension", int] = None,
     ):
         self._name = name
         self._native_dim = None
@@ -37,6 +37,10 @@ class Dimension:
             self._native_dim = value._native_dim if isinstance(value, Dimension) else Scalar(value)
 
         self._create_native_dim()
+
+    @property
+    def name(self):
+        return self._name
 
     @property
     def role(self):

@@ -10,10 +10,10 @@
 #include "ir/include/value/ValueDialect.h"
 
 #include <llvm/IR/Type.h>
+#include <value/include/Debugging.h>
 #include <value/include/FunctionDeclaration.h>
 #include <value/include/LLVMUtilities.h>
 #include <value/include/MLIREmitterContext.h>
-#include <value/include/Debugging.h>
 
 #include <utilities/include/Boolean.h>
 #include <utilities/include/Exception.h>
@@ -51,14 +51,15 @@ namespace ir
 {
     namespace
     {
-        class LLVMTypeConverterDynMem: public mlir::LLVMTypeConverter
+        class LLVMTypeConverterDynMem : public mlir::LLVMTypeConverter
         {
         public:
-            LLVMTypeConverterDynMem(MLIRContext *ctx, const mlir::LowerToLLVMOptions &options):
+            LLVMTypeConverterDynMem(MLIRContext* ctx, const mlir::LowerToLLVMOptions& options) :
                 mlir::LLVMTypeConverter(ctx, options)
             {}
 
-            Type convertMemRefToBarePtr(mlir::BaseMemRefType type) {
+            Type convertMemRefToBarePtr(mlir::BaseMemRefType type)
+            {
                 if (type.isa<mlir::UnrankedMemRefType>())
                     // Unranked memref is not supported in the bare pointer calling convention.
                     return {};
@@ -69,7 +70,8 @@ namespace ir
                 return mlir::LLVM::LLVMPointerType::get(elementType, type.getMemorySpaceAsInt());
             }
 
-            Type convertCallingConventionType(Type type) {
+            Type convertCallingConventionType(Type type)
+            {
                 if (getOptions().useBarePtrCallConv)
                     if (auto memrefTy = type.dyn_cast<mlir::BaseMemRefType>())
                         return convertMemRefToBarePtr(memrefTy);
@@ -78,7 +80,8 @@ namespace ir
             }
 
             LogicalResult barePtrFuncArgTypeConverterDynMem(Type type,
-                                                SmallVectorImpl<Type> &result) {
+                                                            SmallVectorImpl<Type>& result)
+            {
                 auto llvmTy = convertCallingConventionType(type);
                 if (!llvmTy)
                     return mlir::failure();
@@ -88,12 +91,15 @@ namespace ir
             }
 
             Type convertFunctionSignature(
-                FunctionType funcTy, bool isVariadic,
-                LLVMTypeConverter::SignatureConversion &result) 
+                FunctionType funcTy,
+                bool isVariadic,
+                LLVMTypeConverter::SignatureConversion& result)
             {
                 // Select the argument converter depending on the calling convention.
-                if (getOptions().useBarePtrCallConv) {
-                    for (auto &en : llvm::enumerate(funcTy.getInputs())) {
+                if (getOptions().useBarePtrCallConv)
+                {
+                    for (auto& en : llvm::enumerate(funcTy.getInputs()))
+                    {
                         Type type = en.value();
                         llvm::SmallVector<Type, 8> converted;
                         if (failed(barePtrFuncArgTypeConverterDynMem(type, converted)))
@@ -101,8 +107,10 @@ namespace ir
                         result.addInputs(en.index(), converted);
                     }
                 }
-                else {
-                    for (auto &en : llvm::enumerate(funcTy.getInputs())) {
+                else
+                {
+                    for (auto& en : llvm::enumerate(funcTy.getInputs()))
+                    {
                         Type type = en.value();
                         llvm::SmallVector<Type, 8> converted;
                         if (failed(mlir::structFuncArgTypeConverter(*this, type, converted)))
@@ -120,8 +128,8 @@ namespace ir
                 // if it returns on element, convert it, otherwise pack the result types into
                 // a struct.
                 Type resultType = funcTy.getNumResults() == 0
-                                        ? mlir::LLVM::LLVMVoidType::get(&getContext())
-                                        : packFunctionResults(funcTy.getResults());
+                                      ? mlir::LLVM::LLVMVoidType::get(&getContext())
+                                      : packFunctionResults(funcTy.getResults());
                 if (!resultType)
                     return {};
                 return mlir::LLVM::LLVMFunctionType::get(resultType, argTypes, isVariadic);
@@ -243,7 +251,7 @@ namespace ir
             mlir::Type type;
 
             // Optional source MLIR type that "type" was derived from
-            // This contains additional info not available in the LLVM dialect, 
+            // This contains additional info not available in the LLVM dialect,
             // such as whether the type was unsigned (LLVM only supports signless types)
             std::optional<mlir::Type> source;
         };
@@ -377,7 +385,7 @@ namespace ir
             {
                 os << "float16_t";
             }
-            else if(t.type.isBF16())
+            else if (t.type.isBF16())
             {
                 os << "bfloat16_t";
             }
@@ -392,7 +400,7 @@ namespace ir
         }
 
         template <typename StreamType>
-        void WriteFunctionType(StreamType& os, LLVMType t, std::optional<std::string> name = std::nullopt)
+        void WriteFunctionType(StreamType& os, LLVMType t, std::optional<std::string> name = std::nullopt, const std::vector<hat::UsageType>& usages = {})
         {
             // returnType name(paramType, ...);
 
@@ -427,19 +435,25 @@ namespace ir
                 }
 
                 sourceType = std::nullopt;
+                bool addPointerSuffix{};
                 if (t.source) // use additional MLIR type information, if available
                 {
                     auto sourceFnTy = t.source->dyn_cast<mlir::FunctionType>();
                     sourceType = sourceFnTy.getInput(i);
+                    const auto usage = i < usages.size() ? usages[i] : hat::UsageType::InputOutput;
+                    addPointerSuffix = !sourceType->isa<mlir::ShapedType>() && usage != hat::UsageType::Input;
                 }
                 LLVMType paramType = { fnTy.getParamType(i), sourceType };
                 WriteLLVMType(os, paramType);
+
+                if (addPointerSuffix)
+                    os << "*";
             }
             os << ");";
         }
 
         template <typename StreamType>
-        void WriteFunctionTypeAlias(StreamType& os, LLVMType t, std::string name, std::string baseName)
+        void WriteFunctionTypeAlias(StreamType& os, LLVMType t, std::string name, std::string baseName, const std::vector<hat::UsageType>& usages)
         {
             // returnType (*baseName)(paramType, ...) = name;
 
@@ -473,15 +487,20 @@ namespace ir
                 }
 
                 sourceType = std::nullopt;
+                bool addPointerSuffix{};
                 if (t.source) // use additional MLIR type information, if available
                 {
                     auto sourceFnTy = t.source->dyn_cast<mlir::FunctionType>();
                     sourceType = sourceFnTy.getInput(i);
+                    const auto usage = i < usages.size() ? usages[i] : hat::UsageType::InputOutput;
+                    addPointerSuffix = !sourceType->isa<mlir::ShapedType>() && usage != hat::UsageType::Input;
                 }
- 
+
                 LLVMType paramType = { fnTy.getParamType(i), sourceType };
                 WriteLLVMType(os, paramType);
-           }
+                if (addPointerSuffix)
+                    os << "*";
+            }
             os << ") = " << name << ";\n";
             os << "#endif\n";
         }
@@ -517,10 +536,12 @@ namespace ir
                     WriteArrayType(os, t);
                 })
                 .Case([&](mlir::IntegerType) {
-                    if (t.source && t.source->isa<mlir::IndexType>()) {
+                    if (t.source && t.source->isa<mlir::IndexType>())
+                    {
                         WriteIndexType(os, t);
                     }
-                    else {
+                    else
+                    {
                         WriteIntegerType(os, t);
                     }
                 })
@@ -551,22 +572,44 @@ namespace ir
         std::string GetLLVMElementTypeString(LLVMType t)
         {
             return mlir::TypeSwitch<mlir::Type, std::string>(t.type)
-                .Case([&](mlir::LLVM::LLVMPointerType ptrTy) { 
+                .Case([&](mlir::LLVM::LLVMPointerType ptrTy) {
                     assert(t.source && "MLIR type is required");
                     auto mlirType = mlir::TypeSwitch<mlir::Type, mlir::Type>(*t.source)
-                        .Case([&](mlir::ShapedType shapedTy) {
-                            return shapedTy.getElementType();
-                        })
-                        .Default([&](mlir::Type type) {
-                            assert(false && "Error: unsupported MLIR type");
-                            return type;                       
-                        });
+                                        .Case([&](mlir::ShapedType shapedTy) {
+                                            return shapedTy.getElementType();
+                                        })
+                                        .Default([&](mlir::Type type) {
+                                            assert(false && "Error: unsupported MLIR type");
+                                            return type;
+                                        });
 
                     return GetLLVMElementTypeString({ ptrTy.getElementType(), mlirType });
                 })
                 .Default([&](mlir::Type) {
                     return GetLLVMTypeString(t);
                 });
+        }
+
+        std::vector<hat::UsageType> GetHATParameterUsages(const value::ValueFuncOp& funcOp)
+        {
+            std::vector<hat::UsageType> hatUsages;
+            if (auto usagesAttr = funcOp->getAttrOfType<mlir::ArrayAttr>(UsagesAttrName))
+            {
+                auto usagesVec = accera::ir::util::ConvertArrayAttrToIntVector(usagesAttr);
+                std::transform(usagesVec.cbegin(), usagesVec.cend(), std::back_inserter(hatUsages), [](int usage) {
+                    switch (static_cast<accera::value::FunctionParameterUsage>(usage))
+                    {
+                    case accera::value::FunctionParameterUsage::input:
+                        return hat::UsageType::Input;
+                    case accera::value::FunctionParameterUsage::output:
+                        return hat::UsageType::Output;
+                    case accera::value::FunctionParameterUsage::inputOutput:
+                    default:
+                        return hat::UsageType::InputOutput;
+                    }
+                });
+            }
+            return hatUsages;
         }
 
         template <typename StreamType>
@@ -588,6 +631,7 @@ namespace ir
             }
 
             auto fnType = fn.getType().dyn_cast<mlir::FunctionType>();
+            auto usages = GetHATParameterUsages(fn);
             assert(fnType.getNumResults() <= 1);
 
             mlir::LowerToLLVMOptions options(context);
@@ -603,14 +647,14 @@ namespace ir
                 llvmType = llvmTypeConverterDynMem.convertFunctionSignature(fnType, false, conversionDynMem);
             }
 
-            WriteFunctionType(os, { llvmType, fnType }, name);
+            WriteFunctionType(os, { llvmType, fnType }, name, usages);
 
             os << "\n\n";
 
             // if a base name is set, emit an alias for this function using the base name
             if (auto baseName = fn->getAttrOfType<mlir::StringAttr>(ir::BaseNameAttrName))
             {
-                WriteFunctionTypeAlias(os, { llvmType, fnType }, name, baseName.getValue().str());
+                WriteFunctionTypeAlias(os, { llvmType, fnType }, name, baseName.getValue().str(), usages);
                 os << "\n\n";
             }
 
@@ -666,7 +710,7 @@ namespace ir
             return mlir::success();
         }
 
-        std::unique_ptr<hat::Parameter> ConvertToIncompleteHATParameter(mlir::Type type, const std::string& runtimeSizeStr = "")
+        std::unique_ptr<hat::Parameter> ConvertToIncompleteHATParameter(const std::string& name, const std::string& description, const hat::UsageType usage, mlir::Type type, const std::string& runtimeSizeStr = "", const std::string& declaredType = "", const std::string& elementType = "")
         {
             std::unique_ptr<hat::Parameter> param;
             if (type.isa<mlir::ShapedType>())
@@ -704,51 +748,37 @@ namespace ir
                             currentShardSize *= shape[idx];
                         }
                     }
-                    auto affineArray = std::make_unique<hat::AffineArrayParameter>();
                     std::vector<size_t> shapeVec;
                     std::transform(shape.begin(), shape.end(), std::back_inserter(shapeVec), [](int64_t val) { return static_cast<size_t>(val); });
-                    affineArray->Shape(shapeVec);
-                    affineArray->AffineMap(affineMap);
-                    affineArray->AffineOffset(affineOffset);
-                    param = std::move(affineArray);
+                    if (usage != hat::UsageType::Input && shapeVec.size() == 1 && shapeVec[0] == 1)
+                    {
+                        // TODO: This is currently a hack since output Dimension does not work. So in the DSL we use Array
+                        // instead and here we emulate an ElementParameter instead. Remove this when output Dimension are working.
+                        assert(declaredType.back() == '*');
+                        return std::make_unique<hat::ElementParameter>(name, description, usage, declaredType.substr(0, declaredType.length() - 1), elementType);
+                    }
+
+                    return std::make_unique<hat::AffineArrayParameter>(name, description, usage, declaredType, elementType, shapeVec, affineMap, affineOffset);
                 }
-                else
-                {
-                    // It has at least one unknown dimension so it is a RuntimeArray
-                    auto runtimeArray = std::make_unique<hat::RuntimeArrayParameter>();
-                    runtimeArray->Size(runtimeSizeStr);
-                    param = std::move(runtimeArray);
-                }
-            }
-            else
-            {
-                // ElementType is the only other option now
-                param = std::make_unique<hat::ElementParameter>();
+
+                // It has at least one unknown dimension so it is a RuntimeArray
+                return std::make_unique<hat::RuntimeArrayParameter>(name, description, usage, declaredType, elementType, runtimeSizeStr);
             }
 
-            return param;
+            // ElementType is the only other option now
+            return std::make_unique<hat::ElementParameter>(name, description, usage, declaredType, elementType);
         }
 
-        std::vector<hat::UsageType> GetHATParameterUsages(const value::ValueFuncOp& funcOp)
+        std::vector<std::string> GetFuncArgStringAttributes(const value::ValueFuncOp& fn, const StringRef& attrName, const unsigned numAttrs)
         {
-            std::vector<hat::UsageType> hatUsages;
-            if (auto usagesAttr = funcOp->getAttrOfType<mlir::ArrayAttr>(UsagesAttrName))
+            if (fn->hasAttr(attrName))
             {
-                auto usagesVec = accera::ir::util::ConvertArrayAttrToIntVector(usagesAttr);
-                std::transform(usagesVec.cbegin(), usagesVec.cend(), std::back_inserter(hatUsages), [](int usage) {
-                    switch (static_cast<accera::value::FunctionParameterUsage>(usage))
-                    {
-                    case accera::value::FunctionParameterUsage::input:
-                        return hat::UsageType::Input;
-                    case accera::value::FunctionParameterUsage::output:
-                        return hat::UsageType::Output;
-                    case accera::value::FunctionParameterUsage::inputOutput:
-                    default:
-                        return hat::UsageType::InputOutput;
-                    }
+                auto argAttr = fn->getAttr(attrName).cast<ArrayAttr>();
+                return util::ArrayAttrToVector<std::string, mlir::StringAttr>(argAttr, [](const auto& attr) {
+                    return attr.str();
                 });
             }
-            return hatUsages;
+            return { numAttrs, "" };
         }
 
         mlir::LogicalResult WriteMultiModuleHATFile(llvm::raw_ostream& os,
@@ -784,62 +814,53 @@ namespace ir
                         options.useBarePtrCallConv = useBarePtrCallConv;
                         options.emitCWrappers = false;
                         mlir::LLVMTypeConverter llvmTypeConverter(context, options);
-                        
+
                         mlir::TypeConverter::SignatureConversion conversion(fnType.getNumInputs());
                         auto convertedType = llvmTypeConverter.convertFunctionSignature(fnType, /*isVariadic=*/false, conversion);
                         mlir::LLVM::LLVMFunctionType llvmType;
 
                         if (convertedType)
                             llvmType = convertedType.dyn_cast<mlir::LLVM::LLVMFunctionType>();
-                        else 
+                        else
                         {
                             LLVMTypeConverterDynMem llvmTypeConverterDynMem(context, options);
                             mlir::TypeConverter::SignatureConversion conversionDynMem(fnType.getNumInputs());
                             llvmType = llvmTypeConverterDynMem.convertFunctionSignature(fnType, /*isVariadic=*/false, conversionDynMem).dyn_cast<mlir::LLVM::LLVMFunctionType>();
                         }
 
-                        auto function = std::make_unique<hat::Function>();
-                        function->Name(fnName);
-                        function->Description("");
-                        function->CallingConvention(hat::CallingConventionType::CDecl); // TODO : plumb this through
-
+                        auto function = std::make_unique<hat::Function>(fnName, "", hat::CallingConventionType::CDecl); // TODO : plumb this through
                         auto usages = GetHATParameterUsages(fn);
                         auto numInputs = fnType.getNumInputs();
+
+                        auto vecArgNames = GetFuncArgStringAttributes(fn, value::ValueFuncOp::getArgumentsNameAttrName(), numInputs);
+                        auto vecArgSizes = GetFuncArgStringAttributes(fn, value::ValueFuncOp::getArgumentsSizeAttrName(), numInputs);
+                        assert(vecArgNames.size() == numInputs);
+                        assert(vecArgSizes.size() == numInputs);
+
                         for (unsigned i = 0; i < numInputs; ++i)
                         {
-                            // TODO : plumb name / description / etc through
+                            // TODO : plumb description / etc through
 
                             // Get the logical type information from the MLIR standard dialect version of the function signature
                             // as the LLVM converted version will lose shape and signness information
                             const auto llvmArgType = llvmTypeConverter.convertType(llvmType.getParamType(i));
                             const auto mlirArgType = fnType.getInput(i);
-                            std::unique_ptr<hat::Parameter> arg = ConvertToIncompleteHATParameter(mlirArgType); // TODO : plumb through size string
-                            arg->Name(""); // TODO : plumb parameter name through
-                            arg->Description(""); // TODO : plumb parameter description
-                            arg->Usage(usages.size() == numInputs ? usages[i] : hat::UsageType::InputOutput);
+                            const auto usage = i < usages.size() ? usages[i] : hat::UsageType::InputOutput;
 
                             auto declaredType = GetLLVMTypeString({ llvmArgType, mlirArgType }); // TODO : support for const
-                            arg->DeclaredType(declaredType);
-
                             auto elementType = GetLLVMElementTypeString({ llvmArgType, mlirArgType });
-                            arg->ElementType(elementType);
-
-                            function->AddArgument(std::move(arg));
+                            function->AddArgument(ConvertToIncompleteHATParameter(vecArgNames[i], /*TODO: plumb*/ "", usage, mlirArgType, vecArgSizes[i], declaredType, elementType));
                         }
 
                         if (fnType.getNumResults() == 0)
                         {
                             // Void return
-                            auto returnParam = std::make_unique<hat::VoidParameter>();
-                            returnParam->Usage(hat::UsageType::Output);
-                            function->Return(std::move(returnParam));
+                            function->Return(std::make_unique<hat::VoidParameter>("", "", hat::UsageType::Output));
                         }
                         else
                         {
                             // TODO : plumb through size string
-                            auto returnParam = ConvertToIncompleteHATParameter(fnType.getResult(0));
-                            returnParam->Usage(hat::UsageType::Output);
-                            function->Return(std::move(returnParam));
+                            function->Return(ConvertToIncompleteHATParameter("", "", hat::UsageType::Output, fnType.getResult(0)));
                         }
 
                         auto codeDecl = MakeFunctionDeclaration(fn, useBarePtrCallConv);
@@ -895,7 +916,7 @@ namespace ir
             return mlir::success();
         }
 
-        } // namespace
+    } // namespace
 
     mlir::LogicalResult TranslateToHeader(std::vector<mlir::ModuleOp>& modules, const std::string& libraryName, llvm::raw_ostream& os)
     {

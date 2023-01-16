@@ -277,41 +277,16 @@ class Parameter : public TOMLSerializable
 public:
     Parameter() = delete; // Construct via subclasses
 
-    Parameter& Name(const std::string& name)
-    {
-        _name = name;
-        return *this;
-    }
     std::string Name() const { return _name; }
 
-    Parameter& Description(const std::string& description)
-    {
-        _description = description;
-        return *this;
-    }
     std::string Description() const { return _description; }
 
     LogicalParamType LogicalType() const { return _logicalType; }
 
-    Parameter& DeclaredType(const std::string& declaredType)
-    {
-        _declaredType = declaredType;
-        return *this;
-    }
     std::string DeclaredType() const { return _declaredType; }
 
-    Parameter& ElementType(const std::string& elementType)
-    {
-        _elementType = elementType;
-        return *this;
-    }
     std::string ElementType() const { return _elementType; }
 
-    Parameter& Usage(const UsageType& usage)
-    {
-        _usage = usage;
-        return *this;
-    }
     UsageType Usage() const { return _usage; }
 
     virtual toml::table Serialize() const
@@ -320,8 +295,14 @@ public:
     }
 
 protected:
-    Parameter(const LogicalParamType& logicalType) :
-        _logicalType(logicalType) {}
+    Parameter(const LogicalParamType& logicalType, const std::string& name, const std::string& description, const UsageType usage, const std::string& declaredType, const std::string& elementType) :
+        _logicalType{ logicalType },
+        _name{ name },
+        _description{ description },
+        _usage{ usage },
+        _declaredType{ declaredType },
+        _elementType{ elementType }
+    {}
 
     toml::table SerializeCommonParameters() const
     {
@@ -338,39 +319,27 @@ protected:
     }
 
 private:
+    LogicalParamType _logicalType;
     std::string _name;
     std::string _description;
-    LogicalParamType _logicalType;
+    UsageType _usage;
     std::string _declaredType;
     std::string _elementType;
-    UsageType _usage;
 };
 
 class AffineArrayParameter : public Parameter
 {
 public:
-    AffineArrayParameter() :
-        Parameter(LogicalParamType::AffineArray) {}
+    AffineArrayParameter(const std::string& name, const std::string& description, const UsageType usage, const std::string& declaredType, const std::string& elementType, const std::vector<size_t>& shape, const std::vector<size_t>& affineMap, size_t affineOffset) :
+        Parameter(LogicalParamType::AffineArray, name, description, usage, declaredType, elementType),
+        _shape{ shape },
+        _affineMap{ affineMap },
+        _affineOffset{ affineOffset } {}
 
-    AffineArrayParameter& Shape(const std::vector<size_t>& shape)
-    {
-        _shape = shape;
-        return *this;
-    }
     std::vector<size_t> Shape() const { return _shape; }
 
-    AffineArrayParameter& AffineMap(const std::vector<size_t>& affineMap)
-    {
-        _affineMap = affineMap;
-        return *this;
-    }
     std::vector<size_t> AffineMap() const { return _affineMap; }
 
-    AffineArrayParameter& AffineOffset(size_t affineOffset)
-    {
-        _affineOffset = affineOffset;
-        return *this;
-    }
     size_t AffineOffset() const { return _affineOffset; }
 
     toml::table Serialize() const
@@ -401,14 +370,10 @@ private:
 class RuntimeArrayParameter : public Parameter
 {
 public:
-    RuntimeArrayParameter() :
-        Parameter(LogicalParamType::RuntimeArray) {}
+    RuntimeArrayParameter(const std::string& name, const std::string& description, const UsageType usage, const std::string& declaredType, const std::string& elementType, const std::string& size) :
+        Parameter(LogicalParamType::RuntimeArray, name, description, usage, declaredType, elementType),
+        _size{ size } {}
 
-    RuntimeArrayParameter& Size(const std::string& size)
-    {
-        _size = size;
-        return *this;
-    }
     std::string Size() const { return _size; }
 
     toml::table Serialize() const
@@ -425,18 +390,19 @@ private:
 class ElementParameter : public Parameter
 {
 public:
-    ElementParameter() :
-        Parameter(LogicalParamType::Element) {}
+    ElementParameter(const std::string& name, const std::string& description, const UsageType usage, const std::string& declaredType, const std::string& elementType) :
+        Parameter(LogicalParamType::Element, name, description, usage,
+                  declaredType + (usage != UsageType::Input ? "*" : ""), // Make it a pointer type when not used as input
+                  elementType)
+    {}
 };
 
 class VoidParameter : public Parameter
 {
 public:
-    VoidParameter() :
-        Parameter(LogicalParamType::Void)
+    VoidParameter(const std::string& name, const std::string& description, const UsageType usage) :
+        Parameter(LogicalParamType::Void, name, description, usage, "void", "void")
     {
-        DeclaredType("void");
-        ElementType("void");
     }
 };
 
@@ -444,25 +410,15 @@ class Function : public TOMLSerializable
     , public AuxiliaryExtensible<Function>
 {
 public:
-    Function& Name(const std::string& name)
-    {
-        _name = name;
-        return *this;
-    }
+    Function(const std::string& name, const std::string& description, const CallingConventionType callingConvention) :
+        _name{ name },
+        _description{ description },
+        _callingConvention{ callingConvention } {}
+
     std::string Name() const { return _name; }
 
-    Function& Description(const std::string& description)
-    {
-        _description = description;
-        return *this;
-    }
     std::string Description() const { return _description; }
 
-    Function& CallingConvention(const CallingConventionType& callingConvention)
-    {
-        _callingConvention = callingConvention;
-        return *this;
-    }
     CallingConventionType CallingConvention() const { return _callingConvention; }
 
     Function& AddArgument(std::unique_ptr<Parameter>&& argument)

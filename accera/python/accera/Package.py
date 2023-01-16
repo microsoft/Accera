@@ -404,6 +404,9 @@ class Package:
             )
             # fall-through
 
+        arg_names = [arg.name if isinstance(arg, lang.Array) or isinstance(arg, lang.Dimension) else "" for arg in args]
+        arg_sizes = [arg._size_str if isinstance(arg, lang.Array) else "" for arg in args]
+
         if isinstance(source, lang.Function):
             source: lang.Function
 
@@ -418,6 +421,8 @@ class Package:
             source.param_overrides = parameters
             source.args = tuple(native_array_dim_args)
             source.arg_size_references = compute_arg_size_references(args)
+            source.arg_names = arg_names
+            source.arg_sizes = arg_sizes
             source.requested_args = args
             self._fns[source.name] = source
             return source  # for composability
@@ -438,6 +443,8 @@ class Package:
                 base_name=base_name,
                 args=tuple(map(_convert_arg, args)),
                 arg_size_references=compute_arg_size_references(args),
+                arg_names=arg_names,
+                arg_sizes=arg_sizes,
                 requested_args=args,
                 definition=wrapper_fn,
                 auxiliary=auxiliary_metadata,

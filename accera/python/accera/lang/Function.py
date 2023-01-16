@@ -68,6 +68,8 @@ class Function:
     requested_args: tuple = ()    # args as provided into Package.add
     args: tuple = ()    # unpacked versions of the args (as native arrays)
     arg_size_references: tuple = () # references from array args to dimension arg positions for dynamically sized arrays
+    arg_sizes: tuple = () # size string for dynamically sized array
+    arg_names: tuple = () # name string for all args
     param_overrides: dict = field(default_factory=dict)    # overrides for constants
     definition: Callable = None
     no_inline: bool = False # no_inline == True means that this function cannot be inlined into other functions
@@ -93,7 +95,7 @@ class Function:
 
         if self.args:
             usages = [role_to_usage(arg) for arg in self.requested_args]
-            self._native_fn.parameters(self.args, usages, self.arg_size_references)
+            self._native_fn.parameters(self.args, usages, self.arg_size_references, self.arg_names, self.arg_sizes)
 
             if self.output_verifiers:
                 self._native_fn.outputVerifiers(self.output_verifiers)
@@ -120,7 +122,7 @@ class Function:
         if self.public:
             api_decl = _DeclareFunction(self.name)
             if self.args:
-                api_decl.parameters(self.args, usages, self.arg_size_references)
+                api_decl.parameters(self.args, usages, self.arg_size_references, self.arg_names, self.arg_sizes)
             if self.base_name:
                 api_decl.baseName(self.base_name)
             api_decl.public(True).decorated(False).headerDecl(True).rawPointerAPI(True).define(self._native_fn)

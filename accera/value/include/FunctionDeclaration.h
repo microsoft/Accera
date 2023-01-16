@@ -139,7 +139,7 @@ namespace value
         /// <param name="argSizeReferences"> Parameter-sized number of entries, each containing either a sentinel -1 value, or an array arg shape that references the positions of other parameters if they are dynamic sizes </param>
         /// <returns> A reference to this instance </returns>
         /// <remarks> If this function is not called, the instance defaults to taking no arguments </remarks>
-        [[nodiscard]] FunctionDeclaration& Parameters(std::vector<ViewAdapter> parameters, std::optional<std::vector<FunctionParameterUsage>> usages = std::nullopt, std::optional<std::vector<std::vector<int64_t>>> argSizeReferences = std::nullopt);
+        [[nodiscard]] FunctionDeclaration& Parameters(std::vector<ViewAdapter> parameters, std::optional<std::vector<FunctionParameterUsage>> usages = std::nullopt, std::optional<std::vector<std::vector<int64_t>>> argSizeReferences = std::nullopt, std::optional<std::vector<std::string>> paramNames = std::nullopt, std::optional<std::vector<std::string>> paramSizes = std::nullopt);
 
         /// <summary> Emits a call to the function declaration </summary>
         /// <param name="arguments"> A vector of Value instances that hold the arguments for the function call </param>
@@ -216,6 +216,10 @@ namespace value
 
         [[nodiscard]] std::vector<std::string> GetArgumentsSymbol() const { return _argumentsSymbol; }
 
+        [[nodiscard]] std::vector<std::string> GetArgumentsName() const { return _argumentsName; }
+
+        [[nodiscard]] std::vector<std::string> GetArgumentsSize() const { return _argumentsSize; }
+
         static std::string GetTemporaryFunctionPointerPrefix() { return "__ACCERA_TEMPORARY__"; }
 
     private:
@@ -260,6 +264,8 @@ namespace value
         std::string _baseName;
         std::vector<std::string> _outputVerifiers;
         std::vector<std::string> _argumentsSymbol;
+        std::vector<std::string> _argumentsName;
+        std::vector<std::string> _argumentsSize;
     };
 
     [[nodiscard]] FunctionDeclaration DeclareFunction(std::string name);

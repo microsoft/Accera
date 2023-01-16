@@ -42,7 +42,7 @@ namespace value
         return *this;
     }
 
-    FunctionDeclaration& FunctionDeclaration::Parameters(std::vector<ViewAdapter> paramTypes, std::optional<std::vector<FunctionParameterUsage>> paramUsages, std::optional<std::vector<std::vector<int64_t>>> argSizeReferences)
+    FunctionDeclaration& FunctionDeclaration::Parameters(std::vector<ViewAdapter> paramTypes, std::optional<std::vector<FunctionParameterUsage>> paramUsages, std::optional<std::vector<std::vector<int64_t>>> argSizeReferences, std::optional<std::vector<std::string>> paramNames, std::optional<std::vector<std::string>> paramSizes)
     {
         CheckNonEmpty();
         if (paramUsages.has_value())
@@ -81,6 +81,35 @@ namespace value
                 _parameterSizeReferences.push_back(sentinelValueReferences);
             }
         }
+
+        if (paramNames.has_value())
+        {
+            if (paramNames->size() != paramTypes.size())
+            {
+                throw InputException(InputExceptionErrors::invalidArgument, "Param names, if specified, must match the number of parameter types");
+            }
+
+            _argumentsName.assign(paramNames->begin(), paramNames->end());
+        }
+        else
+        {
+            std::fill_n(std::back_inserter(_argumentsName), paramTypes.size(), "");
+        }
+
+        if (paramSizes.has_value())
+        {
+            if (paramSizes->size() != paramTypes.size())
+            {
+                throw InputException(InputExceptionErrors::invalidArgument, "Param sizes, if specified, must match the number of parameter types");
+            }
+
+            _argumentsSize.assign(paramSizes->begin(), paramSizes->end());
+        }
+        else
+        {
+            std::fill_n(std::back_inserter(_argumentsSize), paramTypes.size(), "");
+        }
+
         _paramTypes.assign(paramTypes.begin(), paramTypes.end());
         
         // TODO: we might want to change the symbol name to a unique name, e.g. function name

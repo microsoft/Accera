@@ -191,12 +191,14 @@ Remarks:
     Not all contexts may support an external function.
 )pbdoc")
             .def(
-                "parameters", [](value::FunctionDeclaration& fn, std::vector<value::ViewAdapter> types, std::optional<std::vector<value::FunctionParameterUsage>> usages, std::optional<std::vector<std::vector<int64_t>>> argSizeReferences) -> value::FunctionDeclaration& {
-                    return fn.Parameters(types, usages, argSizeReferences);
+                "parameters", [](value::FunctionDeclaration& fn, std::vector<value::ViewAdapter> types, std::optional<std::vector<value::FunctionParameterUsage>> usages, std::optional<std::vector<std::vector<int64_t>>> argSizeReferences, std::optional<std::vector<std::string>> paramNames, std::optional<std::vector<std::string>> paramSizes) -> value::FunctionDeclaration& {
+                    return fn.Parameters(types, usages, argSizeReferences, paramNames, paramSizes);
                 },
                 "param_types"_a,
                 "param_usages"_a = std::nullopt,
                 "param_arg_size_references"_a = std::nullopt,
+                "param_arg_names"_a = std::nullopt,
+                "param_arg_sizes"_a = std::nullopt,
                 py::return_value_policy::reference_internal,
                 R"pbdoc(
 Sets the parameters this function requires

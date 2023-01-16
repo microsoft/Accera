@@ -32,6 +32,7 @@ class Array:
     def __init__(
         self,
         role: "accera.Array.Role",
+        name: str = '',
         data: Union["numpy.ndarray"] = None,
         element_type: Union["accera.ScalarType", type] = None,
         layout: Union["accera.Array.Layout", Tuple[int]] = Layout.FIRST_MAJOR,
@@ -67,6 +68,7 @@ class Array:
         """
 
         self._role = role
+        self._name = name
         self._data = data
         self._element_type = element_type
         self._layout = layout
@@ -76,6 +78,7 @@ class Array:
         self._native_array = None
         self._delayed_calls = {}
         self._flags = flags
+        self._size_str = ""
 
         if self._role == Array.Role.CONST:
             if self._data is None:
@@ -141,6 +144,10 @@ class Array:
     @property
     def layout(self):
         return self._layout
+
+    @property
+    def name(self):
+        return self._name
 
     @property
     def requested_layout(self):
@@ -214,6 +221,7 @@ class Array:
 
     def _create_native_array(self):
         self._shape = [x.get_value() if isinstance(x, DelayedParameter) else x for x in self._shape]
+        self._size_str = '*'.join([x.name if isinstance(x, Dimension) else str(x) for x in self._shape])
         self._offset = self._offset.get_value() if isinstance(self._offset, DelayedParameter) else self._offset
         self._layout = self._layout.get_value() if isinstance(self._layout, DelayedParameter) else self._layout
 
@@ -310,9 +318,10 @@ class SubArray(Array):
             package.add(main, args=(A,), base_name="main")
 
     """
-    def __init__(self, source: Array, shape: Tuple[Union[int, DelayedParameter]]):
+    def __init__(self, source: Array, shape: Tuple[Union[int, DelayedParameter]], name: str = None):
         self._source = source
         self._role = source.role
+        self._name = name if name is not None else (source._name + '_sub')
         self._shape = shape or source.shape
         self._element_type = source.element_type
         self._layout = source._layout
@@ -326,12 +335,17 @@ class SubArray(Array):
 
         self._create_native_array()
 
+    @property
+    def name(self):
+        return self._name
+
     def _create_native_array(self):
         # Creates a placeholder NativeArray of the expected layout
         # Note that this is *not* the actual subarray view, but is intended only for
         # defining functions. To get the actual subarray view, call
         # NativeArray.sub_array() on the source NativeArray after it is materialized.
         self._shape = [x.get_value() if isinstance(x, DelayedParameter) else x for x in self._shape]
+        self._size_str = '*'.join([x.name if isinstance(x, Dimension) else str(x) for x in self._shape])
 
         runtime_shape = [k_dynamic_size if isinstance(x, Dimension) else x for x in self._shape]
 

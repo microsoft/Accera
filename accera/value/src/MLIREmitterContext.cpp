@@ -1240,6 +1240,26 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
                 fnOp->setAttr(ir::value::ValueFuncOp::getArgumentsSymbolAttrName(), b.getArrayAttr(argumentsSymbolAttrs));
             }
 
+            if (auto argumentsName = decl.GetArgumentsName(); !argumentsName.empty())
+            {
+                std::vector<mlir::Attribute> argumentsNameAttrs;
+                for (const auto& arg : argumentsName)
+                {
+                    argumentsNameAttrs.push_back(b.getStringAttr(arg));
+                }
+                fnOp->setAttr(ir::value::ValueFuncOp::getArgumentsNameAttrName(), b.getArrayAttr(argumentsNameAttrs));
+            }
+
+            if (auto argumentsSize = decl.GetArgumentsSize(); !argumentsSize.empty())
+            {
+                std::vector<mlir::Attribute> argumentsSizeAttrs;
+                for (const auto& arg : argumentsSize)
+                {
+                    argumentsSizeAttrs.push_back(b.getStringAttr(arg));
+                }
+                fnOp->setAttr(ir::value::ValueFuncOp::getArgumentsSizeAttrName(), b.getArrayAttr(argumentsSizeAttrs));
+            }
+
             // Collect function tags into a dictionary
             auto tags = decl.GetTags();
             std::vector<mlir::NamedAttribute> tagAttrs;

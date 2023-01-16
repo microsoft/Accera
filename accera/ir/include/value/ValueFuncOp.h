@@ -61,6 +61,8 @@ public:
     static StringRef getGPULaunchAttrName() { return "gpu_launch"; }
     static StringRef getArgumentsSymbolAttrName() { return "args_symbol"; }
     static StringRef getArgumentsSymbolName() { return "args_symbol_name"; }
+    static StringRef getArgumentsNameAttrName() { return "args_name"; }
+    static StringRef getArgumentsSizeAttrName() { return "args_size"; }
 
     mlir::StringAttr sym_nameAttr()
     {

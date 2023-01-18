@@ -5677,5 +5677,138 @@ class SmokeTest(unittest.TestCase):
                 after=correctness_check_values["post"],
             )
 
+    def test_dynamic_size_redundant_split_1(self) -> None:
+        package_name = "test_dynamic_size_redundant_split_1"
+        split_size = 1
+
+        m_extent = Dimension()
+        input_arr = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        output_arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+
+        nest = Nest((m_extent,))
+        i = nest.get_indices()
+        @nest.iteration_logic
+        def _():
+            output_arr[i] += input_arr[i]
+
+        sched = nest.create_schedule()
+        ii = sched.split(i, split_size)
+        iii = sched.split(ii, split_size)
+        sched.reorder(i, ii, iii)
+        plan = sched.create_plan()
+
+        # Create a package and add our function definition to it
+        package = Package()
+
+        fn = package.add(plan, args=(m_extent, input_arr, output_arr), base_name=package_name)
+
+        M_test = np.int64(1)
+        input_test = np.random.random((M_test,)).astype(np.float32)
+        output_test = np.random.random((M_test,)).astype(np.float32)
+        correctness_check_values = {
+            "pre": [M_test, input_test, output_test],
+            "post": [M_test, input_test, output_test + input_test],
+        }
+
+        # Build the HAT package
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+
+            v.check_correctness(
+                fn.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
+    def test_dynamic_size_split_1(self) -> None:
+        package_name = "test_dynamic_size_split_1"
+        split_size = 1
+
+        m_extent = Dimension()
+        input_arr = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        output_arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+
+        nest = Nest((m_extent,))
+        i = nest.get_indices()
+        @nest.iteration_logic
+        def _():
+            output_arr[i] += input_arr[i]
+
+        sched = nest.create_schedule()
+        ii = sched.split(i, split_size)
+        sched.reorder(i, ii)
+        plan = sched.create_plan()
+
+        # Create a package and add our function definition to it
+        package = Package()
+
+        fn = package.add(plan, args=(m_extent, input_arr, output_arr), base_name=package_name)
+
+        M_test = np.int64(1)
+        input_test = np.random.random((M_test,)).astype(np.float32)
+        output_test = np.random.random((M_test,)).astype(np.float32)
+        correctness_check_values = {
+            "pre": [M_test, input_test, output_test],
+            "post": [M_test, input_test, output_test + input_test],
+        }
+
+        # Build the HAT package
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+
+            v.check_correctness(
+                fn.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
+    def test_dynamic_size_split_and_redundant_split_1(self) -> None:
+        package_name = "test_dynamic_size_split_and_redundant_split_1"
+        outer_split_size = 16
+        inner_split_size = 1
+
+        m_extent = Dimension()
+        input_arr = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        output_arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+
+        nest = Nest((m_extent,))
+        i = nest.get_indices()
+        @nest.iteration_logic
+        def _():
+            output_arr[i] += input_arr[i]
+
+        sched = nest.create_schedule()
+        ii = sched.split(i, outer_split_size)
+        iii = sched.split(ii, inner_split_size)
+        iiii = sched.split(iii, inner_split_size)
+        sched.reorder(i, ii, iii, iiii)
+        plan = sched.create_plan()
+
+        # Create a package and add our function definition to it
+        package = Package()
+
+        fn = package.add(plan, args=(m_extent, input_arr, output_arr), base_name=package_name)
+
+        M_test = np.int64(37)
+        input_test = np.random.random((M_test,)).astype(np.float32)
+        output_test = np.random.random((M_test,)).astype(np.float32)
+        correctness_check_values = {
+            "pre": [M_test, input_test, output_test],
+            "post": [M_test, input_test, output_test + input_test],
+        }
+
+        # Build the HAT package
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+
+            v.check_correctness(
+                fn.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
 if __name__ == '__main__':
     unittest.main(verbosity=10)

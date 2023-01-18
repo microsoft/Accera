@@ -534,6 +534,39 @@ namespace util
         //       an offset from that position, whereas in mlir::FlatAffineConstraints::getSliceBounds, the opposite appears to be done...
         //       It's not clear if this is a bug or just a bad choice of arg names.
         auto [lbMap, ubMap] = cst.getLowerAndUpperBound(0 /* pos */, dimId /* offset */, 1 /* num */, cst.getNumDimIds(), localExprs, _context);
+
+        lbMap = mlir::removeDuplicateExprs(lbMap);
+        ubMap = mlir::removeDuplicateExprs(ubMap);
+
+        // TODO : we may need to write our own custom lower / upper bound resolution that ports portions of the builtin tools
+        // For now we depend on the builtin tools and some workarounds
+        // In some situations, seemingly more common with split sizes of 1, the constraints can simplify away some inequalities that are
+        // useful for detecting lower and upper bounds via the rather simple checks that getLowerAndUpperBound() performs.
+        //      (Put another way: the code that simplifies constraints is smarter than the code that detects lower/upper bounds,
+        //       and if the latter was smarter then a single bound might have been detected)
+        // When a single lower bound or a single upper bound isn't found, then multiple can be returned. This can cause issues for how
+        // Accera uses these bounds.
+        // As a workaround, if we have multiple results we attempt to find a single constant result and use that instead
+        if (lbMap.getNumResults() > 1)
+        {
+            auto lbConstOpt = cst.getConstantBound(mlir::IntegerPolyhedron::BoundType::LB, dimId);
+            if (lbConstOpt.hasValue())
+            {
+                auto lbConstExpr = mlir::getAffineConstantExpr(lbConstOpt.getValue(), _context);
+                lbMap = mlir::AffineMap::get(lbMap.getNumDims(), lbMap.getNumSymbols(), lbConstExpr);
+            }
+        }
+
+        if (ubMap.getNumResults() > 1)
+        {
+            auto ubConstOpt = cst.getConstantBound(mlir::IntegerPolyhedron::BoundType::UB, dimId);
+            if (ubConstOpt.hasValue())
+            {
+                auto ubConstExpr = mlir::getAffineConstantExpr(ubConstOpt.getValue(), _context);
+                ubMap = mlir::AffineMap::get(ubMap.getNumDims(), ubMap.getNumSymbols(), ubConstExpr);
+            }
+        }
+
         auto constraintOperands = tmpResolveCst.GetConstraintValuesForDimId(id);
         auto simplifiedLBMap = lbMap;
         auto simplifiedUBMap = ubMap;

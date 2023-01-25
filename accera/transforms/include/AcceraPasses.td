@@ -314,6 +314,17 @@ def ValueFuncToTarget : Pass<"value-func-to-target", "::mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ValueUnrolling
+//===----------------------------------------------------------------------===//
+
+def ValueUnrolling : Pass<"value-unroll", "::mlir::ModuleOp"> {
+  let constructor = "accera::transforms::value::createValueUnrollingPass()";
+  let dependentDialects = [
+    "mlir::StandardOpsDialect"
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // LoopNestToValueFunc
 //===----------------------------------------------------------------------===//
 

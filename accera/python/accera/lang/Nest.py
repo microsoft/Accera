@@ -54,14 +54,9 @@ class Nest:
         """Gets the iteration space extents
 
         Returns:
-            A list of extents (multi-dimensional iteration space)
-            or a single extent (1-dimensional iteration space)
+            A list of extents (N-dimensional iteration space)
         """
-        return (
-            [idx for idx, _ in self._shape]
-            if len(self._shape) > 1
-            else self._shape[0][0]
-        )
+        return [idx for idx, _ in self._shape]
 
     def get_indices(self) -> Union[List[LoopIndex], LoopIndex]:
         """Gets the iteration space indices

@@ -22,6 +22,7 @@ set(rcvalue_src
     src/value/FunctionPointerResolutionPass.cpp
     src/value/RangeValueOptimizePass.cpp
     src/value/ValueFuncToTargetPass.cpp
+    src/value/ValueUnrollingPass.cpp
     src/value/ValueSimplifyPass.cpp
     src/value/ValueToLLVMLoweringPass.cpp
     src/value/ValueToStandardLoweringPass.cpp
@@ -32,6 +33,7 @@ set(rcvalue_include
     include/value/FunctionPointerResolutionPass.h
     include/value/RangeValueOptimizePass.h
     include/value/ValueFuncToTargetPass.h
+    include/value/ValueUnrollingPass.h
     include/value/ValueSimplifyPass.h
     include/value/ValueToLLVMLoweringPass.h
     include/value/ValueToStandardLoweringPass.h

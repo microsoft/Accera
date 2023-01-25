@@ -497,6 +497,8 @@ struct AllocOpLowering : public OpRewritePattern<ValueAllocOp>
                 rewriter.replaceOpWithNewOp<memref::AllocaOp>(op, MemRefType::Builder{ memrefType }.setLayout({}), mlir::ValueRange{}, op.alignmentAttr());
                 break;
             case vir::MemoryAllocType::Heap:
+                // Create the heap allocation at the beginning of the function
+                rewriter.setInsertionPointToStart(&parentFuncOp.front());
                 allocOp = rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType, op.getOperation()->getOperands(), op.alignmentAttr());
 
                 // Create a dealloc op at the end of the block containing this alloc op

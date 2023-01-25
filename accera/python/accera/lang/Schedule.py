@@ -54,13 +54,7 @@ class Schedule:
         except TypeError:
             self._indices: List[LoopIndex] = [self._indices]
 
-        # nest.get_shape gives us a single index if there's only one index
         shape = nest.get_shape()
-        try:
-            _ = iter(shape)
-        except TypeError:
-            shape = [shape]
-
         if any([isinstance(s, DelayedParameter) for s in shape]):
             self._delayed_calls[partial(self._init_delayed)] = nest
 
@@ -396,11 +390,6 @@ class Schedule:
 
     def _init_delayed(self, nest: Nest):
         shape = nest.get_shape()
-
-        try:
-            _ = iter(shape)
-        except TypeError:
-            shape = [shape]
 
         for index, size in zip(self._index_map, shape):
             self._index_map[index].stop = size

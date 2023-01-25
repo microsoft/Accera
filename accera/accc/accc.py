@@ -7,7 +7,7 @@
 
 import os
 import shutil
-from enum import Enum, auto
+from enum import Enum, Flag, auto
 
 from .utilities import *
 from .parameters import *
@@ -100,18 +100,23 @@ DEFAULT_ACC_TRANSLATE_ARGS = []
 
 DEFAULT_MLIR_TRANSLATE_ARGS = ["--mlir-print-op-on-diagnostic", "--acc-to-llvmir"]
 
+DEFAULT_LOW_PRECISION_FLOAT_OPTS = ["-fp-contract=fast", "--enable-unsafe-fp-math"]
+DEFAULT_HIGH_PRECISION_FLOAT_OPTS = ["-fp-contract=on"]
+
+OPT_DISABLE_LOOP_UNROLLING_ARGS = ["--disable-loop-unrolling"]
+
 LLVM_TOOLING_OPTS = {
-    SystemTarget.HOST.value: ["-O3", "-fp-contract=fast", "-mcpu=native"],
+    SystemTarget.HOST.value: ["-O3", "-mcpu=native"],
     SystemTarget.RPI4.value: [
-        "-O3", "-fp-contract=fast", "--march=arm", "-mcpu=cortex-a72", "--mtriple=armv7-linux-gnueabihf"
+        "-O3", "--march=arm", "-mcpu=cortex-a72", "--mtriple=armv7-linux-gnueabihf"
     ],
     SystemTarget.RPI3.value: [
-        "-O3", "-fp-contract=fast", "--march=arm", "-mcpu=cortex-a53", "--mtriple=armv7-linux-gnueabihf"
+        "-O3", "--march=arm", "-mcpu=cortex-a53", "--mtriple=armv7-linux-gnueabihf"
     ],
     SystemTarget.RPI0.value: [
-        "-O3", "-fp-contract=fast", "--march=arm", "-mcpu=arm1136jf-s", "--mtriple=armv6-linux-gnueabihf"
+        "-O3", "--march=arm", "-mcpu=arm1136jf-s", "--mtriple=armv6-linux-gnueabihf"
     ],
-    SystemTarget.AVX512.value: ["-O3", "-fp-contract=fast", "--march=x86-64", "-mcpu=skylake-avx512"],
+    SystemTarget.AVX512.value: ["-O3", "--march=x86-64", "-mcpu=skylake-avx512"],
     SystemTarget.ARM_CORTEX_M4.value: [
         "-Oz", "-mcpu=cortex-m4", "--mtriple=thumbv7em-arm-none-eabi",
     ],
@@ -121,7 +126,6 @@ LLVM_TOOLING_OPTS = {
 }
 
 DEFAULT_LLVM_TOOLING_OPTS = [
-    '--enable-unsafe-fp-math',
     '--enable-no-infs-fp-math',
     '--enable-no-nans-fp-math',
     '--enable-no-signed-zeros-fp-math',
@@ -131,6 +135,34 @@ DEFAULT_LLVM_TOOLING_OPTS = [
 DEFAULT_OPT_ARGS = DEFAULT_LLVM_TOOLING_OPTS + []
 
 DEFAULT_LLC_ARGS = DEFAULT_LLVM_TOOLING_OPTS + ["-relocation-model=pic"]
+
+class Options(Flag):
+    NONE = auto() # (enable auto unroll | low precision float)
+    DISABLE_AUTO_UNROLL = auto()
+    HIGH_PRECISION_FLOATING_POINT_OPS = auto()
+
+def _get_common_fp_options_args(options: Options):
+    if options & Options.HIGH_PRECISION_FLOATING_POINT_OPS:
+        return DEFAULT_HIGH_PRECISION_FLOAT_OPTS
+    else:
+        return DEFAULT_LOW_PRECISION_FLOAT_OPTS
+
+def _get_options_opt_args(options: Options):
+    args = []
+
+    if options & Options.DISABLE_AUTO_UNROLL:
+        args += OPT_DISABLE_LOOP_UNROLLING_ARGS
+
+    args += _get_common_fp_options_args(options)
+
+    return args
+
+def _get_options_llc_args(options: Options):
+    args = []
+
+    args += _get_common_fp_options_args(options)
+
+    return args
 
 
 def get_default_deploy_shared_libraries(target=CPU_TARGET):
@@ -848,7 +880,8 @@ class AcceraProject:
         stderr=None,
         pretend=False,
         system_target=SystemTarget.HOST.value,
-        quiet=None
+        quiet=None,
+        _additional_llvm_opt_args=[] # Doesn't override defaults like llvm_opt_args does
     ):
 
         quiet = quiet if quiet is not None else self.quiet
@@ -862,6 +895,7 @@ class AcceraProject:
             full_llvm_opt_args += llvm_opt_args or (LLVM_TOOLING_OPTS[system_target] + DEFAULT_OPT_ARGS)
             full_llvm_opt_args += [f'-o="{module_file_set.optimized_ll_filepath}"']
             full_llvm_opt_args += [f'"{module_file_set.translated_ll_filepath}"']
+            full_llvm_opt_args += _additional_llvm_opt_args
             llvm_opt_command = " ".join([f'"{llvm_opt_exe}"'] + full_llvm_opt_args)
             run_command(
                 llvm_opt_command,
@@ -879,7 +913,8 @@ class AcceraProject:
         stderr=None,
         pretend=False,
         system_target=SystemTarget.HOST.value,
-        quiet=None
+        quiet=None,
+        _additional_llvm_llc_args=[] # Doesn't override defaults like llc_args does
     ):
 
         quiet = quiet if quiet is not None else self.quiet
@@ -892,6 +927,7 @@ class AcceraProject:
             full_llc_args = []    # empty list every iteration
             full_llc_args += llc_args or (LLVM_TOOLING_OPTS[system_target] + DEFAULT_LLC_ARGS)
             full_llc_args += ["-filetype=obj"]
+            full_llc_args += _additional_llvm_llc_args
             full_llc_args += [f'-o="{module_file_set.object_filepath}"']
             full_llc_args += [f'"{module_file_set.optimized_ll_filepath}"']
             llc_command = " ".join([f'"{llc_exe}"'] + full_llc_args)
@@ -976,7 +1012,8 @@ class AcceraProject:
         system_target=SystemTarget.HOST.value,
         runtime=Runtime.DEFAULT.value,
         quiet=None,
-        gpu_only=False
+        gpu_only=False,
+        _options: Options=Options.NONE
     ):
         # By default, save stdout and stderr for each phase to separate files
 
@@ -1036,7 +1073,8 @@ class AcceraProject:
                         stderr=stderr_file,
                         pretend=pretend,
                         system_target=system_target,
-                        quiet=quiet
+                        quiet=quiet,
+                        _additional_llvm_opt_args=_get_options_opt_args(_options)
                     )
 
             with OpenFile(llc_files[self.stdout_key], "w", pretend=pretend) as stdout_file:
@@ -1046,7 +1084,8 @@ class AcceraProject:
                         stderr=stderr_file,
                         pretend=pretend,
                         system_target=system_target,
-                        quiet=quiet
+                        quiet=quiet,
+                        _additional_llvm_llc_args=_get_options_llc_args(_options)
                     )
 
             with OpenFile(llc_asm_files[self.stdout_key], "w", pretend=pretend) as stdout_file:

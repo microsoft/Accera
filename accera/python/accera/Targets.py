@@ -430,6 +430,7 @@ KNOWN_CPUS = [
     # ref: https://en.wikipedia.org/wiki/Tiger_Lake
     # Desktop processors
     ["Intel 11900KB", "Tiger Lake", "Core i9", 3.3, 4.9, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+    ["Intel 11850H",  "Tiger Lake", "Core i7", 3.2, 4.8, 8, 16, [48, 512, 24 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["Intel 11700B",  "Tiger Lake", "Core i7", 3.2, 4.8, 8, 16, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["Intel 11500B",  "Tiger Lake", "Core i5", 3.3, 4.6, 6, 12, [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["Intel 11100B",  "Tiger Lake", "Core i3", 3.6, 4.4, 4, 8,  [48, 512, 16 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],

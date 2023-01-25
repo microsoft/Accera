@@ -18,6 +18,7 @@
 #include "value/FunctionPointerResolutionPass.h"
 #include "value/RangeValueOptimizePass.h"
 #include "value/ValueFuncToTargetPass.h"
+#include "value/ValueUnrollingPass.h"
 #include "value/ValueSimplifyPass.h"
 #include "value/ValueToLLVMLoweringPass.h"
 #include "value/ValueToStandardLoweringPass.h"

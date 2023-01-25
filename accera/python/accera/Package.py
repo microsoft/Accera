@@ -171,6 +171,11 @@ class Package:
         RELEASE = "Release"  #: Release (maximally optimized).
         DEBUG = "Debug"  #: Debug mode (automatically tests logical equivalence).
 
+    class _Options(Flag):
+        NONE = auto() # (enable auto unroll | low precision fp ops)
+        DISABLE_AUTO_UNROLL = auto()
+        HIGH_PRECISION_FLOATING_POINT_OPS = auto()
+
     Platform = Platform
 
     # class attribute to track the default module
@@ -570,6 +575,16 @@ class Package:
         )
         return target, target_device, compiler_options, libs
 
+    def _make_accc_options(self, options: _Options):
+        from . import accc
+        accc_opts = accc.Options.NONE
+        if options & Package._Options.DISABLE_AUTO_UNROLL:
+            accc_opts |= accc.Options.DISABLE_AUTO_UNROLL
+        if options & Package._Options.HIGH_PRECISION_FLOATING_POINT_OPS:
+            accc_opts |= accc.Options.HIGH_PRECISION_FLOATING_POINT_OPS
+        return accc_opts
+
+
     def build(
         self,
         name: str,
@@ -579,6 +594,7 @@ class Package:
         tolerance: float = 1e-5,
         output_dir: str = None,
         fail_on_error: bool = False,
+        _opts: _Options = _Options.NONE,
         _quiet=True,
     ):
         """Builds a HAT package.
@@ -688,6 +704,9 @@ class Package:
         # Enable dumping of IR passes based on build format
         dump_ir = bool(format & (Package.Format.MLIR | Package.Format.MLIR_VERBOSE))
         dump_ir_verbose = bool(format & Package.Format.MLIR_VERBOSE)
+
+        accc_options = self._make_accc_options(_opts)
+
         proj.generate_and_emit(
             build_config=mode.value,
             system_target=target._device_name,
@@ -696,6 +715,7 @@ class Package:
             dump_intrapass_ir=dump_ir_verbose,
             gpu_only=compiler_options.gpu_only,
             quiet=_quiet,
+            _options=accc_options
         )
 
         path_root = os.path.join(output_dir, name)

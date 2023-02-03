@@ -709,7 +709,7 @@ class Package:
 
         proj.generate_and_emit(
             build_config=mode.value,
-            system_target=target._device_name,
+            system_target=target_device.device_name,
             runtime=target.runtime.name,
             dump_all_passes=dump_ir,
             dump_intrapass_ir=dump_ir_verbose,

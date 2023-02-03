@@ -27,6 +27,19 @@ def accintr_VpmaddwdOp : LLVM_IntrOpBase<AcceraIntrinsics_Dialect, // Dialect
                                         1>, // num results
                           Arguments<(ins LLVM_Type, LLVM_Type)>;
 
+// Implements the LLVM_IntrOpBase interface (from mlir/Dialect/LLVMIR/LLVMOpBase.td)
+// rather than LLVM_OneResultIntrOp because we don't want to put this op in the llvm dialect.
+// Otherwise it will screw up how the conversion is handled later in acc-translate.
+// However, we still want the other args to be like those in LLVM_OneResultIntrOp and LLVM_IntrOp
+def accintr_VpmaddwdAVX512Op : LLVM_IntrOpBase<AcceraIntrinsics_Dialect, // Dialect
+                                        "x86.avx512.pmaddw.d.512", // MLIR op name (will get prefixed with the "accintr." dialect name)
+                                        "x86_avx512_pmaddw_d_512", // LLVM IR C++ enum name (see <llvm-project>/llvm/include/llvm/IR/IntrinsicsX86.td )
+                                        [], // overloadedResults
+                                        [], // overloadedOperands 
+                                        [NoSideEffect], // traits
+                                        1>, // num results
+                          Arguments<(ins LLVM_Type, LLVM_Type)>;
+
 
 // TODO : this may not be needed when we have multi-dimensional reductions supporting max/min
 def accintr_VmaxpsOp : LLVM_IntrOpBase<AcceraIntrinsics_Dialect, // Dialect

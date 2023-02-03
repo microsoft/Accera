@@ -58,7 +58,7 @@ module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "
 // CHECK: #map1 = affine_map<() -> (0)>
 // CHECK: #map2 = affine_map<() -> (16)>
 // CHECK: #map3 = affine_map<() -> (32)>
-// CHECK: module @test_thrifty_caching_simple_input_cache attributes {llvm.data_layout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"} {
+// CHECK: module @test_thrifty_caching_simple_input_cache
 // CHECK:   accv.module "test_thrifty_caching_simple_input_cache" {
 // CHECK:     "accv.global"() {sym_name = "cache_6", type = memref<32x16xf32, 3>} : () -> ()
 // CHECK:     accv.func nested @test_thrifty_caching_simple_input_cache_1127a105_impl_6891397719071098712(%arg0: memref<32x32xf32, #map0>, %arg1: memref<32x32xf32, #map0>, %arg2: memref<32x32xf32, #map0>) attributes {exec_target = 0 : i64} {

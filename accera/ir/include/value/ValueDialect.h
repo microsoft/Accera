@@ -106,6 +106,7 @@ const mlir::StringRef NoInlineIntoAttrName = "accv.no_inline_into";
 const mlir::StringRef BaseNameAttrName = "accv.base_name";
 const mlir::StringRef DynamicArgSizeReferencesAttrName = "accv.dyn_arg_size_refs";
 const mlir::StringRef UsagesAttrName = "accv.usages";
+const mlir::StringRef TargetDeviceFeaturesAttrName = "accv.target_device_features";
 
 } // namespace accera::ir
 

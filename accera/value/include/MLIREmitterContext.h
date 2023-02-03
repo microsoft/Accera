@@ -100,6 +100,8 @@ namespace value
 
         void setDataLayout(const CompilerOptions& options);
 
+        void setTargetFeatures(const TargetDevice& targetDevice);
+
         void setDebugMode(bool enable);
 
         struct EmittableInfo

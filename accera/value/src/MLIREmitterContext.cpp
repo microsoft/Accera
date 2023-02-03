@@ -708,6 +708,12 @@ struct MLIRContextBase::Impl : private InitAccera
         _mlirModule->setAttr(mlir::LLVM::LLVMDialect::getDataLayoutAttrName(), builder.getStringAttr(layout));
     }
 
+    void setTargetFeatures(const std::string& features)
+    {
+        auto context = builder.getContext();
+        _mlirModule->setAttr(ir::TargetDeviceFeaturesAttrName, mlir::StringAttr::get(context, features));
+    }
+
 protected:
     mlir::OwningOpRef<mlir::ModuleOp> _ownedModule;
     mlir::ModuleOp _mlirModule;
@@ -755,6 +761,7 @@ MLIRContext::MLIRContext(const std::string& moduleName, const CompilerOptions& o
     EmitterContext(options)
 {
     setDataLayout(options);
+    setTargetFeatures(options.targetDevice);
     setDebugMode(options.debug);
     _localEmittables.push({});
 }
@@ -764,6 +771,7 @@ MLIRContext::MLIRContext(mlir::ModuleOp& existingModule, const CompilerOptions& 
     EmitterContext(options)
 {
     setDataLayout(options);
+    setTargetFeatures(options.targetDevice);
     setDebugMode(options.debug);
     _localEmittables.push({});
 }
@@ -852,6 +860,11 @@ void MLIRContext::setDataLayout(const CompilerOptions& options)
     {
         _impl->setDataLayout(layout);
     }
+}
+
+void MLIRContext::setTargetFeatures(const TargetDevice& targetDevice)
+{
+    _impl->setTargetFeatures(targetDevice.features);
 }
 
 void MLIRContext::setDebugMode(bool enable)

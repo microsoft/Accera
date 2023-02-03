@@ -446,5 +446,9 @@ namespace util
 
     bool HasIdentityLayout(mlir::Value memref);
 
+    // Assumes feature is a string in the llvm format like "avx512vnni", without a "-" or "+" prefix. This function checks if "+feature" is in the supported list
+    // If prependPlus is false, then the "+" is not prepended and it is assumed that feature contains the "+" or "-"
+    bool ModuleSupportsTargetDeviceFeature(mlir::Operation* where, const std::string& feature, bool prependPlus = true);
+
 } // namespace util
 } // namespace accera::ir

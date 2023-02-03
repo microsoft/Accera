@@ -274,6 +274,32 @@ namespace cpp_printer
         return success();
     }
 
+    LogicalResult StdDialectCppPrinter::printSqrtOp(math::SqrtOp sqrtOp)
+    {
+        RETURN_IF_FAILED(printer->printDeclarationForOpResult(sqrtOp.getOperation()));
+        os << " = ";
+
+        StringRef operandName = state.nameState.getName(sqrtOp.getOperand());
+        auto ty = sqrtOp.getType();
+        if (ty.isF32())
+        {
+            os << "sqrtf(" << operandName << ")";
+        }
+        else if (ty.isF16())
+        {
+            if (!state.hasRuntime(Runtime::CUDA))
+            {
+                return sqrtOp.emitOpError("<<fp16 is supported only for CUDA>>");
+            }
+            os << "hsqrt(" << operandName << ")";
+        }
+        else
+        {
+            return sqrtOp.emitOpError("<<unsupported type for sqrtOp>>");
+        }
+        return success();
+    }
+
     LogicalResult StdDialectCppPrinter::printLoadOp(memref::LoadOp loadOp)
     {
         // make sure we don't accidentally load a value from an unsupported
@@ -689,6 +715,9 @@ namespace cpp_printer
 
         if (auto expOp = dyn_cast<math::ExpOp>(op))
             return printExpOp(expOp);
+
+        if (auto sqrtOp = dyn_cast<math::SqrtOp>(op))
+            return printSqrtOp(sqrtOp);
 
         if (auto loadOp = dyn_cast<memref::LoadOp>(op))
             return printLoadOp(loadOp);

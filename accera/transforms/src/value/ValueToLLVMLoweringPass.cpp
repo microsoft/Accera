@@ -569,7 +569,22 @@ struct VpmaddwdOpLowering : public ValueLLVMOpConversionPattern<vpmaddwd>
         LLVMTypeConverter llvmTypeConverter(rewriter.getContext());
         auto outputVecType = op.getType().cast<mlir::VectorType>();
         auto outputVecLLVMType = llvmTypeConverter.convertType(outputVecType);
-        rewriter.replaceOpWithNewOp<intrinsics::VpmaddwdOp>(op, outputVecLLVMType, op.lhs(), op.rhs());
+        auto outputRank = outputVecType.getRank();
+        assert(outputRank == 1 && "Vpmaddwd op should have a 1-D result");
+        auto elementCount = outputVecType.getShape()[0];
+        auto avx512Support = util::ModuleSupportsTargetDeviceFeature(op, "avx512");
+        if (elementCount == 8)
+        {
+            rewriter.replaceOpWithNewOp<intrinsics::VpmaddwdOp>(op, outputVecLLVMType, op.lhs(), op.rhs());
+        }
+        else if (elementCount == 16 && avx512Support)
+        {
+            rewriter.replaceOpWithNewOp<intrinsics::VpmaddwdAVX512Op>(op, outputVecLLVMType, op.lhs(), op.rhs());
+        }
+        else
+        {
+            assert(false && "Bad vector size for given target's vpmaddwd support");
+        }
         return success();
     }
 };

@@ -68,6 +68,9 @@ namespace cpp_printer
         /// print ExpOp
         LogicalResult printExpOp(math::ExpOp expOp);
 
+        /// print SqrtOp
+        LogicalResult printSqrtOp(math::SqrtOp sqrtOp);
+
         /// print LoadOp
         LogicalResult printLoadOp(memref::LoadOp loadOp);
 

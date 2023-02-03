@@ -88,7 +88,7 @@ TEST_CASE("scalar_test1")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @function_decl1 {
+// CHECK-LABEL: module @function_decl1
 // CHECK-NEXT: accv.module "function_decl1"
 TEST_CASE("function_decl1")
 {
@@ -272,7 +272,7 @@ TEST_CASE("gpu_module3")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @mlir_test1 {
+// CHECK-LABEL: module @mlir_test1
 // CHECK-NEXT: accv.module "mlir_test1" {
 // CHECK-NEXT: }
 TEST_CASE("mlir_test1")
@@ -280,7 +280,7 @@ TEST_CASE("mlir_test1")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @mlir_test2 {
+// CHECK-LABEL: module @mlir_test2
 // CHECK-NEXT: accv.module "mlir_test2" {
 // CHECK-NEXT:  "accv.global"() {
 // CHECK-SAME: sym_name = "mlir_test2_global1"
@@ -299,7 +299,7 @@ TEST_CASE("mlir_test2")
             "global2", std::vector<int>{ 1, 2, 3, 4 }, MemoryLayout(MemoryShape{ 2, 2 })));
 }
 
-// CHECK-LABEL: module @mlir_test3 {
+// CHECK-LABEL: module @mlir_test3
 // CHECK-NEXT: accv.module "mlir_test3" {
 TEST_CASE("mlir_test3")
 {
@@ -323,7 +323,7 @@ TEST_CASE("mlir_test3")
     REQUIRE(fooFn);
 }
 
-// CHECK-LABEL: module @mlir_test4 {
+// CHECK-LABEL: module @mlir_test4
 // CHECK-NEXT: accv.module "mlir_test4" {
 // CHECK-NEXT: accv.func nested @foo_{{[0-9]+}}(%arg0: memref<10x10xi32>)
 // COM: CHECK-NEXT: accv.func @foo_{{[0-9]+}}(%arg0: memref<10x10xi32>) attributes {args_symbol = ["{{[a-z0-9_]+}}"], exec_target = 0 : i64, sym_visibility = "nested"} {
@@ -355,7 +355,7 @@ TEST_CASE("mlir_test4")
 
 // TODO : revert this IR after aligned_alloc fix and Value allocate uses std_alloc again instead of accv.global
 
-// CHECK-LABEL: module @mlir_test5 {
+// CHECK-LABEL: module @mlir_test5
 // CHECK-NEXT: accv.module "mlir_test5" {
 TEST_CASE("mlir_test5")
 {
@@ -463,7 +463,7 @@ TEST_CASE("mlir_test10")
         });
 }
 
-// CHECK-LABEL: module @mlir_test11 {
+// CHECK-LABEL: module @mlir_test11
 // CHECK-NEXT: accv.module "mlir_test11" {
 TEST_CASE("mlir_test11")
 {
@@ -492,7 +492,7 @@ TEST_CASE("mlir_test11")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @mlir_test12 {
+// CHECK-LABEL: module @mlir_test12
 // CHECK-NEXT: accv.module "mlir_test12" {
 // CHECK-NEXT:    accv.func nested @constant_scalar_test_{{[0-9]+}}()
 // CHECK:           scf.if
@@ -549,7 +549,7 @@ TEST_CASE("mlir_test13")
         });
 }
 
-// CHECK-LABEL: module @test_emit_c_interface {
+// CHECK-LABEL: module @test_emit_c_interface
 // CHECK-NEXT: accv.module "test_emit_c_interface" {
 TEST_CASE("test_emit_c_interface")
 {
@@ -573,7 +573,7 @@ TEST_CASE("test_emit_c_interface")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @test_raw_pointer_api {
+// CHECK-LABEL: module @test_raw_pointer_api
 // CHECK-NEXT: accv.module "test_raw_pointer_api" {
 TEST_CASE("test_raw_pointer_api")
 {
@@ -597,7 +597,7 @@ TEST_CASE("test_raw_pointer_api")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @test_emit_header_decl {
+// CHECK-LABEL: module @test_emit_header_decl
 // CHECK-NEXT: accv.module "test_emit_header_decl" {
 TEST_CASE("test_emit_header_decl")
 {
@@ -621,7 +621,7 @@ TEST_CASE("test_emit_header_decl")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @test_function_tags {
+// CHECK-LABEL: module @test_function_tags
 // CHECK-NEXT: accv.module "test_function_tags" {
 TEST_CASE("test_function_tags")
 {
@@ -643,7 +643,7 @@ TEST_CASE("test_function_tags")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @scalar_binary_ops_test {
+// CHECK-LABEL: module @scalar_binary_ops_test
 // CHECK-NEXT: accv.module "scalar_binary_ops_test" {
 TEST_CASE("scalar_binary_ops_test")
 {
@@ -791,7 +791,7 @@ TEST_CASE("mlir_schedule_test_3")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @mlir_schedule_test_4 {
+// CHECK-LABEL: module @mlir_schedule_test_4
 // CHECK-NEXT: accv.module "mlir_schedule_test_4" {
 
 TEST_CASE("mlir_schedule_test_4")
@@ -836,7 +836,7 @@ TEST_CASE("mlir_schedule_test_4")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @mlir_matrix_view_test {
+// CHECK-LABEL: module @mlir_matrix_view_test
 // CHECK-NEXT: accv.module "mlir_matrix_view_test" {
 // CHECK-NEXT: accv.func nested @MatrixView_{{[0-9]+}}(%arg0: memref<10x10xf32
 // COM: CHECK: memref.subview %arg0[%{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}] [1, 1] [10, 1] : memref<10x10xf32, #map0> to memref<f32, #map1>
@@ -862,7 +862,7 @@ TEST_CASE("mlir_matrix_view_test")
         });
 }
 
-// CHECK-LABEL: module @mlir_tensor_view_test {
+// CHECK-LABEL: module @mlir_tensor_view_test
 // CHECK-NEXT: accv.module "mlir_tensor_view_test" {
 // CHECK-NEXT: accv.func nested @TensorView_{{[0-9]+}}(%arg0: memref<5x10x15xf32
 // COM: CHECK: memref.subview %arg0[%{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}] [1, 1, 1] [150, 15, 1] : memref<5x10x15xf32, #map0> to memref<f32, #map1>
@@ -901,7 +901,7 @@ TEST_CASE("mlir_tensor_view_test")
         });
 }
 
-// CHECK-LABEL: module @mlir_intrinsic_test {
+// CHECK-LABEL: module @mlir_intrinsic_test
 // CHECK-NEXT: accv.module "mlir_intrinsic_test" {
 // CHECK-NEXT: accv.func nested @intrinsics_float
 TEST_CASE("mlir_intrinsic_test")
@@ -943,7 +943,7 @@ TEST_CASE("mlir_intrinsic_test")
         });
 }
 
-// CHECK-LABEL: module @mlir_index_arithmetic_test {
+// CHECK-LABEL: module @mlir_index_arithmetic_test
 // CHECK-NEXT: accv.module "mlir_index_arithmetic_test" {
 // CHECK-NEXT:   accv.func nested @IndexArithmetic_{{[0-9]+}}(%arg0: memref<8x18xf32
 // CHECK-SAME: %arg1: memref<8x10xf32
@@ -981,7 +981,7 @@ TEST_CASE("mlir_index_arithmetic_test")
         });
 }
 
-// CHECK-LABEL: module @mlir_scalar_float_test {
+// CHECK-LABEL: module @mlir_scalar_float_test
 // CHECK-NEXT: accv.module "mlir_scalar_float_test" {
 TEST_CASE("mlir_scalar_float_test")
 {
@@ -1117,7 +1117,7 @@ TEST_CASE("mlir_scalar_float_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_print_scalar_test {
+// CHECK-LABEL: module @jit_print_scalar_test
 // CHECK-NEXT: accv.module "jit_print_scalar_test" {
 // CHECK: "accv.print"
 // JIT-LABEL: @jit_print_scalar_test
@@ -1154,7 +1154,7 @@ TEST_CASE("jit_print_scalar_test")
         });
 }
 
-// CHECK-LABEL: module @jit_matrix_test {
+// CHECK-LABEL: module @jit_matrix_test
 // CHECK-NEXT: accv.module "jit_matrix_test" {
 // CHECK: "accv.print"
 // JIT-LABEL: @jit_matrix_test
@@ -1184,7 +1184,7 @@ TEST_CASE("jit_matrix_test")
         });
 }
 
-// CHECK-LABEL: module @jit_matrix_slice_test {
+// CHECK-LABEL: module @jit_matrix_slice_test
 // CHECK-NEXT: accv.module "jit_matrix_slice_test" {
 // CHECK: "accv.print"
 // JIT-LABEL: @jit_matrix_slice_test
@@ -1222,7 +1222,7 @@ TEST_CASE("jit_matrix_slice_test")
         });
 }
 
-// CHECK-LABEL: module @jit_matrix_view_test {
+// CHECK-LABEL: module @jit_matrix_view_test
 // CHECK-NEXT: accv.module "jit_matrix_view_test" {
 // CHECK: "accv.print"
 // JIT-LABEL: @jit_matrix_view_test
@@ -1258,7 +1258,7 @@ TEST_CASE("jit_matrix_view_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_row_sum_test {
+// CHECK-LABEL: module @jit_row_sum_test
 // CHECK-NEXT: accv.module "jit_row_sum_test" {
 // JIT-LABEL: @jit_row_sum_test
 
@@ -1310,7 +1310,7 @@ TEST_CASE("jit_row_sum_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_row_product_test {
+// CHECK-LABEL: module @jit_row_product_test
 // CHECK-NEXT: accv.module "jit_row_product_test" {
 // JIT-LABEL: @jit_row_product_test
 
@@ -1362,7 +1362,7 @@ TEST_CASE("jit_row_product_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_array_view_test1 {
+// CHECK-LABEL: module @jit_array_view_test1
 // CHECK-NEXT: accv.module "jit_array_view_test1" {
 // CHECK: "accv.print"
 // JIT-LABEL: @jit_array_view_test1
@@ -1419,7 +1419,7 @@ TEST_CASE("jit_array_view_test1")
         });
 }
 
-// CHECK-LABEL: module @jit_array_view_test2 {
+// CHECK-LABEL: module @jit_array_view_test2
 // CHECK-NEXT: accv.module "jit_array_view_test2" {
 // CHECK: "accv.print"
 // JIT-LABEL: @jit_array_view_test2
@@ -1460,7 +1460,7 @@ TEST_CASE("jit_array_view_test2")
         });
 }
 
-// CHECK-LABEL: module @jit_array_view_test3 {
+// CHECK-LABEL: module @jit_array_view_test3
 // CHECK-NEXT: accv.module "jit_array_view_test3" {
 // JIT-LABEL: @jit_array_view_test3
 TEST_CASE("jit_array_view_test3")
@@ -1496,7 +1496,7 @@ TEST_CASE("jit_array_view_test3")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_matrix_multiply_test {
+// COM: CHECK-LABEL: module @jit_matrix_multiply_test
 // COM: CHECK-NEXT: accv.module "jit_matrix_multiply_test" {
 // COM: JIT-LABEL: @jit_matrix_multiply_test
 TEST_CASE("jit_matrix_multiply_test")
@@ -1630,7 +1630,7 @@ TEST_CASE("jit_matrix_multiply_test")
         });
     SUCCEED();
 }
-// CHECK-LABEL: module @jit_int8_matrix_multiply_test {
+// CHECK-LABEL: module @jit_int8_matrix_multiply_test
 // CHECK-NEXT: accv.module "jit_int8_matrix_multiply_test" {
 // JIT-LABEL: @jit_int8_matrix_multiply_test
 
@@ -1673,7 +1673,7 @@ TEST_CASE("jit_int8_matrix_multiply_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_int8_simple_matrix_multiply_test1 {
+// CHECK-LABEL: module @jit_int8_simple_matrix_multiply_test1
 // CHECK-NEXT: accv.module "jit_int8_simple_matrix_multiply_test1" {
 // JIT-LABEL: @jit_int8_simple_matrix_multiply_test1
 
@@ -1812,7 +1812,7 @@ TEST_CASE("jit_int8_simple_matrix_multiply_test1")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_int8_simple_matrix_multiply_test3 {
+// CHECK-LABEL: module @jit_int8_simple_matrix_multiply_test3
 // CHECK-NEXT: accv.module "jit_int8_simple_matrix_multiply_test3" {
 // JIT-LABEL: @jit_int8_simple_matrix_multiply_test3
 
@@ -1921,7 +1921,7 @@ TEST_CASE("jit_int8_simple_matrix_multiply_test3")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_int8_cached_matrix_multiply_test {
+// CHECK-LABEL: module @jit_int8_cached_matrix_multiply_test
 // CHECK-NEXT: accv.module "jit_int8_cached_matrix_multiply_test" {
 // JIT-LABEL: @jit_int8_cached_matrix_multiply_test
 
@@ -1993,7 +1993,7 @@ TEST_CASE("jit_int8_cached_matrix_multiply_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_int8_expvec_matrix_multiply_test {
+// CHECK-LABEL: module @jit_int8_expvec_matrix_multiply_test
 // CHECK-NEXT: accv.module "jit_int8_expvec_matrix_multiply_test" {
 // JIT-LABEL: @jit_int8_expvec_matrix_multiply_test
 TEST_CASE("jit_int8_expvec_matrix_multiply_test")
@@ -2064,7 +2064,7 @@ TEST_CASE("jit_int8_expvec_matrix_multiply_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_int16_matrix_multiply_test {
+// CHECK-LABEL: module @jit_int16_matrix_multiply_test
 // CHECK-NEXT: accv.module "jit_int16_matrix_multiply_test" {
 // JIT-LABEL: @jit_int16_matrix_multiply_test
 
@@ -2107,7 +2107,7 @@ TEST_CASE("jit_int16_matrix_multiply_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_int32_matrix_multiply_test {
+// CHECK-LABEL: module @jit_int32_matrix_multiply_test
 // CHECK-NEXT: accv.module "jit_int32_matrix_multiply_test" {
 // JIT-LABEL: @jit_int32_matrix_multiply_test
 
@@ -2150,7 +2150,7 @@ TEST_CASE("jit_int32_matrix_multiply_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_int32_cached_matrix_multiply_test {
+// CHECK-LABEL: module @jit_int32_cached_matrix_multiply_test
 // CHECK-NEXT: accv.module "jit_int32_cached_matrix_multiply_test" {
 // JIT-LABEL: @jit_int32_cached_matrix_multiply_test
 
@@ -2223,7 +2223,7 @@ TEST_CASE("jit_int32_cached_matrix_multiply_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_float_cached_matrix_multiply_test {
+// CHECK-LABEL: module @jit_float_cached_matrix_multiply_test
 // CHECK-NEXT: accv.module "jit_float_cached_matrix_multiply_test" {
 // JIT-LABEL: @jit_float_cached_matrix_multiply_test
 
@@ -2300,7 +2300,7 @@ TEST_CASE("jit_float_cached_matrix_multiply_test")
 // TODO: Enable when functionality is needed and semantics are fully cleared
 #if 0
 
-// COM: CHECK-LABEL: module @jit_vectorize_outer_loop_test {
+// COM: CHECK-LABEL: module @jit_vectorize_outer_loop_test
 // COM: CHECK-NEXT: accv.module "jit_vectorize_outer_loop_test" {
 // COM: JIT-LABEL: @jit_vectorize_outer_loop_test
 TEST_CASE("jit_vectorize_outer_loop_test")
@@ -2391,7 +2391,7 @@ TEST_CASE("jit_vectorize_outer_loop_test")
 
 // COM: CHECK: [[colMap:#map[0-9]+]] = affine_map<(d0, d1) -> (d1 * 4 + d0)>
 // COM: CHECK: [[rowMap:#map[0-9]+]] = affine_map<(d0, d1) -> (d1 + d0 * 4)>
-// COM: CHECK-LABEL: module @jit_matrix_transpose_test {
+// COM: CHECK-LABEL: module @jit_matrix_transpose_test
 // COM: CHECK-NEXT: accv.module "jit_matrix_transpose_test" {
 // COM: JIT-LABEL: @jit_matrix_transpose_test
 
@@ -2453,7 +2453,7 @@ TEST_CASE("jit_matrix_transpose_test")
 }
 
 
-// COM: CHECK-LABEL: module @jit_array_order_test {
+// COM: CHECK-LABEL: module @jit_array_order_test
 // COM: CHECK-NEXT: accv.module "jit_array_order_test" {
 // COM: CHECK: "accv.print"
 // COM: JIT-LABEL: @jit_array_order_test
@@ -2530,7 +2530,7 @@ TEST_CASE("jit_array_order_test")
 }
 
 
-// COM: CHECK-LABEL: module @jit_array_slice_test1 {
+// COM: CHECK-LABEL: module @jit_array_slice_test1
 // COM: CHECK-NEXT: accv.module "jit_array_slice_test1" {
 // COM: CHECK: "accv.print"
 // COM: JIT-LABEL: @jit_array_slice_test1
@@ -2631,7 +2631,7 @@ TEST_CASE("jit_array_slice_test1")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_array_slice_test2 {
+// COM: CHECK-LABEL: module @jit_array_slice_test2
 // COM: CHECK-NEXT: accv.module "jit_array_slice_test2" {
 // COM: CHECK: "accv.print"
 // COM: JIT-LABEL: @jit_array_slice_test2
@@ -2681,7 +2681,7 @@ TEST_CASE("jit_array_slice_test2")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_merge_dim_test {
+// COM: CHECK-LABEL: module @jit_merge_dim_test
 // COM: CHECK-NEXT: accv.module "jit_merge_dim_test" {
 // COM: CHECK: "accv.print"
 // COM: JIT-LABEL: @jit_merge_dim_test
@@ -2765,7 +2765,7 @@ TEST_CASE("jit_merge_dim_test")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_split_dim_test {
+// COM: CHECK-LABEL: module @jit_split_dim_test
 // COM: CHECK-NEXT: accv.module "jit_split_dim_test" {
 // COM: CHECK: "accv.print"
 // COM: JIT-LABEL: @jit_split_dim_test
@@ -2833,7 +2833,7 @@ TEST_CASE("jit_split_dim_test")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_array_reshape_test1 {
+// COM: CHECK-LABEL: module @jit_array_reshape_test1
 // COM: CHECK-NEXT: accv.module "jit_array_reshape_test1" {
 // COM: CHECK: "accv.print"
 // COM: JIT-LABEL: @jit_array_reshape_test1
@@ -2919,7 +2919,7 @@ TEST_CASE("jit_array_reshape_test1")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_array_reorder_test1 {
+// COM: CHECK-LABEL: module @jit_array_reorder_test1
 // COM: CHECK-NEXT: accv.module "jit_array_reorder_test1" {
 // COM: CHECK: "accv.print"
 // COM: JIT-LABEL: @jit_array_reorder_test1
@@ -2988,7 +2988,7 @@ TEST_CASE("jit_array_reorder_test1")
 
 // COM: CHECK: [[map0:#map[0-9]+]] = affine_map<(d0, d1, d2) ->
 // COM: CHECK: [[map1:#map[0-9]+]] = affine_map<(d0, d1, d2) ->
-// COM: CHECK-LABEL: module @jit_array_reorder_test2 {
+// COM: CHECK-LABEL: module @jit_array_reorder_test2
 // COM: CHECK-NEXT: accv.module "jit_array_reorder_test2" {
 // COM: CHECK: %0 = "accv.alloc"() {allocType = 0 : i64}
 // COM: CHECK-SAME: () -> memref<2x3x4xi32, [[map0]], 3>
@@ -3022,7 +3022,7 @@ TEST_CASE("jit_array_reorder_test2")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_array_merge_and_slice_test {
+// COM: CHECK-LABEL: module @jit_array_merge_and_slice_test
 // COM: CHECK-NEXT: accv.module "jit_array_merge_and_slice_test" {
 // COM: CHECK: "accv.print"
 // COM: JIT-LABEL: @jit_array_merge_and_slice_test
@@ -3181,7 +3181,7 @@ TEST_CASE("jit_array_merge_and_slice_test")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_reordered_array_merge_and_slice_test {
+// COM: CHECK-LABEL: module @jit_reordered_array_merge_and_slice_test
 // COM: JIT-LABEL: @jit_reordered_array_merge_and_slice_test
 TEST_CASE("jit_reordered_array_merge_and_slice_test")
 {
@@ -3397,7 +3397,7 @@ TEST_CASE("jit_reordered_array_merge_and_slice_test")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_reordered_array_slice_test {
+// COM: CHECK-LABEL: module @jit_reordered_array_slice_test
 // COM: CHECK-NEXT: accv.module "jit_reordered_array_slice_test" {
 // COM: JIT-LABEL: @jit_reordered_array_slice_test
 TEST_CASE("jit_reordered_array_slice_test")
@@ -3430,7 +3430,7 @@ TEST_CASE("jit_reordered_array_slice_test")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_reordered_array_view_test {
+// COM: CHECK-LABEL: module @jit_reordered_array_view_test
 // COM: CHECK-NEXT: accv.module "jit_reordered_array_view_test" {
 // COM: JIT-LABEL: @jit_reordered_array_view_test
 TEST_CASE("jit_reordered_array_view_test")
@@ -3462,7 +3462,7 @@ TEST_CASE("jit_reordered_array_view_test")
         });
 }
 
-// COM: CHECK-LABEL: module @jit_map_reduce_test {
+// COM: CHECK-LABEL: module @jit_map_reduce_test
 // COM: JIT-LABEL: @jit_map_reduce_test
 TEST_CASE("jit_map_reduce_test")
 {
@@ -3494,7 +3494,7 @@ TEST_CASE("jit_map_reduce_test")
     SUCCEED();
 }
 
-// COM: CHECK-LABEL: module @jit_reduce_test {
+// COM: CHECK-LABEL: module @jit_reduce_test
 // COM: JIT-LABEL: @jit_reduce_test
 TEST_CASE("jit_reduce_test")
 {
@@ -3522,7 +3522,7 @@ TEST_CASE("jit_reduce_test")
 }
 
 
-// COM: CHECK-LABEL: module @jit_profile_region_test {
+// COM: CHECK-LABEL: module @jit_profile_region_test
 // COM: JIT-LABEL: @jit_profile_region_test
 TEST_CASE("jit_profile_region_test")
 {
@@ -3553,7 +3553,7 @@ TEST_CASE("jit_profile_region_test")
 }
 #endif // 0
 
-// CHECK-LABEL: module @vectorized_add_test {
+// CHECK-LABEL: module @vectorized_add_test
 TEST_CASE("vectorized_add_test")
 {
     const int M = 2048;
@@ -3597,7 +3597,7 @@ TEST_CASE("vectorized_add_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @vectorized_sum_test {
+// CHECK-LABEL: module @vectorized_sum_test
 TEST_CASE("vectorized_sum_test")
 {
     const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
@@ -3641,7 +3641,7 @@ TEST_CASE("vectorized_sum_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @vectorized_max_test {
+// CHECK-LABEL: module @vectorized_max_test
 TEST_CASE("vectorized_max_test")
 {
     const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
@@ -3691,7 +3691,7 @@ TEST_CASE("vectorized_max_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @vectorized_exp_test {
+// CHECK-LABEL: module @vectorized_exp_test
 TEST_CASE("vectorized_exp_test")
 {
     const int vectorSize = 8; // AVX-2 gives 256-bit registers, which can hold 8 floats
@@ -3739,7 +3739,7 @@ TEST_CASE("vectorized_exp_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @softmax_test {
+// CHECK-LABEL: module @softmax_test
 TEST_CASE("softmax_test")
 {
     const int M = 32;
@@ -3778,7 +3778,7 @@ TEST_CASE("softmax_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_reduce_n_test {
+// CHECK-LABEL: module @jit_reduce_n_test
 // JIT-LABEL: @jit_reduce_n_test
 TEST_CASE("jit_reduce_n_test")
 {
@@ -3796,7 +3796,7 @@ TEST_CASE("jit_reduce_n_test")
     SUCCEED();
 }
 
-// CHECK-LABEL: module @jit_get_time_test {
+// CHECK-LABEL: module @jit_get_time_test
 // JIT-LABEL: @jit_get_time_test
 TEST_CASE("jit_get_time_test")
 {

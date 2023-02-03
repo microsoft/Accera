@@ -1441,5 +1441,18 @@ namespace util
         return memRefMap.isIdentity();
     }
 
+    bool ModuleSupportsTargetDeviceFeature(mlir::Operation* where, const std::string& feature, bool prependPlus)
+    {
+        // The LLVM feature list is like "-avx512pf,+avx2,..." where a '-' indicates a missing feature and a '+' indicates a supported feature
+        // If prependPlus is set to true, then this function prepends '+' to the feature string given before checking for the string
+
+        auto moduleParent = CastOrGetParentOfType<mlir::ModuleOp>(where);
+        auto targetDeviceFeaturesAttr = moduleParent->getAttrOfType<mlir::StringAttr>(accera::ir::TargetDeviceFeaturesAttrName);
+        assert(targetDeviceFeaturesAttr != nullptr && "Parent module doesn't have device features");
+        auto featureListStr = targetDeviceFeaturesAttr.str();
+        std::string checkString = prependPlus ? "+" + feature : feature;
+        return featureListStr.find(checkString) != std::string::npos;
+    }
+
 } // namespace util
 } // namespace accera::ir

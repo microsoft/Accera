@@ -2020,6 +2020,14 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
         return rewriter.notifyMatchFailure(op, message);
     };
 
+    auto avx2Support = ir::util::ModuleSupportsTargetDeviceFeature(affineForOp, "avx2");
+    auto avx512Support = ir::util::ModuleSupportsTargetDeviceFeature(affineForOp, "avx512");
+    if (!avx2Support && !avx512Support)
+    {
+        // the vpmaddwd instruction is only supported on machines with the AVX2 or AVX512 instruction set extensions
+        return reportMatchFailure(affineForOp, "Target device does not support vpmaddwd instruction");
+    }
+
     std::vector<mlir::Type> supportedBaseInputElementTypes { rewriter.getIntegerType(8), rewriter.getIntegerType(8, false /* isSigned */), rewriter.getIntegerType(16) };
     std::vector<mlir::Type> supportedCastInputElementTypes { rewriter.getIntegerType(16), rewriter.getIntegerType(32) };
     auto isInputTypeSupported = [&supportedBaseInputElementTypes, &supportedCastInputElementTypes](const mlir::Type& type, bool baseInputType) {
@@ -2058,7 +2066,8 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
     int64_t jj_end = outerLoop.getConstantUpperBound();
     int64_t jj_step = outerLoop.getStep();
     int64_t jj_numIters = (jj_end - jj_begin) / jj_step;
-    if (jj_numIters != 8)
+    bool supported_jj_numIters = (jj_numIters == 8) || (jj_numIters == 16 && avx512Support);
+    if (!supported_jj_numIters)
         return failure();
     auto jj_inductionVar = outerLoop.getInductionVar();
 
@@ -2355,11 +2364,26 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
     auto i16Type = rewriter.getIntegerType(16);
     auto i32Type = rewriter.getIntegerType(32);
     auto fullVecType = mlir::VectorType::get({ vectorSize }, i16Type);
-    auto altElemsMask = rewriter.getI64ArrayAttr({ 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1 });
+    std::vector<int64_t> altElemsVec; // { 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1 }
+    altElemsVec.reserve(vectorSize);
+    for (int64_t i = 0; i < vectorSize; ++i)
+    {
+        altElemsVec.push_back(i % 2);
+    }
+    auto altElemsMask = rewriter.getI64ArrayAttr(altElemsVec);
 
     auto halfVecType = mlir::VectorType::get({ vectorSize / 2 }, i16Type);
-    auto oddMask = rewriter.getI64ArrayAttr({ 1, 3, 5, 7, 9, 11, 13, 15 });
-    auto evenMask = rewriter.getI64ArrayAttr({ 0, 2, 4, 6, 8, 10, 12, 14 });
+    std::vector<int64_t> oddMaskVec; // { 1, 3, 5, 7, 9, 11, 13, 15 }
+    std::vector<int64_t> evenMaskVec; // { 0, 2, 4, 6, 8, 10, 12, 14 }
+    oddMaskVec.reserve(vectorSize / 2);
+    evenMaskVec.reserve(vectorSize / 2);
+    for (int64_t i = 0; i < vectorSize / 2; ++i)
+    {
+        oddMaskVec.push_back(i*2 + 1);
+        evenMaskVec.push_back(i*2);
+    }
+    auto oddMask = rewriter.getI64ArrayAttr(oddMaskVec);
+    auto evenMask = rewriter.getI64ArrayAttr(evenMaskVec);
 
     auto loadCastBroadcastExtractVec = [&](mlir::AffineLoadOp loadOp, int64_t loadVecSize, mlir::Type loadElementType, bool cast, bool broadcast) -> std::tuple<mlir::Value, mlir::Value, mlir::Value> {
         auto loadOpVectorType = mlir::VectorType::get({ loadVecSize }, loadElementType);

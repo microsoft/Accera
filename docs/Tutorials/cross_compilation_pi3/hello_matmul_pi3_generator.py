@@ -7,9 +7,9 @@ M = 128
 N = 256
 K = 256
 
-A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, K))
-B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(K, N))
-C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
+A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, K))
+B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(K, N))
+C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
 
 # Define the loop nest
 nest = acc.Nest(shape=(M, N, K))

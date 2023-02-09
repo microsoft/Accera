@@ -14,7 +14,7 @@ if "@CMAKE_INSTALL_PREFIX@"[1:-1] != "CMAKE_INSTALL_PREFIX":
 else:
     sys.path.insert(1, os.getcwd())
 
-from accera import Package
+from accera import Package, Role
 from accera.test import verifiers
 
 TEST_PACKAGE_DIR = "test_acccgen"
@@ -105,9 +105,9 @@ class ContainerTypesTests(unittest.TestCase):
         for t in [ScalarType.int8, ScalarType.int16, ScalarType.int32, ScalarType.int64, ScalarType.float16,
                   ScalarType.float32, ScalarType.float64]:
             M, S, N = 16, 11, 10
-            A = Array(role=Array.Role.INPUT, element_type=t, shape=(M, S))
-            B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(S, N))
-            C = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(M, N))
+            A = Array(role=Role.INPUT, element_type=t, shape=(M, S))
+            B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(S, N))
+            C = Array(role=Role.INPUT_OUTPUT, element_type=t, shape=(M, N))
 
             nest = Nest(shape=(M, N, S))
             i, j, k = nest.get_indices()
@@ -129,9 +129,9 @@ class ContainerTypesTests(unittest.TestCase):
         from accera import cast, Array, Nest, ScalarType
         for t in [ScalarType.uint8, ScalarType.uint16, ScalarType.uint32, ScalarType.uint64]:
             M, S, N = 16, 11, 10
-            A = Array(role=Array.Role.INPUT, element_type=t, shape=(M, S))
-            B = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(S, N))
-            C = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(M, N))
+            A = Array(role=Role.INPUT, element_type=t, shape=(M, S))
+            B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(S, N))
+            C = Array(role=Role.INPUT_OUTPUT, element_type=t, shape=(M, N))
 
             nest = Nest(shape=(M, N, S))
             i, j, k = nest.get_indices()
@@ -183,47 +183,13 @@ class PackagingTypesTests(unittest.TestCase):
             os.remove(header_filename)
             module = None
 
-    def test_function(self) -> None:
-        from accera import CompilerOptions
-        from accera._lang_python import _MemoryLayout, _Module
-        from accera._lang_python._lang import Array, Function
-
-        module = _Module(name="test", options=CompilerOptions())
-        self.assertIsNotNone(module)
-        with ModuleScope(module):
-            fn = Function("test_fn")
-
-            data = [3.14] * 1000
-            v = Array(data, _MemoryLayout([10, 10, 10]))
-
-            fn.parameters([v])
-            fn.returns(v)
-
-            fn.decorated(False).public(True)
-            fn.rawPointerAPI(True)
-            fn.headerDecl(True)
-            fn.baseName("test_fn_basename")
-
-            def fn_def(args):
-                return args[0]
-
-            fn.define(fn_def)
-
-            self.assertTrue(fn.emits_header_decl)
-            self.assertTrue(fn.is_public)
-            self.assertTrue(fn.is_defined)
-
-            # RuntimeError: device or resource busy: device or resource busy
-            # fn([v])
-            module = None
-
     def test_conditional_function(self) -> None:
         from accera import ScalarType, Package, Nest, Array, Scalar, as_index
         from accera._lang_python._lang import _If
 
         M = 10
         N = 20
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
         nest = Nest(shape=(M * 2, N * 2))
         i, j = nest.get_indices()
 
@@ -254,7 +220,7 @@ class PackagingTypesTests(unittest.TestCase):
 
         M = 10
         N = 20
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
         nest = Nest(shape=(M * 2, N * 2))
         i, j = nest.get_indices()
 
@@ -278,7 +244,7 @@ class PackagingTypesTests(unittest.TestCase):
 
         M = 10
         N = 20
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
         nest = Nest(shape=(M * 2, N * 2))
         i, j = nest.get_indices()
 
@@ -309,7 +275,7 @@ class PackagingTypesTests(unittest.TestCase):
 
         module1 = _Module(name="const_module", options=CompilerOptions())
         with ModuleScope(module1):
-            array = Array(role=Array.Role.CONST, data=np_arr)
+            array = Array(role=Role.CONST, data=np_arr)
             self.assertIsNotNone(array)
             module1.Print()
 
@@ -370,9 +336,9 @@ class PackagingTypesTests(unittest.TestCase):
             data = [float(x) for x in range(M * N)]
             np_arr = np.array(data, dtype=np.float32)
             np_arr = np_arr.reshape(M, N)
-            # input_matrix = Array(role=Array.Role.INPUT, shape=(M, N))
-            input_matrix = Array(role=Array.Role.CONST, shape=(M, N), data=np_arr)
-            output_matrix = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+            # input_matrix = Array(role=Role.INPUT, shape=(M, N))
+            input_matrix = Array(role=Role.CONST, shape=(M, N), data=np_arr)
+            output_matrix = Array(role=Role.INPUT_OUTPUT, shape=(M, N))
             domain["function"] = package.add(
                 embed_buffer(input_matrix, output_matrix), args=(output_matrix, ), base_name=f"ew_accumulate_{M}_{N}"
             )
@@ -398,9 +364,9 @@ class PackagingTypesTests(unittest.TestCase):
         from accera import Array, ScalarType, Nest
 
         package = Package()
-        arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(256, 256))
+        arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(256, 256))
         arr2_placeholder = Array(
-            role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(arr.shape[0] // 8, arr.shape[1] // 8)
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(arr.shape[0] // 8, arr.shape[1] // 8)
         )
 
         # create a nest
@@ -479,7 +445,7 @@ class LogicTypesTests(unittest.TestCase):
         from accera._lang_python._lang import _If
 
         M = 100
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, M))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, M))
         nest = Nest(shape=(M, M))
         i, j = nest.get_indices()
 

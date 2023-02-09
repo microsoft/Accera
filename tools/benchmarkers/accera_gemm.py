@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import hatlib
 from accera import Array, Nest, Constants, ScalarType, Target, Package
+from accera._lang_python import Role
 from accera._lang_python._lang import _MMASchedulingPolicy, _MMAShape, _MMAFragmentOp, _CacheStrategy
 import cosmosdb
 from gemm_opts import GemmOpts
@@ -163,18 +164,18 @@ def create_gemm_nest_args(M: int, N: int, K: int, transA: bool, transB: bool, dt
     datatype = get_type(dtype)
 
     A = Array(
-        role=Array.Role.INPUT,
+        role=Role.INPUT,
         element_type=datatype,
         shape=(M, K),
         layout=get_layout(transA)
     )
     B = Array(
-        role=Array.Role.INPUT,
+        role=Role.INPUT,
         element_type=datatype,
         shape=(K, N),
         layout=get_layout(transB)
     )
-    C = Array(role=Array.Role.INPUT_OUTPUT, element_type=datatype, shape=(M, N))
+    C = Array(role=Role.INPUT_OUTPUT, element_type=datatype, shape=(M, N))
 
     nest = Nest([M, N, K])
     i, j, k = nest.get_indices()

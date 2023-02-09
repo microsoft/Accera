@@ -10,6 +10,7 @@ import sys
 import unittest
 import logging
 import pathlib
+import platform
 import shutil
 import numpy as np
 from typing import Callable, List
@@ -43,13 +44,13 @@ else:
 
 INTERNAL_FUNCTION_OPTS = { "no_inline_into": True, "public": False }
 
-from accera import Package, ScalarType, Nest, Array, Constants, Scalar, fuse, create_parameters, Dimension, cast, Target
-from accera._lang_python._lang import _MemorySpace, _MMAShape
+from accera import Package, ScalarType, Nest, Array, Constants, Scalar, fuse, create_parameters, cast, Target, Role
+from accera._lang_python._lang import _MemorySpace, _MMAShape, Dimension
 from accera import min as accmin
 from accera.samples import MatrixMultiplication
 from accera.test import verifiers
 from accera.test.test_utils import expectedFailure, FailedReason
-from accera.Targets import GridUnits, KNOWN_DEVICES
+from accera.Targets import KNOWN_DEVICES
 
 TEST_PACKAGE_DIR = "test_acccgen"
 
@@ -64,9 +65,9 @@ class SmokeTest(unittest.TestCase):
     PACKAGE_MODE = Package.Mode.RELEASE
 
     def test_full_fusion_trivial(self) -> None:
-        A = Array(role=Array.Role.INPUT, shape=(16, 16))
-        B = Array(role=Array.Role.INPUT, shape=(16, 16))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 16))
+        A = Array(role=Role.INPUT, shape=(16, 16))
+        B = Array(role=Role.INPUT, shape=(16, 16))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 16))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(16, 16))
@@ -101,9 +102,9 @@ class SmokeTest(unittest.TestCase):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_full_fusion_reordered(self) -> None:
-        A = Array(role=Array.Role.INPUT, shape=(16, 16))
-        B = Array(role=Array.Role.INPUT, shape=(16, 16))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 16))
+        A = Array(role=Role.INPUT, shape=(16, 16))
+        B = Array(role=Role.INPUT, shape=(16, 16))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 16))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(16, 16))
@@ -139,9 +140,9 @@ class SmokeTest(unittest.TestCase):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_partial_fusion_trivial(self) -> None:
-        A = Array(role=Array.Role.INPUT, shape=(16, 11))
-        B = Array(role=Array.Role.INPUT, shape=(11, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 10))
+        A = Array(role=Role.INPUT, shape=(16, 11))
+        B = Array(role=Role.INPUT, shape=(11, 10))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 10))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(16, 10, 11))
@@ -177,9 +178,9 @@ class SmokeTest(unittest.TestCase):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_partial_fusion_reordered(self) -> None:
-        A = Array(role=Array.Role.INPUT, shape=(16, 11))
-        B = Array(role=Array.Role.INPUT, shape=(11, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 10))
+        A = Array(role=Role.INPUT, shape=(16, 11))
+        B = Array(role=Role.INPUT, shape=(11, 10))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 10))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(16, 10, 11))
@@ -222,9 +223,9 @@ class SmokeTest(unittest.TestCase):
         M = 256
         N = 128
         K = 512
-        A = Array(role=Array.Role.INPUT, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = Array(role=Role.INPUT, shape=(M, K))
+        B = Array(role=Role.INPUT, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(M, N))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(M, N, K))
@@ -268,11 +269,11 @@ class SmokeTest(unittest.TestCase):
 
 
     def test_partial_fusion_matmul3_naive(self) -> None:
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(16, 11))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(11, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 10))
-        D = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, 7))
-        E = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 7))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(16, 11))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(11, 10))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 10))
+        D = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(10, 7))
+        E = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 7))
 
         # Create nest0 and schedule0 for C = A @ B
         nest0 = Nest(shape=(16, 10, 11))
@@ -309,11 +310,11 @@ class SmokeTest(unittest.TestCase):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_partial_fusion_matmul3_fancy(self) -> None:
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(16, 11))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(11, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 10))
-        D = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(10, 7))
-        E = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 7))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(16, 11))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(11, 10))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 10))
+        D = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(10, 7))
+        E = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 7))
 
         # Create nest0 and schedule0 for C = A @ B
         nest0 = Nest(shape=(16, 10, 11))
@@ -358,9 +359,9 @@ class SmokeTest(unittest.TestCase):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_multischedule_fusion1(self) -> None:
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(4, 8))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(4, ))
-        accum = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, shape=(1, ))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(4, 8))
+        B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(4, ))
+        accum = Array(role=Role.TEMP, element_type=ScalarType.float32, shape=(1, ))
 
         # for i in range(4):
         #     accum[0]  = 0.0
@@ -406,9 +407,9 @@ class SmokeTest(unittest.TestCase):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
     def test_multischedule_fusion2(self) -> None:
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(4, 8, 12))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(4, 8))
-        accum = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, shape=(1, ))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(4, 8, 12))
+        B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(4, 8))
+        accum = Array(role=Role.TEMP, element_type=ScalarType.float32, shape=(1, ))
 
         # Goal:
         # for i in range(4):
@@ -514,9 +515,9 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -552,9 +553,9 @@ class SmokeTest(unittest.TestCase):
 
         for domain in domains:
             M, N, K = domain
-            A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-            B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-            C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+            A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+            B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+            C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
             package.add(*MLAS(A, B, C, alpha=0.2, zero_C=True, opts=opts), base_name=f"mlas_py_{M}_{N}_{K}")
 
         package_name = "test_mlas_matmul"
@@ -568,9 +569,9 @@ class SmokeTest(unittest.TestCase):
         M, N, K = [31, 63, 127]
         B_data = np.array([float(x) for x in range(K * N)]).reshape(K, N).astype(np.float32)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.CONST, element_type=ScalarType.float32, data=B_data)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.CONST, element_type=ScalarType.float32, data=B_data)
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
         function = package.add(*EmitTimeCacheMLAS(A, B, C), base_name=f"mlas_py_{M}_{N}_{K}")
 
         A_test = np.ones(A.shape, dtype=np.float32) * 3.14
@@ -593,9 +594,9 @@ class SmokeTest(unittest.TestCase):
         package = Package()
 
         M, N, K = [31, 63, 127]
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
         package.add(
             *RuntimeInitCacheMLAS(A, B, C, pack_fn_name="pack", packed_buffer_size_fn_name="packed_size"),
             base_name=f"mlas_py_{M}_{N}_{K}"
@@ -617,13 +618,13 @@ class SmokeTest(unittest.TestCase):
 
         const_matrix_shape = (K, N)
         data = np.random.random(const_matrix_shape).astype(np.float32)
-        const_matrix = Array(role=Array.Role.CONST, element_type=ScalarType.float32, data=data)
+        const_matrix = Array(role=Role.CONST, element_type=ScalarType.float32, data=data)
 
         # Matmul function
 
-        matmul_input_matrix = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        matmul_input_matrix = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
 
-        matmul_output_matrix = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        matmul_output_matrix = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         matmul_nest = Nest(shape=(M, N, K))
         i, j, k = matmul_nest.get_indices()
@@ -639,9 +640,9 @@ class SmokeTest(unittest.TestCase):
 
         # Elementwise add function
 
-        ew_add_input_matrix = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        ew_add_input_matrix = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
 
-        ew_add_output_matrix = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(K, N))
+        ew_add_output_matrix = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(K, N))
 
         ew_add_nest = Nest(shape=(K, N))
         x, y = ew_add_nest.get_indices()
@@ -687,9 +688,9 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(M_, M)
         self.assertEqual(N_, N)
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M_, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N_))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M_, N_))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M_, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N_))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M_, N_))
 
         nest = Nest(shape=(M_, N_, K))
         i, j, k = nest.get_indices()
@@ -772,13 +773,13 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int8, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int8, shape=(K, N))
-        zero_point_A = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(1, ))
-        zero_point_B = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(1, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
-        col_sums = Array(role=Array.Role.TEMP, element_type=ScalarType.int32, shape=(N, ))
-        row_sums = Array(role=Array.Role.TEMP, element_type=ScalarType.int32, shape=(M, ))
+        A = Array(role=Role.INPUT, element_type=ScalarType.int8, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.int8, shape=(K, N))
+        zero_point_A = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(1, ))
+        zero_point_B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(1, ))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
+        col_sums = Array(role=Role.TEMP, element_type=ScalarType.int32, shape=(N, ))
+        row_sums = Array(role=Role.TEMP, element_type=ScalarType.int32, shape=(M, ))
 
         def get_compute_col_sums_schedule():
             compute_col_sums_nest = Nest(shape=(K, N))
@@ -913,11 +914,11 @@ class SmokeTest(unittest.TestCase):
 
     def test_three_matrix_multiplication_case_study_part1(self) -> None:
         import accera as acc
-        A = acc.Array(role=acc.Array.Role.INPUT, shape=(256, 32))
-        B = acc.Array(role=acc.Array.Role.INPUT, shape=(32, 256))
-        C = acc.Array(role=acc.Array.Role.TEMP, shape=(256, 256))
-        D = acc.Array(role=acc.Array.Role.INPUT, shape=(256, 32))
-        E = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(256, 32))
+        A = acc.Array(role=acc.Role.INPUT, shape=(256, 32))
+        B = acc.Array(role=acc.Role.INPUT, shape=(32, 256))
+        C = acc.Array(role=acc.Role.TEMP, shape=(256, 256))
+        D = acc.Array(role=acc.Role.INPUT, shape=(256, 32))
+        E = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(256, 32))
 
         # Create nest0 and schedule0 for C += A @ B
         nest0 = acc.Nest(shape=(256, 256, 32))
@@ -976,11 +977,11 @@ class SmokeTest(unittest.TestCase):
 
     def test_three_matrix_multiplication_case_study_part2(self) -> None:
         import accera as acc
-        A = acc.Array(role=acc.Array.Role.INPUT, shape=(256, 32))
-        B = acc.Array(role=acc.Array.Role.INPUT, shape=(32, 256))
-        C = acc.Array(role=acc.Array.Role.TEMP, shape=(256, 256))
-        D = acc.Array(role=acc.Array.Role.INPUT, shape=(256, 32))
-        E = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(256, 32))
+        A = acc.Array(role=acc.Role.INPUT, shape=(256, 32))
+        B = acc.Array(role=acc.Role.INPUT, shape=(32, 256))
+        C = acc.Array(role=acc.Role.TEMP, shape=(256, 256))
+        D = acc.Array(role=acc.Role.INPUT, shape=(256, 32))
+        E = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(256, 32))
 
         # Create nest0 and schedule0 for C += A @ B
         nest0 = acc.Nest(shape=(256, 256, 32))
@@ -1047,11 +1048,11 @@ class SmokeTest(unittest.TestCase):
 
     def test_three_matrix_multiplication_case_study_part3(self) -> None:
         import accera as acc
-        A = acc.Array(role=acc.Array.Role.INPUT, shape=(256, 32))
-        B = acc.Array(role=acc.Array.Role.INPUT, shape=(32, 256))
-        C = acc.Array(role=acc.Array.Role.TEMP, shape=(256, 256))
-        D = acc.Array(role=acc.Array.Role.INPUT, shape=(256, 32))
-        E = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(256, 32))
+        A = acc.Array(role=acc.Role.INPUT, shape=(256, 32))
+        B = acc.Array(role=acc.Role.INPUT, shape=(32, 256))
+        C = acc.Array(role=acc.Role.TEMP, shape=(256, 256))
+        D = acc.Array(role=acc.Role.INPUT, shape=(256, 32))
+        E = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(256, 32))
 
         # Create nest0 and schedule0 for C += A @ B
         nest0 = acc.Nest(shape=(256, 256, 32))
@@ -1125,9 +1126,9 @@ class SmokeTest(unittest.TestCase):
         K = 2    # kernel size
         M = N - K + 1    # output (no padding, stride 1)
 
-        Input = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, N, Fi))
-        Kernel = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, K, Fi, Fo))
-        Output = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, M, Fo))
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N, Fi))
+        Kernel = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, K, Fi, Fo))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, M, Fo))
 
         nest = Nest(shape=(Fo, M, M, Fi, K, K))
         out_ch, out_r, out_c, in_ch, k_r, k_c = nest.get_indices()
@@ -1191,7 +1192,7 @@ class SmokeTest(unittest.TestCase):
         subArrayNumRows = 2
         subArrayNumCols = 3
 
-        Input = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
+        Input = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
 
         # Zero out a sub array of size [2, 3]:
         # xxxxx
@@ -1231,6 +1232,195 @@ class SmokeTest(unittest.TestCase):
             DataStrided[3, 3] = 0.0
             v.check_correctness(function.name, before=(Data, ), after=(DataStrided, ))
 
+    def test_offset_sub_array_packing_flat(self) -> None:
+        # Take an 8x8 array and produce an array of 64 + 8 elements,
+        # where the second array contains the transpose of the first array and has an additional
+        # copy of the 8 elements down the diagonal as the first 8 elements
+        # Note: this isn't expected to be a useful utility pattern but it's a simple example that combines sub arrays of differing rank/offsets and data packing
+
+        N = 8
+        output_size = N*N + N
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(output_size,))
+
+        package = Package()
+
+        diagonal_fetch_nest = Nest(shape=(N,))
+        diagonal_idx = diagonal_fetch_nest.get_indices()
+        @diagonal_fetch_nest.iteration_logic
+        def _diag_fetch():
+            diag_vec = Output.sub_array(offsets=(0,), shape=(N,))
+            diag_vec[diagonal_idx] = Input[diagonal_idx, diagonal_idx]
+
+        diag_fn = package.add(diagonal_fetch_nest, args=(Input, Output), base_name="diagonal_fetch_fn")
+
+        transpose_nest = Nest(shape=(N, N))
+        transpose_i, transpose_j = transpose_nest.get_indices()
+        @transpose_nest.iteration_logic
+        def _transpose():
+            packed_output = Output.sub_array(offsets=(N,), shape=(N*N,))
+            packed_output[transpose_j*N + transpose_i] = Input[transpose_i, transpose_j]
+
+        transpose_fn = package.add(transpose_nest, args=(Input, Output), base_name="transpose_fn")
+
+        outer_nest = Nest(shape=(1,))
+        @outer_nest.iteration_logic
+        def _():
+            diag_fn(Input, Output)
+            transpose_fn(Input, Output)
+
+        function = package.add(outer_nest, args=(Input, Output), base_name="test_offset_sub_array_packing_flat")
+
+        package_name = "test_offset_sub_array_packing_flat"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+            # correctness check
+            test_input = np.random.random([N, N]).astype(np.float32)
+            test_output = np.random.random([N*N + N]).astype(np.float32)
+            for i in range(N):
+                test_output[i] = test_input[i, i]
+                for j in range(N):
+                    test_output[N + (i*N + j)] = test_input[j, i]
+            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output))
+
+    def test_offset_sub_array_packing_split_dim(self) -> None:
+        # Take a 4x4 array and produce an array of 16 + 4 elements,
+        # where the second array contains the transpose of the first array and has an additional
+        # copy of the 4 elements down the diagonal as the first 4 elements
+        # Note: this isn't expected to be a useful utility pattern but it's a simple example that combines sub arrays of differing rank/offsets and data packing
+
+        N = 4
+        output_size = N*N + N
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(output_size,))
+
+        package = Package()
+
+        diagonal_fetch_nest = Nest(shape=(N,))
+        diagonal_idx = diagonal_fetch_nest.get_indices()
+        @diagonal_fetch_nest.iteration_logic
+        def _diag_fetch():
+            diag_vec = Output.sub_array(offsets=(0,), shape=(N,))
+            diag_vec[diagonal_idx] = Input[diagonal_idx, diagonal_idx]
+
+        diag_fn = package.add(diagonal_fetch_nest, args=(Input, Output), base_name="diagonal_fetch_fn")
+
+        transpose_nest = Nest(shape=(N, N))
+        transpose_i, transpose_j = transpose_nest.get_indices()
+        @transpose_nest.iteration_logic
+        def _transpose():
+            packed_output = Output.sub_array(offsets=(N,), shape=(N*N,))
+            packed_output_split = packed_output._split_dimension(0, N)
+            packed_output_split[transpose_j, transpose_i] = Input[transpose_i, transpose_j]
+
+        transpose_fn = package.add(transpose_nest, args=(Input, Output), base_name="transpose_fn")
+
+        outer_nest = Nest(shape=(1,))
+        @outer_nest.iteration_logic
+        def _():
+            diag_fn(Input, Output)
+            transpose_fn(Input, Output)
+
+        function = package.add(outer_nest, args=(Input, Output), base_name="test_offset_sub_array_packing_split_dim")
+
+        package_name = "test_offset_sub_array_packing_split_dim"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+            # correctness check
+            test_input = np.random.random([N, N]).astype(np.float32)
+            test_output = np.random.random([N*N + N]).astype(np.float32)
+            for i in range(N):
+                test_output[i] = test_input[i, i]
+                for j in range(N):
+                    test_output[N + (i*N + j)] = test_input[j, i]
+            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output))
+
+    def test_offset_sub_array_packing_multiple_split_dim(self) -> None:
+        # Take an 4x4 array and produce an array of 16 + 4 elements,
+        # where the second array contains a 4x4 array where each 2x2 quadrant is a transpose of the corresponding input 2x2 quadrant
+        # and there is a copy of the 4 elements down the diagonal as the first 4 elements
+        # Note: this isn't expected to be a useful utility pattern but it's a simple example that combines sub arrays of differing rank/offsets and data packing
+
+        N = 4
+        N_inner = 2
+        output_size = N*N + N
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(output_size,))
+
+        package = Package()
+
+        diagonal_fetch_nest = Nest(shape=(N,))
+        diagonal_idx = diagonal_fetch_nest.get_indices()
+        @diagonal_fetch_nest.iteration_logic
+        def _diag_fetch():
+            diag_vec = Output.sub_array(offsets=(0,), shape=(N,))
+            diag_vec[diagonal_idx] = Input[diagonal_idx, diagonal_idx]
+
+        diag_fn = package.add(diagonal_fetch_nest, args=(Input, Output), base_name="diagonal_fetch_fn")
+
+        transpose_nest = Nest(shape=(N // N_inner, N // N_inner, N_inner, N_inner))
+        transpose_i, transpose_j, transpose_ii, transpose_jj = transpose_nest.get_indices()
+        @transpose_nest.iteration_logic
+        def _transpose():
+            # packed_output is an offset vector with shape [ 16 ]
+            packed_output = Output.sub_array(offsets=(N,), shape=(N*N,))
+
+            # packed_output_split_0 is an offset array with shape [ 4, 4 ]
+            packed_output_split_0 = packed_output._split_dimension(0, N)
+
+            # packed_output_split_1 is an offset array with shape [ 4, 2, 2 ]
+            packed_output_split_1 = packed_output_split_0._split_dimension(1, N_inner)
+
+            # packed_output_split_2 is an offset array with shape [ 2, 2, 2, 2 ]
+            packed_output_split_2 = packed_output_split_1._split_dimension(0, N_inner)
+
+            i = transpose_i * N_inner + transpose_ii
+            j = transpose_j * N_inner + transpose_jj
+            packed_output_split_2[transpose_i, transpose_j, transpose_jj, transpose_ii] = Input[i, j]
+
+        transpose_fn = package.add(transpose_nest, args=(Input, Output), base_name="transpose_fn")
+
+        outer_nest = Nest(shape=(1,))
+        @outer_nest.iteration_logic
+        def _():
+            diag_fn(Input, Output)
+            transpose_fn(Input, Output)
+
+        function = package.add(outer_nest, args=(Input, Output), base_name="test_offset_sub_array_packing_multiple_split_dim")
+
+        package_name = "test_offset_sub_array_packing_multiple_split_dim"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+            # correctness check
+            test_input = np.random.random([N, N]).astype(np.float32)
+            test_output = np.random.random([N*N + N]).astype(np.float32)
+            for i in range(0, N, N_inner):
+                for j in range(0, N, N_inner):
+                    for ii in range(N_inner):
+                        test_output[i + ii] = test_input[i+ii, i+ii] # fill the beginning with the diagonal elements
+                        for jj in range(N_inner):
+                            # output[i, j, jj, ii] = input[i+ii, j+jj]
+                            # output[i*((N//N_inner) * N_inner * N_inner) + j*(N_inner * N_inner) + jj*(N_inner) + ii] = input[i+ii, j+jj]
+                            # Then offset output by N to account for the beginning diagonal elements
+                            # Note that since i and j each step by N_inner, there's already one multiplication by N_inner accounted for in their values
+                            test_output[N + (i*((N//N_inner)*N_inner) + j*(N_inner) + jj*(N_inner) + ii)] = test_input[i + ii, j + jj]
+            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output))
+
     def test_padded_nchwc_conv2d_manual_cache(self) -> None:
         input_channels = 64
         base_input_shape = (input_channels, 28, 28)    # CHW order
@@ -1261,9 +1451,9 @@ class SmokeTest(unittest.TestCase):
             output_filter_blocks, padded_output_shape[1], padded_output_shape[2], channels_per_block
         )
 
-        Input = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=nchwc_padded_input_shape)
-        Kernel = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=nchwc_weights_shape)
-        Output = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=nchwc_padded_output_shape)
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=nchwc_padded_input_shape)
+        Kernel = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=nchwc_weights_shape)
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=nchwc_padded_output_shape)
 
         nest = Nest(
             shape=(
@@ -1353,9 +1543,9 @@ class SmokeTest(unittest.TestCase):
         N = 1024
         S = 1024
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, S))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, S))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(S, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, S))
 
@@ -1399,9 +1589,9 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -1438,9 +1628,9 @@ class SmokeTest(unittest.TestCase):
 
     def test_parameter_grid_no_regression(self) -> None:
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(16, 16))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(16, 16))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 16))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(16, 16))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(16, 16))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(16, 16))
 
         nest = Nest(shape=[16, 16, 16])
         i, j, k = nest.get_indices()
@@ -1470,9 +1660,9 @@ class SmokeTest(unittest.TestCase):
 
         P0, P1, P2, P3, P4, P5 = create_parameters()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(P0, P1))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(P0, P1))
 
         nest = Nest(shape=[P0, P1, P2])
         i, j, k = nest.get_indices()
@@ -1578,10 +1768,10 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.LAST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.LAST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -1657,9 +1847,9 @@ class SmokeTest(unittest.TestCase):
     def _multicache_matmul_common(self, M, N, K, name_suffix, jjj_split=16) -> None:
         import accera as acc
 
-        A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K))
-        B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N))
-        C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = acc.Array(role=acc.Role.INPUT, shape=(M, K))
+        B = acc.Array(role=acc.Role.INPUT, shape=(K, N))
+        C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N))
 
         nest = acc.Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -1724,9 +1914,9 @@ class SmokeTest(unittest.TestCase):
     ) -> None:
         import accera as acc
 
-        A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K))
-        B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N))
-        C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = acc.Array(role=acc.Role.INPUT, shape=(M, K))
+        B = acc.Array(role=acc.Role.INPUT, shape=(K, N))
+        C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N))
 
         nest = acc.Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -1994,9 +2184,9 @@ class SmokeTest(unittest.TestCase):
     ) -> None:
         import accera as acc
 
-        A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K))
-        B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N))
-        C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = acc.Array(role=acc.Role.INPUT, shape=(M, K))
+        B = acc.Array(role=acc.Role.INPUT, shape=(K, N))
+        C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N))
 
         nest = acc.Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -2227,9 +2417,9 @@ class SmokeTest(unittest.TestCase):
         N = 2**16
         block_x = 256
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
 
         nest = Nest(shape=(N, ))
         i = nest.get_indices()
@@ -2273,9 +2463,9 @@ class SmokeTest(unittest.TestCase):
     def _test_gpu_vec_add_boundary(self, N, splits, test_name):
         from accera import Array, Nest, Package, ScalarType, Target
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
 
         nest = Nest(shape=(N, ))
         i = nest.get_indices()
@@ -2335,9 +2525,9 @@ class SmokeTest(unittest.TestCase):
     def _test_cpu_vec_add_boundary(self, N, splits, test_name):
         from accera import Array, Nest, Package, ScalarType, Target
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
 
         nest = Nest(shape=(N, ))
         i = nest.get_indices()
@@ -2396,8 +2586,8 @@ class SmokeTest(unittest.TestCase):
         from accera import Array, Nest, ScalarType
         from accera._lang_python._lang import _MemorySpace
 
-        In = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
-        Out = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
+        In = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
+        Out = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
 
         nest = Nest(shape=(N, N))
         i, j = nest.get_indices()
@@ -2494,8 +2684,8 @@ class SmokeTest(unittest.TestCase):
         from accera import Array, Nest, ScalarType
         from accera._lang_python._lang import _MemorySpace
 
-        In = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
-        Out = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
+        In = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
+        Out = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
 
         nest = Nest(shape=(N, N))
         i, j = nest.get_indices()
@@ -2604,10 +2794,10 @@ class SmokeTest(unittest.TestCase):
     ) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -2690,10 +2880,10 @@ class SmokeTest(unittest.TestCase):
         m_tile_size = block_x
         n_tile_size = block_y
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -2772,10 +2962,10 @@ class SmokeTest(unittest.TestCase):
         k_outer_tile_size = 256
         k_inner_tile_size = 32
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -2813,9 +3003,9 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT, element_type=array_element_types[0], shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=array_element_types[0], shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -2847,12 +3037,12 @@ class SmokeTest(unittest.TestCase):
 
     # TODO : move vpmaddwd tests to a different test file
     def test_signextend_int16_matmul_vpmaddwd(self):
-        from accera import AllocateFlags
+        from accera import AllocateFlags, create_dimensions
         test_name = "test_signextend_int16_matmul_vpmaddwd"
 
         def inout_array(arr: Array):
             # Copy the array info but change it to input-output role for use in an inner function declaration
-            return Array(role=Array.Role.INPUT_OUTPUT, element_type=arr.element_type, shape=arr.shape)
+            return Array(role=Role.INPUT_OUTPUT, element_type=arr.element_type, shape=arr.shape)
 
         M = 240
         N = 256
@@ -2868,22 +3058,22 @@ class SmokeTest(unittest.TestCase):
         N_vector_tile = 8
         K_vector_tile = 2
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.uint8, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.uint8, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
 
-        A_cache = Array(role=Array.Role.TEMP,
+        A_cache = Array(role=Role.TEMP,
                         element_type=ScalarType.int16,
                         shape=(M_tile, K_tile),
                         layout=Array.Layout.FIRST_MAJOR,
                         flags=AllocateFlags.HEAP)
-        B_cache = Array(role=Array.Role.TEMP,
+        B_cache = Array(role=Role.TEMP,
                         element_type=ScalarType.uint8,
                         shape=(N_tile // N_kernel_tile, K_tile // K_vector_tile, N_kernel_tile, K_vector_tile),
                         layout=Array.Layout.FIRST_MAJOR,
                         flags=AllocateFlags.HEAP)
 
-        C_cache = Array(role=Array.Role.TEMP,
+        C_cache = Array(role=Role.TEMP,
                         element_type=ScalarType.int32,
                         shape=(M_kernel_tile, N_kernel_tile),
                         layout=Array.Layout.FIRST_MAJOR,
@@ -2893,7 +3083,7 @@ class SmokeTest(unittest.TestCase):
         io_B_cache = inout_array(B_cache)
         io_C_cache = inout_array(C_cache)
 
-        B_ext = Array(role=Array.Role.TEMP,
+        B_ext = Array(role=Role.TEMP,
                         element_type=ScalarType.int16,
                         shape=(N_kernel_tile, K_vector_tile),
                         layout=Array.Layout.FIRST_MAJOR,
@@ -2901,21 +3091,10 @@ class SmokeTest(unittest.TestCase):
 
         io_B_ext = inout_array(B_ext)
 
-        m_tile_dim = Dimension()
-        n_tile_dim = Dimension()
-        k_tile_dim = Dimension()
-        m_kernel_dim = Dimension()
-        n_kernel_dim = Dimension()
-        k_kernel_dim = Dimension()
-        m_vector_dim = Dimension()
-
-        i_tile_idx = Dimension()
-        j_tile_idx = Dimension()
-        k_tile_idx = Dimension()
-        i_kernel_idx = Dimension()
-        j_kernel_idx = Dimension()
-        k_kernel_idx = Dimension()
-        i_vector_idx = Dimension()
+        m_tile_dim, n_tile_dim, k_tile_dim = create_dimensions()
+        m_kernel_dim, n_kernel_dim, k_kernel_dim = create_dimensions()
+        i_tile_idx, j_tile_idx, k_tile_idx = create_dimensions()
+        i_kernel_idx, j_kernel_idx, k_kernel_idx, i_vector_idx = create_dimensions()
 
         package = Package()
 
@@ -3166,9 +3345,9 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -3217,15 +3396,16 @@ class SmokeTest(unittest.TestCase):
             )
 
 
+    @expectedFailure(FailedReason.INVALID, "generated x86_64 lib not readable by MacOS arm64 build tools", sys.platform == "darwin" and platform.machine() == "arm64")
     def test_int16_matmul_vpmaddwd_16_element_avx512(self):
         test_name = "test_int16_matmul_vpmaddwd_16_element_avx512"
         M = 240
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -3270,9 +3450,9 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -3326,9 +3506,9 @@ class SmokeTest(unittest.TestCase):
         N = 256
         K = 256
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -3381,8 +3561,8 @@ class SmokeTest(unittest.TestCase):
         M = 256
         N = 16
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(M,), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M,), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N))
         i, j = nest.get_indices()
@@ -3428,8 +3608,8 @@ class SmokeTest(unittest.TestCase):
         M = 256
         N = 16
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int32, shape=(M,), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M,), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N))
         i, j = nest.get_indices()
@@ -3611,9 +3791,9 @@ class SmokeTest(unittest.TestCase):
         N = 256
         block_x = 16
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
 
         nest = Nest(shape=(N, ))
         i = nest.get_indices()
@@ -3682,9 +3862,9 @@ class SmokeTest(unittest.TestCase):
         block_y = block_x
         tile_size = 16
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -3759,9 +3939,9 @@ class SmokeTest(unittest.TestCase):
         N = 32
         K = 32
 
-        A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-        B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-        C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+        A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+        B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+        C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
         nest = acc.Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -3819,9 +3999,9 @@ class SmokeTest(unittest.TestCase):
         N = 32
         K = 32
 
-        A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-        B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-        C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+        A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+        B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+        C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
         nest = acc.Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -3872,9 +4052,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K))
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N))
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N))
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K))
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N))
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N))
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -3912,9 +4092,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -3956,9 +4136,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -3998,9 +4178,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4063,11 +4243,11 @@ class SmokeTest(unittest.TestCase):
 
     #     weights_shape = (output_filters, input_channels, kernel_shape[0], kernel_shape[1])
 
-    #     Input = Array(role=Array.Role.INPUT,
+    #     Input = Array(role=Role.INPUT,
     #                   element_type=ScalarType.float32, shape=padded_input_shape)
-    #     Kernel = Array(role=Array.Role.INPUT,
+    #     Kernel = Array(role=Role.INPUT,
     #                    element_type=ScalarType.float32, shape=weights_shape)
-    #     Output = Array(role=Array.Role.INPUT_OUTPUT,
+    #     Output = Array(role=Role.INPUT_OUTPUT,
     #                    element_type=ScalarType.float32, shape=padded_output_shape)
 
     #     nest = Nest(shape=(output_filters,
@@ -4143,11 +4323,11 @@ class SmokeTest(unittest.TestCase):
 
     #     weights_shape = (output_filters, input_channels, kernel_shape[0], kernel_shape[1])
 
-    #     Input = Array(role=Array.Role.INPUT,
+    #     Input = Array(role=Role.INPUT,
     #                   element_type=ScalarType.float32, shape=padded_input_shape)
-    #     Kernel = Array(role=Array.Role.INPUT,
+    #     Kernel = Array(role=Role.INPUT,
     #                    element_type=ScalarType.float32, shape=weights_shape)
-    #     Output = Array(role=Array.Role.INPUT_OUTPUT,
+    #     Output = Array(role=Role.INPUT_OUTPUT,
     #                    element_type=ScalarType.float32, shape=padded_output_shape)
 
     #     nest = Nest(shape=(output_filters,
@@ -4221,11 +4401,11 @@ class SmokeTest(unittest.TestCase):
 
     #     weights_shape = (output_filters, input_channels, kernel_shape[0], kernel_shape[1])
 
-    #     Input = Array(role=Array.Role.INPUT,
+    #     Input = Array(role=Role.INPUT,
     #                   element_type=ScalarType.float32, shape=padded_input_shape)
-    #     Kernel = Array(role=Array.Role.INPUT,
+    #     Kernel = Array(role=Role.INPUT,
     #                    element_type=ScalarType.float32, shape=weights_shape)
-    #     Output = Array(role=Array.Role.INPUT_OUTPUT,
+    #     Output = Array(role=Role.INPUT_OUTPUT,
     #                    element_type=ScalarType.float32, shape=padded_output_shape)
 
     #     nest = Nest(shape=(output_filters,
@@ -4278,9 +4458,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4319,9 +4499,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4360,9 +4540,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4402,9 +4582,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4447,9 +4627,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4501,9 +4681,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4551,9 +4731,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4594,9 +4774,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4638,9 +4818,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4692,9 +4872,9 @@ class SmokeTest(unittest.TestCase):
     #     N = 32
     #     K = 32
 
-    #     A = acc.Array(role=acc.Array.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     B = acc.Array(role=acc.Array.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
-    #     C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     A = acc.Array(role=acc.Role.INPUT, shape=(M, K), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     B = acc.Array(role=acc.Role.INPUT, shape=(K, N), layout=acc.Array.Layout.FIRST_MAJOR)
+    #     C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
 
     #     nest = acc.Nest(shape=(M, N, K))
     #     i, j, k = nest.get_indices()
@@ -4741,10 +4921,10 @@ class SmokeTest(unittest.TestCase):
         m_tile_size = block_x
         n_tile_size = block_y
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(S, M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(S, K, N), layout=Array.Layout.LAST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(S, M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(S, K, N), layout=Array.Layout.LAST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(S, M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -4870,10 +5050,10 @@ class SmokeTest(unittest.TestCase):
         m_tile_size = block_x
         n_tile_size = block_y
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -4958,10 +5138,10 @@ class SmokeTest(unittest.TestCase):
         m_tile_size = block_x
         n_tile_size = block_y
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -5047,10 +5227,10 @@ class SmokeTest(unittest.TestCase):
         m_tile_size = block_x
         n_tile_size = block_y
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -5125,9 +5305,9 @@ class SmokeTest(unittest.TestCase):
         N = 512
         S = 512
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, S))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, S))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(S, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, S))
 
@@ -5180,10 +5360,10 @@ class SmokeTest(unittest.TestCase):
         outer_tile_y = outer_tile_x
         outer_tile_k = 64
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -5265,10 +5445,10 @@ class SmokeTest(unittest.TestCase):
         outer_tile_y = outer_tile_x
         outer_tile_k = 64
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -5329,7 +5509,7 @@ class SmokeTest(unittest.TestCase):
         # Define our vector sizes
         N = 2**16
 
-        Out = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float16, shape=(N, ))
+        Out = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float16, shape=(N, ))
 
         nest = Nest(shape=(N, ))
         i = nest.get_indices()
@@ -5366,8 +5546,8 @@ class SmokeTest(unittest.TestCase):
         # Define our vector sizes
         N = 16
 
-        In = Array(role=Array.Role.INPUT, element_type=ScalarType.float16, shape=(N, ))
-        Out = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float16, shape=(N, ))
+        In = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(N, ))
+        Out = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float16, shape=(N, ))
 
         nest = Nest(shape=(N, ))
         i = nest.get_indices()
@@ -5403,9 +5583,9 @@ class SmokeTest(unittest.TestCase):
         # Define our vector sizes
         N = 2**16
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float16, shape=(N, ))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float16, shape=(N, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float16, shape=(N, ))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(N, ))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(N, ))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float16, shape=(N, ))
 
         nest = Nest(shape=(N, ))
         i = nest.get_indices()
@@ -5451,10 +5631,10 @@ class SmokeTest(unittest.TestCase):
         outer_tile_y = outer_tile_x
         outer_tile_k = 64
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -5518,10 +5698,10 @@ class SmokeTest(unittest.TestCase):
         outer_tile_y = outer_tile_x
         outer_tile_k = 64
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -5605,10 +5785,10 @@ class SmokeTest(unittest.TestCase):
         outer_tile_k = 16
         # 32x32 = 1024 threads, A and B caches will each have 32x16 and 16x32 active blocks
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(M, N),
             layout=Array.Layout.FIRST_MAJOR
@@ -5691,9 +5871,9 @@ class SmokeTest(unittest.TestCase):
         M_tile = 32
         N_tile = 16
         K_tile = 8
-        A = Array(role=Array.Role.INPUT, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = Array(role=Role.INPUT, shape=(M, K))
+        B = Array(role=Role.INPUT, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(M, N))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(M, N, K))
@@ -5738,9 +5918,9 @@ class SmokeTest(unittest.TestCase):
         package_name = "test_dynamic_size_redundant_split"
         split_size = 32
 
-        m_extent = Dimension()
-        input_arr = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
-        output_arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        m_extent = Dimension(name='m_extent')
+        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
 
         nest = Nest((m_extent,))
         i = nest.get_indices()
@@ -5782,9 +5962,9 @@ class SmokeTest(unittest.TestCase):
         package_name = "test_dynamic_size_redundant_split_1"
         split_size = 1
 
-        m_extent = Dimension()
-        input_arr = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
-        output_arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        m_extent = Dimension("m_extent")
+        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
 
         nest = Nest((m_extent,))
         i = nest.get_indices()
@@ -5826,9 +6006,9 @@ class SmokeTest(unittest.TestCase):
         package_name = "test_dynamic_size_split_1"
         split_size = 1
 
-        m_extent = Dimension()
-        input_arr = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
-        output_arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        m_extent = Dimension("m_extent")
+        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
 
         nest = Nest((m_extent,))
         i = nest.get_indices()
@@ -5870,9 +6050,9 @@ class SmokeTest(unittest.TestCase):
         outer_split_size = 16
         inner_split_size = 1
 
-        m_extent = Dimension()
-        input_arr = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
-        output_arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        m_extent = Dimension("m_extent")
+        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
 
         nest = Nest((m_extent,))
         i = nest.get_indices()

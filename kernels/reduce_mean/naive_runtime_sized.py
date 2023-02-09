@@ -40,7 +40,7 @@ def _get_zero_index_nest(shape: Tuple[acc.Dimension]):
 
 def get_output_shape(input_shape: Tuple[acc.Dimension], axes: List[int], keepdims: int = 1):
 
-    output_shape = tuple(acc.Dimension(role=acc.Dimension.Role.OUTPUT, value=i) for i in input_shape)
+    output_shape = tuple(acc.Dimension(role=acc.Role.OUTPUT, value=i) for i in input_shape)
 
     # assign number to each Dimension
     # list filtering (comparison operators)
@@ -52,7 +52,7 @@ def get_output_shape(input_shape: Tuple[acc.Dimension], axes: List[int], keepdim
     else:
         output_shape = list(filter((-1).__ne__, output_shape))
         if len(output_shape) == 0:
-            output_shape = [acc.Dimension(role=acc.Dimension.Role.OUTPUT, value=1)]
+            output_shape = [acc.Dimension(role=acc.Role.OUTPUT, value=1)]
     return output_shape
 
 
@@ -154,8 +154,8 @@ def reduce_mean_rank_3(dtype: acc.ScalarType, axes: List[int] = None, keepdims: 
 
     axes = _get_axes(axes, input_shape)
     output_shape = get_output_shape(input_shape, axes, keepdims)
-    data = acc.Array(role=acc.Array.Role.INPUT, element_type=dtype, shape=input_shape)
-    reduced = acc.Array(role=acc.Array.Role.OUTPUT, element_type=dtype, shape=output_shape)
+    data = acc.Array(role=acc.Role.INPUT, element_type=dtype, shape=input_shape)
+    reduced = acc.Array(role=acc.Role.OUTPUT, element_type=dtype, shape=output_shape)
 
     schedule = reduce_mean_schedule(data, reduced, axes, keepdims)
 

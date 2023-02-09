@@ -55,9 +55,9 @@ K = 256
 Write a Python function that receives arrays `A`, `B` and `C`. These are our input and input/output matrices.
 
 ```python
-A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, K))
-B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(K, N))
-C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
+A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, K))
+B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(K, N))
+C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
 ```
 
 Here, we will use the `Nest` class to define our 3-layered nested for loop. The range indices are `M`, `N`, and `K`, with the outermost loop (`M`) listed first. We can get the loop nest indices in order to perform the computation.

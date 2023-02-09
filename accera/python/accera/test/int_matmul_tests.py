@@ -23,10 +23,8 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-from accera import Array, Nest, Package, ScalarType, Target, Constants, cast
+from accera import Array, Nest, Package, ScalarType, Target, cast, Role
 from accera.test import verifiers
-from accera.test.test_utils import expectedFailure, FailedReason
-from accera.Targets import GridUnits
 
 TEST_MODE = Package.Mode.DEBUG if DEV_MODE else Package.Mode.RELEASE
 # TEST_FORMAT = Package.Format.DEFAULT | Package.Format.MLIR_VERBOSE
@@ -45,10 +43,10 @@ class IntMatmulTest(unittest.TestCase):
         N = vecSize
         K = 2
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, K))
-        # B = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(K, N))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(N, K))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, K))
+        # B = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(K, N))
+        B = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(N, K))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
 
         nest = Nest((M, N, K))
         i, j, k = nest.get_indices()
@@ -115,10 +113,10 @@ class IntMatmulTest(unittest.TestCase):
         splitN = 8
         splitK = 2
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(M, K))
-        # B = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(K, N))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.int16, shape=(N, K))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, K))
+        # B = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(K, N))
+        B = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(N, K))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
 
         nest = Nest((M, N, K))
         i, j, k = nest.get_indices()

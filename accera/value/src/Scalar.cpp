@@ -28,24 +28,37 @@ namespace value
         else
             return false;
     }
-    
+
     using namespace utilities;
 
     Scalar::Scalar() = default;
 
-    Scalar::Scalar(Value value, const std::string& name) :
-        _value(std::move(value))
+    Scalar::Scalar(Value value, const std::string& name, Role role) :
+        _role{ role }
     {
+        SetValue(value);
+
+        if (!name.empty())
+        {
+            SetName(name);
+        }
+    }
+
+    void Scalar::SetValue(Value value)
+    {
+        if (value.PointerLevel() && (_role == Role::InputOutput || _role == Role::Output))
+        {
+            value = value.PointerTo();
+        }
+
+        _value.Reset();
+        _value = std::move(value);
         if (auto& layout = _value.GetLayout();
             !_value.IsDefined() || !_value.IsConstrained() ||
             !(layout == ScalarLayout ||
               (layout.NumDimensions() == 1 && layout.GetExtent(0) == 1)))
         {
             throw InputException(InputExceptionErrors::invalidArgument);
-        }
-        if (!name.empty())
-        {
-            SetName(name);
         }
     }
 
@@ -72,6 +85,8 @@ namespace value
             {
                 _value = other._value;
             }
+
+            _role = other.GetRole();
         }
         return *this;
     }
@@ -96,13 +111,28 @@ namespace value
                 _value = std::move(other._value);
             }
             other._value.Clear();
+
+            _role = other.GetRole();
         }
         return *this;
+    }
+
+    void Scalar::Set(const Scalar& other)
+    {
+        if (_role == Role::Input)
+            throw LogicException(LogicExceptionErrors::illegalState);
+
+        *this = other;
     }
 
     Value Scalar::GetValue() const
     {
         return _value;
+    }
+
+    Role Scalar::GetRole() const
+    {
+        return _role;
     }
 
     Scalar Scalar::Copy() const
@@ -430,10 +460,10 @@ namespace value
         return GetContext().BinaryOperation(ValueBinaryOperation::logicalOr, lhs.GetValue(), rhs.GetValue());
     }
 
-    Scalar MakeScalar(ValueType type, const std::string&)
+    Scalar MakeScalar(ValueType type, const std::string&, Role role)
     {
         // TODO: figure out how to name these scalars
-        return Scalar(Value(type, ScalarLayout));
+        return Scalar(Value(type, ScalarLayout), "", role);
     }
 
 } // namespace value

@@ -9,9 +9,21 @@ import accera as acc
 corei9 = acc.Target(Target.Model.INTEL_7960X, num_threads=44)
 ```
 or
+
 ```python
 v100 = acc.Target(Target.Model.NVIDIA_V100)
 ```
+or
+
+```python
+corei7 = acc.Target(known_name="Intel 7700T")
+```
+
+To query the list of known names:
+```python
+dir(acc.Targets.Model)
+```
+
 
 We can also define custom targets:
 ```python

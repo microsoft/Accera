@@ -14,8 +14,8 @@ def generate():
     Limit = acc.Scalar()
     Delta = acc.Scalar()
 
-    OutputDim = acc.create_dimensions(role=acc.Dimension.Role.OUTPUT)
-    Output = acc.Array(shape=(OutputDim, ), role=acc.Array.Role.OUTPUT)
+    OutputDim = acc.create_dimensions(role=acc.Role.OUTPUT)
+    Output = acc.Array(shape=(OutputDim, ), role=acc.Role.OUTPUT)
 
     OutputDim.value = acc.floor((Limit - Start) / Delta)
     nest = acc.Nest(OutputDim)

@@ -1425,96 +1425,46 @@ LogicalResult OffsetOpLowering::matchAndRewrite(
     return success();
 }
 
+std::vector<mlir::OpFoldResult> ParsePartiallyStaticValues(mlir::OpBuilder& builder, mlir::ValueRange values)
+{
+    std::vector<mlir::OpFoldResult> partiallyStaticValues;
+    std::transform(values.begin(), values.end(), std::back_inserter(partiallyStaticValues), [&](mlir::Value val) -> mlir::OpFoldResult {
+        if (auto constantOp = val.getDefiningOp<mlir::arith::ConstantIndexOp>())
+        {
+            return builder.getI64IntegerAttr(constantOp.value());
+        }
+        else
+        {
+            return val;
+        }
+    });
+    return partiallyStaticValues;
+}
+
 LogicalResult ViewOpLowering::matchAndRewrite(
     ValueViewOp op,
     PatternRewriter& rewriter) const
 {
-    auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
-    auto source = op.source();
-    auto sourceType = op.getSourceMemRefType();
-    auto shape = sourceType.getShape();
-
-    auto isStaticCanonicalOrder = [](MemRefType t) {
-        llvm::SmallVector<int64_t, 4> memRefStrides;
-        int64_t globalOffset;
-        if (failed(getStridesAndOffset(t, memRefStrides, globalOffset)))
-        {
-            return false;
-        }
-        int64_t prevStride = memRefStrides[0];
-        for (auto stride : memRefStrides)
-        {
-            if (mlir::ShapedType::isDynamicStrideOrOffset(stride) || stride > prevStride)
-            {
-                return false;
-            }
-            prevStride = stride;
-        }
-        return true;
-    };
-
-    llvm::SmallVector<mlir::Value, 4> offsets, sizes, strides;
-    for (auto offset : op.offsets())
+    // If the offsets, sizes, and strides are static, then use the static version of subview op
+    std::vector<int64_t> sizeInts = util::TryParseStaticSizes(op.sizes(), util::DynamicSizeSentinelValue);
+    std::vector<int64_t> offsetInts = util::TryParseStaticSizes(op.offsets(), util::DynamicStrideOrOffsetSentinelValue);
+    std::vector<int64_t> strideInts = util::TryParseStaticSizes(op.strides(), util::DynamicStrideOrOffsetSentinelValue);
+    bool staticSize = std::find(sizeInts.begin(), sizeInts.end(), util::DynamicSizeSentinelValue) == sizeInts.end();
+    bool staticOffset = std::find(offsetInts.begin(), offsetInts.end(), util::DynamicStrideOrOffsetSentinelValue) == offsetInts.end();
+    bool staticStride = std::find(strideInts.begin(), strideInts.end(), util::DynamicStrideOrOffsetSentinelValue) == strideInts.end();
+    if (staticSize && staticOffset && staticStride)
     {
-        if (auto r = mlir::dyn_cast<vir::RangeOp>(offset.getDefiningOp()))
-        {
-            auto min = r.min();
-            auto max = r.max();
-            auto step = r.step();
-            offsets.push_back(min.getDefiningOp()->getResult(0));
-            sizes.push_back(max.getDefiningOp()->getResult(0));
-            strides.push_back(step.getDefiningOp()->getResult(0));
-        }
-        else
-        {
-            return op.emitError("Bad offset operands for ViewOp");
-        }
-    }
-
-    if (isStaticCanonicalOrder(sourceType))
-    {
-        bool isStaticShape = true;
-        llvm::SmallVector<int64_t, 4> staticOffsets, staticSizes, staticStrides;
-        for (auto [size, offset, stride] : llvm::zip(sizes, offsets, strides))
-        {
-            auto sizeOp = size.getDefiningOp<arith::ConstantIndexOp>();
-            auto offsetOp = offset.getDefiningOp<arith::ConstantIndexOp>();
-            auto strideOp = stride.getDefiningOp<arith::ConstantIndexOp>();
-            if (sizeOp && offsetOp && strideOp)
-            {
-                staticSizes.push_back(sizeOp.value());
-                staticOffsets.push_back(offsetOp.value());
-                staticStrides.push_back(strideOp.value());
-            }
-            else
-            {
-                isStaticShape = false;
-                break;
-            }
-        }
-
-        if (isStaticShape)
-        {
-            rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, source, staticOffsets, staticSizes, staticStrides);
-        }
-        else
-        {
-            rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, source, offsets, sizes, strides);
-        }
+        rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, op.getType(), op.source(), offsetInts, sizeInts, strideInts);
     }
     else
     {
-        llvm::SmallVector<mlir::Value, 4> sizes;
-        llvm::SmallVector<mlir::Value, 4> strides;
-
-        for (auto idx = 0; idx < op.getNumOffsets(); ++idx)
-        {
-            sizes.push_back(rewriter.create<arith::ConstantIndexOp>(loc, shape[idx]));
-            strides.push_back(rewriter.create<arith::ConstantIndexOp>(loc, 1));
-        }
-
-        rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, source, offsets, sizes, strides);
+        // Convert the offsets, sizes, and strides to partially-static vectors of OpFoldResult (which is a PointerUnion<Attribute, Value>)
+        std::vector<mlir::OpFoldResult> partiallyStaticSizes = ParsePartiallyStaticValues(rewriter, op.sizes());
+        std::vector<mlir::OpFoldResult> partiallyStaticOffsets = ParsePartiallyStaticValues(rewriter, op.offsets());
+        std::vector<mlir::OpFoldResult> partiallyStaticStrides = ParsePartiallyStaticValues(rewriter, op.strides());
+        rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, op.source(), partiallyStaticOffsets, partiallyStaticSizes, partiallyStaticStrides);
     }
+
     return success();
 }
 
@@ -1619,14 +1569,30 @@ LogicalResult SplitDimOpLowering::matchAndRewrite(
     auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
     auto source = op.source();
 
-    auto sourceType = op.getSourceMemRefType();
     auto resultType = op.getType();
-    auto elemTy = sourceType.getElementType();
 
-    // TODO: switch to using a linalg.reshape at some point
-    // cast to a value with type `memref<total_size x elem_type>` (via `memref<* x elem_type>`)
-    mlir::Value ptr = rewriter.create<memref::CastOp>(loc, source, mlir::UnrankedMemRefType::get(elemTy, sourceType.getMemorySpace()));
-    auto result = rewriter.create<memref::CastOp>(loc, ptr, resultType);
+    // The reassociation indices for a split dim op are [[0], [1], ..., [dim, dim+1], [dim+2], ..., [rank - 1]]
+
+    int64_t dim = static_cast<int64_t>(op.dim());
+    auto destRank = resultType.getRank();
+    std::vector<mlir::ReassociationIndices> reassociationIndices;
+    for (int64_t idx = 0; idx < dim; ++idx)
+    {
+        mlir::ReassociationIndices unchangedIndices = { idx };
+        reassociationIndices.push_back(unchangedIndices);
+    }
+
+    mlir::ReassociationIndices splitIndices = { dim, dim + 1 };
+    reassociationIndices.push_back(splitIndices);
+
+    for (int64_t idx = (dim + 2); idx < destRank; ++idx)
+    {
+        mlir::ReassociationIndices unchangedIndices = { idx };
+        reassociationIndices.push_back(unchangedIndices);
+    }
+
+    auto result = rewriter.create<memref::ExpandShapeOp>(loc, resultType, source, reassociationIndices);
+
     rewriter.replaceOp(op, { result });
 
     return success();

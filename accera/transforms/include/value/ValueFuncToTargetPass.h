@@ -26,5 +26,6 @@ void populateValueLambdaToFuncPatterns(mlir::MLIRContext* context, mlir::Rewrite
 void populateValueFuncToTargetPatterns(mlir::MLIRContext* context, mlir::RewritePatternSet& patterns);
 void populateValueLaunchFuncInlinerPatterns(mlir::MLIRContext*, mlir::RewritePatternSet&);
 
+std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueFuncToTargetPass(const IntraPassSnapshotOptions& snapshotOptions);
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueFuncToTargetPass();
 } // namespace accera::transforms::value

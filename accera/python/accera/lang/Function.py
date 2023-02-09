@@ -10,8 +10,8 @@ from functools import wraps, singledispatch
 
 from ..Targets import Target
 from ..lang.Array import Array
-from ..lang.Dimension import Dimension
-from .._lang_python._lang import Array as NativeArray
+from .._lang_python import Role
+from .._lang_python._lang import Array as NativeArray, Dimension, Scalar
 
 
 @singledispatch
@@ -25,7 +25,7 @@ def _unpack_arg(arg: NativeArray):
 @_unpack_arg.register(Array)
 def _(arg: Array):
     if arg._value.is_empty:
-        if arg.role == Array.Role.TEMP:
+        if arg.role == Role.TEMP:
             # BUGBUG: this has a side effect, but we also don't want to
             # repeat allocations if the same temp array gets passed into
             # multiple Function's
@@ -40,21 +40,21 @@ def _(arg: Array):
             # - Both function arguments and constant arrays should have non-empty values.
             raise ValueError(
                 """A non-temporary array is being used like a temporary array.
-Did you specify role=Array.Role.TEMP?"""
+Did you specify role=Role.TEMP?"""
             )
     return arg._get_native_array()    # unpack
 
 def role_to_usage(arg):
     from .._lang_python import _FunctionParameterUsage
 
-    if isinstance(arg, Array) or isinstance(arg, Dimension): 
-        role = arg.role
-        if role == Array.Role.INPUT or role == Dimension.Role.INPUT:
+    if isinstance(arg, (Array, Scalar, Dimension)):
+        assert arg.role != Role.TEMP # temp vars cannot be passed as args
+        if arg.role == Role.INPUT:
             return _FunctionParameterUsage.INPUT
-        elif role == Dimension.Role.OUTPUT:
+        elif arg.role == Role.OUTPUT:
             return _FunctionParameterUsage.OUTPUT
         else:
-            return _FunctionParameterUsage.INPUT_OUTPUT                             
+            return _FunctionParameterUsage.INPUT_OUTPUT
     else:
         return _FunctionParameterUsage.INPUT
 

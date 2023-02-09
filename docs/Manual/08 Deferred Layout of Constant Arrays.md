@@ -13,7 +13,7 @@ import accera as acc
 import numpy as np
 
 matrix = np.random.rand(16, 16)
-A = acc.Array(role=acc.Array.Role.CONST, data=matrix, layout=acc.Array.Layout.DEFERRED)
+A = acc.Array(role=acc.Role.CONST, data=matrix, layout=acc.Array.Layout.DEFERRED)
 ```
 Now we define the nest logic, the schedule, and the plan. Consider that we define a plan named `plan` and use this plan to define a cache `A` based on dimension `i`:
 ```python

@@ -28,6 +28,7 @@ set(src
     src/Pointer.cpp
     src/Profiling.cpp
     src/Scalar.cpp
+    src/ScalarDimension.cpp
     src/ScalarOperations.cpp
     src/Schedule.cpp
     src/TargetDevice.cpp

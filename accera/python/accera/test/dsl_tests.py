@@ -24,9 +24,10 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-from accera import ScalarType, Array, Function, Nest, Target, Package, algorithms, Dimension, cast, AllocateFlags
+from accera import ScalarType, Array, Function, Nest, Target, Package, algorithms, cast, AllocateFlags, Role
 from accera.test import verifiers
 from accera.test.test_utils import expectedFailure, FailedReason
+from accera._lang_python._lang import Dimension
 
 INTERNAL_FUNCTION_OPTS = {
     "no_inline_into": True,
@@ -76,17 +77,17 @@ class DSLTest_01Arrays(unittest.TestCase):
                 )
 
     def test_input_array(self) -> None:
-        A = Array(shape=(10, 20), role=Array.Role.INPUT, element_type=ScalarType.float32)
+        A = Array(shape=(10, 20), role=Role.INPUT, element_type=ScalarType.float32)
         self.assertIsNotNone(A)
 
     def test_input_array_standard_layout(self) -> None:
-        A = Array(shape=(10, 20), role=Array.Role.INPUT, layout=Array.Layout.LAST_MAJOR)
-        # A = Array(shape=(10, 20), layout=Array.Layout.LAST_MAJOR, role=Array.Role.INPUT, element_type=ScalarType.float32)
+        A = Array(shape=(10, 20), role=Role.INPUT, layout=Array.Layout.LAST_MAJOR)
+        # A = Array(shape=(10, 20), layout=Array.Layout.LAST_MAJOR, role=Role.INPUT, element_type=ScalarType.float32)
         self.assertIsNotNone(A)
 
     def test_input_array_dimension_layout(self) -> None:
         A = Array(
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             element_type=ScalarType.float32,
             shape=(10, 20),
             layout=(1, 10),
@@ -94,7 +95,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         self.assertIsNotNone(A)
 
         A = Array(
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             element_type=ScalarType.float32,
             shape=(10, 20),
             layout=(10, 1),
@@ -102,7 +103,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         self.assertIsNotNone(A)
 
         A = Array(
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             element_type=ScalarType.float32,
             shape=(10, ),
             layout=(1, ),
@@ -110,7 +111,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         self.assertIsNotNone(A)
 
         A = Array(
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             element_type=ScalarType.float32,
             shape=(10, 20, 50),
             layout=(1, 10, 200),
@@ -118,7 +119,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         self.assertIsNotNone(A)
 
         A = Array(
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             element_type=ScalarType.float32,
             shape=(10, 20, 50),
             layout=(200, 10, 1),
@@ -126,7 +127,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         self.assertIsNotNone(A)
 
         A = Array(
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             element_type=ScalarType.float32,
             shape=(10, 20, 50),
             layout=(1, 200, 10),
@@ -134,7 +135,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         self.assertIsNotNone(A)
 
         A = Array(
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             element_type=ScalarType.float32,
             shape=(10, 20, 50),
             layout=(10, 200, 1),
@@ -146,13 +147,13 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             Array(
-                role=Array.Role.INPUT_OUTPUT,
+                role=Role.INPUT_OUTPUT,
                 element_type=ScalarType.float32,
                 shape=(inf, inf),
             )
 
         A = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(10, inf),
         )
@@ -181,7 +182,7 @@ class DSLTest_01Arrays(unittest.TestCase):
 
     def test_input_output_array(self) -> None:
         A = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(10, 20),
         )
@@ -203,14 +204,14 @@ class DSLTest_01Arrays(unittest.TestCase):
                 np.float64,
         ]:
             D = np.ones((128, 256), dtype=dt)
-            A = Array(role=Array.Role.CONST, data=D)
+            A = Array(role=Role.CONST, data=D)
             self.assertIsNotNone(A)
 
     def test_const_array_type_layout(self) -> None:
         D = np.ones((128, 256), dtype=np.float64)
         for t in [ScalarType.bool] + INT_TYPES + FLOAT_TYPES:
             A = Array(
-                role=Array.Role.CONST,
+                role=Role.CONST,
                 element_type=t,
                 layout=Array.Layout.LAST_MAJOR,
                 data=D,
@@ -219,14 +220,14 @@ class DSLTest_01Arrays(unittest.TestCase):
 
     def test_temp_array(self) -> None:
         A = Array(
-            role=Array.Role.TEMP,
+            role=Role.TEMP,
             element_type=ScalarType.float32,
             layout=Array.Layout.LAST_MAJOR,
             shape=(10, 20),
         )
         self.assertIsNotNone(A)
         B = Array(
-            role=Array.Role.TEMP,
+            role=Role.TEMP,
             element_type=ScalarType.float32,
             layout=Array.Layout.FIRST_MAJOR,
             shape=(10, 20),
@@ -237,7 +238,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         # Materializes (allocates) a TEMP array externally to an added function
 
         def make_test_fn(package, A, B, C):
-            T = Array(role=Array.Role.TEMP, element_type=A.element_type, shape=A.shape)
+            T = Array(role=Role.TEMP, element_type=A.element_type, shape=A.shape)
 
             nest = Nest(A.shape)
             i, j = nest.get_indices()
@@ -249,9 +250,9 @@ class DSLTest_01Arrays(unittest.TestCase):
 
             return package.add(nest, args=(A, B, C))
 
-        A = Array(shape=(256, 32), role=Array.Role.INPUT)
-        B = Array(shape=(256, 32), role=Array.Role.INPUT)
-        C = Array(shape=(256, 32), role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(256, 32), role=Role.INPUT)
+        B = Array(shape=(256, 32), role=Role.INPUT)
+        C = Array(shape=(256, 32), role=Role.INPUT_OUTPUT)
 
         package = Package()
         make_test_fn(package, A, B, C)
@@ -268,8 +269,8 @@ class DSLTest_01Arrays(unittest.TestCase):
         # Materializes (allocates) a TEMP array within an added function
 
         package = Package()
-        A = Array(shape=(256, 32), role=Array.Role.INPUT)
-        B = Array(shape=(256, 32), role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(256, 32), role=Role.INPUT)
+        B = Array(shape=(256, 32), role=Role.INPUT_OUTPUT)
 
         def make_init_function(package, A):
             nest = Nest(A.shape)
@@ -297,7 +298,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         helper_fn2 = make_helper_function2(package, A, B)
 
         def test_fn(A, B):
-            T = Array(role=Array.Role.TEMP, element_type=A.element_type, shape=A.shape)
+            T = Array(role=Role.TEMP, element_type=A.element_type, shape=A.shape)
             init_fn(T)
             helper_fn2(T, B)
             helper_fn2(A, B)
@@ -314,7 +315,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             )
 
         def test_fn_wrong_role(A, B):
-            T = Array(role=Array.Role.INPUT_OUTPUT, element_type=A.element_type, shape=A.shape)
+            T = Array(role=Role.INPUT_OUTPUT, element_type=A.element_type, shape=A.shape)
             init_fn(T)
             helper_fn2(T, B)
             helper_fn2(A, B)
@@ -336,15 +337,15 @@ class DSLTest_01Arrays(unittest.TestCase):
         # *without* passing the array as a function argument
 
         package = Package()
-        A = Array(shape=(256, 32), role=Array.Role.INPUT_OUTPUT)
-        B = Array(shape=(256, 32), role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(256, 32), role=Role.INPUT_OUTPUT)
+        B = Array(shape=(256, 32), role=Role.INPUT_OUTPUT)
 
         nest = Nest(A.shape)
         i, j = nest.get_indices()
 
         @nest.iteration_logic
         def _():
-            T = Array(role=Array.Role.TEMP, element_type=A.element_type, shape=(1, ))
+            T = Array(role=Role.TEMP, element_type=A.element_type, shape=(1, ))
 
             # TODO: inject via introspection if we need to support this scenario
             T._allocate()
@@ -364,8 +365,38 @@ class DSLTest_01Arrays(unittest.TestCase):
                 output_dir=TEST_PACKAGE_DIR,
             )
 
+    def test_dynamic_temp_array(self) -> None:
+        def make_test_fn(package, A, B, C, N):
+            T = Array(role=Role.TEMP, element_type=A.element_type, shape=A.shape)
+
+            nest = Nest(B.shape)
+            i, j = nest.get_indices()
+
+            @nest.iteration_logic
+            def _():
+                T[i, j] = A[i, j] + B[i, j]
+                C[i, j] += T[i, j]**2.0
+
+            return package.add(nest, args=(A, B, C, N))
+
+        N = Dimension()
+        A = Array(shape=(256, N), role=Role.INPUT)
+        B = Array(shape=(256, 32), role=Role.INPUT)
+        C = Array(shape=(256, 32), role=Role.INPUT_OUTPUT)
+
+        package = Package()
+        make_test_fn(package, A, B, C, N)
+        package_name = "test_dynamic_temp_array"
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
+            package.build(
+                package_name,
+                format=TEST_FORMAT,
+                mode=Package.Mode.RELEASE,
+                output_dir=TEST_PACKAGE_DIR,
+            )
+
     def test_first_major_array_access(self) -> None:
-        A = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.FIRST_MAJOR)
+        A = Array(shape=(256, 32), role=Role.INPUT, layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(256, 32))
         i, j = nest.get_indices()
@@ -389,7 +420,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def test_last_major_array_access(self) -> None:
-        A = Array(shape=(256, 32), role=Array.Role.INPUT, layout=Array.Layout.LAST_MAJOR)
+        A = Array(shape=(256, 32), role=Role.INPUT, layout=Array.Layout.LAST_MAJOR)
 
         nest = Nest(shape=(256, 32))
         i, j = nest.get_indices()
@@ -415,13 +446,13 @@ class DSLTest_01Arrays(unittest.TestCase):
     def test_array_value_type_cast(self) -> None:
         A = Array(
             shape=(256, 32),
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             layout=Array.Layout.FIRST_MAJOR,
             element_type=ScalarType.float32,
         )
         B = Array(
             shape=(256, 32),
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             layout=Array.Layout.FIRST_MAJOR,
             element_type=ScalarType.int32,
         )
@@ -456,13 +487,13 @@ class DSLTest_01Arrays(unittest.TestCase):
     def test_array_vectorize_cast(self) -> None:
         A = Array(
             shape=(256, 32),
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             layout=Array.Layout.FIRST_MAJOR,
             element_type=ScalarType.uint8,
         )
         B = Array(
             shape=(256, 32),
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             layout=Array.Layout.FIRST_MAJOR,
             element_type=ScalarType.int16,
         )
@@ -496,13 +527,13 @@ class DSLTest_01Arrays(unittest.TestCase):
         shape = (64, 32, 8, 2)
         A = Array(
             shape=shape,
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             layout=Array.Layout.FIRST_MAJOR,
             element_type=ScalarType.uint8,
         )
         B = Array(
             shape=shape,
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             layout=Array.Layout.FIRST_MAJOR,
             element_type=ScalarType.int16,
         )
@@ -540,13 +571,13 @@ class DSLTest_01Arrays(unittest.TestCase):
         output_shape = (M // M_tile, N // N_tile, N_tile, M_tile)
         A = Array(
             shape=input_shape,
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             layout=Array.Layout.FIRST_MAJOR,
             element_type=ScalarType.uint8,
         )
         B = Array(
             shape=output_shape,
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             layout=Array.Layout.FIRST_MAJOR,
             element_type=ScalarType.uint8,
         )
@@ -587,7 +618,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         package = Package()
 
         arr = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(256, 256),
         )
@@ -634,7 +665,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         package = Package()
 
         arr = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(256, 256),
         )
@@ -695,11 +726,10 @@ class DSLTest_01Arrays(unittest.TestCase):
                 )
 
     def test_runtimesizes_vector_add(self) -> None:
-        from accera import Dimension
         N = Dimension()
 
-        A = Array(shape=(N, ), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        B = Array(shape=(N, ), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(N, ), element_type=ScalarType.float32, role=Role.INPUT)
+        B = Array(shape=(N, ), element_type=ScalarType.float32, role=Role.INPUT_OUTPUT)
 
         nest = Nest((N, ))
 
@@ -724,10 +754,9 @@ class DSLTest_01Arrays(unittest.TestCase):
         self._verify_helper(package, test_name, function.name, correctness_check_values)
 
     def _simple_runtimesize_loopnest_common(self, name, splits=[]) -> None:
-        from accera import Dimension
         M = Dimension()
 
-        A = Array(shape=(M, ), element_type=ScalarType.float32, role=Array.Role.INPUT)
+        A = Array(shape=(M, ), element_type=ScalarType.float32, role=Role.INPUT)
 
         nest = Nest((M, ))
 
@@ -761,11 +790,10 @@ class DSLTest_01Arrays(unittest.TestCase):
     def _test_runtimesizes_matmul_common(
         self, name, M, N, K, sizes_first=True, splits=None, level_caches=None, max_element_caches=None
     ) -> None:
-        from accera import Dimension
 
-        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Role.INPUT_OUTPUT)
 
         nest = Nest((M, N, K))
 
@@ -877,52 +905,44 @@ class DSLTest_01Arrays(unittest.TestCase):
 
     # 1/3 dynamic
     def test_matmul_partial_runtimesizes_M(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_matmul_partial_runtimesizes_M", Dimension(), 128, 32, sizes_first=True
         )
 
     def test_matmul_partial_runtimesizes_K(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_matmul_partial_runtimesizes_K", 64, 128, Dimension(), sizes_first=True
         )
 
     def test_matmul_partial_runtimesizes_N(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_matmul_partial_runtimesizes_N", 64, Dimension(), 32, sizes_first=True
         )
 
     # 2/3 dynamic
     def test_matmul_partial_runtimesizes_MN(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_matmul_partial_runtimesizes_MN", Dimension(), Dimension(), 32, sizes_first=True
         )
 
     def test_matmul_partial_runtimesizes_MK(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_matmul_partial_runtimesizes_MK", Dimension(), 128, Dimension(), sizes_first=True
         )
 
     def test_matmul_partial_runtimesizes_NK(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_matmul_partial_runtimesizes_NK", 64, Dimension(), Dimension(), sizes_first=True
         )
 
     # 3/3 dynamic
     def test_matmul_all_runtimesizes(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_matmul_all_runtimesizes", Dimension(), Dimension(), Dimension(), sizes_first=True
         )
 
     # Fails because debug mode expects all the arguments first
     # def test_matmul_partial_runtimesizes_MNK_size_last(self) -> None:
-    #     from accera import Dimension
     #     self._test_runtimesizes_matmul_common(
     #         "test_matmul_partial_runtimesizes_MNK_size_last",
     #         Dimension(),
@@ -931,13 +951,11 @@ class DSLTest_01Arrays(unittest.TestCase):
     #         sizes_first=False)
 
     def test_partial_runtimesizes_static_splits_matmul(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_partial_runtimesizes_static_splits_matmul", 256, Dimension(), 128, splits=[[], [8], []]
         )
 
     def test_all_runtimesizes_matmul_single_static_split(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_all_runtimesizes_matmul_single_static_split",
             Dimension(),
@@ -947,17 +965,15 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def test_all_runtimesizes_matmul_single_dim_two_static_split(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_all_runtimesizes_matmul_single_dim_two_static_split",
-            Dimension(),
-            Dimension(),
-            Dimension(),
+            Dimension("M"),
+            Dimension("N"),
+            Dimension("K"),
             splits=[[], [64, 8], []]
         )
 
     def test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_1(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_1",
             Dimension(),
@@ -967,7 +983,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_2(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_all_runtimesizes_matmul_single_dim_two_static_split_boundary_2",
             Dimension(),
@@ -977,7 +992,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def test_all_runtimesizes_matmul_two_dim_single_static_split(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_all_runtimesizes_matmul_two_dim_single_static_split",
             Dimension(),
@@ -987,7 +1001,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def test_all_runtimesizes_matmul_two_dim_two_static_split(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_all_runtimesizes_matmul_two_dim_two_static_split",
             Dimension(),
@@ -997,7 +1010,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def test_all_runtimesizes_matmul_three_dim_two_static_split_boundary(self) -> None:
-        from accera import Dimension
         self._test_runtimesizes_matmul_common(
             "test_all_runtimesizes_matmul_three_dim_two_static_split_boundary",
             Dimension(),
@@ -1007,7 +1019,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def test_all_runtimesizes_matmul_two_dim_single_static_split_static_cache(self) -> None:
-        from accera import Dimension
         # Creates a cache in the statically sized main loop, but no cache in the dynamically sized cleanup loops as dynamically-sized caches are not supported yet
         self._test_runtimesizes_matmul_common(
             "test_all_runtimesizes_matmul_two_dim_single_static_split_static_cache",
@@ -1019,7 +1030,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         )    # Cache B at level 2, which will be the jj index in a (i, j, k, jj, kk) schedule
 
     def test_all_runtimesizes_matmul_two_dim_two_static_split_static_cache(self) -> None:
-        from accera import Dimension
         # Creates a cache in the statically sized main loop, but no cache in the dynamically sized cleanup loops as dynamically-sized caches are not supported yet
         self._test_runtimesizes_matmul_common(
             "test_all_runtimesizes_matmul_two_dim_two_static_split_static_cache",
@@ -1031,7 +1041,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         )    # Cache B at level 4, which will be the jj index in a (i, j, k, jj, kk, jjj, kkk) schedule
 
     def test_all_runtimesizes_matmul_two_dim_two_static_split_static_max_element_cache(self) -> None:
-        from accera import Dimension
         j_outer_split = 64
         j_inner_split = 8
         k_outer_split = 32
@@ -1046,7 +1055,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def test_partial_dynamic_sized_uint8_matmul(self) -> None:
-        from accera import Dimension
 
         test_name = "test_partial_dynamic_sized_uint8_matmul"
 
@@ -1054,9 +1062,9 @@ class DSLTest_01Arrays(unittest.TestCase):
         N = 256
         K = Dimension()
 
-        A = Array(shape=(M, K), element_type=ScalarType.uint8, role=Array.Role.INPUT)
-        B = Array(shape=(K, N), element_type=ScalarType.uint8, role=Array.Role.INPUT)
-        C = Array(shape=(M, N), element_type=ScalarType.int32, role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(M, K), element_type=ScalarType.uint8, role=Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.uint8, role=Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.int32, role=Role.INPUT_OUTPUT)
 
         nest = Nest((M, N, K))
 
@@ -1103,7 +1111,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         self._verify_helper(package, test_name, function.name, correctness_check_values)
 
     def test_all_dynamic_sizes_static_unroll_matmul(self) -> None:
-        from accera import Dimension
 
         test_name = "test_all_dynamic_sizes_static_unroll_matmul"
 
@@ -1111,9 +1118,9 @@ class DSLTest_01Arrays(unittest.TestCase):
         N = Dimension()
         K = Dimension()
 
-        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Role.INPUT_OUTPUT)
 
         nest = Nest((M, N, K))
 
@@ -1148,7 +1155,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         self._verify_helper(package, test_name, function.name, correctness_check_values)
 
     def test_all_dynamic_sizes_static_vectorize_matmul(self) -> None:
-        from accera import Dimension
 
         test_name = "test_all_dynamic_sizes_static_vectorize_matmul"
 
@@ -1156,9 +1162,9 @@ class DSLTest_01Arrays(unittest.TestCase):
         N = Dimension()
         K = Dimension()
 
-        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Role.INPUT_OUTPUT)
 
         nest = Nest((M, N, K))
 
@@ -1193,7 +1199,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         self._verify_helper(package, test_name, function.name, correctness_check_values)
 
     def test_all_dynamic_sized_fp32_mlas_matmul(self) -> None:
-        from accera import Dimension
 
         test_name = "test_all_dynamic_sized_fp32_mlas_matmul"
 
@@ -1201,9 +1206,9 @@ class DSLTest_01Arrays(unittest.TestCase):
         N = Dimension(name="N")
         K = Dimension(name="K")
 
-        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Array.Role.INPUT)
-        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(M, K), element_type=ScalarType.float32, role=Role.INPUT)
+        B = Array(shape=(K, N), element_type=ScalarType.float32, role=Role.INPUT)
+        C = Array(shape=(M, N), element_type=ScalarType.float32, role=Role.INPUT_OUTPUT)
 
         assert A._size_str == "M*K"
         assert B._size_str == "K*N"
@@ -1265,7 +1270,7 @@ class DSLTest_01Arrays(unittest.TestCase):
     # Step 3, call range_get_result to fill in the result of output array
     #
     def test_output_array_range_node1(self) -> None:
-        from accera import Dimension, create_dimensions, floor, cast
+        from accera import create_dimensions, floor, cast
         from accera._lang_python._lang import Scalar
 
         start = Scalar(ScalarType.float32)
@@ -1273,25 +1278,24 @@ class DSLTest_01Arrays(unittest.TestCase):
         delta = Scalar(ScalarType.float32)
 
         inputDim = create_dimensions()
-        inputDim.role = Dimension.Role.INPUT
 
-        outputDims = Array(shape=(1, ), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
-        output = Array(shape=(inputDim, ), role=Array.Role.INPUT_OUTPUT)
-        output_start = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
+        outputDim = Dimension(role=Role.OUTPUT)
+        output = Array(shape=(inputDim, ), role=Role.INPUT_OUTPUT)
+        output_start = Scalar(ScalarType.float32, Role.INPUT_OUTPUT)
 
         nest1 = Nest((1, ))
 
         @nest1.iteration_logic
         def _():
-            outputDims[0] = cast(floor((limit - start) / delta), ScalarType.int64)
+            outputDim.set(cast(floor((limit - start) / delta), ScalarType.int64))
 
         nest2 = Nest([inputDim])
         i = nest2.get_indices()
 
         @nest2.iteration_logic
         def _():
-            output[i] = output_start[0]
-            output_start[0] += delta
+            output[i] = output_start
+            output_start.set(output_start + delta)
 
         # Generate a function like:
         # range_get_size(float start, float limit, float delta, int64_t* output_dim);
@@ -1300,7 +1304,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         package = Package()
         get_size_fn_name = f"get_size"
         get_result_fn_name = f"get_result"
-        get_size_fn = package.add(nest1, args=(start, limit, delta, outputDims), base_name=get_size_fn_name)
+        get_size_fn = package.add(nest1, args=(start, limit, delta, outputDim), base_name=get_size_fn_name)
         get_result_fn = package.add(nest2, args=(inputDim, output, output_start, delta), base_name=get_result_fn_name)
 
         start_test = np.float32(1.0)
@@ -1339,40 +1343,36 @@ class DSLTest_01Arrays(unittest.TestCase):
 
     # This test is another implementation of range node using nested function calls
     def test_output_array_range_node2(self) -> None:
-        from accera import Dimension, create_dimensions, floor, cast
-        from accera._lang_python._lang import Scalar
+        from accera import create_dimensions, floor, cast
+        from accera._lang_python._lang import Scalar, Dimension
 
         start = Scalar(ScalarType.float32)
         limit = Scalar(ScalarType.float32)
         delta = Scalar(ScalarType.float32)
 
         inputDim = create_dimensions()
-        inputDim.role = Dimension.Role.INPUT
 
-        outputDims = Array(shape=(1, ), element_type=ScalarType.int64, role=Array.Role.INPUT_OUTPUT)
-        output = Array(shape=(inputDim, ), role=Array.Role.INPUT_OUTPUT)
-        output_start = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.INPUT_OUTPUT)
-        output_start_Tmp = Array(shape=(1, ), element_type=ScalarType.float32, role=Array.Role.TEMP)
+        outputDim = Dimension(role=Role.OUTPUT)
+        output = Array(shape=(inputDim, ), role=Role.INPUT_OUTPUT)
+        output_start = Scalar(type=ScalarType.float32, role=Role.TEMP)
 
         nest1 = Nest((1, ))
-
         @nest1.iteration_logic
         def _():
-            outputDims[0] = cast(floor((limit - start) / delta), ScalarType.int64)
+            outputDim.set(cast(floor((limit - start) / delta), ScalarType.int64))
 
         nest2 = Nest((1, ))
-
         @nest2.iteration_logic
         def _():
-            output_start[0] = start
+            output_start.set(start)
 
         nest3 = Nest([inputDim])
         i = nest3.get_indices()
 
         @nest3.iteration_logic
         def _():
-            output[i] = output_start[0]
-            output_start[0] += delta
+            output[i] = output_start
+            output_start.set(output_start + delta)
 
         # Generate a function like:
         # range_get_size(float start, float limit, float delta, int64_t* output_dim);
@@ -1382,16 +1382,16 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         package = Package()
         # BUGBUG: dim args ordered first due to issue with Debug mode
-        package.add(nest1, args=(start, limit, delta, outputDims), base_name=f"range_get_size")
-        ini_start_fn = package.add(nest2, args=(output_start, start), base_name=f"ini_start")
-        get_result_fn = package.add(nest3, args=(inputDim, output, output_start, delta), base_name=f"get_result")
+        package.add(nest1, args=(start, limit, delta, outputDim), base_name=f"range_get_size")
+        ini_start_fn = package.add(nest2, args=(start,), base_name=f"ini_start")
+        get_result_fn = package.add(nest3, args=(inputDim, output, delta), base_name=f"get_result")
 
         nest4 = Nest((1, ))
 
         @nest4.iteration_logic
         def _():
-            ini_start_fn(output_start_Tmp, start)
-            get_result_fn(inputDim, output, output_start_Tmp, delta)
+            ini_start_fn(start)
+            get_result_fn(inputDim, output, delta)
 
         # BUGBUG: dim args ordered first due to issue with Debug mode
         package.add(nest4, args=(inputDim, output, start, delta), base_name=f"range_get_output_array")
@@ -1404,31 +1404,28 @@ class DSLTest_01Arrays(unittest.TestCase):
         )
 
     def _test_output_array_gather_node(self, axis: int) -> None:
-        from accera import Dimension, create_dimensions, floor, cast
-        from accera._lang_python._lang import Scalar
+        from accera import create_dimensions
 
         DataDim0, DataDim1, IndicesDim0, IndicesDim1 = create_dimensions()
 
         # rank(Output) = rank(Data) + rank(Indices) - 1 = 2 + 2 - 1 = 3
-        InputDim0, InputDim1, InputDim2 = create_dimensions()
+        OutputDim0, OutputDim1, OutputDim2 = create_dimensions(Role.OUTPUT)
 
-        OutputDims = Array(shape=(3, ), element_type=ScalarType.index, role=Array.Role.INPUT_OUTPUT)
-
-        Data = Array(shape=(DataDim0, DataDim1), role=Array.Role.INPUT)
-        Indices = Array(shape=(IndicesDim0, IndicesDim1), role=Array.Role.INPUT, element_type=ScalarType.index)
+        Data = Array(shape=(DataDim0, DataDim1), role=Role.INPUT)
+        Indices = Array(shape=(IndicesDim0, IndicesDim1), role=Role.INPUT, element_type=ScalarType.index)
 
         # derive output dims from input dims
         # Note: negative indices are not supported
         if axis == 0:
             # represents a runtime output-only array (dynamically allocated)
-            Output = Array(shape=(IndicesDim0, IndicesDim1, DataDim1), role=Array.Role.INPUT_OUTPUT)
+            Output = Array(shape=(IndicesDim0, IndicesDim1, DataDim1), role=Role.INPUT_OUTPUT)
 
             nest_dims_0 = Nest((1, ))
             @nest_dims_0.iteration_logic
             def _():
-                OutputDims[0] = IndicesDim0
-                OutputDims[1] = IndicesDim1
-                OutputDims[2] = DataDim1
+                OutputDim0.set(IndicesDim0)
+                OutputDim1.set(IndicesDim1)
+                OutputDim2.set(DataDim1)
 
             nest_array_0 = Nest((IndicesDim0, IndicesDim1, DataDim1))
             i, j, k = nest_array_0.get_indices()
@@ -1448,7 +1445,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             package = Package()
             package.add(
                 nest_dims_0,
-                args=(DataDim1, IndicesDim0, IndicesDim1, OutputDims),
+                args=(DataDim1, IndicesDim0, IndicesDim1, OutputDim0, OutputDim1, OutputDim2),
                 base_name=f"Gather_rank_2_dim_axis_{axis}"
             )
             package.add(
@@ -1467,13 +1464,13 @@ class DSLTest_01Arrays(unittest.TestCase):
         else:
             assert (axis == 1)
             # represents a runtime output-only array (dynamically allocated)
-            Output = Array(shape=(DataDim0, IndicesDim0, IndicesDim1), role=Array.Role.INPUT_OUTPUT)
+            Output = Array(shape=(DataDim0, IndicesDim0, IndicesDim1), role=Role.INPUT_OUTPUT)
             nest_dims_1 = Nest((1, ))
             @nest_dims_1.iteration_logic
             def _():
-                OutputDims[0] = DataDim0
-                OutputDims[1] = IndicesDim0
-                OutputDims[2] = IndicesDim1
+                OutputDim0.set(DataDim0)
+                OutputDim1.set(IndicesDim0)
+                OutputDim2.set(IndicesDim1)
 
             nest_array_1 = Nest((DataDim0, IndicesDim0, IndicesDim1))
             i, j, k = nest_array_1.get_indices()
@@ -1494,7 +1491,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             package = Package()
             package.add(
                 nest_dims_1,
-                args=(DataDim0, IndicesDim0, IndicesDim1, OutputDims),
+                args=(DataDim0, IndicesDim0, IndicesDim1, OutputDim0, OutputDim1, OutputDim2),
                 base_name=f"Gather_rank_2_dim_axis_{axis}"
             )
             package.add(
@@ -1519,9 +1516,9 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
         # helper function to create a nest so that we can focus on the logic function
         M, N, S = shape
 
-        A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
-        B = Array(role=Array.Role.INPUT, element_type=type, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=type, shape=(M, S))
+        B = Array(role=Role.INPUT, element_type=type, shape=(S, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
 
         return Nest(shape=(M, N, S)), A, B, C
 
@@ -1545,9 +1542,9 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
     def test_signed_types(self) -> None:
         for t in [ScalarType.int16, ScalarType.int32, ScalarType.int64] + FLOAT_TYPES:
 
-            A = Array(role=Array.Role.INPUT, element_type=t, shape=(16, 16))
-            B = Array(role=Array.Role.INPUT, element_type=t, shape=(16, 16))
-            C = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(16, 16))
+            A = Array(role=Role.INPUT, element_type=t, shape=(16, 16))
+            B = Array(role=Role.INPUT, element_type=t, shape=(16, 16))
+            C = Array(role=Role.INPUT_OUTPUT, element_type=t, shape=(16, 16))
 
             nest = Nest(shape=(16, 16))
             i, j = nest.get_indices()
@@ -1588,9 +1585,9 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 ScalarType.uint64,
         ]:
 
-            A = Array(role=Array.Role.INPUT, element_type=t, shape=(16, 16))
-            B = Array(role=Array.Role.INPUT, element_type=t, shape=(16, 16))
-            C = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(16, 16))
+            A = Array(role=Role.INPUT, element_type=t, shape=(16, 16))
+            B = Array(role=Role.INPUT, element_type=t, shape=(16, 16))
+            C = Array(role=Role.INPUT_OUTPUT, element_type=t, shape=(16, 16))
 
             nest = Nest(shape=(16, 16))
             i, j = nest.get_indices()
@@ -1744,8 +1741,8 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
         M = 16
         N = 8
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
 
         nest = Nest((M, N))
         i, j = nest.get_indices()
@@ -1778,8 +1775,8 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
         M = 256
         N = 128
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
 
         nest = Nest((M, N))
         i, j = nest.get_indices()
@@ -1823,8 +1820,8 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
     #     M = 16
     #     N = 8
 
-    #     A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-    #     B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
+    #     A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+    #     B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N))
 
     #     nest = Nest((M, N))
     #     i, j = nest.get_indices()
@@ -1866,10 +1863,10 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             func_names.append(fn_name)
 
             nest = Nest((M, N))
-            A = Array(role=Array.Role.INPUT, element_type=t, shape=(M, N))
-            B = Array(role=Array.Role.INPUT, element_type=t, shape=(M, N))
-            C_max = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(M, N))
-            C_min = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(M, N))
+            A = Array(role=Role.INPUT, element_type=t, shape=(M, N))
+            B = Array(role=Role.INPUT, element_type=t, shape=(M, N))
+            C_max = Array(role=Role.INPUT_OUTPUT, element_type=t, shape=(M, N))
+            C_min = Array(role=Role.INPUT_OUTPUT, element_type=t, shape=(M, N))
 
             i, j = nest.get_indices()
 
@@ -1940,15 +1937,15 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             fn_name = f"{package_name}_{t.name}"
             func_names.append(fn_name)
 
-            A = Array(role=Array.Role.INPUT, element_type=t, shape=(M, N))
-            A_max = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(1, ))
-            A_min = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=(1, ))
+            A = Array(role=Role.INPUT, element_type=t, shape=(M, N))
+            A_max = Array(role=Role.INPUT_OUTPUT, element_type=t, shape=(1, ))
+            A_min = Array(role=Role.INPUT_OUTPUT, element_type=t, shape=(1, ))
 
-            A_max_cache = Array(role=Array.Role.TEMP, element_type=t, shape=(M_tile, N_tile), flags=AllocateFlags.STACK)
-            A_min_cache = Array(role=Array.Role.TEMP, element_type=t, shape=(M_tile, N_tile), flags=AllocateFlags.STACK)
+            A_max_cache = Array(role=Role.TEMP, element_type=t, shape=(M_tile, N_tile), flags=AllocateFlags.STACK)
+            A_min_cache = Array(role=Role.TEMP, element_type=t, shape=(M_tile, N_tile), flags=AllocateFlags.STACK)
 
-            io_A_max_cache = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=A_max_cache.shape)
-            io_A_min_cache = Array(role=Array.Role.INPUT_OUTPUT, element_type=t, shape=A_min_cache.shape)
+            io_A_max_cache = Array(role=Role.INPUT_OUTPUT, element_type=t, shape=A_max_cache.shape)
+            io_A_min_cache = Array(role=Role.INPUT_OUTPUT, element_type=t, shape=A_min_cache.shape)
 
             outer_i_dim = Dimension()
             outer_j_dim = Dimension()
@@ -2176,9 +2173,9 @@ class DSLTest_03Schedules(unittest.TestCase):
     def _create_nest(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
         M, N, S = shape
 
-        A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
-        B = Array(role=Array.Role.INPUT, element_type=type, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=type, shape=(M, S))
+        B = Array(role=Role.INPUT, element_type=type, shape=(S, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
 
         return Nest(shape=(M, N, S)), A, B, C
 
@@ -2315,9 +2312,9 @@ class DSLTest_03Schedules(unittest.TestCase):
             for K in [1, 3, 5]:    # filter sizes
                 M = N - K + 1    # output size
 
-                A = Array(role=Array.Role.INPUT, shape=(N, ))
-                B = Array(role=Array.Role.INPUT, shape=(K, ))
-                C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, ))
+                A = Array(role=Role.INPUT, shape=(N, ))
+                B = Array(role=Role.INPUT, shape=(K, ))
+                C = Array(role=Role.INPUT_OUTPUT, shape=(M, ))
 
                 nest = Nest(shape=(M, K))
                 i, j = nest.get_indices()
@@ -2364,9 +2361,9 @@ class DSLTest_03Schedules(unittest.TestCase):
         K = 3    # filter size
         M = N - K + 1    # output size = 8
 
-        A = Array(role=Array.Role.INPUT, shape=(N, ))
-        B = Array(role=Array.Role.INPUT, shape=(K, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, ))
+        A = Array(role=Role.INPUT, shape=(N, ))
+        B = Array(role=Role.INPUT, shape=(K, ))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(M, ))
 
         nest = Nest(shape=(M, K))
         i, j = nest.get_indices()
@@ -2450,7 +2447,7 @@ class DSLTest_03Schedules(unittest.TestCase):
 
     def test_schedule_pad_inner_index_no_bc_1(self) -> None:
         I = 16
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I, ))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(I, ))
 
         nest = Nest(shape=(I, ))
         i = nest.get_indices()
@@ -2478,7 +2475,7 @@ class DSLTest_03Schedules(unittest.TestCase):
     def test_schedule_pad_inner_index_no_bc_2(self) -> None:
         I = 16
         J = 8
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
 
         nest = Nest(shape=(I, J))
         i, j = nest.get_indices()
@@ -2506,7 +2503,7 @@ class DSLTest_03Schedules(unittest.TestCase):
     def test_schedule_pad_inner_index_no_bc_3(self) -> None:
         I = 16
         J = 8
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
 
         nest = Nest(shape=(I, J))
         i, j = nest.get_indices()
@@ -2535,7 +2532,7 @@ class DSLTest_03Schedules(unittest.TestCase):
     @expectedFailure(FailedReason.BUG, "Padding with boundary conditions is broken")
     def test_schedule_pad_inner_index_bc_1(self) -> None:
         I = 17
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I, ))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(I, ))
 
         nest = Nest(shape=(I, ))
         i = nest.get_indices()
@@ -2564,7 +2561,7 @@ class DSLTest_03Schedules(unittest.TestCase):
     def test_schedule_pad_inner_index_bc_2(self) -> None:
         I = 17
         J = 8
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
 
         nest = Nest(shape=(I, J))
         i, j = nest.get_indices()
@@ -2593,7 +2590,7 @@ class DSLTest_03Schedules(unittest.TestCase):
     def test_schedule_pad_inner_index_bc_3(self) -> None:
         I = 17
         J = 8
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
 
         nest = Nest(shape=(I, J))
         i, j = nest.get_indices()
@@ -2622,7 +2619,7 @@ class DSLTest_03Schedules(unittest.TestCase):
     @expectedFailure(FailedReason.BUG, "Padding of outer indices is unsupported")
     def test_schedule_pad_outer_index_no_bc_1(self) -> None:
         I = 16
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I, ))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(I, ))
 
         nest = Nest(shape=(I, ))
         i = nest.get_indices()
@@ -2651,7 +2648,7 @@ class DSLTest_03Schedules(unittest.TestCase):
     def test_schedule_pad_outer_index_no_bc_2(self) -> None:
         I = 16
         J = 8
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
 
         nest = Nest(shape=(I, J))
         i, j = nest.get_indices()
@@ -2680,7 +2677,7 @@ class DSLTest_03Schedules(unittest.TestCase):
     def test_schedule_pad_outer_index_no_bc_3(self) -> None:
         I = 16
         J = 8
-        A = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
+        A = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(I, J))
 
         nest = Nest(shape=(I, J))
         i, j = nest.get_indices()
@@ -2757,9 +2754,9 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_full_iteration_space_fusing(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT, shape=(16, 16))
-        B = Array(role=Array.Role.INPUT, shape=(16, 16))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 16))
+        A = Array(role=Role.INPUT, shape=(16, 16))
+        B = Array(role=Role.INPUT, shape=(16, 16))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 16))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(16, 16))
@@ -2821,9 +2818,9 @@ class DSLTest_04Fusing(unittest.TestCase):
         from accera import fuse, Nest, max
         from accera._lang_python._lang import Scalar
 
-        A = Array(role=Array.Role.INPUT, shape=(16, 11))
-        B = Array(role=Array.Role.INPUT, shape=(11, 10))
-        C = Array(role=Array.Role.INPUT, shape=(16, 10))
+        A = Array(role=Role.INPUT, shape=(16, 11))
+        B = Array(role=Role.INPUT, shape=(11, 10))
+        C = Array(role=Role.INPUT, shape=(16, 10))
 
         # Fully-connected neural layer with activation: C = op(C + A @ B)
         # Create nest0 and schedule0
@@ -2873,8 +2870,8 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_partial_iteration_space_fusing_2(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, ))
-        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(4, ))
+        A = Array(role=Role.INPUT_OUTPUT, shape=(16, ))
+        B = Array(role=Role.INPUT_OUTPUT, shape=(4, ))
 
         n0 = Nest([16])
         i0 = n0.get_indices()
@@ -2918,9 +2915,9 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_unequal_iteration_space_fusing_1(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT, shape=(16, 16))
-        B = Array(role=Array.Role.INPUT, shape=(16, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 16))
+        A = Array(role=Role.INPUT, shape=(16, 16))
+        B = Array(role=Role.INPUT, shape=(16, 10))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 16))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(16, 16))
@@ -2983,9 +2980,9 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_unequal_iteration_space_fusing_2(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT, shape=(16, 10))
-        B = Array(role=Array.Role.INPUT, shape=(16, 16))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 16))
+        A = Array(role=Role.INPUT, shape=(16, 10))
+        B = Array(role=Role.INPUT, shape=(16, 16))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 16))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(16, 10))
@@ -3049,9 +3046,9 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_unequal_iteration_space_fusing_3(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT, shape=(16, 16))
-        B = Array(role=Array.Role.INPUT, shape=(16, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 16))
+        A = Array(role=Role.INPUT, shape=(16, 16))
+        B = Array(role=Role.INPUT, shape=(16, 10))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 16))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(16, 16))
@@ -3142,8 +3139,8 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_concat_fusing_1(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, ))
-        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(7, ))
+        A = Array(role=Role.INPUT_OUTPUT, shape=(3, ))
+        B = Array(role=Role.INPUT_OUTPUT, shape=(7, ))
 
         n1 = Nest(A.shape)
         n2 = Nest(B.shape)
@@ -3186,9 +3183,9 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_concat_fusing_2(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(11, ))
-        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(7, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(5, ))
+        A = Array(role=Role.INPUT_OUTPUT, shape=(11, ))
+        B = Array(role=Role.INPUT_OUTPUT, shape=(7, ))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(5, ))
 
         n1 = Nest(A.shape)
         n2 = Nest(B.shape)
@@ -3243,8 +3240,8 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_concat_fusing_3(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 16))
-        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(7, 16))
+        A = Array(role=Role.INPUT_OUTPUT, shape=(3, 16))
+        B = Array(role=Role.INPUT_OUTPUT, shape=(7, 16))
 
         n1 = Nest(A.shape)
         n2 = Nest(B.shape)
@@ -3289,9 +3286,9 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_concat_fusing_4(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(11, 16))
-        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(7, 16))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(5, 16))
+        A = Array(role=Role.INPUT_OUTPUT, shape=(11, 16))
+        B = Array(role=Role.INPUT_OUTPUT, shape=(7, 16))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(5, 16))
 
         n1 = Nest(A.shape)
         n2 = Nest(B.shape)
@@ -3349,10 +3346,10 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_multi_concat_fusing_1(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(1024 + 13, ))
-        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(1024 + 11, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(1024 + 7, ))
-        D = Array(role=Array.Role.INPUT_OUTPUT, shape=(1024 + 3, ))
+        A = Array(role=Role.INPUT_OUTPUT, shape=(1024 + 13, ))
+        B = Array(role=Role.INPUT_OUTPUT, shape=(1024 + 11, ))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(1024 + 7, ))
+        D = Array(role=Role.INPUT_OUTPUT, shape=(1024 + 3, ))
 
         # Create nest0 and schedule
         nest0 = Nest(A.shape)
@@ -3416,9 +3413,9 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_multi_partial_fusion_1(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 11))
-        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 7))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 5))
+        A = Array(role=Role.INPUT_OUTPUT, shape=(3, 11))
+        B = Array(role=Role.INPUT_OUTPUT, shape=(3, 7))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(3, 5))
 
         n1 = Nest(A.shape)
         n2 = Nest(B.shape)
@@ -3461,9 +3458,9 @@ class DSLTest_04Fusing(unittest.TestCase):
     def test_multi_partial_fusion_2(self) -> None:
         from accera import fuse, Nest
 
-        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 11, 4))
-        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 7))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(3, 5, 6, 8))
+        A = Array(role=Role.INPUT_OUTPUT, shape=(3, 11, 4))
+        B = Array(role=Role.INPUT_OUTPUT, shape=(3, 7))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(3, 5, 6, 8))
 
         n1 = Nest(A.shape)
         n2 = Nest(B.shape)
@@ -3510,9 +3507,9 @@ class DSLTest_04Fusing(unittest.TestCase):
         N = 128
         M_tile = 32
         N_tile = 16
-        A = Array(role=Array.Role.INPUT, shape=(M, ))
-        B = Array(role=Array.Role.INPUT, shape=(N, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = Array(role=Role.INPUT, shape=(M, ))
+        B = Array(role=Role.INPUT, shape=(N, ))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(M, N))
 
         # Create nest0 and schedule
         nest0 = Nest(shape=(M, N))
@@ -3607,12 +3604,12 @@ class DSLTest_04Fusing(unittest.TestCase):
 
         package = Package()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        B_temp = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, shape=(K_tile, N_tile))
-        io_B_temp = Array(role=Array.Role.INPUT_OUTPUT, element_type=B_temp.element_type, shape=B_temp.shape)
+        B_temp = Array(role=Role.TEMP, element_type=ScalarType.float32, shape=(K_tile, N_tile))
+        io_B_temp = Array(role=Role.INPUT_OUTPUT, element_type=B_temp.element_type, shape=B_temp.shape)
 
         i_tile_idx = Dimension()
         j_tile_idx = Dimension()
@@ -3679,7 +3676,7 @@ class DSLTest_04Fusing(unittest.TestCase):
 
     def test_nested_nests_matmul_boundary(self):
         test_name = "test_nested_nests_matmul_boundary"
-        from accera import min, Dimension
+        from accera import min
 
         M = 20
         N = 32
@@ -3690,12 +3687,12 @@ class DSLTest_04Fusing(unittest.TestCase):
 
         package = Package()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        B_temp = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, shape=(K_tile, N_tile))
-        io_B_temp = Array(role=Array.Role.INPUT_OUTPUT, element_type=B_temp.element_type, shape=B_temp.shape)
+        B_temp = Array(role=Role.TEMP, element_type=ScalarType.float32, shape=(K_tile, N_tile))
+        io_B_temp = Array(role=Role.INPUT_OUTPUT, element_type=B_temp.element_type, shape=B_temp.shape)
 
         i_tile_idx = Dimension()
         j_tile_idx = Dimension()
@@ -3768,7 +3765,7 @@ class DSLTest_04Fusing(unittest.TestCase):
 
     def test_double_nested_nests_matmul_boundary(self):
         test_name = "test_double_nested_nests_matmul_boundary"
-        from accera import min, Dimension
+        from accera import min
 
         M = 20
         N = 32
@@ -3780,12 +3777,12 @@ class DSLTest_04Fusing(unittest.TestCase):
 
         package = Package()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        B_temp = Array(role=Array.Role.TEMP, element_type=ScalarType.float32, shape=(K_tile, N_tile))
-        io_B_temp = Array(role=Array.Role.INPUT_OUTPUT, element_type=B_temp.element_type, shape=B_temp.shape)
+        B_temp = Array(role=Role.TEMP, element_type=ScalarType.float32, shape=(K_tile, N_tile))
+        io_B_temp = Array(role=Role.INPUT_OUTPUT, element_type=B_temp.element_type, shape=B_temp.shape)
 
         n_tile_dim = Dimension()
         n_kernel_dim = Dimension()
@@ -3962,14 +3959,14 @@ class DSLTest_06PlansCaching(unittest.TestCase):
     def _create_plan(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
         M, N, S = shape
 
-        A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
+        A = Array(role=Role.INPUT, element_type=type, shape=(M, S))
         B = Array(
-            role=Array.Role.INPUT,
+            role=Role.INPUT,
             element_type=type,
             shape=(S, N),
             layout=Array.Layout.LAST_MAJOR,
         )    # use a different caching layout
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
 
         nest = Nest(shape=(M, N, S))
         i, j, k = nest.get_indices()
@@ -4059,7 +4056,7 @@ class DSLTest_06PlansCaching(unittest.TestCase):
 
     @expectedFailure(FailedReason.NOT_IN_PY, "Various target memory identifiers")
     def test_cache_mapping(self) -> None:
-        A = Array(role=Array.Role.INPUT, shape=(1024, ))
+        A = Array(role=Role.INPUT, shape=(1024, ))
 
         nest = Nest(shape=(64, ))
         i = nest.get_indices()
@@ -4075,8 +4072,8 @@ class DSLTest_06PlansCaching(unittest.TestCase):
         self._verify_plan(plan, [A], "test_cache_mapping")
 
     def test_cache_trigger_level(self) -> None:
-        A = Array(role=Array.Role.INPUT, shape=(1024, 1024))
-        B = Array(role=Array.Role.INPUT_OUTPUT, shape=(1024, 1024))
+        A = Array(role=Role.INPUT, shape=(1024, 1024))
+        B = Array(role=Role.INPUT_OUTPUT, shape=(1024, 1024))
 
         nest = Nest(shape=(1024, 1024))
         i, j = nest.get_indices()
@@ -4101,9 +4098,9 @@ class DSLTest_06PlansCaching(unittest.TestCase):
         N = 1024
         S = 1024
 
-        A = Array(role=Array.Role.INPUT, shape=(M, S))
-        B = Array(role=Array.Role.INPUT, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = Array(role=Role.INPUT, shape=(M, S))
+        B = Array(role=Role.INPUT, shape=(S, N))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(M, N))
 
         nest = Nest(shape=(M, N, S))
         i, j, k = nest.get_indices()
@@ -4145,9 +4142,9 @@ class DSLTest_06PlansCaching(unittest.TestCase):
         N = 1024
         S = 1024
 
-        A = Array(role=Array.Role.INPUT, shape=(M, S))
-        B = Array(role=Array.Role.INPUT, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = Array(role=Role.INPUT, shape=(M, S))
+        B = Array(role=Role.INPUT, shape=(S, N))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(M, N))
 
         nest = Nest(shape=(M, N, S))
         i, j, k = nest.get_indices()
@@ -4209,7 +4206,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
     def test_unroll(self) -> None:
         from accera import Target, Nest
 
-        A = Array(role=Array.Role.INPUT, shape=(3, 5))
+        A = Array(role=Role.INPUT, shape=(3, 5))
 
         my_target = Target(category=Target.Category.CPU)
 
@@ -4231,9 +4228,9 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
     def test_vectorize(self) -> None:
         from accera import Target, Nest
 
-        A = Array(role=Array.Role.INPUT, shape=(64, ))
-        B = Array(role=Array.Role.INPUT, shape=(64, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(64, ))
+        A = Array(role=Role.INPUT, shape=(64, ))
+        B = Array(role=Role.INPUT, shape=(64, ))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(64, ))
 
         my_target = Target(category=Target.Category.CPU, vector_bytes=16, vector_registers=2)
 
@@ -4251,9 +4248,9 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
     def test_kernelize(self) -> None:
         from accera import Target, Nest
 
-        A = Array(role=Array.Role.INPUT, shape=(16, 11))
-        B = Array(role=Array.Role.INPUT, shape=(11, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 10))
+        A = Array(role=Role.INPUT, shape=(16, 11))
+        B = Array(role=Role.INPUT, shape=(11, 10))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 10))
 
         nest = Nest(shape=(16, 10, 11))
         i, j, k = nest.get_indices()
@@ -4275,9 +4272,9 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
     def test_kernelize_2(self) -> None:
         from accera import Target, Nest
 
-        A = Array(role=Array.Role.INPUT, shape=(16, 16))
-        B = Array(role=Array.Role.INPUT, shape=(16, 16))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 16))
+        A = Array(role=Role.INPUT, shape=(16, 16))
+        B = Array(role=Role.INPUT, shape=(16, 16))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 16))
 
         nest = Nest(shape=(16, 16, 16))
         i, j, k = nest.get_indices()
@@ -4298,9 +4295,9 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
 
     @expectedFailure(FailedReason.NOT_IN_PY, "pinning parallelization to CPU cores")
     def test_cpu_bind(self) -> None:
-        A = Array(role=Array.Role.INPUT, shape=(16, 11))
-        B = Array(role=Array.Role.INPUT, shape=(11, 10))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(16, 10))
+        A = Array(role=Role.INPUT, shape=(16, 11))
+        B = Array(role=Role.INPUT, shape=(11, 10))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(16, 10))
 
         nest = Nest(shape=(16, 10, 11))
         i, j, k = nest.get_indices()
@@ -4319,9 +4316,9 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
         M = 128
         N = 256
         K = 256
-        A = Array(role=Array.Role.INPUT, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = Array(role=Role.INPUT, shape=(M, K))
+        B = Array(role=Role.INPUT, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -4362,9 +4359,9 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
         M = 128
         N = 256
         K = 256
-        A = Array(role=Array.Role.INPUT, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = Array(role=Role.INPUT, shape=(M, K))
+        B = Array(role=Role.INPUT, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -4414,9 +4411,9 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
             )
 
     def test_scheduling_strategies(self) -> None:
-        A = Array(role=Array.Role.INPUT, shape=(256, 1024))
-        B = Array(role=Array.Role.INPUT, shape=(1024, 512))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(256, 512))
+        A = Array(role=Role.INPUT, shape=(256, 1024))
+        B = Array(role=Role.INPUT, shape=(1024, 512))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(256, 512))
 
         nest = Nest(shape=(256, 512, 1024))
         i, j, k = nest.get_indices()
@@ -4532,9 +4529,9 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
         B_test = np.random.random(matrix.shape).astype(np.float32)
 
         for layout in [Array.Layout.FIRST_MAJOR, Array.Layout.LAST_MAJOR]:
-            A = Array(role=Array.Role.CONST, data=matrix, layout=Array.Layout.DEFERRED)
+            A = Array(role=Role.CONST, data=matrix, layout=Array.Layout.DEFERRED)
             B = Array(
-                role=Array.Role.INPUT_OUTPUT,
+                role=Role.INPUT_OUTPUT,
                 element_type=ScalarType.float32,
                 shape=matrix.shape,
             )
@@ -4579,9 +4576,9 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
         B_test = np.random.random(matrix.shape).astype(np.float32)
 
         for layout in [(128, 1), (1, 128)]:
-            A = Array(role=Array.Role.CONST, data=matrix, layout=Array.Layout.DEFERRED)
+            A = Array(role=Role.CONST, data=matrix, layout=Array.Layout.DEFERRED)
             B = Array(
-                role=Array.Role.INPUT_OUTPUT,
+                role=Role.INPUT_OUTPUT,
                 element_type=ScalarType.float32,
                 shape=matrix.shape,
             )
@@ -4612,10 +4609,10 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         P0, P1, P2, P3 = create_parameters()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(P0, P1),
         )
@@ -4696,10 +4693,10 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         P0, P1, P2, P3 = create_parameters()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(P0, P1),
         )
@@ -4765,9 +4762,9 @@ class DSLTest_09Parameters(unittest.TestCase):
 
                 P = create_parameters()
 
-                A = Array(role=Array.Role.INPUT, shape=(N, ))
-                B = Array(role=Array.Role.INPUT, shape=(K, ))
-                C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, ))
+                A = Array(role=Role.INPUT, shape=(N, ))
+                B = Array(role=Role.INPUT, shape=(K, ))
+                C = Array(role=Role.INPUT_OUTPUT, shape=(M, ))
 
                 nest = Nest(shape=(M, K))
                 i, j = nest.get_indices()
@@ -4826,9 +4823,9 @@ class DSLTest_09Parameters(unittest.TestCase):
         N = 10
         S = 11
         type = ScalarType.float32
-        A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
-        B = Array(role=Array.Role.INPUT, element_type=type, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=type, shape=(M, S))
+        B = Array(role=Role.INPUT, element_type=type, shape=(S, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
 
         nest = Nest(shape=(M, N, S))
 
@@ -4903,9 +4900,9 @@ class DSLTest_09Parameters(unittest.TestCase):
     def test_parameterization_5(self) -> None:
         from accera import create_parameters
 
-        A = Array(role=Array.Role.INPUT, shape=(256, 1024))
-        B = Array(role=Array.Role.INPUT, shape=(1024, 512))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(256, 512))
+        A = Array(role=Role.INPUT, shape=(256, 1024))
+        B = Array(role=Role.INPUT, shape=(1024, 512))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(256, 512))
 
         nest = Nest(shape=(256, 512, 1024))
         i, j, k = nest.get_indices()
@@ -5067,10 +5064,10 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         P0, P1, P2, P3, P4 = create_parameters()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(P0, P1),
         )
@@ -5112,10 +5109,10 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         P0, P1, P2, P3, P4 = create_parameters()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(P0, P1),
         )
@@ -5161,10 +5158,10 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         P0, P1, P2, P3 = create_parameters()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(P0, P1),
         )
@@ -5221,9 +5218,9 @@ class DSLTest_09Parameters(unittest.TestCase):
     def test_fusion_parameterization_1(self) -> None:
         from accera import create_parameters, Nest, fuse
 
-        A = Array(role=Array.Role.INPUT, element_type=float, shape=(32, ))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(32, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(1, ))
+        A = Array(role=Role.INPUT, element_type=float, shape=(32, ))
+        B = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(32, ))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(1, ))
 
         n0 = Nest([32, 32])
         i0, j0 = n0.get_indices()
@@ -5310,9 +5307,9 @@ class DSLTest_09Parameters(unittest.TestCase):
         """
         from accera import create_parameters, Nest, fuse
 
-        A = Array(role=Array.Role.INPUT, element_type=float, shape=(32, ))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(32, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(1, ))
+        A = Array(role=Role.INPUT, element_type=float, shape=(32, ))
+        B = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(32, ))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(1, ))
 
         n0 = Nest([32, 32])
         i0, j0 = n0.get_indices()
@@ -5377,9 +5374,9 @@ class DSLTest_09Parameters(unittest.TestCase):
     def test_fusion_parameterization_3(self) -> None:
         from accera import create_parameters, Nest, fuse
 
-        A = Array(role=Array.Role.INPUT, element_type=float, shape=(32, ))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(32, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(1, ))
+        A = Array(role=Role.INPUT, element_type=float, shape=(32, ))
+        B = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(32, ))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(1, ))
 
         n0 = Nest([32, 32])
         i0, j0 = n0.get_indices()
@@ -5437,9 +5434,9 @@ class DSLTest_09Parameters(unittest.TestCase):
     def test_fusion_parameterization_4(self) -> None:
         from accera import create_parameters, Nest, fuse, create_parameter_grid
 
-        A = Array(role=Array.Role.INPUT, element_type=float, shape=(128, ))
-        B = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(128, ))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=(1, ))
+        A = Array(role=Role.INPUT, element_type=float, shape=(128, ))
+        B = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(128, ))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(1, ))
 
         n0 = Nest([128, 128])
         i0, j0 = n0.get_indices()
@@ -5541,10 +5538,10 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         P0, P1, P2, P3, P4 = create_parameters()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(P0, P1),
         )
@@ -5597,10 +5594,10 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         P0, P1, P2, P3 = create_parameters()
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P0, P2))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(P2, P1))
         C = Array(
-            role=Array.Role.INPUT_OUTPUT,
+            role=Role.INPUT_OUTPUT,
             element_type=ScalarType.float32,
             shape=(P0, P1),
         )
@@ -5657,9 +5654,9 @@ class DSLTest_09Parameters(unittest.TestCase):
         M = 128
         N = 256
         K = 256
-        A = Array(role=Array.Role.INPUT, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, shape=(M, N))
+        A = Array(role=Role.INPUT, shape=(M, K))
+        B = Array(role=Role.INPUT, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -5709,7 +5706,7 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         package = Package()
         P0, P1 = create_parameters()
-        arr = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(256, 256))
+        arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(256, 256))
         arr0 = arr.sub_array(offsets=(0, 0), shape=(P0, P1))
 
         # add a function that utilizes a subarray layout
@@ -5751,7 +5748,7 @@ class DSLTest_09Parameters(unittest.TestCase):
 
 class DSLTest_10Packages(unittest.TestCase):
     def _create_plan(self, target=Target.HOST) -> Function:
-        A = Array(role=Array.Role.INPUT_OUTPUT, shape=(64, ))
+        A = Array(role=Role.INPUT_OUTPUT, shape=(64, ))
 
         nest = Nest(shape=(64, ))
         i = nest.get_indices()
@@ -5811,9 +5808,9 @@ class DSLTest_10Packages(unittest.TestCase):
 
     def test_debug_mode_1(self) -> None:
         M = N = K = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -5855,9 +5852,9 @@ class DSLTest_10Packages(unittest.TestCase):
 
     def test_debug_mode_2(self) -> None:
         M = N = K = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -5906,9 +5903,9 @@ class DSLTest_10Packages(unittest.TestCase):
         from accera import fuse
 
         M = N = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest0 = Nest(shape=(M, N))
         i0, j0 = nest0.get_indices()
@@ -5961,9 +5958,9 @@ class DSLTest_10Packages(unittest.TestCase):
         from accera import fuse
 
         M = N = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest0 = Nest(shape=(M, N))
         i0, j0 = nest0.get_indices()
@@ -6025,9 +6022,9 @@ class DSLTest_10Packages(unittest.TestCase):
         from accera import fuse
 
         M = N = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest0 = Nest(shape=(M, N))
         i0, j0 = nest0.get_indices()
@@ -6091,9 +6088,9 @@ class DSLTest_10Packages(unittest.TestCase):
         from accera import fuse
 
         M = N = 16
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest0 = Nest(shape=(M, N))
         i0, j0 = nest0.get_indices()
@@ -6208,7 +6205,7 @@ class DSLTest_10Packages(unittest.TestCase):
 
     def test_logic_function_conditionals(self) -> None:
         def make_test_fn(package, A, B, C):
-            T = Array(role=Array.Role.TEMP, element_type=A.element_type, shape=A.shape)
+            T = Array(role=Role.TEMP, element_type=A.element_type, shape=A.shape)
 
             nest = Nest(A.shape)
             i, j = nest.get_indices()
@@ -6232,9 +6229,9 @@ class DSLTest_10Packages(unittest.TestCase):
 
             return package.add(nest, args=(A, B, C))
 
-        A = Array(shape=(256, 32), role=Array.Role.INPUT)
-        B = Array(shape=(256, 32), role=Array.Role.INPUT)
-        C = Array(shape=(256, 32), role=Array.Role.INPUT_OUTPUT)
+        A = Array(shape=(256, 32), role=Role.INPUT)
+        B = Array(shape=(256, 32), role=Role.INPUT)
+        C = Array(shape=(256, 32), role=Role.INPUT_OUTPUT)
 
         package = Package()
         make_test_fn(package, A, B, C)
@@ -6247,9 +6244,9 @@ class DSLTest_11AutoPlan(unittest.TestCase):
     def _create_plan(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
         M, N, S = shape
 
-        A = Array(role=Array.Role.INPUT, element_type=type, shape=(M, S))
-        B = Array(role=Array.Role.INPUT, element_type=type, shape=(S, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=type, shape=(M, S))
+        B = Array(role=Role.INPUT, element_type=type, shape=(S, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=type, shape=(M, N))
 
         nest = Nest(shape=(M, N, S))
         i, j, k = nest.get_indices()

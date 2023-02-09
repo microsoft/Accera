@@ -45,7 +45,7 @@ namespace value
     };
 
     // implementation of an output verifier function
-    void CheckAllClose(Array actual, Array desired, float tolerance, const std::vector<ScalarDimension>& runtimeSizes = {});
+    void CheckAllClose(Array actual, Array desired, float tolerance, const std::vector<Scalar>& runtimeSizes = {});
 
 } // namespace value
 

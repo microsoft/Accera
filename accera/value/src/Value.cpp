@@ -400,6 +400,13 @@ namespace value
         _hasName = false;
     }
 
+    Value Value::PointerTo() const
+    {
+        Value copy = *this;
+        ++copy._type.second;
+        return copy;
+    }
+
     int Value::PointerLevel() const
     {
         return _type.second;

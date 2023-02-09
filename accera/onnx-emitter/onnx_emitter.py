@@ -181,10 +181,10 @@ def handle_gemm_node(node, model, package, target=Target.HOST):
 
     # accera BUG: adding name to ctor throws
     # RuntimeError: EmitterContext is not set!
-    A = Array(role=Array.Role.INPUT, element_type=float, shape=A_shape)    # , name=A_input_name)
-    B = Array(role=Array.Role.INPUT, element_type=float, shape=B_shape)    # , name=B_input_name)
-    C = Array(role=Array.Role.INPUT, element_type=float, shape=C_shape)    # , name=node.input([2])
-    Y = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=Y_shape)    # , name=Y_output_name)
+    A = Array(role=Role.INPUT, element_type=float, shape=A_shape)    # , name=A_input_name)
+    B = Array(role=Role.INPUT, element_type=float, shape=B_shape)    # , name=B_input_name)
+    C = Array(role=Role.INPUT, element_type=float, shape=C_shape)    # , name=node.input([2])
+    Y = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=Y_shape)    # , name=Y_output_name)
 
     emitted_info = {}
     opts = get_target_options(target)
@@ -243,9 +243,9 @@ def handle_matmul_node(node, model, package, target=Target.HOST):
           f"\nC = [{', '.join(map(str, C_shape))}]"
           f"\nalpha = {alpha} transA = {transA} transB = {transB}")
 
-    A = Array(role=Array.Role.INPUT, element_type=float, shape=A_shape)    # , name=A_input_name)
-    B = Array(role=Array.Role.INPUT, element_type=float, shape=B_shape)    # , name=B_input_name)
-    C = Array(role=Array.Role.INPUT_OUTPUT, element_type=float, shape=C_shape)    # , name=C_output_name)
+    A = Array(role=Role.INPUT, element_type=float, shape=A_shape)    # , name=A_input_name)
+    B = Array(role=Role.INPUT, element_type=float, shape=B_shape)    # , name=B_input_name)
+    C = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=C_shape)    # , name=C_output_name)
 
     emitted_info = {}
 

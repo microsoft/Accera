@@ -42,6 +42,7 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
+from accera._lang_python import Role
 from accera._lang_python._lang import _MMAShape, _MMASchedulingPolicy, _MemorySpace, _CacheStrategy, _MMAFragmentOp
 from accera.test import verifiers
 from accera.test.test_utils import expectedFailure, FailedReason, get_type_str
@@ -214,9 +215,9 @@ class TensorizeTest(unittest.TestCase):
         if thread_tile is not None and tensorize:
             raise ValueError("Can't specify both a thread_tile shape and tensorize")
 
-        A = Array(role=Array.Role.INPUT, element_type=array_element_types[0], shape=(M, K), layout=array_layouts[0])
-        B = Array(role=Array.Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=array_layouts[1])
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=array_layouts[2])
+        A = Array(role=Role.INPUT, element_type=array_element_types[0], shape=(M, K), layout=array_layouts[0])
+        B = Array(role=Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=array_layouts[1])
+        C = Array(role=Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=array_layouts[2])
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -392,9 +393,9 @@ class TensorizeTest(unittest.TestCase):
         if thread_tile is not None and tensorize:
             raise ValueError("Can't specify both a thread_tile shape and tensorize")
 
-        A = Array(role=Array.Role.INPUT, element_type=array_element_types[0], shape=(M, K), layout=array_layouts[0])
-        B = Array(role=Array.Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=array_layouts[1])
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=array_layouts[2])
+        A = Array(role=Role.INPUT, element_type=array_element_types[0], shape=(M, K), layout=array_layouts[0])
+        B = Array(role=Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=array_layouts[1])
+        C = Array(role=Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=array_layouts[2])
 
         if tensorize:
             plan, in_cache_idx, out_cache_idx = self._matmul_relu_tensor_plan(M, N, K, block_tile, outer_tile_k, thread_coarsening_tile, mma_shape, num_total_passes, use_static_offsets, num_fused_passes, scheduling_policy, target, A, B, C, prologue_op, epilogue_op)
@@ -453,9 +454,9 @@ class TensorizeTest(unittest.TestCase):
         if inner_tile_k is None:
             inner_tile_k = outer_tile_k
 
-        A = Array(role=Array.Role.INPUT, element_type=array_element_types[0], shape=(batch_count, M, K), layout=array_layouts[0])
-        B = Array(role=Array.Role.INPUT, element_type=array_element_types[1], shape=(batch_count, K, N), layout=array_layouts[1])
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(batch_count, M, N), layout=array_layouts[2])
+        A = Array(role=Role.INPUT, element_type=array_element_types[0], shape=(batch_count, M, K), layout=array_layouts[0])
+        B = Array(role=Role.INPUT, element_type=array_element_types[1], shape=(batch_count, K, N), layout=array_layouts[1])
+        C = Array(role=Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(batch_count, M, N), layout=array_layouts[2])
 
         nest = Nest(shape=(batch_count, M, N, K))
         b, i, j, k = nest.get_indices()
@@ -558,9 +559,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 16
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -617,9 +618,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 16
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -676,9 +677,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 16
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -735,9 +736,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 16
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -795,9 +796,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -857,9 +858,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -916,9 +917,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 128
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -975,9 +976,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -1035,9 +1036,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -1095,9 +1096,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -1154,9 +1155,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -1213,9 +1214,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -1280,10 +1281,10 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
-        D = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        D = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -1348,9 +1349,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -1416,9 +1417,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -1477,9 +1478,9 @@ class TensorizeTest(unittest.TestCase):
         outer_tile_x = 64
         outer_tile_y = outer_tile_x
 
-        A = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -1527,9 +1528,9 @@ class TensorizeTest(unittest.TestCase):
 
     def _cuda_tensorize(self, M, N, K, outer_tile_x, outer_tile_y, mma_shape, num_total_passes, tolerance=1e-5, intype=ScalarType.float16, outtype=ScalarType.float16, num_fused_passes=None, scheduling_policy=_MMASchedulingPolicy.PASS_ORDER, verify=True) -> None:
         from accera import Target
-        A = Array(role=Array.Role.INPUT, element_type=intype, shape=(M, K))
-        B = Array(role=Array.Role.INPUT, element_type=intype, shape=(K, N))
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=outtype, shape=(M, N))
+        A = Array(role=Role.INPUT, element_type=intype, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=intype, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=outtype, shape=(M, N))
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -1704,9 +1705,9 @@ class TensorizeTest(unittest.TestCase):
                               element_type=ScalarType.float16, output_type=ScalarType.float16) -> None:
         from accera import Array, Nest, Package, Target
 
-        A = Array(role=Array.Role.INPUT, element_type=element_type, shape=(M, K), layout=array_layouts[0])
-        B = Array(role=Array.Role.INPUT, element_type=element_type, shape=(K, N), layout=array_layouts[1])
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=output_type, shape=(M, N), layout=array_layouts[2])
+        A = Array(role=Role.INPUT, element_type=element_type, shape=(M, K), layout=array_layouts[0])
+        B = Array(role=Role.INPUT, element_type=element_type, shape=(K, N), layout=array_layouts[1])
+        C = Array(role=Role.INPUT_OUTPUT, element_type=output_type, shape=(M, N), layout=array_layouts[2])
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()
@@ -2615,9 +2616,9 @@ class TensorizeTest(unittest.TestCase):
 
         output_type = element_type if tensorize else ScalarType.float32
 
-        A = Array(role=Array.Role.INPUT, element_type=element_type, shape=(M, K), layout=a_layout)
-        B = Array(role=Array.Role.INPUT, element_type=element_type, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(role=Array.Role.INPUT_OUTPUT, element_type=output_type, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=element_type, shape=(M, K), layout=a_layout)
+        B = Array(role=Role.INPUT, element_type=element_type, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(role=Role.INPUT_OUTPUT, element_type=output_type, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
 
         nest = _matmul_nest(M, N, K, A, B, C)
         i, j, k = nest.get_indices()

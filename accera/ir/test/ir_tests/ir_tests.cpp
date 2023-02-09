@@ -2855,7 +2855,7 @@ TEST_CASE_METHOD(Fixture, "debug_check_all_close", "[cpu][nest]")
                 Print(diff, toStderr);
                 Print("\n\n"s, toStderr);
             }).Else([&] {
-                Print("\nOK (no mismatches detected)\n"s);
+                Print("\nOK (all checks passes)\n"s);
             });
         });
 
@@ -3248,11 +3248,14 @@ TEST_CASE_METHOD(Fixture, "runtime_sizes_K", "[cpu][runtime_sizes]")
     DeclareFunction("NestMatMul")
         .Decorated(false)
         .Public(true)
-        .Parameters(
-            Value({ ValueType::Index, ScalarLayout }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+        .Parameters({ Value({ ValueType::Index, ScalarLayout }),
+                      Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
+                      Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
+                      Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }) },
+                    std::vector{ FunctionParameterUsage::input,
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::inputOutput })
         .Define([=](ScalarDimension KValue, Array A, Array B, Array C) {
             Nest nest(MemoryShape{ M, N, K }, std::vector{ KValue });
 
@@ -3292,12 +3295,16 @@ TEST_CASE_METHOD(Fixture, "runtime_sizes_M_N", "[cpu][runtime_sizes]")
     DeclareFunction("NestMatMul")
         .Decorated(false)
         .Public(true)
-        .Parameters(
-            Value({ ValueType::Index, ScalarLayout }),
-            Value({ ValueType::Index, ScalarLayout }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+        .Parameters({ Value({ ValueType::Index, ScalarLayout }),
+                      Value({ ValueType::Index, ScalarLayout }),
+                      Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
+                      Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
+                      Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }) },
+                    std::vector{ FunctionParameterUsage::input,
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::inputOutput })
         .Define([=](ScalarDimension MValue, ScalarDimension NValue, Array A, Array B, Array C) {
             Nest nest(MemoryShape{ M, N, K }, std::vector{ MValue, NValue });
 
@@ -3337,13 +3344,18 @@ TEST_CASE_METHOD(Fixture, "runtime_sizes_all", "[cpu][runtime_sizes]")
     DeclareFunction("NestMatMul")
         .Decorated(false)
         .Public(true)
-        .Parameters(
-            Value({ ValueType::Index, ScalarLayout }),
-            Value({ ValueType::Index, ScalarLayout }),
-            Value({ ValueType::Index, ScalarLayout }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
-            Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }))
+        .Parameters({ Value({ ValueType::Index, ScalarLayout }),
+                      Value({ ValueType::Index, ScalarLayout }),
+                      Value({ ValueType::Index, ScalarLayout }),
+                      Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, K }) }),
+                      Value({ ValueType::Float, MemoryLayout(MemoryShape{ K, N }) }),
+                      Value({ ValueType::Float, MemoryLayout(MemoryShape{ M, N }) }) },
+                    std::vector{ FunctionParameterUsage::input,
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::input,
+                                 FunctionParameterUsage::inputOutput })
         .Define([=](ScalarDimension MValue, ScalarDimension NValue, ScalarDimension KValue, Array A, Array B, Array C) {
             Nest nest(MemoryShape{ M, N, K }, std::vector{ MValue, NValue, KValue });
 
@@ -3396,7 +3408,7 @@ TEST_CASE_METHOD(Fixture, "runtime_sizes_output", "[cpu][runtime_sizes]")
                         FunctionParameterUsage::output,
                     })
         .Define([=](Scalar start, Scalar delta, Scalar limit, Pointer outputPtr, Pointer outputDimPtr) {
-            ScalarDimension outputDim = Cast((limit - start) / delta, ValueType::Index);
+            ScalarDimension outputDim { Cast((limit - start) / delta, ValueType::Index).GetValue() };
             outputDimPtr.Store(outputDim);
 
             // TODO: replace with custom allocator

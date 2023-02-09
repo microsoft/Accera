@@ -1680,12 +1680,12 @@ MakeCacheOp UpdateActiveBlockCacheShape(PatternRewriter& rewriter,
 
     if (cacheAccessContext.dimReorderCache)
     {
-        assert((cacheShape[0] == DynamicSizeSentinelValue || cacheShape.size() == activeBlockInfo.shape.size()) && "Inconsistent cache rank");
+        assert((cacheShape[0] == util::DynamicSizeSentinelValue || cacheShape.size() == activeBlockInfo.shape.size()) && "Inconsistent cache rank");
 
         // reorder cacheShape based on the dimension reorder
         auto reorderVec = cacheAccessContext.accessMaps.dimOrder.ToVector();
         assert(reorderVec.size() == activeBlockInfo.shape.size());
-        cacheShape.resize(activeBlockInfo.shape.size(), DynamicSizeSentinelValue);
+        cacheShape.resize(activeBlockInfo.shape.size(), util::DynamicSizeSentinelValue);
         for (unsigned cacheDimIdx = 0; cacheDimIdx < activeBlockInfo.shape.size(); ++cacheDimIdx)
         {
             cacheShape[cacheDimIdx] = std::max(cacheShape[cacheDimIdx], activeBlockInfo.shape[reorderVec[cacheDimIdx]]);
@@ -1695,7 +1695,7 @@ MakeCacheOp UpdateActiveBlockCacheShape(PatternRewriter& rewriter,
     {
         assert(cacheShape.size() == 1 && "Affine coefficient caches must be rank 1 buffers");
         int64_t volumePlusOffset = activeBlockInfo.activeBlockVolume + cacheAccessContext.accessMaps.coefficients.offset;
-        if (cacheShape[0] == DynamicSizeSentinelValue)
+        if (cacheShape[0] == util::DynamicSizeSentinelValue)
         {
             cacheShape[0] = volumePlusOffset;
         }
@@ -4094,7 +4094,7 @@ LogicalResult AdjustHierarchicalCacheRegionPositionRewrite::matchAndRewrite(Begi
                     //   end_1'
                     // end_0
                     // Then we wouldn't want to move end_1 to be before end_0 because that would affect another region
-                    if (util::GetFirstOp(endOp, otherEndOp) == otherEndOp)
+                    if (otherEndOp->isBeforeInBlock(endOp))
                     {
                         endOp->moveBefore(otherEndOp);
                     }
@@ -4106,7 +4106,7 @@ LogicalResult AdjustHierarchicalCacheRegionPositionRewrite::matchAndRewrite(Begi
                     beginCreateCacheOp->moveBefore(otherBeginOp);
 
                     // Similar to the other case, only move the endOp if it is before the otherEndOp
-                    if (util::GetFirstOp(endOp, otherEndOp) == endOp)
+                    if (endOp->isBeforeInBlock(otherEndOp))
                     {
                         endOp->moveAfter(otherEndOp);
                     }

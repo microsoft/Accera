@@ -11,10 +11,11 @@
 * [`accera.fuse`](functions/fuse.md) `(schedules[, partial])`
 
 # Top level enumerations
-* [`accera.CacheStrategy](<enumerations/CacheStrategy.md>)
+* [`accera.CacheStrategy`](<enumerations/CacheStrategy.md>)
 * [`accera.ScalarType`](<enumerations/ScalarType.md>)
 * [`accera.MMASchedulingPolicy`](<enumerations/MMASchedulingPolicy.md>)
 * [`accera.MMAShape`](<enumerations/MMAShape.md>)
+* [`accera.Role`](<enumerations/Role.md>)
 
 # Classes
 
@@ -26,7 +27,6 @@ A multidimensional array of scalar elements.
 
 ### Enumerations
 * [`accera.Array.Layout`](<classes/Array/Layout.md>)
-* [`accera.Array.Role`](<classes/Array/Role.md>)
 
 ### Methods
 * [`deferred_layout`](<classes/Array/deferred_layout.md>) `(layout)`
@@ -37,17 +37,6 @@ A multidimensional array of scalar elements.
 ## `class accera.Cache`
 
 A local copy of an `Array` block.
-
----
-
-## `class accera.Dimension`
-A runtime dimension.
-
-### Constructors
-* [`Dimension`](<classes/Dimension/Dimension.md>) `([role, value])`
-
-### Enumerations
-* [`accera.Dimension.Role`](<classes/Dimension/Role.md>)
 
 ---
 
@@ -118,8 +107,19 @@ A scheduled (ordered) loop nest with target-specific implementation details.
 A scalar element.
 
 ### Constructors
-* [`Scalar`](<classes/Scalar/Scalar.md>) `([element_type, value])`
+* [`Scalar`](<classes/Scalar/Scalar.md>) `([value])`
+* [`Scalar`](<classes/Scalar/Scalar.md>) `([value, name, role])`
+* [`Scalar`](<classes/Scalar/Scalar.md>) `([element_type, role])`
 
+---
+
+## `class accera.Dimension`
+A specialization of Scalar with `element_type` as ScalarType.index.
+
+### Constructors
+* [`Dimension`](<classes/Dimension/Dimension.md>) `([role])`
+* [`Dimension`](<classes/Dimension/Dimension.md>) `([name, role])`
+* [`Dimension`](<classes/Dimension/Dimension.md>) `([value, name, role])`
 
 ---
 

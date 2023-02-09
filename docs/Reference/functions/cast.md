@@ -28,8 +28,8 @@ The result after casting
 Casting from float32 to int16:
 
 ```python
-A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(10, 20))
-B = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.int16, shape=(10, 20))
+A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(10, 20))
+B = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.int16, shape=(10, 20))
 
 nest = acc.Nest(10, 20)
 i, j = nest.get_indices()
@@ -43,8 +43,8 @@ def _():
 In comparison, casting from int16 to float32 is implicit, which means the `cast` operation can be omitted:
 
 ```python
-A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.int16, shape=(10, 20))
-B = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(10, 20))
+A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.int16, shape=(10, 20))
+B = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(10, 20))
 
 nest = acc.Nest(10, 20)
 i, j = nest.get_indices()
@@ -59,7 +59,7 @@ Casting a constant to int8:
 
 ```python
 
-A = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.int8, shape=(10, 20))
+A = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.int8, shape=(10, 20))
 
 nest = acc.Nest(10, 20)
 i, j = nest.get_indices()

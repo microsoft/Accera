@@ -27,7 +27,7 @@ subArrayNumRows = 2
 subArrayNumCols = 3
 
 matrix = np.random.rand(N, N)
-Arr = Array(role=Array.Role.INPUT, data=matrix)
+Arr = Array(role=Role.INPUT, data=matrix)
 
 # Zero out a sub array of size [2, 3] such that the resulting array looks like this:
 # xxxxx

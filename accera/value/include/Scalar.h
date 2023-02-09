@@ -13,6 +13,14 @@ namespace accera
 {
 namespace value
 {
+    enum class Role
+    {
+        Const, // Compile-time constant (immutable internal-scope)
+        Input, // immutable external-scope
+        InputOutput, // mutable external-scope
+        Output, // mutable external-scope
+        Temp // mutable internal-scope (cannot be used as function arguments)
+    };
 
     /// <summary> A View type that wraps a Value instance and enforces a memory layout that represents a single value </summary>
     class Scalar
@@ -23,15 +31,15 @@ namespace value
         /// <summary> Constructor that wraps the provided instance of Value </summary>
         /// <param name="value"> The Value instance to wrap </param>
         /// <param name="name"> The optional name </param>
-        Scalar(Value value, const std::string& name = "");
+        Scalar(Value value, const std::string& name = "", Role role = Role::Input);
 
         /// <summary> Constructs an instance from a fundamental type value </summary>
         /// <typeparam name="T"> Any fundamental type accepted by Value </typeparam>
         /// <param name="t"> The value to wrap </param>
         /// <param name="name"> The optional name </param>
         template <typename T>
-        Scalar(T t, const std::string& name = "") :
-            Scalar(Value(t), name)
+        Scalar(T t, const std::string& name = "", Role role = Role::Input) :
+            Scalar(Value(t), name, role)
         {}
 
         Scalar(const Scalar&);
@@ -43,9 +51,15 @@ namespace value
         /// <summary> Gets the underlying wrapped Value instance </summary>
         Value GetValue() const;
 
+        Role GetRole() const;
+
         /// <summary> Creates a new Scalar instance that contains the same value as this instance </summary>
         /// <returns> A new Scalar instance that points to a new, distinct memory that contains the same value as this instance </returns>
         Scalar Copy() const;
+
+        /// <summary> Used to set the value of a scalar after it has been initialized (cannot be used for input type scalars). </summary>
+        /// <param name="other"> The scalar value to set to. </param>
+        void Set(const Scalar& other);
 
         /// <summary> Arithmetic operators </summary>
         Scalar& operator+=(Scalar);
@@ -69,8 +83,8 @@ namespace value
             return *_value.Get<T*>();
         }
 
-        void SetName(const std::string& name);
-        std::string GetName() const;
+        virtual void SetName(const std::string& name);
+        virtual std::string GetName() const;
 
         /// <summary> Retrieves the type of data stored in the wrapped Value instance </summary>
         /// <returns> The type </returns>
@@ -79,6 +93,11 @@ namespace value
         // Returns [s1, s2] with either s1 casted to s2's type or s2 casted to s1's type or unchanged if
         // there is no implicit type conversion that can be done.
         static std::pair<Scalar, Scalar> MakeTypeCompatible(Scalar s1, Scalar s2);
+
+    protected:
+        virtual void SetValue(Value value);
+
+        Role _role{ Role::Input };
 
     private:
         friend Scalar operator+(Scalar, Scalar);
@@ -107,12 +126,12 @@ namespace value
         Value _value;
     };
 
-    Scalar MakeScalar(ValueType type, const std::string& name = "");
+    Scalar MakeScalar(ValueType type, const std::string& name = "", Role role = Role::Input);
 
     template <typename T, std::enable_if_t<std::is_convertible_v<std::vector<T>, detail::ConstantData>, void*> = nullptr>
-    Scalar MakeScalar(const std::string& name = "")
+    Scalar MakeScalar(const std::string& name = "", Role role = Role::Input)
     {
-        return MakeScalar(GetValueType<T>(), name);
+        return MakeScalar(GetValueType<T>(), name, role);
     }
 } // namespace value
 } // namespace accera
@@ -149,9 +168,9 @@ namespace value
         case ValueType::Index:
             return Scalar(static_cast<index_t>(t));
         case ValueType::Float16:
-            return Scalar(float16_t{static_cast<float16_t::underlying_type>(t)});
+            return Scalar(float16_t{ static_cast<float16_t::underlying_type>(t) });
         case ValueType::BFloat16:
-            return Scalar(bfloat16_t{static_cast<bfloat16_t::underlying_type>(t)});
+            return Scalar(bfloat16_t{ static_cast<bfloat16_t::underlying_type>(t) });
         case ValueType::Float:
             return Scalar(static_cast<float>(t));
         case ValueType::Double:

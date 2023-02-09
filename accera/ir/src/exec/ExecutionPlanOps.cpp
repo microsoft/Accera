@@ -947,7 +947,7 @@ namespace executionPlan
         auto inputElementType = inputMemRefType.getElementType();
         auto cacheElementType = elementType.has_value() ? accera::value::ValueTypeToMLIRType(builder, *elementType) : inputElementType;
 
-        std::vector<int64_t> dynamicSizedMemrefShape(1, DynamicSizeSentinelValue);
+        std::vector<int64_t> dynamicSizedMemrefShape(1, util::DynamicSizeSentinelValue);
         cacheInfo.cacheType = MemRefType::get(dynamicSizedMemrefShape, cacheElementType, {}, memoryLocation);
         cacheInfo.cacheAllocation = cacheAllocation;
         cacheInfo.accessMaps = accessMaps;

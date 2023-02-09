@@ -4,7 +4,7 @@
 # Accera v1.2 Reference
 
 ## `accera.Array.deferred_layout(cache)`
-Specifies the layout for a `Array.Role.CONST` array based on a `Cache`. For more details, see [Deferred layout of constant arrays](<../../../Manual/08%20Deferred%20Layout%20of%20Constant%20Arrays.md>)
+Specifies the layout for a `Role.CONST` array based on a `Cache`. For more details, see [Deferred layout of constant arrays](<../../../Manual/08%20Deferred%20Layout%20of%20Constant%20Arrays.md>)
 
 ## Arguments
 
@@ -23,8 +23,8 @@ import accera as acc
 matrix = np.random.rand(16, 16)
 
 # Create a constant array with a deferred layout
-A = acc.Array(role=acc.Array.Role.CONST, data=matrix, layout=acc.Array.Layout.DEFERRED)
-B = Array(role=Array.Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=matrix.shape)
+A = acc.Array(role=acc.Role.CONST, data=matrix, layout=acc.Array.Layout.DEFERRED)
+B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=matrix.shape)
 
 nest = Nest(shape=matrix.shape)
 i, j = nest.get_indices()

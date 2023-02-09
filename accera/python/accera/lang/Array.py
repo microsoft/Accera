@@ -8,13 +8,12 @@ from typing import *
 from enum import Enum, auto
 from functools import partial
 
-from .._lang_python import ScalarType, _MemoryLayout, AllocateFlags
-from .._lang_python._lang import Array as NativeArray
+from .._lang_python import ScalarType, _MemoryLayout, AllocateFlags, Role
+from .._lang_python._lang import Array as NativeArray, Dimension
 from .Layout import Layout, MemoryMapLayout
 from ..Parameter import DelayedParameter
 from ..Constants import inf, k_dynamic_size
 from .NativeLoopNestContext import NativeLoopNestContext
-from .Dimension import Dimension
 
 
 class Array:
@@ -22,16 +21,9 @@ class Array:
 
     Layout = Layout
 
-    class Role(Enum):
-        "Defines the Array role"
-        INPUT = (auto())    #: An input array (immutable external-scope) whose contents are known at compile-time.
-        INPUT_OUTPUT = auto()    #: An input/output array (mutable external-scope).
-        CONST = auto()    #: A constant array (immutable internal-scope).
-        TEMP = auto()    #: A temporary array (mutable internal-scope).
-
     def __init__(
         self,
-        role: "accera.Array.Role",
+        role: "accera.Role",
         name: str = '',
         data: Union["numpy.ndarray"] = None,
         element_type: Union["accera.ScalarType", type] = None,
@@ -64,7 +56,7 @@ class Array:
 
               In both cases, the last dimension (s3) is not used in computing the affine memory map.
             offset: The offset of the affine memory map | integer (positive, zero, or negative), default: 0
-            shape: The array shape. Required for roles other than `Array.Role.CONST`, should not be specified for `Array.Role.CONST`
+            shape: The array shape. Required for roles other than `Role.CONST`, should not be specified for `Role.CONST`
         """
 
         self._role = role
@@ -80,9 +72,9 @@ class Array:
         self._flags = flags
         self._size_str = ""
 
-        if self._role == Array.Role.CONST:
+        if self._role == Role.CONST:
             if self._data is None:
-                raise ValueError("data is required for Array.Role.CONST")
+                raise ValueError("data is required for Role.CONST")
             shape = self._data.shape    # infer shape from data
             self._shape = shape
 
@@ -112,13 +104,13 @@ class Array:
                         self._data = self._data.astype(dtype)
                     # else no conversion needed
                 else:
-                    raise NotImplementedError(f"Unsupported element type {self._element_type} for Array.Role.CONST")
+                    raise NotImplementedError(f"Unsupported element type {self._element_type} for Role.CONST")
             else:    # infer element_type from data
                 self._element_type = dtype_map.get(str(self._data.dtype), None)
                 if self._element_type:
                     logging.debug(f"[API] Inferred {self._data.dtype} as {self._element_type}")
                 else:
-                    raise NotImplementedError(f"Unsupported dtype {self._data.dtype} for Array.Role.CONST")
+                    raise NotImplementedError(f"Unsupported dtype {self._data.dtype} for Role.CONST")
 
         if not self._element_type:
             self._element_type = ScalarType.float32
@@ -184,7 +176,7 @@ class Array:
         self._create_native_array()
 
     def deferred_layout(self, cache: "accera.Cache"):
-        """Specifies the layout for a Array.Role.CONST array
+        """Specifies the layout for a Role.CONST array
         Args:
             cache: The layout to set
         """
@@ -192,8 +184,8 @@ class Array:
             raise ValueError("The cache is not created for this array")
         if self._layout != Array.Layout.DEFERRED:
             raise ValueError("Array layout is already set")
-        if self._role != Array.Role.CONST:
-            raise ValueError("Array role must be Array.Role.CONST")
+        if self._role != Role.CONST:
+            raise ValueError("Array role must be Role.CONST")
 
         self._layout = cache.layout
         self._create_native_array()
@@ -230,7 +222,7 @@ class Array:
         mm_layout = MemoryMapLayout(self._layout, runtime_shape, self._offset)
         memory_layout = _MemoryLayout(runtime_shape, order=mm_layout.order)
 
-        if self._role == Array.Role.CONST:
+        if self._role == Role.CONST:
             if self._layout != Array.Layout.DEFERRED:
                 if self._element_type == ScalarType.float32:
                     # pass directly as a python buffer because float32's are not native to python
@@ -246,9 +238,7 @@ class Array:
             self._layout = self._native_array.layout
 
     def _build_native_context(self, context: NativeLoopNestContext):
-        args_list = list(context.function_args)
-        args_list.append(self._native_array)
-        context.function_args = tuple(args_list)
+        context.function_args.append(self._native_array)
 
     def _replay_delayed_calls(self):
         '''
@@ -292,7 +282,7 @@ class SubArray(Array):
 
             # define a nest that uses a subarray of a specific layout
             # in this case, the first quadrant of a (32, 32) array
-            A = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(32, 32))
+            A = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(32, 32))
             A0 = A.sub_array(offsets=(0, 0), shape=(A.shape[0]//2, A.shape[1]//2))
             nest = Nest(A0.shape)
 

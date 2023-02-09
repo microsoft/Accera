@@ -55,8 +55,8 @@ namespace value
         }
         else
         {
-            // assume input/output if not specified
-            std::fill_n(std::back_inserter(_paramUsages), paramTypes.size(), FunctionParameterUsage::inputOutput);
+            // assume input if not specified
+            std::fill_n(std::back_inserter(_paramUsages), paramTypes.size(), FunctionParameterUsage::input);
         }
         if (argSizeReferences.has_value())
         {

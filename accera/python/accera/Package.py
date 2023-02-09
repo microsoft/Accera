@@ -30,11 +30,10 @@ del _R_DIM3
 
 @singledispatch
 def _convert_arg(arg: _lang_python._lang._Valor):
-    if isinstance(arg, lang.Dimension):
-        arg._native_dim = _lang_python._lang.Scalar(arg)
-        return arg._native_dim
+    if isinstance(arg, _lang_python._lang.Dimension):
+        return _lang_python._lang.Scalar(arg, role=arg.role)
     if isinstance(arg, _lang_python._lang.Scalar):
-        return _lang_python._lang.Scalar(arg)
+        return arg
     if arg.layout == _lang_python._MemoryLayout():
         return _lang_python._lang.Scalar(arg)
     else:
@@ -255,12 +254,9 @@ class Package:
         # TEMP arrays in the args list are a programming error because they are meant to be internally defined in a function
         # Note: this does not prevent TEMP arrays from being passed as an argument to a function, but they cannot be the
         #       api-defining arguments for the function
-        temp_array_pos = []
         for idx, arg in enumerate(args):
-            if isinstance(arg, lang.Array) and arg.role == lang.Array.Role.TEMP:
-                temp_array_pos.append(idx)
-        if len(temp_array_pos) > 0:
-            raise ValueError(f"Error in package.add() for function {base_name}: args includes TEMP array at positions {temp_array_pos}")
+            if isinstance(arg, (lang.Array, _lang_python._lang.Scalar, _lang_python._lang.Dimension)) and arg.role == _lang_python.Role.TEMP:
+                raise ValueError(f"Error in package.add() for function {base_name}: args includes TEMP array at positions {idx}")
 
         heuristic_parameters_dict = {}
         if isinstance(source, lang.Plan):
@@ -354,8 +350,8 @@ class Package:
                                 ]
                                 + [
                                     (a.role, a.element_type, a.shape, a.layout)
-                                    if isinstance(a, lang.Array) else (a.role)
-                                    if isinstance(a, lang.Dimension) else None
+                                    if isinstance(a, lang.Array) else (a.name, a.type)
+                                    if isinstance(a, _lang_python._lang.Dimension) else None
                                     for a in args 
                                 ],
                             )
@@ -385,7 +381,7 @@ class Package:
             arg_size_refs = []
             for arg in args:
                 if isinstance(arg, lang.Array):
-                    arr_dim_mappings = [args.index(dim) if isinstance(dim, lang.Dimension) else SENTINEL_VALUE for dim in arg.shape]
+                    arr_dim_mappings = [args.index(dim) if isinstance(dim, _lang_python._lang.Dimension) else SENTINEL_VALUE for dim in arg.shape]
                     arg_size_refs.append(arr_dim_mappings)
                 else:
                     arg_size_refs.append([SENTINEL_VALUE])
@@ -409,7 +405,7 @@ class Package:
             )
             # fall-through
 
-        arg_names = [arg.name if isinstance(arg, lang.Array) or isinstance(arg, lang.Dimension) else "" for arg in args]
+        arg_names = [arg.name if isinstance(arg, lang.Array) or isinstance(arg, _lang_python._lang.Dimension) else "" for arg in args]
         arg_sizes = [arg._size_str if isinstance(arg, lang.Array) else "" for arg in args]
 
         if isinstance(source, lang.Function):
@@ -418,7 +414,7 @@ class Package:
             # due to the fall-through, we only need to validate here
             validate_target(source.target)
 
-            native_array_dim_args = [arg._get_native_array() if isinstance(arg, lang.Array) else arg._native_dim if isinstance(arg, lang.Dimension) else arg for arg in args ]
+            native_array_dim_args = [arg._get_native_array() if isinstance(arg, lang.Array) else arg for arg in args ]
 
             source.name = get_function_name(source.target)
             source.base_name = base_name

@@ -53,9 +53,9 @@ M = 16
 N = 10
 S = 11
 
-A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, S))
-B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(S, N))
-C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
+A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, S))
+B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(S, N))
+C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
 
 # Define a simple affine loop nest and name its loops i, j, k
 nest = acc.Nest(shape=(M, N, S))
@@ -84,9 +84,9 @@ M = acc.create_dimensions() # replace M with a runtime dimension
 N = 10 # a compile-time dimension
 S = 11
 
-A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, S))
-B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(S, N))
-C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
+A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, S))
+B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(S, N))
+C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
 
 # Define a simple affine loop nest and name its loops i, j, k
 nest = acc.Nest(shape=(M, N, S))
@@ -243,9 +243,9 @@ The Array shapes above are known at compile-time. If one or all of the shapes ar
 ```python
 M, N, S = acc.create_dimensions() # runtime dimensions
 
-A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, S))
-B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(S, N))
-C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
+A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(M, S))
+B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(S, N))
+C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(M, N))
 
 ...
 

@@ -12,9 +12,9 @@ Recall that a `Nest` represents the loop-nest logic. We can parameterize the nes
 # Create parameters
 P0, P1, P2, P3 = acc.create_parameters()
 
-A = acc.Array(role=acc.Array.Role.INPUT, shape=(P0, P2))
-B = acc.Array(role=acc.Array.Role.INPUT, shape=(P2, P1))
-C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(P0, P1))
+A = acc.Array(role=acc.Role.INPUT, shape=(P0, P2))
+B = acc.Array(role=acc.Role.INPUT, shape=(P2, P1))
+C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(P0, P1))
 
 # Define a simple nest
 nest = acc.Nest(shape=(P0, P1, P2))

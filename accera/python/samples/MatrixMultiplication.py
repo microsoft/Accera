@@ -4,7 +4,7 @@
 ####################################################################################################
 
 from typing import Sequence, NamedTuple
-from accera import Target, Array, Scalar, Nest, fuse
+from accera import Target, Array, Scalar, Nest, fuse, Role
 
 
 class Options(NamedTuple):
@@ -131,7 +131,7 @@ def MLAS_with_bias_and_alpha_scaling(
 
     bias_schedule = bias_nest.create_schedule()
 
-    accumulated = Array(role=Array.Role.TEMP, element_type=A.element_type, shape=(1, ))
+    accumulated = Array(role=Role.TEMP, element_type=A.element_type, shape=(1, ))
 
     zero_accum_nest = Nest(shape=Y.shape)
 

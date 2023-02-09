@@ -53,9 +53,9 @@ No installation is required. This will launch a Jupyter notebook with the quicks
     import accera as acc
 
     # define placeholder inputs/output
-    A = acc.Array(role=acc.Array.Role.INPUT, shape=(512, 512))
-    B = acc.Array(role=acc.Array.Role.INPUT, shape=(512, 512))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(512, 512))
+    A = acc.Array(role=acc.Role.INPUT, shape=(512, 512))
+    B = acc.Array(role=acc.Role.INPUT, shape=(512, 512))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(512, 512))
 
     # implement the logic for matmul and relu
     matmul = acc.Nest(shape=(512, 512, 512))

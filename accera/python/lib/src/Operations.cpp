@@ -17,13 +17,14 @@ void DefineOperations(py::module& module)
 {
     module.def(
               "Allocate",
-              [](value::ValueType type, util::MemoryLayout layout, size_t alignment, value::AllocateFlags flags) {
-                  return value::Allocate(type, layout, alignment, flags);
+              [](value::ValueType type, util::MemoryLayout layout, size_t alignment, value::AllocateFlags flags, const std::vector<value::ScalarDimension>& runtimeSizes) {
+                  return value::Allocate(type, layout, alignment, flags, runtimeSizes);
               },
               "type"_a,
-              "layout"_a,
+              "layout"_a = util::ScalarLayout,
               "alignment"_a = 0,
-              "flags"_a = value::AllocateFlags::None)
+              "flags"_a = value::AllocateFlags::None,
+              "runtimeSizes"_a = std::vector<value::ScalarDimension>{})
         .def(
             "StaticAllocate",
             [](std::string name, value::ValueType type, util::MemoryLayout layout, value::AllocateFlags flags) {

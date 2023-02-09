@@ -394,6 +394,9 @@ namespace value
         /// <summary> Resets this instance </summary>
         void Clear();
 
+        /// <summary> Increases the pointer level by 1. </summary>
+        Value PointerTo() const;
+
         /// <summary> Returns the number of pointer indirections on the data referred to by this instance </summary>
         /// <returns> The number of pointer indirections </returns>
         int PointerLevel() const;

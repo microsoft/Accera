@@ -7,7 +7,9 @@ from typing import Dict, List, Tuple, Any
 
 from .Targets import Target
 from .Package import Package
-from .lang import Array, Nest, Function, Dimension
+from .lang import Array, Nest, Function
+from ._lang_python import Role
+from ._lang_python._lang import Dimension
 
 
 def get_args_to_debug(func: Function) -> List[Array]:
@@ -15,7 +17,7 @@ def get_args_to_debug(func: Function) -> List[Array]:
     For example, INPUT_OUTPUT Arrays
     """
     args_to_check = [
-        arg for arg in func.requested_args if isinstance(arg, Array) and arg.role == Array.Role.INPUT_OUTPUT
+        arg for arg in func.requested_args if isinstance(arg, Array) and arg.role == Role.INPUT_OUTPUT
     ]
     return args_to_check
 
@@ -38,10 +40,8 @@ def add_check_allclose(package: Package, array: Array, atol: float = 1e-5, targe
     shape_str = '_'.join(map(str, resolved_shape))
 
     # placeholders
-    actual = Array(role=Array.Role.INPUT, element_type=element_type, shape=shape, layout=layout)
-    desired = Array(role=Array.Role.INPUT, element_type=element_type, shape=shape, layout=layout)
-
-    runtime_sizes = [x._native_dim for x in shape if isinstance(x, Dimension)]
+    actual = Array(role=Role.INPUT, element_type=element_type, shape=shape, layout=layout)
+    desired = Array(role=Role.INPUT, element_type=element_type, shape=shape, layout=layout)
     dims = [x for x in shape if isinstance(x, Dimension)]
 
     # so that we can unwrap the native arrays

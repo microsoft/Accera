@@ -88,9 +88,6 @@ namespace executionPlan
         std::vector<std::vector<Index>> cacheRegionBaseIndices;
     };
 
-    // Copied from ShapedType::kDynamicSize in mlir\include\mlir\IR\StandardTypes.h becuase gcc has linker issues with static constexpr constants
-    const int64_t DynamicSizeSentinelValue = -1;
-
 #include "exec/ExecutionPlanInterfaces.h.inc"
 } // namespace executionPlan
 } // namespace accera::ir

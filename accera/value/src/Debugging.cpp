@@ -40,16 +40,23 @@ namespace value
     };
 
     LocationGuard::LocationGuard(FileLocation location) :
-        _impl(std::make_unique<LocationGuardImpl>(location)) {}
+        _impl(std::make_unique<LocationGuardImpl>(location))
+    {}
     LocationGuard::~LocationGuard() = default;
-    mlir::Location LocationGuard::GetLocation() const { return _impl->GetLocation(); }
+    mlir::Location LocationGuard::GetLocation() const
+    {
+        return _impl->GetLocation();
+    }
 
     // Compares two arrays by checking whether they are equal up to the specified tolerance
     // Outputs mismatches to stderr
     // Inspired by numpy.testing.assert_allclose
-    void CheckAllClose(Array actual, Array desired, float tolerance, const std::vector<ScalarDimension>& runtimeSizes)
+    void CheckAllClose(Array actual, Array desired, float tolerance, const std::vector<Scalar>& sizes)
     {
         using namespace std::string_literals;
+
+        std::vector<ScalarDimension> runtimeSizes;
+        std::transform(sizes.begin(), sizes.end(), std::back_inserter(runtimeSizes), [](const auto& dim) { return ScalarDimension(dim.GetValue()); });
 
         ThrowIfNot(actual.Shape() == desired.Shape());
         auto atol = Scalar(tolerance);
@@ -68,7 +75,7 @@ namespace value
         {
             for (unsigned i = 0; i < runtimeSizes.size(); i++)
             {
-                total *= Cast(runtimeSizes[i], count.GetType());
+                total *= Cast(sizes[i], count.GetType());
             }
             total = total * Scalar(actual.Size());
         }
@@ -101,9 +108,8 @@ namespace value
             Print("\nDifferences:\n"s, toStderr);
             Print(diff, toStderr);
             Print("\n\n"s, toStderr);
-        })
-        .Else([&] {
-            Print("\nOK (no mismatches detected)\n"s);
+        }).Else([&] {
+            Print("\nOK (all checks pass)\n"s);
         });
 
         auto schedule = nest.CreateSchedule();

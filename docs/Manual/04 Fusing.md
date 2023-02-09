@@ -24,9 +24,9 @@ C = (C + A) * B
 
 If all three matrices are 10 by 10, one way to do this without fusing is to write: 
 ```python
-A = acc.Array(role=acc.Array.Role.INPUT, shape=(10, 10))
-B = acc.Array(role=acc.Array.Role.INPUT, shape=(10, 10))
-C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(10, 10))
+A = acc.Array(role=acc.Role.INPUT, shape=(10, 10))
+B = acc.Array(role=acc.Role.INPUT, shape=(10, 10))
+C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(10, 10))
 
 # Create nest_simple and schedule_simple
 nest_simple = acc.Nest(shape=(10, 10))
@@ -273,11 +273,11 @@ Where `A` has a shape (4, 5), `B` (5, 6), `D` (6, 10), and `E` (4, 10).
 
 We start by defining the arrays. In addition to `A`, `B`, `D`, and `E`, we define a temporary array `C` to store the intermediate result of `A@B`.
 ```python
-A = acc.Array(role=acc.Array.Role.INPUT, shape=(4, 5))
-B = acc.Array(role=acc.Array.Role.INPUT, shape=(5, 6))
-C = acc.Array(role=acc.Array.Role.TEMP, shape=(4, 6))
-D = acc.Array(role=acc.Array.Role.INPUT, shape=(6, 10))
-E = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(4, 10))
+A = acc.Array(role=acc.Role.INPUT, shape=(4, 5))
+B = acc.Array(role=acc.Role.INPUT, shape=(5, 6))
+C = acc.Array(role=acc.Role.TEMP, shape=(4, 6))
+D = acc.Array(role=acc.Role.INPUT, shape=(6, 10))
+E = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(4, 10))
 ```
 Note that `C` has the role of `TEMP`. Temporary arrays are mutable and initialized with zeros. Moreover, these arrays are logical objects that may not exist in memory during the entire computation.
 

@@ -44,6 +44,13 @@ namespace
             .value("STACK", value::AllocateFlags::Stack)
             .value("HEAP", value::AllocateFlags::Heap)
             .value("THREAD_LOCAL", value::AllocateFlags::ThreadLocal);
+
+        py::enum_<value::Role>(module, "Role", "Defines how the container will be used")
+            .value("CONST", value::Role::Const)
+            .value("INPUT", value::Role::Input)
+            .value("INPUT_OUTPUT", value::Role::InputOutput)
+            .value("OUTPUT", value::Role::Output)
+            .value("TEMP", value::Role::Temp);
     }
 
     void DefineContainerStructs(py::module& module, py::module& /*subModule*/)
@@ -244,10 +251,10 @@ Args:
                 "shape"_a,
                 "strides"_a = std::nullopt)
             .def("_slice", &value::Array::Slice)
+            .def("_split_dimension", &value::Array::SplitDimension, "dim"_a, "size"_a)
 // TODO: Enable when functionality is needed and semantics are fully cleared
 #if 0
             .def("_merge_dimensions", &value::Array::MergeDimensions, "dim1"_a, "dim2"_a)
-            .def("_split_dimension", &value::Array::SplitDimension, "dim"_a, "size"_a)
             .def("_reshape", &value::Array::Reshape, "layout"_a)
 #endif // 0
             .def(
@@ -319,14 +326,15 @@ specific to the EmitterContext, specified by the Emittable type.
 
         py::class_<value::Scalar>(module, "Scalar", "A View type that wraps a _Valor instance and enforces a memory layout that represents a single value")
             .def(py::init<value::Scalar>())
-            .def(py::init<value::Value, const std::string&>(), "value"_a, "name"_a = "")
+            .def(py::init<value::Value, const std::string&, value::Role>(), "value"_a, "name"_a = "", "role"_a = value::Role::Input)
             .def(py::init([](value::Array arr) {
                 return value::Scalar(arr.GetValue());
             }))
-            .def(py::init([](value::ValueType type) {
-                     return value::MakeScalar(type, "");
+            .def(py::init([](value::ValueType type, value::Role role) {
+                     return value::MakeScalar(type, "", role);
                  }),
-                 "type"_a)
+                 "type"_a,
+                 "role"_a = value::Role::Input)
             // .ADD_CTOR(bool) // BUG: bool requires std::vector nonsense
             .ADD_CTOR(int8_t)
             .ADD_CTOR(int16_t)
@@ -388,16 +396,34 @@ specific to the EmitterContext, specified by the Emittable type.
             .def("__xor__", &value::BitwiseXOr)
             .def("__pow__", &value::Pow)
             .def("copy", &value::Scalar::Copy)
+            .def("set", &value::Scalar::Set)
             .def_property("name", &value::Scalar::GetName, &value::Scalar::SetName)
             .def_property_readonly("type", &value::Scalar::GetType)
+            .def_property_readonly("role", &value::Scalar::GetRole)
             .def_property_readonly("_value", &value::Scalar::GetValue);
 
         py::implicitly_convertible<value::Value, value::Scalar>();
         py::implicitly_convertible<value::Array, value::Scalar>();
+        py::implicitly_convertible<value::ScalarDimension, value::Scalar>();
         py::implicitly_convertible<py::int_, value::Scalar>();
         py::implicitly_convertible<py::float_, value::Scalar>();
 
 #undef ADD_CTOR
+    }
+
+    void DefineScalarDimensionClass(py::module& module)
+    {
+        py::class_<value::ScalarDimension>(module, "Dimension", "A View type that wraps a _Valor instance and enforces a memory layout that represents a single value")
+            .def(py::init<value::Role>(), "role"_a = value::Role::Input)
+            .def(py::init<const std::string&, value::Role>(), "name"_a, "role"_a = value::Role::Input)
+            .def(py::init<value::Value, const std::string&, value::Role>(), "value"_a, "name"_a = "", "role"_a = value::Role::Input)
+            .def_property("name", &value::ScalarDimension::GetName, &value::ScalarDimension::SetName)
+            .def_property_readonly("type", &value::ScalarDimension::GetType)
+            .def_property_readonly("role", &value::ScalarDimension::GetRole)
+            .def_property("_value", &value::ScalarDimension::GetValue, &value::ScalarDimension::SetValue);
+
+        py::implicitly_convertible<value::Value, value::ScalarDimension>();
+        py::implicitly_convertible<py::int_, value::ScalarDimension>();
     }
 
     void DefineViewAdapterClass(py::module& module)
@@ -405,12 +431,14 @@ specific to the EmitterContext, specified by the Emittable type.
         py::class_<value::ViewAdapter>(module, "ViewAdapter", "A helper type that can hold any View type")
             .def(py::init<value::Value>())
             .def(py::init<value::Scalar>())
+            .def(py::init<value::ScalarDimension>())
             .def(py::init<value::Array>())
             .def("get_value", py::overload_cast<>(&value::ViewAdapter::GetValue))
             .def_property_readonly("_value", py::overload_cast<>(&value::ViewAdapter::GetValue));
 
         py::implicitly_convertible<value::Value, value::ViewAdapter>();
         py::implicitly_convertible<value::Scalar, value::ViewAdapter>();
+        py::implicitly_convertible<value::ScalarDimension, value::ViewAdapter>();
         py::implicitly_convertible<value::Array, value::ViewAdapter>();
     }
 } // namespace
@@ -425,6 +453,7 @@ void DefineContainerTypes(py::module& module, py::module& subModule)
     DefineArrayClass(subModule);
     DefineValueClass(subModule);
     DefineScalarClass(subModule);
+    DefineScalarDimensionClass(subModule);
     DefineViewAdapterClass(subModule);
 }
 } // namespace accera::python::lang

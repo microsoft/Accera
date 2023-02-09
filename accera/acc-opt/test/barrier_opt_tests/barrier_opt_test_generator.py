@@ -20,9 +20,9 @@ def barrier():
 def barrier_trivial_test_1():
     '''Simple sequential code test with no barriers'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -47,7 +47,7 @@ def barrier_trivial_test_1():
 def barrier_single_warp_test_1():
     '''Simple sequential code test with a single warp of threads'''
     N = 16
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     nest = acc.Nest(shape=(N,))
     i = nest.get_indices()
@@ -77,7 +77,7 @@ def barrier_single_warp_test_2():
     N = 4096
     blocksize = 16
 
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     nest = acc.Nest(shape=(N,))
     i = nest.get_indices()
@@ -109,7 +109,7 @@ def barrier_single_warp_test_3():
     blocksize = 32
     subblocksize = 32
 
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     nest = acc.Nest(shape=(N,))
     i = nest.get_indices()
@@ -142,7 +142,7 @@ def barrier_multi_warp_test_1():
     blocksize = 256
     subblocksize = 32
 
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     nest = acc.Nest(shape=(N,))
     i = nest.get_indices()
@@ -172,9 +172,9 @@ def barrier_multi_warp_test_1():
 def barrier_seq_test_1():
     '''Simple sequential code test'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -204,9 +204,9 @@ def barrier_seq_test_1():
 def barrier_seq_test_2():
     '''More complex sequential code test'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -237,9 +237,9 @@ def barrier_seq_test_2():
 def barrier_seq_test_3():
     '''More complex sequential code test'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -271,8 +271,8 @@ def barrier_seq_test_3():
 def barrier_if_test_1():
     '''Test with an if block'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -306,8 +306,8 @@ def barrier_if_test_1():
 def barrier_if_test_2():
     '''Test with an if block'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -346,9 +346,9 @@ def barrier_if_test_2():
 def barrier_if_test_3():
     '''Test with an if/else construct'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -387,9 +387,9 @@ def barrier_if_test_3():
 def barrier_if_test_4():
     '''Test with an if/else construct'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -437,9 +437,9 @@ def barrier_if_test_4():
 def barrier_loop_test_1():
     '''Test with a loop'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -478,9 +478,9 @@ def barrier_loop_test_1():
 def barrier_loop_test_2():
     '''Test with a loop'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -521,9 +521,9 @@ def barrier_loop_test_2():
 def barrier_loop_test_3():
     '''Test with sibling loops'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -582,9 +582,9 @@ def barrier_loop_test_3():
 def barrier_loop_test_4():
     '''Test with doubly-nested loops'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    B = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    B = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))
@@ -640,8 +640,8 @@ def barrier_loop_test_4():
 def barrier_loop_test_5():
     '''Test with inter-iteration dependencies in a loop'''
     N = 4096
-    A = acc.Array(role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
-    C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    A = acc.Array(role=acc.Role.INPUT, element_type=acc.ScalarType.float32, shape=(N,))
+    C = acc.Array(role=acc.Role.INPUT_OUTPUT, element_type=acc.ScalarType.float32, shape=(N,))
 
     blocksize = 16
     nest = acc.Nest(shape=(N,))

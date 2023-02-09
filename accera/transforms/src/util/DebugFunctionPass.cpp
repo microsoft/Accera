@@ -193,9 +193,10 @@ std::vector<mlir::Value> GetTargetFunctionArgs(PatternRewriter& rewriter, Locati
     auto dbgFnOpArgs = dbgFnOp.getArguments();
     for (auto [blockArg, checkFunction] : llvm::zip(dbgFnOpArgs, GetCheckFunctions(targetFnOp)))
     {
-        if (!checkFunction.empty()) // output arguments have non-empty check functions
+        auto memrefType = blockArg.getType().dyn_cast<mlir::MemRefType>();
+        if (!checkFunction.empty() || (memrefType && memrefType.getRank() == 1 && memrefType.getShape()[0] == 1)) // non-scalar output arguments have non-empty check functions
         {
-            if (auto memrefType = blockArg.getType().dyn_cast<mlir::MemRefType>())
+            if (memrefType)
             {
                 // Simplify any identity affine maps, e.g. (d0, d1) -> (d0 * 256 + d1) can become (d0, d1) -> (d0, d1)
                 // Required by ConvertToLLVMPattern::isConvertibleAndHasIdentityMaps() in GlobalMemrefOpLowering

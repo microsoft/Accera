@@ -13,7 +13,8 @@ from .LogicFunction import logic_function, LogicFunction
 from .NativeLoopNestContext import NativeLoopNestContext
 from ..Parameter import DelayedParameter
 from .. import Target
-from .Dimension import Dimension
+from .._lang_python import Role
+from .._lang_python._lang import Scalar, Dimension, Array as NativeArray
 from ..Constants import k_dynamic_size
 
 
@@ -141,22 +142,27 @@ class Nest:
             if value_id in context.mapping:
                 captures_to_replace[k] = context.mapping[value_id]
             else:
+                from .._lang_python._lang import Allocate
                 if isinstance(v, Array):
-                    from .._lang_python._lang import Allocate, Array as NativeArray
                     from .._lang_python import _ResolveConstantDataReference
 
-                    if v.role == Array.Role.TEMP:
+                    if v.role == Role.TEMP:
+                        runtimeSizes = [x for x in v._shape if isinstance(x, Dimension)]
                         temp_array = NativeArray(
-                            Allocate(type=v.element_type, layout=v.layout, flags=v.flags)
+                            Allocate(type=v.element_type, layout=v.layout, flags=v.flags, runtimeSizes=runtimeSizes)
                         )
                         captures_to_replace[k] = context.mapping[value_id] = temp_array
-                    elif v.role == Array.Role.CONST:
+                    elif v.role == Role.CONST:
                         const_ref_array = NativeArray(
                             _ResolveConstantDataReference(v._value)
                         )
                         captures_to_replace[k] = context.mapping[
                             value_id
                         ] = const_ref_array
+                    continue
+                elif isinstance(v, (Scalar, Dimension)) and v.role == Role.TEMP:
+                    temp_scalar = Scalar(Allocate(type=v.type), role=v.role)
+                    captures_to_replace[k] = context.mapping[value_id] = temp_scalar
                     continue
                 elif isinstance(v, LoopIndex):
                     continue
@@ -171,8 +177,7 @@ class Nest:
                     it = iter(v)
                 except TypeError:
                     continue
-                else:          
-                    from .._lang_python._lang import Scalar   
+                else:
                     replaced_values = []
                     is_scalar = False
                     for elem in it:
@@ -188,8 +193,7 @@ class Nest:
         return captures_to_replace
 
     def _build_native_context(self, context: NativeLoopNestContext):
-        from .._lang_python._lang import _Nest, Scalar
-        from .._lang_python._lang import Array as NativeArray
+        from .._lang_python._lang import _Nest
 
         try:
             args_iter = iter(*context.runtime_args)
@@ -201,17 +205,16 @@ class Nest:
             if isinstance(x, Array):
                 logic_args[id(x)] = NativeArray(y)
             elif isinstance(x, Dimension):
-                x._native_dim = Scalar(y)
-                logic_args[id(x)] = x._native_dim
+                x._value = y
+                logic_args[id(x)] = Scalar(y, name=x.name, role=x.role)
             elif isinstance(x, Scalar):
-                logic_args[id(x)] = Scalar(y)   
+                logic_args[id(x)] = Scalar(y, role=x.role)
             else:
-                logic_args[id(x)] = y              
-        
-        context.nest = _Nest(
-            shape=[k_dynamic_size if isinstance(x, Dimension) else x for x, _ in self._shape], 
-            runtime_sizes=[x._native_dim for x, _ in self._shape if isinstance(x, Dimension)]
-        )
+                logic_args[id(x)] = y
+
+        nest_shape = [k_dynamic_size if isinstance(x, Dimension) else x for x, _ in self._shape]
+        nest_rt_sizes = [x for x, _ in self._shape if isinstance(x, Dimension)]
+        context.nest = _Nest(shape=nest_shape, runtime_sizes=nest_rt_sizes)
 
         native_indices = context.nest.get_indices()
 

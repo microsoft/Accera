@@ -296,6 +296,10 @@ LogicalResult CopyOpLowering::matchAndRewrite(
             (void)rewriter.create<memref::CopyOp>(loc, input, output);
         }
     }
+    else if (inputType == outputMemRef.getElementType())
+    {
+        (void)rewriter.create<memref::StoreOp>(loc, input, output, std::vector<mlir::Value>(outputMemRef.getRank(), zero));
+    }
     else if (inputType.isIndex())
     {
         if (outputMemRef.getElementType().isInteger(64)) // this should really be target dependent...
@@ -308,17 +312,6 @@ LogicalResult CopyOpLowering::matchAndRewrite(
         else
         {
             mlir::emitError(loc, "Index types can only be stored within MemRefs of I64");
-        }
-    }
-    else if (inputType == outputMemRef.getElementType())
-    {
-        if (outputMemRef.getElementType() == inputType)
-        {
-            (void)rewriter.create<memref::StoreOp>(loc, input, output, std::vector<mlir::Value>(outputMemRef.getRank(), zero));
-        }
-        else
-        {
-            mlir::emitError(loc, "Output MemRef element type must match input type for scalar copying");
         }
     }
     else

@@ -51,6 +51,10 @@ namespace accera::ir
 {
 namespace util
 {
+    // Copied from ShapedType::kDynamicSize and ShapedType::kDynamicStrideOrOffset because gcc has linker issues with static constexpr constants
+    const int64_t DynamicSizeSentinelValue = -1;
+    const int64_t DynamicStrideOrOffsetSentinelValue = std::numeric_limits<int64_t>::min();
+
     void CanonicalizeGreedily(mlir::Operation* op);
     void FillCanonicalPatternsRecursively(mlir::Operation* op, mlir::RewritePatternSet& patterns);
 
@@ -313,7 +317,7 @@ namespace util
 
     mlir::Value CreateConstantRangeForOpIterationCounter(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineForOp forOp);
 
-    mlir::Operation* GetFirstOp(mlir::Operation* left, mlir::Operation* right);
+    mlir::Operation* GetLastOp(const std::vector<mlir::Operation*>& ops);
 
     template <typename OpType>
     bool IsOutermostOpOfType(OpType op, std::optional<std::string> ignoreAttrName = std::nullopt)
@@ -449,6 +453,10 @@ namespace util
     // Assumes feature is a string in the llvm format like "avx512vnni", without a "-" or "+" prefix. This function checks if "+feature" is in the supported list
     // If prependPlus is false, then the "+" is not prepended and it is assumed that feature contains the "+" or "-"
     bool ModuleSupportsTargetDeviceFeature(mlir::Operation* where, const std::string& feature, bool prependPlus = true);
+
+    std::vector<int64_t> TryParseStaticSizes(mlir::ValueRange values, int64_t dynamicSentinelValue);
+
+    std::vector<mlir::Value> GetLayoutMapOperands(mlir::Value source);
 
 } // namespace util
 } // namespace accera::ir

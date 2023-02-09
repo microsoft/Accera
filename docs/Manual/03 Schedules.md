@@ -234,9 +234,9 @@ N = 10  # input size
 K = 3  # filter size
 M = N - K + 1  # output size = 8
 
-A = acc.Array(role=acc.Array.Role.INPUT, shape=(N,))
-B = acc.Array(role=acc.Array.Role.INPUT, shape=(K,))
-C = acc.Array(role=acc.Array.Role.INPUT_OUTPUT, shape=(M,))
+A = acc.Array(role=acc.Role.INPUT, shape=(N,))
+B = acc.Array(role=acc.Role.INPUT, shape=(K,))
+C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(M,))
 
 nest = acc.Nest(shape=(M, K))
 i, j = nest.get_indices()

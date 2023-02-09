@@ -765,7 +765,7 @@ def accv_OffsetOp : accv_Op<"offset", [NoSideEffect]> {
   }];
 }
 
-def accv_ViewOp : accv_Op<"view", [NoSideEffect]> {
+def accv_ViewOp : accv_Op<"view", [NoSideEffect, AttrSizedOperandSegments]> {
   let summary = "memref view operation";
   let description = [{
     The `accv.view` operation converts a memref type to another memref type
@@ -776,26 +776,29 @@ def accv_ViewOp : accv_Op<"view", [NoSideEffect]> {
     *) Memref: the "base" memref on which to create a "view" memref.
     *) Offsets: memref-rank number of dynamic offsets into the "base"
                 memref at which to create the "view" memref.
+    *) Sizes:   memref-rank number of dynamic sizes to create the dimensions
+                of the view memref with
+    *) Strides: memref-rank number of dynamic strides to create the view memref with
+    *) SourceMemrefOperands: dynamic operands for the source memref
   }];
 
   let arguments = (ins
     AnyMemRef:$source,
-    Variadic<AnyType>:$offsets // TODO: change AnyType to accv.range
+    Variadic<Index>:$sizes,
+    Variadic<Index>:$offsets,
+    Variadic<Index>:$strides,
+    Variadic<Index>:$sourceMemrefOperands // Dynamic operands for the source memref layout
   );
   let results = (outs AnyMemRef);
 
   let builders = [
-    OpBuilder<(ins "Value":$source, "ArrayRef<std::pair<Value, Value>>":$bounds, "MemRefType":$resultType)>,
-    OpBuilder<(ins "Value":$source, "ValueRange":$bounds, "MemRefType":$resultType), [{
-        $_state.addOperands(source);
-        $_state.addOperands(bounds);
-        $_state.types.push_back(resultType);
-      }]>,
-    OpBuilder<(ins "Value":$source, "MemRefType":$resultType), [{
-        $_state.addOperands(source);
-        $_state.addOperands(ValueRange{});
-        $_state.types.push_back(resultType);
-      }]>
+    // Dynamic sizes
+    OpBuilder<(ins "Value":$source, "ValueRange":$sizes, "ValueRange":$offsets, "ValueRange":$strides)>,
+    OpBuilder<(ins "Value":$source, "ValueRange":$sizes, "ValueRange":$offsets)>,
+
+    // Static sizes
+    OpBuilder<(ins "Value":$source, "ArrayRef<int64_t>":$sizes, "ArrayRef<int64_t>":$offsets, "ArrayRef<int64_t>":$strides)>,
+    OpBuilder<(ins "Value":$source, "ArrayRef<int64_t>":$sizes, "ArrayRef<int64_t>":$offsets)>
   ];
 
   let extraClassDeclaration = [{
@@ -809,6 +812,8 @@ def accv_ViewOp : accv_Op<"view", [NoSideEffect]> {
 
     /// Returns as integer value the number of offset operands.
     int64_t getNumOffsets() { return llvm::size(offsets()); }
+
+    std::vector<mlir::Value> getLayoutMapOperands();
   }];
 }
 
@@ -900,8 +905,9 @@ def accv_SplitDimOp : accv_Op<"split_dim", [NoSideEffect]> {
 
   let arguments = (ins
     AnyMemRef:$source,
+    Variadic<Index>:$sourceMemrefOperands,
     I64Attr:$dim,
-    I64Attr:$size
+    I64Attr:$size // TODO : support dynamic splits
   );
   let results = (outs AnyMemRef:$result);
 
@@ -913,6 +919,8 @@ def accv_SplitDimOp : accv_Op<"split_dim", [NoSideEffect]> {
 
     /// The result of a split_dim is always a memref.
     MemRefType getType() { return getResult().getType().cast<MemRefType>(); }
+
+    std::vector<mlir::Value> getLayoutMapOperands() { return std::vector<mlir::Value>(sourceMemrefOperands().begin(), sourceMemrefOperands().end()); }
   }];
 }
 

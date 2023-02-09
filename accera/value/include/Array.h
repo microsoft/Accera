@@ -76,6 +76,16 @@ namespace value
         /// <returns> The resulting slice of the array </returns>
         Array Slice(std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets) const;
 
+        /// <summary> Get a view of the data where a dimension is split into 2 dimensions </summary>
+        /// <param name="dim"> The dimension to split </param>
+        /// <param name="size"> The extent of the new inner dimension </param>
+        /// <remarks>
+        /// The new dimension will be placed immediately after the split dimension.
+        /// The dimension being split must have full extent (and not be a sub-view of some other array).
+        /// The extent (and size) of the dimension being split must be a multiple of the split size.
+        /// </remarks>
+        Array SplitDimension(int64_t dim, int64_t size) const;
+
 // TODO: Enable when functionality is needed and semantics are fully cleared
 #if 0
         /// <summary> Get a view of the data where 2 (contiguous) dimensions are merged </summary>
@@ -86,16 +96,6 @@ namespace value
         /// must have the full extent of the underlying memory
         /// </remarks>
         Array MergeDimensions(int64_t dim1, int64_t dim2) const;
-
-        /// <summary> Get a view of the data where a dimension is split into 2 dimensions </summary>
-        /// <param name="dim"> The dimension to split </param>
-        /// <param name="size"> The extent of the new inner dimension </param>
-        /// <remarks>
-        /// The new dimension will be placed immediately after the split dimension.
-        /// The dimension being split must have full extent (and not be a sub-view of some other array).
-        /// The extent (and size) of the dimension being split must be a multiple of the split size.
-        /// </remarks>
-        Array SplitDimension(int64_t dim, int64_t size) const;
 
         /// <summary> Get a view of the data using a completely different layout </summary>
         /// <param name="layout"> The memory layout for the new array view to use </param>

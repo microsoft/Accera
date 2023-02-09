@@ -51,7 +51,7 @@ Input arrays are *immutable external* arrays whose element type, shape, and affi
 ```Python
 import accera as acc
 
-A = acc.Array(shape=(10, 20), role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32)
+A = acc.Array(shape=(10, 20), role=acc.Role.INPUT, element_type=acc.ScalarType.float32)
 ```
 The layout of this array would be the default layout, which is `acc.Array.Layout.FIRST_MAJOR`.
 
@@ -59,7 +59,7 @@ The shape (and similarly, the layout) of Input arrays can also be set at runtime
 
 ```Python
 N = acc.create_dimensions()
-A = acc.Array(shape=(N, 20), role=acc.Array.Role.INPUT, element_type=acc.ScalarType.float32)
+A = acc.Array(shape=(N, 20), role=acc.Role.INPUT, element_type=acc.ScalarType.float32)
 ```
 
 #### Input/output arrays
@@ -70,7 +70,7 @@ Output arrays are *variable-shaped mutable external* arrays whose shapes and aff
 
 * Output arrays are dynamically allocated at runtime. The caller of an Accera function that uses Output arrays will need to implement the `__accera_allocate` function to allocate memory (and also perform the subsequent deallocation).
 * Output arrays are uninitialized by default. Accera will produce an error if operators such as `+=` are used on an Output array without prior initialization through assignment.
-* For simplicity, output dimensions (`acc.Dimension.Role.OUTPUT`) must be used for specifying an Output array shape or layout (this limitation may be lifted in the future).
+* For simplicity, output dimensions (`acc.Role.OUTPUT`) must be used for specifying an Output array shape or layout (this limitation may be lifted in the future).
 
 Output arrays are useful for operations that adjust the array shape depending on the input values. For example, the Range operation generates variable output sizes based on the start, end, and step inputs:
 
@@ -83,11 +83,11 @@ End = acc.Scalar()
 Step = acc.Scalar()
 
 # compute the variable output size
-N = acc.create_dimensions(role=acc.Dimension.Role.OUTPUT)
+N = acc.create_dimensions(role=acc.Role.OUTPUT)
 N.value = acc.floor((End - Start) / Step)
 
 # create an Output array with the variable output size
-A = acc.Array(shape=(N, ), role=acc.Array.Role.OUTPUT, element_type=acc.ScalarType.float32)
+A = acc.Array(shape=(N, ), role=acc.Role.OUTPUT, element_type=acc.ScalarType.float32)
 ```
 
 The layout of this array is the default layout, which is `acc.Array.Layout.FIRST_MAJOR`.
@@ -102,7 +102,7 @@ import accera as acc
 import numpy as np
 
 matrix = np.random.rand(16, 16)
-B = acc.Array(role=acc.Array.Role.CONST, data=matrix)
+B = acc.Array(role=acc.Role.CONST, data=matrix)
 ```
 
 #### Temporary arrays

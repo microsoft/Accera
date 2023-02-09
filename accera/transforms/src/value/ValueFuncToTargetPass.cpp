@@ -98,10 +98,18 @@ constexpr size_t kLaunchConfigNumDims = 6;
 
 struct ValueFuncToTargetPass : public tr::ValueFuncToTargetBase<ValueFuncToTargetPass>
 {
+    ValueFuncToTargetPass(const tr::IntraPassSnapshotOptions& options = {}) :
+        _intrapassSnapshotter(options)
+    {
+    }
+
     void runOnOperation() final
     {
         auto module = getOperation();
         auto context = module.getContext();
+
+        auto snapshotter = _intrapassSnapshotter.MakeSnapshotPipe();
+        snapshotter.Snapshot("Initial", module);
 
         for (auto vModule : make_early_inc_range(module.getOps<vir::ValueModuleOp>()))
         {
@@ -109,23 +117,29 @@ struct ValueFuncToTargetPass : public tr::ValueFuncToTargetBase<ValueFuncToTarge
                 RewritePatternSet patterns(context);
                 vtr::populateValueLambdaToFuncPatterns(context, patterns);
                 (void)applyPatternsAndFoldGreedily(vModule, std::move(patterns));
+                snapshotter.Snapshot("ValueLambdaToFunc", vModule);
             }
 
             {
                 RewritePatternSet patterns(context);
                 vtr::populateValueLaunchFuncInlinerPatterns(context, patterns);
                 (void)applyPatternsAndFoldGreedily(vModule, std::move(patterns));
+                snapshotter.Snapshot("ValueLaunchFuncInliner", vModule);
             }
 
             {
                 RewritePatternSet patterns(context);
                 vtr::populateValueFuncToTargetPatterns(context, patterns);
                 (void)applyPatternsAndFoldGreedily(vModule, std::move(patterns));
+                snapshotter.Snapshot("ValueFuncToTarget", vModule);
             }
 
             HoistGPUBlockThreadIds(vModule);
         }
     }
+
+private:
+    tr::IRSnapshotter _intrapassSnapshotter;
 };
 
 struct ValueReturnOpConversion : OpRewritePattern<vir::ReturnOp>
@@ -382,6 +396,11 @@ void populateValueLaunchFuncInlinerPatterns(mlir::MLIRContext* context, mlir::Re
 {
     uint16_t benefit = 1;
     patterns.insert<ValueLaunchFuncOpInlinerPattern>(context, benefit++);
+}
+
+std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueFuncToTargetPass(const IntraPassSnapshotOptions& snapshotOptions)
+{
+    return std::make_unique<ValueFuncToTargetPass>(snapshotOptions);
 }
 
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueFuncToTargetPass()

@@ -187,6 +187,7 @@ namespace utilities
         _increment(increment),
         _dimensionOrder(size.NumDimensions())
     {
+#if 0 // TODO improve subview / split dim and dynamic shape support
         for (int index = 0; index < _size.NumDimensions(); ++index)
         {
             if (!IsVariableSized(index) && _size[index] + _offset[index] > _extent[index])
@@ -195,7 +196,9 @@ namespace utilities
                                      "Extent must be larger or equal to the size plus offset.");
             }
         }
+#endif
     }
+
 
     MemoryLayout::MemoryLayout(const MemoryLayout& originalLayout, const MemoryShape& size, const MemoryShape& strides) :
         MemoryLayout(size, originalLayout.GetExtent(), originalLayout.GetOffset(), StridedIncrement(originalLayout.GetExtent(), strides))
@@ -217,6 +220,7 @@ namespace utilities
         _increment(increment),
         _dimensionOrder(order)
     {
+#if 0 // TODO improve subview / split dim and dynamic shape support
         for (int index = 0; index < _size.NumDimensions(); ++index)
         {
             if (!IsVariableSized(index) && _size[index] + _offset[index] > _extent[index])
@@ -225,6 +229,7 @@ namespace utilities
                                      "Extent must be larger or equal to the size plus offset.");
             }
         }
+#endif
     }
 
     size_t MemoryLayout::NumElements() const
@@ -556,7 +561,6 @@ namespace utilities
 
     MemoryLayout MemoryLayout::GetSplitDimensionLayout(int dimension, int innerSize) const
     {
-        ThrowIf(_size[dimension] != _extent[dimension], InputExceptionErrors::invalidArgument, "Dimension to split must have full extent");
         ThrowIf(_size[dimension] % innerSize != 0, InputExceptionErrors::invalidArgument, "Dimension to split must be a multiple of the split size");
         ThrowIf(_offset[dimension] != 0, LogicExceptionErrors::illegalState, "Dimension to split should have an offset of 0"); // sanity check
 

@@ -28,6 +28,7 @@
 #include "value/ValueOpsEnums.cpp.inc"
 
 #include <numeric>
+#include <utility>
 
 namespace accera::ir::value
 {
@@ -452,6 +453,128 @@ void MapReduceOp::build(OpBuilder& builder, OperationState& result, Value input,
         if (reduceBodyBuilder)
             reduceBodyBuilder(builder, result.location, reduceBodyBlock.getArgument(0), reduceBodyBlock.getArgument(1));
     }
+}
+
+void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ValueRange sizes, ValueRange offsets, ValueRange strides)
+{
+    auto sourceMemRefType = source.getType().cast<mlir::MemRefType>();
+    int64_t sourceRank = sourceMemRefType.getRank();
+    int64_t numOffsets = static_cast<int64_t>(offsets.size());
+    int64_t numSizes = static_cast<int64_t>(sizes.size());
+    int64_t numStrides = static_cast<int64_t>(strides.size());
+    assert(sourceRank == numOffsets);
+    assert(sourceRank == numSizes);
+    assert(sourceRank == numStrides);
+
+    std::vector<int64_t> sizeInts = util::TryParseStaticSizes(sizes, util::DynamicSizeSentinelValue);
+    std::vector<int64_t> offsetInts = util::TryParseStaticSizes(offsets, util::DynamicStrideOrOffsetSentinelValue);
+    std::vector<int64_t> strideInts = util::TryParseStaticSizes(strides, util::DynamicStrideOrOffsetSentinelValue);
+
+    // The viewed memref has a layout map that is the application of the strides and offsets to the previous layout map
+    // with a memref size equal to the given sizes
+
+    // To create the layout map generically, for offsets (O0, ..., ON) and strides (T0, ..., TN) we create
+    // a stride map:
+    //      (d0, ..., dN) -> (d0 * T0, ..., dN * TN)
+    // and an offset map
+    //      (d0, ..., dN) -> (d0 + O0, ..., dN + ON)
+    // Then compose them to have a full mapping from the subviewed space to the source space.
+    // The composition is offset(stride) since the given stride factors should not be applied to the given offsets
+    //      offset(stride(d0, ..., dN))
+    //      offset((d0, ..., dN) -> (d0 * T0, ..., dN * TN))
+    //      (d0, ..., dN) -> (d0 * T0 + O0, ..., dN * TN + O0)
+    // Finally, we compose this map with the source layout map and incorporate any of that map's symbols
+
+    // Create stride map
+    std::vector<mlir::AffineExpr> strideExprs;
+    size_t strideSymbolCount = 0;
+    for (auto idx = 0; idx < sourceRank; ++idx)
+    {
+        if (strideInts[idx] == util::DynamicStrideOrOffsetSentinelValue)
+        {
+            strideExprs.push_back(builder.getAffineDimExpr(idx) * builder.getAffineSymbolExpr(strideSymbolCount++));
+        }
+        else
+        {
+            strideExprs.push_back(builder.getAffineDimExpr(idx) * strideInts[idx]);
+        }
+    }
+    auto strideMap = mlir::AffineMap::get(sourceRank, strideSymbolCount, strideExprs, builder.getContext());
+
+    // Create offset map
+    std::vector<mlir::AffineExpr> offsetExprs;
+    size_t offsetSymbolCount = 0;
+    for (auto idx = 0; idx < sourceRank; ++idx)
+    {
+        if (offsetInts[idx] == util::DynamicStrideOrOffsetSentinelValue)
+        {
+            offsetExprs.push_back(builder.getAffineDimExpr(idx) + builder.getAffineSymbolExpr(offsetSymbolCount++));
+        }
+        else
+        {
+            offsetExprs.push_back(builder.getAffineDimExpr(idx) + offsetInts[idx]);
+        }
+    }
+    auto offsetMap = mlir::AffineMap::get(sourceRank, offsetSymbolCount, offsetExprs, builder.getContext());
+
+    // Compose offset(stride(input))
+    auto strideAndOffsetMap = offsetMap.compose(strideMap);
+
+    // Get the source layout and operands
+    auto sourceLayoutMap = sourceMemRefType.getLayout().getAffineMap();
+    if (sourceLayoutMap.isIdentity())
+    {
+        sourceLayoutMap = mlir::getStridedLinearLayoutMap(sourceMemRefType);
+    }
+
+    // Currently, assume either the layout has no symbols or the source op is a view op which we know extract symbols from
+    std::vector<mlir::Value> sourceOperands = util::GetLayoutMapOperands(source);
+
+    // This composition will make sourceLayoutMap's symbols occur first in the symbol list of finalViewLayoutMap
+    auto finalViewLayoutMap = sourceLayoutMap.compose(strideAndOffsetMap);
+
+    auto viewedMemrefType = mlir::MemRefType::get(sizeInts, sourceMemRefType.getElementType(), finalViewLayoutMap, sourceMemRefType.getMemorySpace());
+
+    build(builder, result, viewedMemrefType, source, sizes, offsets, strides, sourceOperands);
+}
+
+void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ValueRange sizes, ValueRange offsets)
+{
+    build(builder, result, source, sizes, offsets, ValueRange{});
+}
+
+void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ArrayRef<int64_t> sizes, ArrayRef<int64_t> offsets, ArrayRef<int64_t> strides)
+{
+    std::vector<mlir::Value> offsetVals;
+    std::vector<mlir::Value> sizeVals;
+    std::vector<mlir::Value> strideVals;
+    offsetVals.reserve(offsets.size());
+    sizeVals.reserve(sizes.size());
+    strideVals.reserve(strides.size());
+    auto makeConstIndex = [&](int64_t val) {
+        return builder.create<mlir::arith::ConstantIndexOp>(result.location, val);
+    };
+    std::transform(offsets.begin(), offsets.end(), std::back_inserter(offsetVals), makeConstIndex);
+    std::transform(sizes.begin(), sizes.end(), std::back_inserter(sizeVals), makeConstIndex);
+    std::transform(strides.begin(), strides.end(), std::back_inserter(strideVals), makeConstIndex);
+    build(builder, result, source, sizeVals, offsetVals, strideVals);
+}
+
+void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ArrayRef<int64_t> sizes, ArrayRef<int64_t> offsets)
+{
+    build(builder, result, source, sizes, offsets, ArrayRef<int64_t>{});
+}
+
+std::vector<mlir::Value> ViewOp::getLayoutMapOperands()
+{
+    // When composing mlir AffineMaps, mapA.compose(mapB) will place mapA's symbols before mapB's symbols in the new map
+    // So when we compose a view transformation onto a source memref, this ViewOp's new operands should come after the source memref operands
+    // Giving the layout map operand order: { sourceMemrefOperands, offset, stride, sizes }
+    std::vector<mlir::Value> layoutMapOperands;
+    layoutMapOperands.insert(layoutMapOperands.end(), sourceMemrefOperands().begin(), sourceMemrefOperands().end());
+    layoutMapOperands.insert(layoutMapOperands.end(), offsets().begin(), offsets().end());
+    layoutMapOperands.insert(layoutMapOperands.end(), strides().begin(), strides().end());
+    return layoutMapOperands;
 }
 
 MMAOp::MMAOp(MMAShape shape_) :

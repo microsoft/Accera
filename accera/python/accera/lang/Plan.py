@@ -18,8 +18,8 @@ from .NativeLoopNestContext import NativeLoopNestContext
 from ..Targets import GridUnits, Target
 from ..Platforms import LibraryDependency
 from ..Constants import AUTO
-from .._lang_python import ScalarType
-from .Dimension import Dimension
+from .._lang_python import ScalarType, Role
+from accera._lang_python._lang import Dimension
 
 from .._lang_python._lang import (
     CacheIndexing,
@@ -486,7 +486,7 @@ class Plan:
         elif isinstance(source, Cache):
             array_role = source.target_role
 
-        if double_buffer and array_role not in [Array.Role.CONST, Array.Role.INPUT]:
+        if double_buffer and array_role not in [Role.CONST, Role.INPUT]:
             raise ValueError(
                 "Double-buffering is only supported for CONST and INPUT arrays"
             )
@@ -549,11 +549,11 @@ class Plan:
                 level = len(self._sched._indices) - index_pos
 
             multicaching_roles = [
-                Array.Role.CONST,
-                Array.Role.INPUT,
+                Role.CONST,
+                Role.INPUT,
             ]
             if _temp_array_multicaches:
-                multicaching_roles += [Array.Role.TEMP]
+                multicaching_roles += [Role.TEMP]
 
             if (trigger_level or trigger_index) and array_role not in multicaching_roles:
                 raise ValueError(
@@ -720,7 +720,7 @@ class Plan:
         """
         # TODO: Make this work with multiple kernels, fused schedules
 
-        if target.role != Array.Role.CONST:
+        if target.role != Role.CONST:
             raise ValueError("Can only pack and embed constant data buffers")
 
         self._commands.append(
@@ -1082,7 +1082,7 @@ def _build_native_nest(plan: "Plan", nest_args: List[Array]):
         plan._replay_delayed_calls()
 
         loopnest_context = NativeLoopNestContext(
-            function_args=nest_args, runtime_args=args
+            function_args=list(nest_args), runtime_args=args
         )
         build_array_native_context(loopnest_context)
         build_loopnest_native_context(loopnest_context)

@@ -126,6 +126,10 @@ namespace value
         return GetContext().Reorder(_value, order);
     }
 
+    Array Array::SplitDimension(int64_t dim, int64_t size) const
+    {
+        return GetContext().SplitDimension(_value, dim, size);
+    }
 // TODO: Enable when functionality is needed and semantics are fully cleared
 #if 0
     Array Array::MergeDimensions(int64_t dim1, int64_t dim2) const
@@ -133,10 +137,6 @@ namespace value
         return GetContext().MergeDimensions(_value, dim1, dim2);
     }
 
-    Array Array::SplitDimension(int64_t dim, int64_t size) const
-    {
-        return GetContext().SplitDimension(_value, dim, size);
-    }
 
     Array Array::Reshape(const MemoryLayout& layout) const
     {

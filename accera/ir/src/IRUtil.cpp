@@ -858,25 +858,19 @@ namespace util
         return builder.create<mlir::AffineApplyOp>(loc, iterCounterMap, mlir::ValueRange{ forOp.getInductionVar() });
     }
 
-    mlir::Operation* GetFirstOp(mlir::Operation* left, mlir::Operation* right)
+    mlir::Operation* GetLastOp(const std::vector<mlir::Operation*>& ops)
     {
-        assert(left->getBlock() == right->getBlock() && "This utility only supports ops in the same block");
-        auto block = left->getBlock();
-        auto beginIter = block->begin();
-        auto endIter = block->end();
-        for (auto iter = beginIter; iter != endIter; ++iter)
+        assert(ops.size() > 0);
+
+        mlir::Operation* result = ops[0];
+        for (auto op : ops)
         {
-            if (&(*iter) == left)
+            if (result->isBeforeInBlock(op))
             {
-                return left;
-            }
-            else if (&(*iter) == right)
-            {
-                return right;
+                result = op;
             }
         }
-        assert(false && "Neither op found in block");
-        return nullptr;
+        return result;
     }
 
     template <typename MemoryOp>
@@ -1452,6 +1446,46 @@ namespace util
         auto featureListStr = targetDeviceFeaturesAttr.str();
         std::string checkString = prependPlus ? "+" + feature : feature;
         return featureListStr.find(checkString) != std::string::npos;
+    }
+
+    std::vector<int64_t> TryParseStaticSizes(mlir::ValueRange values, int64_t dynamicSentinelValue)
+    {
+        std::vector<int64_t> staticValues;
+        std::transform(values.begin(), values.end(), std::back_inserter(staticValues), [&](mlir::Value val) {
+            if (auto constantOp = val.getDefiningOp<mlir::arith::ConstantIndexOp>())
+            {
+                return constantOp.value();
+            }
+            else
+            {
+                return dynamicSentinelValue;
+            }
+        });
+        return staticValues;
+    }
+
+    std::vector<mlir::Value> GetLayoutMapOperands(mlir::Value source)
+    {
+        auto sourceType = source.getType();
+        auto sourceMemRefType = sourceType.cast<mlir::MemRefType>();
+        auto sourceLayoutMap = sourceMemRefType.getLayout().getAffineMap();
+        if (sourceLayoutMap.getNumSymbols() > 0)
+        {
+            // TODO : better symbolic memory shape approach rather than handling individual op types
+            if (auto sourceViewOp = source.getDefiningOp<vir::ViewOp>())
+            {
+                return sourceViewOp.getLayoutMapOperands();
+            }
+            else if (auto splitDimOpOp = source.getDefiningOp<vir::SplitDimOp>())
+            {
+                return splitDimOpOp.getLayoutMapOperands();
+            }
+            else
+            {
+                throw InputException(InputExceptionErrors::invalidArgument, "Only sub_array / ViewOp and split_dimension / SplitDimOp results are supported dynamic source operands");
+            }
+        }
+        return {};
     }
 
 } // namespace util

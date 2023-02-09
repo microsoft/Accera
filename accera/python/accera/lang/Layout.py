@@ -17,7 +17,7 @@ class Layout(Enum):
     #: Specifies a memory layout where the last major axis is in contiguous memory. For example, in a matrix, this corresponds to "column-major".
     LAST_MAJOR = auto()
 
-    #: Defer specifying the memory layout for a `Array.Role.CONST` array until a cache is created.
+    #: Defer specifying the memory layout for a `Role.CONST` array until a cache is created.
     DEFERRED = auto()
 
     def to_numpy_order(self):

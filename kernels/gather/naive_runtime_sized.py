@@ -13,13 +13,13 @@ def generate_rank_2(axis: int):
     DataDim0, DataDim1, IndicesDim0, IndicesDim1 = acc.create_dimensions()
 
     # rank(Output) = rank(Data) + rank(Indices) - 1 = 2 + 2 - 1 = 3
-    OutputDim0, OutputDim1, OutputDim2 = acc.create_dimensions(role=acc.Dimension.Role.OUTPUT)
+    OutputDim0, OutputDim1, OutputDim2 = acc.create_dimensions(role=acc.Role.OUTPUT)
 
-    Data = acc.Array(shape=(DataDim0, DataDim1), role=acc.Array.Role.INPUT)
-    Indices = acc.Array(shape=(IndicesDim0, IndicesDim1), role=acc.Array.Role.INPUT, type=acc.ScalarType.index)
+    Data = acc.Array(shape=(DataDim0, DataDim1), role=acc.Role.INPUT)
+    Indices = acc.Array(shape=(IndicesDim0, IndicesDim1), role=acc.Role.INPUT, type=acc.ScalarType.index)
 
     # represents a runtime output-only array (dynamically allocated)
-    Output = acc.Array(shape=(OutputDim0, OutputDim1, OutputDim2), role=acc.Array.Role.OUTPUT)
+    Output = acc.Array(shape=(OutputDim0, OutputDim1, OutputDim2), role=acc.Role.OUTPUT)
 
     # derive output dims from input dims
     # Note: negative indices are not supported

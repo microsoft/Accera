@@ -7,11 +7,15 @@
 #include "AcceraPasses.h"
 
 #include <ir/include/IRUtil.h>
-#include <ir/include/value/ValueDialect.h>
 #include <ir/include/intrinsics/AcceraIntrinsicsDialect.h>
+#include <ir/include/value/ValueDialect.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/IR/Constant.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Types.h>
+#include <mlir/Support/LogicalResult.h>
 #include <transforms/include/util/SnapshotUtilities.h>
 #include <value/include/Debugging.h>
 #include <value/include/MLIREmitterContext.h>
@@ -28,7 +32,6 @@
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
 #include <mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h>
-
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
@@ -556,6 +559,88 @@ struct MemrefAllocOpLowering : public ConvertOpToLLVMPattern<memref::AllocOp>
     }
 };
 
+struct ValueMemRefCastOpLowering : public ValueLLVMOpConversionPattern<MemRefCastOp>
+{
+    using ValueLLVMOpConversionPattern::ValueLLVMOpConversionPattern;
+
+    LogicalResult matchAndRewrite(
+        MemRefCastOp op,
+        OpAdaptor adaptor,
+        ConversionPatternRewriter& rewriter) const override
+    {
+        auto src = adaptor.source();
+        auto srcType = op.getViewSource().getType().cast<MemRefType>();
+
+        auto dstType = op.getType();
+        auto targetMemSpace = dstType.getMemorySpaceAsInt();
+        auto targetElementTy = llvmTypeConverter.convertType(dstType.getElementType());
+        auto targetStructType = llvmTypeConverter.convertType(dstType).dyn_cast_or_null<LLVM::LLVMStructType>();
+        if (!targetStructType)
+            return failure();
+
+        auto loc = op.getLoc();
+
+        MemRefDescriptor srcMemrefDesc(src);
+        auto targetMemrefDesc = MemRefDescriptor::undef(rewriter, loc, targetStructType);
+
+        targetMemrefDesc.setAllocatedPtr(
+            rewriter,
+            loc,
+            rewriter.create<LLVM::BitcastOp>(
+                loc,
+                LLVM::LLVMPointerType::get(
+                    targetElementTy,
+                    targetMemSpace),
+                srcMemrefDesc.allocatedPtr(
+                    rewriter,
+                    loc)));
+
+        targetMemrefDesc.setAlignedPtr(
+            rewriter,
+            loc,
+            rewriter.create<LLVM::BitcastOp>(
+                loc,
+                LLVM::LLVMPointerType::get(
+                    targetElementTy,
+                    targetMemSpace),
+                srcMemrefDesc.alignedPtr(
+                    rewriter,
+                    loc)));
+
+        if (dstType.hasStaticShape())
+        {
+            targetMemrefDesc.setConstantSize(rewriter, loc, 0, dstType.getDimSize(0));
+        }
+        else
+        {
+            auto llvmIndexType = llvmTypeConverter.convertType(rewriter.getIndexType());
+            mlir::Value size = rewriter.create<LLVM::ConstantOp>(
+                loc, llvmIndexType, rewriter.getI64IntegerAttr(srcType.getElementTypeBitWidth() / dstType.getElementTypeBitWidth()));
+            for (auto s : llvm::enumerate(srcType.getShape()))
+            {
+                if (s.value() != mlir::ShapedType::kDynamicSize)
+                {
+                    size = rewriter.create<LLVM::MulOp>(loc, size, rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getI64IntegerAttr(s.value())));
+                }
+                else
+                {
+                    size = rewriter.create<LLVM::MulOp>(loc, size, rewriter.create<memref::DimOp>(loc, op.getViewSource(), s.index()));
+                }
+            }
+            targetMemrefDesc.setSize(rewriter, loc, 0, size);
+        }
+        targetMemrefDesc.setOffset(rewriter, loc, srcMemrefDesc.offset(rewriter, loc));
+
+        // Unit stride (assuming affine map attached to the cast op will figure out correct byte indexing)
+        // The cast op at the Value layer can handle dilations
+        targetMemrefDesc.setConstantStride(rewriter, loc, 0, 1);
+
+        rewriter.replaceOp(op, { targetMemrefDesc });
+
+        return success();
+    }
+};
+
 // TODO : de-dupe these lowerings, all 2-arg-1-result vector intrinsics appear to have the same lowering
 struct VpmaddwdOpLowering : public ValueLLVMOpConversionPattern<vpmaddwd>
 {
@@ -652,7 +737,6 @@ struct RoundOpLowering : public ValueLLVMOpConversionPattern<RoundOp>
         return success();
     }
 };
-
 
 struct ValueToLLVMLoweringPass : public ConvertValueToLLVMBase<ValueToLLVMLoweringPass>
 {
@@ -1433,7 +1517,7 @@ void ValueToLLVMLoweringPass::runOnModule()
         intermediateTarget.addLegalDialect<mlir::BuiltinDialect>();
 
         RewritePatternSet patterns(&getContext());
-        populateValueToLLVMPatterns(llvmTypeConverter, patterns);
+        populateValueToLLVMNonMemPatterns(llvmTypeConverter, patterns);
 
         populateLinalgToLLVMConversionPatterns(llvmTypeConverter, patterns);
 
@@ -1461,6 +1545,7 @@ void ValueToLLVMLoweringPass::runOnModule()
     {
         RewritePatternSet patterns(&getContext());
 
+        populateValueToLLVMMemPatterns(llvmTypeConverter, patterns);
         populateMathToLLVMConversionPatterns(llvmTypeConverter, patterns);
         populateMemRefToLLVMConversionPatterns(llvmTypeConverter, patterns);
         populateStdToLLVMConversionPatterns(llvmTypeConverter, patterns);
@@ -1516,13 +1601,13 @@ void ValueToLLVMLoweringPass::runOnModule()
 namespace accera::transforms::value
 {
 
-void populateGlobalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
+void populateGlobalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     patterns.insert<GlobalOpToLLVMLowering>(typeConverter, context);
 }
 
-void populateLocalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
+void populateLocalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
 
@@ -1541,10 +1626,17 @@ void populateLocalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, ml
         MemrefAllocOpLowering>(typeConverter, context);
 }
 
-void populateValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
+void populateValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
 {
-    populateGlobalValueToLLVMPatterns(typeConverter, patterns);
-    populateLocalValueToLLVMPatterns(typeConverter, patterns);
+    populateGlobalValueToLLVMNonMemPatterns(typeConverter, patterns);
+    populateLocalValueToLLVMNonMemPatterns(typeConverter, patterns);
+}
+
+void populateValueToLLVMMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
+{
+    mlir::MLIRContext* context = patterns.getContext();
+
+    patterns.insert<ValueMemRefCastOpLowering>(typeConverter, context);
 }
 
 const mlir::LowerToLLVMOptions& GetDefaultAcceraLLVMOptions(mlir::MLIRContext* context)

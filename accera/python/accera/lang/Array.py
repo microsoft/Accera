@@ -4,9 +4,12 @@
 ####################################################################################################
 
 import logging
-from typing import *
+import numpy as np
+
 from enum import Enum, auto
-from functools import partial
+from functools import partial, reduce
+from operator import mul
+from typing import *
 
 from .._lang_python import ScalarType, _MemoryLayout, AllocateFlags, Role
 from .._lang_python._lang import Array as NativeArray, Dimension
@@ -15,6 +18,25 @@ from ..Parameter import DelayedParameter
 from ..Constants import inf, k_dynamic_size
 from .NativeLoopNestContext import NativeLoopNestContext
 
+# For some reason ScalarType.__entries does not resolve correctly at this point
+# so we need this mapping instead of using ScalarType.__entries[str(numpy.dtype)]
+SCALAR_TYPE_TO_DTYPE_STR = {
+    ScalarType.bool: "bool",
+    ScalarType.int8: "int8",
+    ScalarType.int16: "int16",
+    ScalarType.int32: "int32",
+    ScalarType.int64: "int64",
+    ScalarType.uint8: "uint8",
+    ScalarType.uint16: "uint16",
+    ScalarType.uint32: "uint32",
+    ScalarType.uint64: "uint64",
+    ScalarType.float16: "float16",
+    ScalarType.float32: "float32",
+    ScalarType.float64: "float64",
+}
+
+DTYPE_STR_TO_SCALAR_TYPE = {y: x
+                            for x, y in SCALAR_TYPE_TO_DTYPE_STR.items()}
 
 class Array:
     "A multi-dimensional array"
@@ -78,26 +100,8 @@ class Array:
             shape = self._data.shape    # infer shape from data
             self._shape = shape
 
-            # For some reason ScalarType.__entries does not resolve correctly at this point
-            # so we need this mapping instead of using ScalarType.__entries[str(numpy.dtype)]
-            type_map = {
-                ScalarType.bool: "bool",
-                ScalarType.int8: "int8",
-                ScalarType.int16: "int16",
-                ScalarType.int32: "int32",
-                ScalarType.int64: "int64",
-                ScalarType.uint8: "uint8",
-                ScalarType.uint16: "uint16",
-                ScalarType.uint32: "uint32",
-                ScalarType.uint64: "uint64",
-                ScalarType.float16: "float16",
-                ScalarType.float32: "float32",
-                ScalarType.float64: "float64",
-            }
-            dtype_map = {y: x
-                         for x, y in type_map.items()}
             if self._element_type:    # override the data.dtype
-                dtype = type_map.get(self._element_type, None)
+                dtype = SCALAR_TYPE_TO_DTYPE_STR.get(self._element_type, None)
                 if dtype:
                     if str(self._data.dtype) != dtype:
                         logging.debug(f"[API] Converted from {self._data.dtype} to {dtype}")
@@ -106,7 +110,7 @@ class Array:
                 else:
                     raise NotImplementedError(f"Unsupported element type {self._element_type} for Role.CONST")
             else:    # infer element_type from data
-                self._element_type = dtype_map.get(str(self._data.dtype), None)
+                self._element_type = DTYPE_STR_TO_SCALAR_TYPE.get(str(self._data.dtype), None)
                 if self._element_type:
                     logging.debug(f"[API] Inferred {self._data.dtype} as {self._element_type}")
                 else:
@@ -150,6 +154,10 @@ class Array:
         return list(self._shape)
 
     @property
+    def _num_elements(self):
+        return reduce(mul, self.shape, 1)
+
+    @property
     def role(self):
         return self._role
 
@@ -167,6 +175,27 @@ class Array:
             return self._native_array._value
         else:
             return None
+
+    def _reinterpret_cast_internal(self, element_type):
+        if any(map(lambda d: isinstance(d, Dimension), self.shape)):
+            expected_layout = [-1]
+        else:
+            src_element_size = np.dtype(SCALAR_TYPE_TO_DTYPE_STR[self.element_type]).itemsize
+            dst_element_size = np.dtype(SCALAR_TYPE_TO_DTYPE_STR[element_type]).itemsize
+            expected_layout = [int(self._num_elements * (src_element_size / dst_element_size))]
+        reinterpreted = Array(role=self.role, element_type=element_type, shape=expected_layout)
+        return reinterpreted
+
+    def _get_memory_buffer(self):
+        return self._reinterpret_cast_internal(ScalarType.uint8)
+
+    def _reinterpret_cast(self, element_type):
+        if self.element_type != ScalarType.uint8 or len(self.shape) != 1:
+            raise RuntimeError(
+                "Can only call reinterpret cast on flat uint8 memory buffers. Call _get_memory_buffer first?"
+            )
+
+        return self._reinterpret_cast_internal(element_type)
 
     def _get_native_array(self):
         return self._native_array
@@ -308,6 +337,7 @@ class SubArray(Array):
             package.add(main, args=(A,), base_name="main")
 
     """
+
     def __init__(self, source: Array, shape: Tuple[Union[int, DelayedParameter]], name: str = None):
         self._source = source
         self._role = source.role
@@ -318,7 +348,7 @@ class SubArray(Array):
         self._requested_layout = source._requested_layout
         self._offset = 0
         self._delayed_calls = {}
-        
+
         if self._shape and any([isinstance(s, DelayedParameter) for s in self._shape]):
             self._delayed_calls[partial(self._init_delayed)] = tuple([s for s in self._shape])
             return
@@ -341,4 +371,3 @@ class SubArray(Array):
 
         self._layout = _MemoryLayout.get_subarray_layout(self._source._layout, runtime_shape)
         self._native_array = NativeArray(self._element_type, self._layout)
-

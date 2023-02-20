@@ -22,6 +22,7 @@
 #include "value/ValueSimplifyPass.h"
 #include "value/ValueToLLVMLoweringPass.h"
 #include "value/ValueToStandardLoweringPass.h"
+#include "vectorization/VectorizationPass.h"
 
 #include <ir/include/intrinsics/AcceraIntrinsicsDialect.h>
 #include <ir/include/exec/ExecutionPlanOps.h>

@@ -20,6 +20,7 @@
 #include <mlir/IR/PatternMatch.h>
 
 #include <llvm/ADT/TypeSwitch.h>
+#include <mlir/Support/LogicalResult.h>
 
 namespace v = accera::ir::value;
 
@@ -224,12 +225,139 @@ struct constant_float_value_matcher
     llvm::APFloat _eps;
 };
 
+template <typename OpTy, typename ValTy>
+mlir::Value constantBuildHelper(mlir::OpBuilder& builder, mlir::Location loc, ValTy val, mlir::Type type)
+{
+    return builder.create<OpTy>(loc, val, type);
+}
+
+template <>
+mlir::Value constantBuildHelper<mlir::arith::ConstantIndexOp>(mlir::OpBuilder& builder, mlir::Location loc, int64_t val, mlir::Type type)
+{
+    return builder.create<mlir::arith::ConstantIndexOp>(loc, val);
+}
+
+template <>
+mlir::Value constantBuildHelper<mlir::arith::ConstantFloatOp>(mlir::OpBuilder& builder, mlir::Location loc, mlir::APFloat val, mlir::Type type)
+{
+    return builder.create<mlir::arith::ConstantFloatOp>(loc, val, type.cast<mlir::FloatType>());
+}
+
 struct ValueBinOpSimplification : public mlir::OpRewritePattern<v::BinOp>
 {
     using OpRewritePattern::OpRewritePattern;
 
+    mlir::arith::ConstantOp handleConstantBoolOp(mlir::PatternRewriter& rewriter, v::BinaryOpPredicate pred, mlir::arith::ConstantOp lhs, mlir::arith::ConstantOp rhs) const
+    {
+        auto lhsCast = mlir::dyn_cast<mlir::arith::ConstantIntOp>(lhs.getOperation());
+        auto rhsCast = mlir::dyn_cast<mlir::arith::ConstantIntOp>(rhs.getOperation());
+        if (lhsCast == nullptr || rhsCast == nullptr)
+        {
+            return nullptr;
+        }
+        auto lhsType = lhs.getType();
+        auto rhsType = rhs.getType();
+        if (!lhsType.isa<mlir::IntegerType>() || lhsType.cast<mlir::IntegerType>().getWidth() != 1 ||
+            !rhsType.isa<mlir::IntegerType>() || rhsType.cast<mlir::IntegerType>().getWidth() != 1)
+        {
+            return nullptr;
+        }
+
+        auto lhsBool = lhsCast.value() != 0;
+        auto rhsBool = rhsCast.value() != 0;
+        auto loc = lhs->getLoc();
+        switch (pred)
+        {
+        case v::BinaryOpPredicate::LOGICAL_AND:
+            return rewriter.create<mlir::arith::ConstantIntOp>(loc, static_cast<int64_t>(lhsBool && rhsBool), 1);
+        case v::BinaryOpPredicate::LOGICAL_OR:
+            return rewriter.create<mlir::arith::ConstantIntOp>(loc, static_cast<int64_t>(lhsBool || rhsBool), 1);
+        default:
+            return nullptr;
+        }
+    }
+
+    template <typename OpTy>
+    mlir::Value handleConstantOp(mlir::PatternRewriter& rewriter, v::BinaryOpPredicate pred, mlir::arith::ConstantOp lhs, mlir::arith::ConstantOp rhs) const
+    {
+        auto lhsCast = mlir::dyn_cast<OpTy>(lhs.getOperation());
+        auto rhsCast = mlir::dyn_cast<OpTy>(rhs.getOperation());
+        if (lhsCast == nullptr || rhsCast == nullptr)
+        {
+            return nullptr;
+        }
+        auto lhsVal = lhsCast.value();
+        auto rhsVal = rhsCast.value();
+        auto loc = lhs->getLoc();
+        switch (pred)
+        {
+        case v::BinaryOpPredicate::ADD:
+            return constantBuildHelper<OpTy>(rewriter, loc, lhsVal + rhsVal, lhs.getType());
+        case v::BinaryOpPredicate::SUB:
+            return constantBuildHelper<OpTy>(rewriter, loc, lhsVal - rhsVal, lhs.getType());
+        case v::BinaryOpPredicate::MUL:
+            return constantBuildHelper<OpTy>(rewriter, loc, lhsVal * rhsVal, lhs.getType());
+        case v::BinaryOpPredicate::DIV:
+            return constantBuildHelper<OpTy>(rewriter, loc, lhsVal / rhsVal, lhs.getType());
+        // case v::BinaryOpPredicate::MOD: // APFloat doesn't support %, TODO : support for Index / Int
+        case v::BinaryOpPredicate::MAX:
+            return constantBuildHelper<OpTy>(rewriter, loc, lhsVal > rhsVal ? lhsVal : rhsVal, lhs.getType());
+        case v::BinaryOpPredicate::MIN:
+            return constantBuildHelper<OpTy>(rewriter, loc, lhsVal < rhsVal ? lhsVal : rhsVal, lhs.getType());
+        default:
+            return nullptr;
+        }
+    }
+
+    mlir::LogicalResult rewriteConstantBinOp(v::BinOp op, mlir::PatternRewriter& rewriter) const
+    {
+        // TODO : if we lowered BinOps to MLIR earlier than other value dialect ops, the built-in arithmetic canonicalizations and lowerings would handle this
+        auto lhs = op.lhs();
+        auto rhs = op.rhs();
+        auto resultElementType = accera::ir::util::GetElementType(op.result().getType());
+        auto lhsElementType = accera::ir::util::GetElementType(lhs.getType());
+        auto rhsElementType = accera::ir::util::GetElementType(rhs.getType());
+
+        if (lhsElementType != rhsElementType || lhsElementType != resultElementType)
+        {
+            return mlir::failure();
+        }
+
+        if (auto lhsConstantOp = lhs.getDefiningOp<mlir::arith::ConstantOp>())
+        {
+            if (auto rhsConstantOp = rhs.getDefiningOp<mlir::arith::ConstantOp>())
+            {
+                if (mlir::Value intOp = handleConstantOp<mlir::arith::ConstantIntOp>(rewriter, op.getPredicate(), lhsConstantOp, rhsConstantOp))
+                {
+                    rewriter.replaceOp(op, { intOp });
+                    return mlir::success();
+                }
+                else if (mlir::Value indexOp = handleConstantOp<mlir::arith::ConstantIndexOp>(rewriter, op.getPredicate(), lhsConstantOp, rhsConstantOp))
+                {
+                    rewriter.replaceOp(op, { indexOp });
+                    return mlir::success();
+                }
+                else if (mlir::Value floatOp = handleConstantOp<mlir::arith::ConstantFloatOp>(rewriter, op.getPredicate(), lhsConstantOp, rhsConstantOp))
+                {
+                    rewriter.replaceOp(op, { floatOp });
+                    return mlir::success();
+                }
+                else if (mlir::Value boolOp = handleConstantBoolOp(rewriter, op.getPredicate(), lhsConstantOp, rhsConstantOp))
+                {
+                    rewriter.replaceOp(op, { boolOp });
+                    return mlir::success();
+                }
+            }
+        }
+        return mlir::failure();
+    }
+
     mlir::LogicalResult matchAndRewrite(v::BinOp op, mlir::PatternRewriter& rewriter) const override
     {
+        if (mlir::succeeded(rewriteConstantBinOp(op, rewriter)))
+        {
+            return mlir::success();
+        }
         auto zeroish = constant_float_value_matcher(0.0);
         auto oneish = constant_float_value_matcher(1.0);
 
@@ -321,6 +449,66 @@ struct ValueBinOpSimplification : public mlir::OpRewritePattern<v::BinOp>
     }
 };
 
+class ViewOpCanonicalizer : public mlir::OpRewritePattern<v::ViewOp>
+{
+public:
+    using mlir::OpRewritePattern<v::ViewOp>::OpRewritePattern;
+
+    mlir::LogicalResult matchAndRewrite(v::ViewOp op, mlir::PatternRewriter& rewriter) const override
+    {
+        // Simply re-create the v::ViewOp and let v::ViewOp::build's constant detection simplify the return type if it can be simplified
+
+        auto newMemRefType = v::ViewOp::computeMemRefType(op.source(), op.sizes(), op.offsets(), op.strides());
+        auto currentMemRefType = op.getType();
+        if (newMemRefType == currentMemRefType)
+        {
+            return mlir::failure();
+        }
+
+        rewriter.replaceOpWithNewOp<v::ViewOp>(op, op.source(), op.sizes(), op.offsets(), op.strides());
+        return mlir::success();
+    }
+};
+
+class SplitDimOpCanonicalizer : public mlir::OpRewritePattern<v::SplitDimOp>
+{
+public:
+    using mlir::OpRewritePattern<v::SplitDimOp>::OpRewritePattern;
+
+    mlir::LogicalResult matchAndRewrite(v::SplitDimOp op, mlir::PatternRewriter& rewriter) const override
+    {
+        // Simply re-create the v::SplitDimOp and let v::SplitDimOp::build's constant detection simplify the return type if it can be simplified
+
+        auto dim = static_cast<int64_t>(op.dim());
+        auto newMemRefType = v::SplitDimOp::computeMemRefType(op.source(), dim, op.size());
+        auto currentMemRefType = op.getType();
+        if (newMemRefType == currentMemRefType)
+        {
+            return mlir::failure();
+        }
+
+        rewriter.replaceOpWithNewOp<v::SplitDimOp>(op, newMemRefType, op.source(), dim, op.size());
+        return mlir::success();
+    }
+};
+
+class CastOpCanonicalizer : public mlir::OpRewritePattern<v::CastOp>
+{
+public:
+    using mlir::OpRewritePattern<v::CastOp>::OpRewritePattern;
+
+    mlir::LogicalResult matchAndRewrite(v::CastOp op, mlir::PatternRewriter& rewriter) const override
+    {
+        // If the input type and output type are the same for the cast op, elide it
+        if (op.source().getType() == op.result().getType())
+        {
+            rewriter.replaceOp(op, { op.source() });
+            return mlir::success();
+        }
+        return mlir::failure();
+    }
+};
+
 struct BarrierCanonicalizationPattern : public mlir::OpRewritePattern<v::BarrierOp>
 {
     using OpRewritePattern::OpRewritePattern;
@@ -383,6 +571,24 @@ struct ValueModuleOpConversion : public mlir::OpRewritePattern<v::ValueModuleOp>
 };
 
 } // namespace
+
+void v::ViewOp::getCanonicalizationPatterns(mlir::RewritePatternSet& results,
+                                            mlir::MLIRContext* context)
+{
+    results.add<ViewOpCanonicalizer>(context);
+}
+
+void v::SplitDimOp::getCanonicalizationPatterns(mlir::RewritePatternSet& results,
+                                                mlir::MLIRContext* context)
+{
+    results.add<SplitDimOpCanonicalizer>(context);
+}
+
+void v::CastOp::getCanonicalizationPatterns(mlir::RewritePatternSet& results,
+                                            mlir::MLIRContext* context)
+{
+    results.add<CastOpCanonicalizer>(context);
+}
 
 void v::CopyOp::getCanonicalizationPatterns(mlir::RewritePatternSet& patterns,
                                             mlir::MLIRContext* context)

@@ -34,6 +34,7 @@ namespace value
         std::swap(_type, other._type);
         std::swap(_layout, other._layout);
         std::swap(_hasName, other._hasName);
+        std::swap(_name, other._name);
     }
 
     // clang-format off
@@ -74,6 +75,7 @@ namespace value
                     _data = other._data;
                     _type = other._type;
                     _hasName = other._hasName;
+                    _name = other._name;
                 }
             }
             else
@@ -97,6 +99,7 @@ namespace value
                         _data = other._data;
                         _type = other._type;
                         _hasName = other._hasName;
+                        _name = other._name;
                     }
                     else
                     {
@@ -137,6 +140,7 @@ namespace value
                     _layout = std::move(other._layout);
                     _type = std::move(other._type);
                     _hasName = std::move(other._hasName);
+                    _name = std::move(other._name);
                 }
             }
             else
@@ -160,6 +164,7 @@ namespace value
                         _layout = std::move(other._layout);
                         _type = std::move(other._type);
                         _hasName = std::move(other._hasName);
+                        _name = std::move(other._name);
                     }
                     else
                     {
@@ -209,29 +214,32 @@ namespace value
         _layout.reset();
         _data = {};
         _hasName = false;
+        _name = "";
     }
 
     void Value::SetData(Value value, bool force)
     {
         if (!force && IsConstrained() && value.IsConstrained() && value.GetLayout() != GetLayout())
         {
-            throw InputException(InputExceptionErrors::invalidArgument);
+            throw InputException(InputExceptionErrors::invalidArgument,
+                                 "Layout of the current value (" + GetLayout().ToString() + ") does not match that of the input value ("
+                                  + value.GetLayout().ToString() + "). Alternatively, use force = 'true' to overwrite current layout.");
         }
 
         std::visit(VariantVisitor{ [this, force](Emittable emittable) {
                                       auto type = GetContext().GetType(emittable);
                                       if (!force && type.first != _type.first)
                                       {
-                                          throw InputException(InputExceptionErrors::typeMismatch);
+                                          throw TypeMismatchException("Value::SetData (Emittable)", _type.first, type.first);
                                       }
 
                                       _data = emittable;
                                       _type = type;
                                   },
                                    [this, force](auto&& arg) {
-                                       if (!force && GetValueType<std::decay_t<decltype(arg)>>() != _type.first)
+                                       if (auto type = GetValueType<std::decay_t<decltype(arg)>>(); !force && type != _type.first)
                                        {
-                                           throw InputException(InputExceptionErrors::typeMismatch);
+                                           throw TypeMismatchException("Value::SetData (auto&&)", _type.first, type);
                                        }
 
                                        _data = arg;
@@ -382,24 +390,6 @@ namespace value
         GetContext().SetLayout(*this, layout);
     }
 
-    void Value::ClearLayout()
-    {
-        _layout.reset();
-    }
-
-    void Value::ClearData()
-    {
-        _data = Emittable{ nullptr };
-    }
-
-    void Value::Clear()
-    {
-        ClearData();
-        ClearLayout();
-        _type = {};
-        _hasName = false;
-    }
-
     Value Value::PointerTo() const
     {
         Value copy = *this;
@@ -424,13 +414,15 @@ namespace value
 
     void Value::SetName(const std::string& name)
     {
-        GetContext().SetName(*this, name);
+        _name = name;
+        if (!IsEmpty() && IsDefined())
+            GetContext().SetName(*this, name);
         _hasName = true;
     }
 
     std::string Value::GetName() const
     {
-        return GetContext().GetName(*this);
+        return _name;
     }
 
     bool Value::HasCustomName() const

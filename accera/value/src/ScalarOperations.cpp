@@ -261,7 +261,7 @@ namespace value
 
     Scalar Sign(Scalar s)
     {
-        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented);
+        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "Sign operator not implemented.");
     }
 
     Scalar Sqrt(Scalar s)
@@ -314,7 +314,7 @@ namespace value
         {
             if (!v.GetValue().IsIntegral())
             {
-                throw LogicException(LogicExceptionErrors::illegalState);
+                throw LogicException(LogicExceptionErrors::illegalState, "Logical NOT (!) operator can only be applied on integer types but got " + ToString(v.GetType()) + ".");
             }
 
             r = (v == Cast(0, v.GetType()));

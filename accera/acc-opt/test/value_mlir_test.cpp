@@ -847,7 +847,7 @@ TEST_CASE("mlir_schedule_test_4")
 // CHECK: "accv.slice"(%arg0, %{{[0-9]+}}, %{{[0-9]+}}) {sliceDimensions = [0, 1]} : (memref<10x10xf32>, index, index) -> memref<f32>
 // CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [0]} : (memref<10x10xf32>, index) -> memref<10xf32, #map0>
 // CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}) {sliceDimensions = [1]} : (memref<10x10xf32>, index) -> memref<10xf32, #map1>
-// CHECK: "accv.view"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {operand_segment_sizes = dense<[1, 2, 2, 2, 0]> : vector<5xi32>} : (memref<10x10xf32>, index, index, index, index, index, index) -> memref<3x4xf32, #map2>
+// CHECK: "accv.view"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {operand_segment_sizes = dense<[1, 2, 2, 2]> : vector<4xi32>} : (memref<10x10xf32>, index, index, index, index, index, index) -> memref<3x4xf32, #map2>
 TEST_CASE("mlir_matrix_view_test")
 {
     DeclareFunction("MatrixView")
@@ -880,7 +880,7 @@ TEST_CASE("mlir_matrix_view_test")
 // CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [0, 1]} : (memref<5x10x15xf32>, index, index) -> memref<15xf32, #map3>
 // CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [0, 2]} : (memref<5x10x15xf32>, index, index) -> memref<10xf32, #map4>
 // CHECK: "accv.slice"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {sliceDimensions = [1, 2]} : (memref<5x10x15xf32>, index, index) -> memref<5xf32, #map5>
-// CHECK: "accv.view"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {operand_segment_sizes = dense<[1, 3, 3, 3, 0]> : vector<5xi32>} : (memref<5x10x15xf32>, index, index, index, index, index, index, index, index, index) -> memref<3x2x1xf32, #map6>
+// CHECK: "accv.view"(%arg0, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}, %{{[a-z0-9_]+}}) {operand_segment_sizes = dense<[1, 3, 3, 3]> : vector<4xi32>} : (memref<5x10x15xf32>, index, index, index, index, index, index, index, index, index) -> memref<3x2x1xf32, #map6>
 TEST_CASE("mlir_tensor_view_test")
 {
     DeclareFunction("TensorView")

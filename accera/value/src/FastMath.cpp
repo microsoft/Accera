@@ -10,6 +10,8 @@
 #include "Scalar.h"
 #include "ScalarOperations.h"
 
+#include <utilities/include/Exception.h>
+
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 
 namespace accera
@@ -59,23 +61,27 @@ namespace value
 
         Scalar IntAsFloat(Scalar i)
         {
-            // TODO: assert i is int32
+            if (i.GetType() != ValueType::Int32)
+                throw InputException(InputExceptionErrors::typeMismatch, "IntAsFloat only valid for int32 type");
             return Bitcast(i, ValueType::Float);
         }
 
         Scalar FloatAsInt(Scalar f)
         {
-            // TODO: assert f is float32
+            if (f.GetType() != ValueType::Float)
+                throw InputException(InputExceptionErrors::typeMismatch, "FloatAsInt only valid for float32 type");
             return Bitcast(f, ValueType::Int32);
         }
     } // namespace
 
     Scalar FastExp(Scalar a)
     {
+        if (a.GetType() != ValueType::Float)
+            throw InputException(InputExceptionErrors::typeMismatch, "FastExp only valid for float32 type");
         // adapted from https://forums.developer.nvidia.com/t/a-more-accurate-performance-competitive-implementation-of-expf/47528
 
         // exp(a) = 2**i * exp(f); i = rintf (a / log(2))
-        auto j = Fma(1.442695f, a, 12582912.f) - 12582912.f; // 0x1.715476p0, 0x1.8p23
+        auto j = Fma(1.442695f, a, 12582912.0f) - 12582912.0f; // 0x1.715476p0, 0x1.8p23
         auto f = Fma(j, -6.93145752e-1f, a); // -0x1.62e400p-1  // log_2_hi
         f = Fma(j, -1.42860677e-6f, f); // -0x1.7f7d1cp-20 // log_2_lo
         auto i = Cast(j, ValueType::Int32); // floor?
@@ -89,17 +95,18 @@ namespace value
         r = Fma(r, f, 1.00000000e+0f); // 0x1.000000p+0
         r = Fma(r, f, 1.00000000e+0f); // 0x1.000000p+0
         // exp(a) = 2**i * r;
-        auto ia = Select(i > 0, Scalar((int32_t)0), Scalar((int32_t)0x83000000));
-        auto s = IntAsFloat(0x7f000000 + ia);
-
+        // auto ia = Select(i > 0, Scalar((int32_t)0), Scalar((int32_t)0x83000000));
+        auto ia = Select(j > 0, Scalar((int32_t)0), Scalar((int32_t)0x83000000)); // Using 'i' instead of 'j' will fail due to overflow for large values on some architectures
+        auto s = IntAsFloat((int32_t)0x7f000000 + ia);
         auto t = IntAsFloat(ShiftLeft(i, 23) - ia);
         r = r * s;
         r = r * t;
 
         // handle special cases: severe overflow / underflow
         auto overflow = Abs(a) >= 104.0f;
-        auto ia2 = FloatAsInt(a);
-        auto overflowResult = IntAsFloat((Select(ia2 > 0, Scalar((int32_t)0x7f800000), Scalar((int32_t)0))));
+        // auto ia2 = FloatAsInt(a);
+        // auto overflowResult = IntAsFloat((Select(ia2 > 0, Scalar((int32_t)0x7f800000), Scalar((int32_t)0))));
+        auto overflowResult = s * s;
         r = Select(overflow, overflowResult, r);
 
         return r;
@@ -107,6 +114,8 @@ namespace value
 
     Scalar FastExpMlas(Scalar a)
     {
+        if (a.GetType() != ValueType::Float)
+            throw InputException(InputExceptionErrors::typeMismatch, "FastExpMlas only valid for float32 type");
         // adapted from MLAS: ProcessSingleVector loop of routine MlasComputeSumExpF32KernelFma3
         // (in TransKernelFma34.S)
 

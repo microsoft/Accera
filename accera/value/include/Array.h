@@ -7,6 +7,7 @@
 #pragma once
 
 #include "EmitterContext.h"
+#include "value/include/ValueType.h"
 
 #include <utilities/include/FunctionUtils.h>
 #include <utilities/include/MemoryLayout.h>
@@ -68,7 +69,7 @@ namespace value
         /// <param name="offsets"> The origin of the view --- the indices of the first entry in the subarray </param>
         /// <param name="shape"> The shape of the view </param>
         /// <returns> The resulting subarray block </returns>
-        Array SubArray(const std::vector<Scalar>& offsets, const utilities::MemoryShape& shape, std::optional<std::vector<int64_t>> strides = {}) const;
+        Array SubArray(const std::vector<Scalar>& offsets, const std::vector<Scalar>& shape, std::optional<std::vector<Scalar>> strides = {}) const;
 
         /// <summary> Get a reduced-rank slice of the data </summary>
         /// <param name="slicedDimensions"> The dimensions to remove from the domain. </param>
@@ -84,7 +85,7 @@ namespace value
         /// The dimension being split must have full extent (and not be a sub-view of some other array).
         /// The extent (and size) of the dimension being split must be a multiple of the split size.
         /// </remarks>
-        Array SplitDimension(int64_t dim, int64_t size) const;
+        Array SplitDimension(int64_t dim, Scalar size) const;
 
 // TODO: Enable when functionality is needed and semantics are fully cleared
 #if 0
@@ -107,6 +108,11 @@ namespace value
         /// <param name="order"> The order for the new array view to use </param>
         /// <remarks> This operation doesn't alter any memory: it just returns a view of the array with a different logical ordering. </remarks>
         Array Reorder(const utilities::DimensionOrder& order) const;
+
+        /// <summary> Get a view of the data using a different element type </summary>
+        /// <param name="type"> The element type for the new array view to use </param>
+        /// <remarks> This operation doesn't alter any memory: it just returns a view of the array with a different element type. </remarks>
+        Array ReinterpretCast(ValueType type) const;
 
         /// <summary> Returns the shape of the array </summary>
         /// <returns> The shape of the array </returns>
@@ -154,7 +160,7 @@ namespace value
                 auto size = data.size();
                 if (size != layout->GetMemorySize())
                 {
-                    throw InputException(InputExceptionErrors::invalidSize);
+                    throw InputException(InputExceptionErrors::invalidSize, "Data size (" + std::to_string(size) + ") and layout size (" + std::to_string(layout->GetMemorySize()) + ") must match to create value.");
                 }
             }
             return { data, layout, name };

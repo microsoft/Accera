@@ -91,6 +91,7 @@ class CMakeBuild(build_ext):
             # Can be set with Conda-Build, for example.
             cmake_generator = os.environ.get("CMAKE_GENERATOR", "")
             llvm_setup_variant = os.environ.get("LLVM_SETUP_VARIANT", "Default")
+            llvm_custom_path = os.environ.get("LLVM_CUSTOM_PATH", "")
 
             # E.g. /opt/vcpkg/scripts/buildsystems/vcpkg.cmake
             vcpkg_toolchain = os.environ.get("VCPKG_TOOLCHAIN")
@@ -104,6 +105,8 @@ class CMakeBuild(build_ext):
                 f"-DCMAKE_BUILD_TYPE={cfg}",    # not used on MSVC, but no harm
                 f"-DLLVM_SETUP_VARIANT={llvm_setup_variant}"
             ]
+            if llvm_custom_path:
+                cmake_args += [f"-DLLVM_CUSTOM_PATH={llvm_custom_path}"]
             if vcpkg_toolchain:
                 cmake_args += [f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_toolchain}"]
 

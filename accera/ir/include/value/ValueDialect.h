@@ -19,6 +19,7 @@
 #include <mlir/Interfaces/InferTypeOpInterface.h>
 #include <mlir/Interfaces/LoopLikeInterface.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <mlir/Interfaces/ViewLikeInterface.h>
 
 #include <llvm/ADT/STLExtras.h>
 
@@ -87,6 +88,7 @@ using mlir::UnitAttr;
 using mlir::Value;
 using mlir::ValueRange;
 using mlir::VectorType;
+using mlir::ViewLikeOpInterface;
 
 using mlir::getElementTypeOrSelf;
 

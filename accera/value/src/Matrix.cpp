@@ -78,7 +78,7 @@ namespace value
         if (numRows > currentLayout.GetActiveSize(0) ||
             numColumns > currentLayout.GetActiveSize(1))
         {
-            throw InputException(InputExceptionErrors::indexOutOfRange);
+            throw InputException(InputExceptionErrors::indexOutOfRange, "SubMatrix size cannot be larger than the original Matrix.");
         }
 
         // Need to cast so that row and numRows are the same type (and similarly with columns)
@@ -157,12 +157,14 @@ namespace value
     {
         if (m.Rows() != Rows() && m.Columns() != Columns())
         {
-            throw InputException(InputExceptionErrors::sizeMismatch);
+            const auto lhsShape = std::to_string(Rows()) + " x " + std::to_string(Columns());
+            const auto rhsShape = std::to_string(m.Rows()) + " x " + std::to_string(m.Columns());
+            throw InputException(InputExceptionErrors::sizeMismatch, "Matrix += Matrix: Shape of lhs [" + lhsShape + "] must match the shape of rhs [" + rhsShape + "].");
         }
 
         if (m.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Matrix += Matrix", GetType(), m.GetType());
         }
 
         For(m, [this, &m](Scalar row, Scalar column) {
@@ -176,12 +178,14 @@ namespace value
     {
         if (m.Rows() != Rows() && m.Columns() != Columns())
         {
-            throw InputException(InputExceptionErrors::sizeMismatch);
+            const auto lhsShape = std::to_string(Rows()) + " x " + std::to_string(Columns());
+            const auto rhsShape = std::to_string(m.Rows()) + " x " + std::to_string(m.Columns());
+            throw InputException(InputExceptionErrors::sizeMismatch, "Matrix -= Matrix: Shape of lhs [" + lhsShape + "] must match the shape of rhs [" + rhsShape + "].");
         }
 
         if (m.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Matrix -= Matrix", GetType(), m.GetType());
         }
 
         For(m, [this, &m](Scalar row, Scalar column) {
@@ -195,7 +199,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Matrix += Scalar", GetType(), s.GetType());
         }
 
         For(*this, [this, &s](Scalar row, Scalar column) {
@@ -209,7 +213,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Matrix -= Scalar", GetType(), s.GetType());
         }
 
         For(*this, [this, &s](Scalar row, Scalar column) {
@@ -223,7 +227,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Matrix *= Scalar", GetType(), s.GetType());
         }
 
         For(*this, [this, &s](Scalar row, Scalar column) {
@@ -237,7 +241,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Matrix /= Scalar", GetType(), s.GetType());
         }
 
         For(*this, [this, &s](Scalar row, Scalar column) {

@@ -10,25 +10,13 @@ namespace value
     }
 
     ScalarDimension::ScalarDimension(const std::string& name, Role role) :
-        ScalarDimension{ role }
+        Scalar{ MakeScalar(ValueType::Index, name, role) }
     {
-        SetName(name);
     }
 
     ScalarDimension::ScalarDimension(Value value, const std::string& name, Role role) :
-        Scalar{ value, "", role }
+        Scalar{ value, name, role }
     {
-        SetName(name);
-    }
-
-    void ScalarDimension::SetName(const std::string& name)
-    {
-        _name = name;
-    }
-
-    std::string ScalarDimension::GetName() const
-    {
-        return _name;
     }
 
     void ScalarDimension::SetValue(Value value)

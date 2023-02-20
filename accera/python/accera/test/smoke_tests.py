@@ -1238,6 +1238,7 @@ class SmokeTest(unittest.TestCase):
         # copy of the 8 elements down the diagonal as the first 8 elements
         # Note: this isn't expected to be a useful utility pattern but it's a simple example that combines sub arrays of differing rank/offsets and data packing
 
+        test_name = "test_offset_sub_array_packing_flat"
         N = 8
         output_size = N*N + N
 
@@ -1270,29 +1271,31 @@ class SmokeTest(unittest.TestCase):
             diag_fn(Input, Output)
             transpose_fn(Input, Output)
 
-        function = package.add(outer_nest, args=(Input, Output), base_name="test_offset_sub_array_packing_flat")
+        function = package.add(outer_nest, args=(Input, Output), base_name=test_name)
 
-        package_name = "test_offset_sub_array_packing_flat"
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
-        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
             # correctness check
             test_input = np.random.random([N, N]).astype(np.float32)
             test_output = np.random.random([N*N + N]).astype(np.float32)
+            test_output_ref = np.random.random([N*N + N]).astype(np.float32)
             for i in range(N):
-                test_output[i] = test_input[i, i]
+                test_output_ref[i] = test_input[i, i]
                 for j in range(N):
-                    test_output[N + (i*N + j)] = test_input[j, i]
-            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output))
+                    test_output_ref[N + (i*N + j)] = test_input[j, i]
+            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
 
     def test_offset_sub_array_packing_split_dim(self) -> None:
         # Take a 4x4 array and produce an array of 16 + 4 elements,
         # where the second array contains the transpose of the first array and has an additional
         # copy of the 4 elements down the diagonal as the first 4 elements
         # Note: this isn't expected to be a useful utility pattern but it's a simple example that combines sub arrays of differing rank/offsets and data packing
+
+        test_name = "test_offset_sub_array_packing_split_dim"
 
         N = 4
         output_size = N*N + N
@@ -1316,7 +1319,7 @@ class SmokeTest(unittest.TestCase):
         @transpose_nest.iteration_logic
         def _transpose():
             packed_output = Output.sub_array(offsets=(N,), shape=(N*N,))
-            packed_output_split = packed_output._split_dimension(0, N)
+            packed_output_split = packed_output._split_dimension(0, cast(N, ScalarType.index))
             packed_output_split[transpose_j, transpose_i] = Input[transpose_i, transpose_j]
 
         transpose_fn = package.add(transpose_nest, args=(Input, Output), base_name="transpose_fn")
@@ -1327,23 +1330,23 @@ class SmokeTest(unittest.TestCase):
             diag_fn(Input, Output)
             transpose_fn(Input, Output)
 
-        function = package.add(outer_nest, args=(Input, Output), base_name="test_offset_sub_array_packing_split_dim")
+        function = package.add(outer_nest, args=(Input, Output), base_name=test_name)
 
-        package_name = "test_offset_sub_array_packing_split_dim"
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
-        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
             # correctness check
             test_input = np.random.random([N, N]).astype(np.float32)
             test_output = np.random.random([N*N + N]).astype(np.float32)
+            test_output_ref = np.random.random([N*N + N]).astype(np.float32)
             for i in range(N):
-                test_output[i] = test_input[i, i]
+                test_output_ref[i] = test_input[i, i]
                 for j in range(N):
-                    test_output[N + (i*N + j)] = test_input[j, i]
-            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output))
+                    test_output_ref[N + (i*N + j)] = test_input[j, i]
+            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
 
     def test_offset_sub_array_packing_multiple_split_dim(self) -> None:
         # Take an 4x4 array and produce an array of 16 + 4 elements,
@@ -1351,6 +1354,7 @@ class SmokeTest(unittest.TestCase):
         # and there is a copy of the 4 elements down the diagonal as the first 4 elements
         # Note: this isn't expected to be a useful utility pattern but it's a simple example that combines sub arrays of differing rank/offsets and data packing
 
+        test_name = "test_offset_sub_array_packing_multiple_split_dim"
         N = 4
         N_inner = 2
         output_size = N*N + N
@@ -1377,13 +1381,13 @@ class SmokeTest(unittest.TestCase):
             packed_output = Output.sub_array(offsets=(N,), shape=(N*N,))
 
             # packed_output_split_0 is an offset array with shape [ 4, 4 ]
-            packed_output_split_0 = packed_output._split_dimension(0, N)
+            packed_output_split_0 = packed_output._split_dimension(0, cast(N, ScalarType.index))
 
             # packed_output_split_1 is an offset array with shape [ 4, 2, 2 ]
-            packed_output_split_1 = packed_output_split_0._split_dimension(1, N_inner)
+            packed_output_split_1 = packed_output_split_0._split_dimension(1, cast(N_inner, ScalarType.index))
 
             # packed_output_split_2 is an offset array with shape [ 2, 2, 2, 2 ]
-            packed_output_split_2 = packed_output_split_1._split_dimension(0, N_inner)
+            packed_output_split_2 = packed_output_split_1._split_dimension(0, cast(N_inner, ScalarType.index))
 
             i = transpose_i * N_inner + transpose_ii
             j = transpose_j * N_inner + transpose_jj
@@ -1397,29 +1401,267 @@ class SmokeTest(unittest.TestCase):
             diag_fn(Input, Output)
             transpose_fn(Input, Output)
 
-        function = package.add(outer_nest, args=(Input, Output), base_name="test_offset_sub_array_packing_multiple_split_dim")
+        function = package.add(outer_nest, args=(Input, Output), base_name=test_name)
 
-        package_name = "test_offset_sub_array_packing_multiple_split_dim"
-        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
-        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
             # correctness check
             test_input = np.random.random([N, N]).astype(np.float32)
             test_output = np.random.random([N*N + N]).astype(np.float32)
+            test_output_ref = np.random.random([N*N + N]).astype(np.float32)
             for i in range(0, N, N_inner):
                 for j in range(0, N, N_inner):
                     for ii in range(N_inner):
-                        test_output[i + ii] = test_input[i+ii, i+ii] # fill the beginning with the diagonal elements
+                        test_output_ref[i + ii] = test_input[i+ii, i+ii] # fill the beginning with the diagonal elements
                         for jj in range(N_inner):
                             # output[i, j, jj, ii] = input[i+ii, j+jj]
                             # output[i*((N//N_inner) * N_inner * N_inner) + j*(N_inner * N_inner) + jj*(N_inner) + ii] = input[i+ii, j+jj]
                             # Then offset output by N to account for the beginning diagonal elements
                             # Note that since i and j each step by N_inner, there's already one multiplication by N_inner accounted for in their values
-                            test_output[N + (i*((N//N_inner)*N_inner) + j*(N_inner) + jj*(N_inner) + ii)] = test_input[i + ii, j + jj]
-            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output))
+                            test_output_ref[N + (i*((N//N_inner)*N_inner) + j*(N_inner) + jj*(N_inner) + ii)] = test_input[i + ii, j + jj]
+            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
+
+    def test_shifting_shrinking_sub_array(self) -> None:
+        N = 64
+
+        test_name = "test_shifting_shrinking_sub_array"
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N,))
+
+        package = Package()
+
+        nest = Nest(shape=(N,))
+        idx = nest.get_indices()
+        @nest.iteration_logic
+        def _fn():
+            size = N - idx
+            sub_arr = Input.sub_array(offsets=(idx,), shape=(size,))
+            Output[0] = sub_arr[0]
+
+        function = package.add(nest, args=(Input, Output), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+            # correctness check
+            test_input = np.random.random([N]).astype(np.float32)
+            test_output = test_input.copy()
+            test_output_ref = test_input.copy()
+            test_output_ref[0] = test_input[-1]
+            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
+
+    def test_dynamic_sub_array_split_dim_subfunction(self) -> None:
+        # This is a contrived way to simply copy an array, but the utilities used are for packing partial higher dimensional arrays
+        from accera import create_dimensions
+        test_name = "test_dynamic_sub_array_split_dim_subfunction"
+
+        N = 64
+        tile_size = 20 # Intentionally does not divide N
+        inner_split_size = 2
+
+        package = Package()
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N,))
+
+        current_outer_idx, extent = create_dimensions()
+
+        inner_nest = Nest(shape=(extent,))
+        inner_idx = inner_nest.get_indices()
+        @inner_nest.iteration_logic
+        def _inner_fn():
+            full_idx = current_outer_idx + inner_idx
+            tile_remaining_elts = accmin(N - current_outer_idx, cast(tile_size, ScalarType.index))
+            sub_arr = Output.sub_array(offsets=(current_outer_idx,), shape=(tile_remaining_elts,))
+            split_arr = sub_arr._split_dimension(0, cast(inner_split_size, ScalarType.index))
+            split_arr[inner_idx / inner_split_size, inner_idx % inner_split_size] = Input[full_idx]
+
+        inner_fn = package.add(
+            inner_nest,
+            args=(extent, Input, Output, current_outer_idx),
+            base_name=f"{test_name}_inner_fn",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+        outer_nest = Nest(shape=(N,))
+        outer_idx = outer_nest.get_indices()
+        @outer_nest.iteration_logic
+        def _outer_fn():
+            extent_val = accmin(N - outer_idx, cast(tile_size, ScalarType.index))
+            inner_fn(extent_val, Input, Output, outer_idx)
+
+        outer_sched = outer_nest.create_schedule()
+        outer_idx_inner = outer_sched.split(outer_idx, tile_size)
+        outer_sched.reorder(outer_idx, outer_idx_inner)
+        outer_plan = outer_sched.create_plan()
+        outer_plan._erase_loops([outer_idx_inner])
+        
+        function = package.add(outer_plan, args=(Input, Output), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+
+            # correctness check
+            test_input = np.random.random([N]).astype(np.float32)
+            test_output = np.random.random([N]).astype(np.float32)
+            test_output_ref = test_input.copy()
+            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
+
+    def test_dynamic_sub_array_multi_split_dim_subfunction(self) -> None:
+        # Copy and pack a buffer into 2x4 tiles
+        # Split the flat buffer into a 4-D buffer, where it has a truncated shape in the outer loop's cleanup loop
+        from accera import create_dimensions
+
+        test_name = "test_dynamic_sub_array_multi_split_dim_subfunction"
+
+        # Take in the data as a packed flat buffer, interpret it as a matrix and copy it in tiles
+        # Copy a matrix by tiles that does not evenly divide the matrix shape
+        M = 76 # Multiple of m_tile_inner, but not m_tile_outer
+        N = 92 # Multiple of n_tile_inner, but not n_tile_outer
+
+        m_tile_outer = 16
+        m_tile_inner = 2
+
+        n_tile_outer = 32
+        n_tile_inner = 4
+
+        # Split 16x32 tile into 4-D [i, j, i, j] = [8, 8, 2, 4]
+        # Cleanup 1 : 16x28 tile splits into 4-D [i, j, i, j] = [8, 7, 2, 4]
+        # Cleanup 2 : 12x32 tile splits into 4-D [i, j, i, j] = [6, 8, 2, 4]
+        # Cleanup 3 : 12x28 tile splits into 4-D [i, j, i, j] = [6, 7, 2, 4]
+
+        package = Package()
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M*N,))
+
+        current_outer_i, current_outer_j = create_dimensions()
+        extent_i, extent_j = create_dimensions()
+
+        inner_nest = Nest(shape=(extent_i, extent_j))
+        inner_i, inner_j = inner_nest.get_indices()
+        @inner_nest.iteration_logic
+        def _inner_fn():
+            full_i = current_outer_i + inner_i
+            full_j = current_outer_j + inner_j
+            remaining_m_tile = accmin(M - current_outer_i, cast(m_tile_outer, ScalarType.index))
+            remaining_n_tile = accmin(N - current_outer_j, cast(n_tile_outer, ScalarType.index))
+            output_offset_pos = current_outer_i * N + current_outer_j * remaining_m_tile
+            remaining_mn_tile = accmin(remaining_m_tile * remaining_n_tile, cast(m_tile_outer * n_tile_outer, ScalarType.index))
+
+            sub_arr = Output.sub_array(offsets=(output_offset_pos,), shape=(remaining_mn_tile,))
+
+            # Split [512] -> [128, 4] (main)
+            # Split [448] -> [112, 4] (cleanup 1)
+            # Split [384] -> [96, 4] (cleanup 2)
+            # Split [336] -> [84, 4] (cleanup 3)
+            split_arr_1 = sub_arr._split_dimension(0, cast(n_tile_inner, ScalarType.index))
+
+            # Split [128, 4] -> [64, 2, 4] (main)
+            # Split [112, 4] -> [56, 2, 4] (cleanup 1)
+            # Split [96, 4] -> [48, 2, 4] (cleanup 2)
+            # Split [84, 4] -> [42, 2, 4] (cleanup 3)
+            split_arr_2 = split_arr_1._split_dimension(0, cast(m_tile_inner, ScalarType.index))
+
+            # Split [64, 2, 4] -> [8, 8, 2, 4] (main)
+            # Split [56, 2, 4] -> [8, 7, 2, 4] (cleanup 1)
+            # Split [48, 2, 4] -> [6, 8, 2, 4] (cleanup 2)
+            # Split [42, 2, 4] -> [6, 7, 2, 4] (cleanup 3)
+            dynamic_j_split = remaining_n_tile / n_tile_inner
+            split_arr_3 = split_arr_2._split_dimension(0, cast(dynamic_j_split, ScalarType.index))
+
+            split_arr_3[inner_i / m_tile_inner, 
+                        inner_j / n_tile_inner,
+                        inner_i % m_tile_inner,
+                        inner_j % n_tile_inner] = Input[full_i, full_j]
+
+        inner_fn = package.add(
+            inner_nest,
+            args=(extent_i, extent_j, Input, Output, current_outer_i, current_outer_j),
+            base_name=f"{test_name}_inner_fn",
+            function_opts=INTERNAL_FUNCTION_OPTS)
+
+
+        outer_nest = Nest(shape=(M, N))
+        outer_i, outer_j = outer_nest.get_indices()
+        @outer_nest.iteration_logic
+        def _outer_fn():
+            extent_i_val = accmin(M - outer_i, cast(m_tile_outer, ScalarType.index))
+            extent_j_val = accmin(N - outer_j, cast(n_tile_outer, ScalarType.index))
+            inner_fn(extent_i_val, extent_j_val, Input, Output, outer_i, outer_j)
+
+        outer_sched = outer_nest.create_schedule()
+        outer_ii, outer_jj = outer_sched.tile(dict(zip([outer_i, outer_j], [m_tile_outer, n_tile_outer])))
+        outer_sched.reorder(outer_i, outer_j, outer_ii, outer_jj)
+        outer_plan = outer_sched.create_plan()
+        outer_plan._erase_loops([outer_ii, outer_jj])
+
+        function = package.add(outer_plan, args=(Input, Output), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+
+            # correctness check
+            test_input = np.random.random([M, N]).astype(np.float32)
+            test_output = np.random.random([M*N]).astype(np.float32)
+            test_output_ref = np.random.random([M*N]).astype(np.float32)
+            # m_tile_outer does not divide M and n_tile_outer does not divide N, so we have cleanup cases there
+            # However, m_tile_inner and n_tile_inner do divide M and N respectively, so we won't need cleanup cases there
+            def partition_value(range_val, split):
+                return (range_val // split) * split
+            M_pv = partition_value(M, m_tile_outer)
+            N_pv = partition_value(N, n_tile_outer)
+            m_tile_outer_cleanup = M - M_pv
+            n_tile_outer_cleanup = N - N_pv
+            def packed_index(i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset, n_tile_outer_clamped):
+                return tile_offset + i_middle*n_tile_outer_clamped + j_middle*m_tile_inner + i_inner*n_tile_inner + j_inner
+
+            for i_outer in range(0, M_pv, m_tile_outer):
+                for j_outer in range(0, N_pv, n_tile_outer):
+                    tile_offset = i_outer * N + j_outer * m_tile_outer
+                    for i_middle in range(0, m_tile_outer, m_tile_inner):
+                        for j_middle in range(0, n_tile_outer, n_tile_inner):
+                            for i_inner in range(m_tile_inner):
+                                for j_inner in range(n_tile_inner):
+                                    test_output_ref[packed_index(i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset, n_tile_outer)] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
+                # j_outer cleanup
+                for j_outer in range(N_pv, N, n_tile_outer):
+                    tile_offset = i_outer * N + j_outer * m_tile_outer
+                    for i_middle in range(0, m_tile_outer, m_tile_inner):
+                        for j_middle in range(0, n_tile_outer_cleanup, n_tile_inner):
+                            for i_inner in range(m_tile_inner):
+                                for j_inner in range(n_tile_inner):
+                                    test_output_ref[packed_index(i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset, n_tile_outer_cleanup)] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
+            # i_outer cleanup
+            for i_outer in range(M_pv, M, m_tile_outer):
+                for j_outer in range(0, N_pv, n_tile_outer):
+                    tile_offset = i_outer * N + j_outer * m_tile_outer_cleanup
+                    for i_middle in range(0, m_tile_outer_cleanup, m_tile_inner):
+                        for j_middle in range(0, n_tile_outer, n_tile_inner):
+                            for i_inner in range(m_tile_inner):
+                                for j_inner in range(n_tile_inner):
+                                    test_output_ref[packed_index(i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset, n_tile_outer)] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
+                # j_outer cleanup
+                for j_outer in range(N_pv, N, n_tile_outer):
+                    tile_offset = i_outer * N + j_outer * m_tile_outer_cleanup
+                    for i_middle in range(0, m_tile_outer_cleanup, m_tile_inner):
+                        for j_middle in range(0, n_tile_outer_cleanup, n_tile_inner):
+                            for i_inner in range(m_tile_inner):
+                                for j_inner in range(n_tile_inner):
+                                    test_output_ref[packed_index(i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset, n_tile_outer_cleanup)] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
+            v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
 
     def test_padded_nchwc_conv2d_manual_cache(self) -> None:
         input_channels = 64
@@ -6090,6 +6332,86 @@ class SmokeTest(unittest.TestCase):
                 before=correctness_check_values["pre"],
                 after=correctness_check_values["post"],
             )
+
+    def test_vectorized_masked_buffer_fill(self) -> None:
+        from accera._lang_python._lang import _If
+        N_input = 5
+        N_output = 8
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output,))
+        package = Package()
+        nest = Nest(shape=(N_output,))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+            def store_value():
+                Output[i] = Input[i]
+            def store_zero():
+                Output[i] = 0
+            _If(i < N_input, store_value).Else(store_zero)
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(i)
+        fn = package.add(plan, args=(Input, Output), base_name="test_vectorized_masked_buffer_fill")
+        package_name = "test_vectorized_masked_buffer_fill"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE, mode=self.PACKAGE_MODE, output_dir=output_dir)
+    
+    def test_vectorized_masked_store(self) -> None:
+        from accera._lang_python._lang import _If
+        N_input = 8
+        N_output = 5
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output,))
+        package = Package()
+        nest = Nest(shape=(N_input,))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+            def store_value():
+                Output[i] = Input[i]
+            _If(i < N_output, store_value)
+      
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(i)
+        fn = package.add(plan, args=(Input, Output), base_name="test_vectorized_masked_store")
+        package_name = "test_vectorized_masked_store"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE, mode=self.PACKAGE_MODE, output_dir=output_dir)
+
+    def test_vectorized_masked_accumulate(self) -> None:
+        from accera._lang_python._lang import _If
+        N_input = 8
+        N_output = 5
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output,))
+        package = Package()
+        nest = Nest(shape=(N_input,))
+        i = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+            def store_value():
+                Output[i] += Input[i]
+            _If(i < N_output, store_value)
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(i)
+        fn = package.add(plan, args=(Input, Output), base_name="test_vectorized_masked_accumulate")
+        package_name = "test_vectorized_masked_accumulate"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(name=package_name, format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
 if __name__ == '__main__':
     unittest.main(verbosity=10)

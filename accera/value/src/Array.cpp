@@ -91,23 +91,26 @@ namespace value
 
     Scalar Array::operator()(const std::vector<Scalar>& indices)
     {
-        if (static_cast<int64_t>(indices.size()) != GetValue().GetLayout().NumDimensions())
+        const auto numIndices = indices.size();
+        const auto numDims = GetValue().GetLayout().NumDimensions();
+        if (static_cast<int64_t>(numIndices) != numDims)
         {
-            throw InputException(InputExceptionErrors::invalidSize);
+            throw InputException(InputExceptionErrors::invalidSize, "Number of indices passed (" + std::to_string(numIndices) + ") does not match the number of dimensions of the Array (" + std::to_string(numDims) + ").");
         }
-        std::vector<int64_t> dims(indices.size());
+        std::vector<int64_t> dims(numIndices);
         std::iota(dims.begin(), dims.end(), 0);
         Value indexedValue = GetContext().Slice(_value, dims, indices);
 
         return indexedValue;
     }
 
-    Array Array::SubArray(const std::vector<Scalar>& offsets, const MemoryShape& shape, std::optional<std::vector<int64_t>> strides) const
+    Array Array::SubArray(const std::vector<Scalar>& offsets, const std::vector<Scalar>& shape, std::optional<std::vector<Scalar>> strides) const
     {
-        assert(offsets.size() == (size_t) Rank() && shape.NumDimensions() == Rank());
+        assert(offsets.size() == (size_t) Rank() && shape.size() == (size_t) Rank());
         if (!strides)
         {
-            strides = std::vector<int64_t>(Rank(), 1LL);
+            Scalar strideOne = int64_t{ 1 };
+            strides = std::vector<Scalar>(Rank(), strideOne);
         }
 
         assert(strides->size() == static_cast<size_t>(Rank()));
@@ -126,7 +129,12 @@ namespace value
         return GetContext().Reorder(_value, order);
     }
 
-    Array Array::SplitDimension(int64_t dim, int64_t size) const
+    Array Array::ReinterpretCast(ValueType type) const
+    {
+        return GetContext().ReinterpretCast(_value, type);
+    }
+
+    Array Array::SplitDimension(int64_t dim, Scalar size) const
     {
         return GetContext().SplitDimension(_value, dim, size);
     }
@@ -177,7 +185,7 @@ namespace value
         GetContext().For(layout, [fn = std::move(fn), &layout](std::vector<Scalar> coordinates) {
             if (layout.NumDimensions() != static_cast<int>(coordinates.size()))
             {
-                throw InputException(InputExceptionErrors::invalidSize);
+                throw InputException(InputExceptionErrors::invalidSize, "Number of coordinates (" + std::to_string(coordinates.size()) + ") passed in for indexing must match the number of array dimensions (" + std::to_string(layout.NumDimensions()) + ").");
             }
 
             fn(coordinates);
@@ -188,12 +196,12 @@ namespace value
     {
         if (m.Shape() != Shape())
         {
-            throw InputException(InputExceptionErrors::sizeMismatch);
+            throw InputException(InputExceptionErrors::sizeMismatch, "Array += Array: Shape of lhs (" + Shape().ToString() + ") must match the shape of rhs (" + m.Shape().ToString() + ").");
         }
 
         if (m.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw InputException(InputExceptionErrors::typeMismatch, "Array += Array: Type of lhs (" + ToString(GetType()) + ") must match the type of rhs (" + ToString(m.GetType()) + ").");
         }
 
         For(*this, [this, &m](const std::vector<Scalar>& indices) {
@@ -207,12 +215,12 @@ namespace value
     {
         if (m.Shape() != Shape())
         {
-            throw InputException(InputExceptionErrors::sizeMismatch);
+            throw InputException(InputExceptionErrors::sizeMismatch, "Array -= Array: Shape of lhs (" + Shape().ToString() + ") must match the shape of rhs (" + m.Shape().ToString() + ").");
         }
 
         if (m.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw InputException(InputExceptionErrors::typeMismatch, "Array -= Array: Type of lhs (" + ToString(GetType()) + ") must match the type of rhs (" + ToString(m.GetType()) + ").");
         }
 
         For(*this, [this, &m](const std::vector<Scalar>& indices) {
@@ -226,7 +234,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw InputException(InputExceptionErrors::typeMismatch, "Array += Scalar: Type of lhs (" + ToString(GetType()) + ") must match the type of rhs (" + ToString(s.GetType()) + ").");
         }
 
         For(*this, [this, &s](const std::vector<Scalar>& indices) {
@@ -240,7 +248,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw InputException(InputExceptionErrors::typeMismatch, "Array -= Scalar: Type of lhs (" + ToString(GetType()) + ") must match the type of rhs (" + ToString(s.GetType()) + ").");
         }
 
         For(*this, [this, &s](const std::vector<Scalar>& indices) {
@@ -254,7 +262,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw InputException(InputExceptionErrors::typeMismatch, "Array += Scalar: Type of lhs (" + ToString(GetType()) + ") must match the type of rhs (" + ToString(s.GetType()) + ").");
         }
 
         For(*this, [this, &s](const std::vector<Scalar>& indices) {
@@ -268,7 +276,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw InputException(InputExceptionErrors::typeMismatch, "Array /= Scalar: Type of lhs (" + ToString(GetType()) + ") must match the type of rhs (" + ToString(s.GetType()) + ").");
         }
 
         For(*this, [this, &s](const std::vector<Scalar>& indices) {

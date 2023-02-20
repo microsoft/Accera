@@ -83,8 +83,8 @@ namespace value
             return *_value.Get<T*>();
         }
 
-        virtual void SetName(const std::string& name);
-        virtual std::string GetName() const;
+        void SetName(const std::string& name);
+        std::string GetName() const;
 
         /// <summary> Retrieves the type of data stored in the wrapped Value instance </summary>
         /// <returns> The type </returns>
@@ -176,7 +176,7 @@ namespace value
         case ValueType::Double:
             return Scalar(static_cast<double>(t));
         default:
-            throw utilities::LogicException(utilities::LogicExceptionErrors::illegalState);
+            throw utilities::LogicException(utilities::LogicExceptionErrors::illegalState, "Unsupported type used for Cast(): " + ToString(type));
         }
     }
 

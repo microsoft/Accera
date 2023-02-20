@@ -17,6 +17,7 @@
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/AffineMap.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/FunctionImplementation.h>
 #include <mlir/Interfaces/CallInterfaces.h>
 
@@ -365,6 +366,23 @@ OpFoldResult CastOp::fold(ArrayRef<Attribute> operands)
     return {};
 }
 
+bool MemRefCastOp::areCastCompatible(TypeRange inputs, TypeRange outputs)
+{
+    if (inputs.size() != 1 || outputs.size() != 1)
+    {
+        return false;
+    }
+
+    auto input = inputs.front().dyn_cast<MemRefType>();
+    auto output = outputs.front().dyn_cast<MemRefType>();
+    if (!input || !output)
+    {
+        return false;
+    }
+
+    return true;
+}
+
 void ReorderOp::build(OpBuilder& builder,
                       OperationState& result,
                       Value source,
@@ -457,6 +475,40 @@ void MapReduceOp::build(OpBuilder& builder, OperationState& result, Value input,
 
 void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ValueRange sizes, ValueRange offsets, ValueRange strides)
 {
+    auto viewedMemrefType = ViewOp::computeMemRefType(source, sizes, offsets, strides);
+    build(builder, result, viewedMemrefType, source, sizes, offsets, strides);
+}
+
+void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ValueRange sizes, ValueRange offsets)
+{
+    build(builder, result, source, sizes, offsets, ValueRange{});
+}
+
+void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ArrayRef<int64_t> sizes, ArrayRef<int64_t> offsets, ArrayRef<int64_t> strides)
+{
+    std::vector<mlir::Value> offsetVals;
+    std::vector<mlir::Value> sizeVals;
+    std::vector<mlir::Value> strideVals;
+    offsetVals.reserve(offsets.size());
+    sizeVals.reserve(sizes.size());
+    strideVals.reserve(strides.size());
+    auto makeConstIndex = [&](int64_t val) {
+        return builder.create<mlir::arith::ConstantIndexOp>(result.location, val);
+    };
+    std::transform(offsets.begin(), offsets.end(), std::back_inserter(offsetVals), makeConstIndex);
+    std::transform(sizes.begin(), sizes.end(), std::back_inserter(sizeVals), makeConstIndex);
+    std::transform(strides.begin(), strides.end(), std::back_inserter(strideVals), makeConstIndex);
+    build(builder, result, source, sizeVals, offsetVals, strideVals);
+}
+
+void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ArrayRef<int64_t> sizes, ArrayRef<int64_t> offsets)
+{
+    build(builder, result, source, sizes, offsets, ArrayRef<int64_t>{});
+}
+
+MemRefType ViewOp::computeMemRefType(Value source, ValueRange sizes, ValueRange offsets, ValueRange strides)
+{
+    auto context = source.getContext();
     auto sourceMemRefType = source.getType().cast<mlir::MemRefType>();
     int64_t sourceRank = sourceMemRefType.getRank();
     int64_t numOffsets = static_cast<int64_t>(offsets.size());
@@ -492,14 +544,14 @@ void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, Val
     {
         if (strideInts[idx] == util::DynamicStrideOrOffsetSentinelValue)
         {
-            strideExprs.push_back(builder.getAffineDimExpr(idx) * builder.getAffineSymbolExpr(strideSymbolCount++));
+            strideExprs.push_back(mlir::getAffineDimExpr(idx, context) * mlir::getAffineSymbolExpr(strideSymbolCount++, context));
         }
         else
         {
-            strideExprs.push_back(builder.getAffineDimExpr(idx) * strideInts[idx]);
+            strideExprs.push_back(mlir::getAffineDimExpr(idx, context) * strideInts[idx]);
         }
     }
-    auto strideMap = mlir::AffineMap::get(sourceRank, strideSymbolCount, strideExprs, builder.getContext());
+    auto strideMap = mlir::AffineMap::get(sourceRank, strideSymbolCount, strideExprs, context);
 
     // Create offset map
     std::vector<mlir::AffineExpr> offsetExprs;
@@ -508,14 +560,14 @@ void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, Val
     {
         if (offsetInts[idx] == util::DynamicStrideOrOffsetSentinelValue)
         {
-            offsetExprs.push_back(builder.getAffineDimExpr(idx) + builder.getAffineSymbolExpr(offsetSymbolCount++));
+            offsetExprs.push_back(mlir::getAffineDimExpr(idx, context) + mlir::getAffineSymbolExpr(offsetSymbolCount++, context));
         }
         else
         {
-            offsetExprs.push_back(builder.getAffineDimExpr(idx) + offsetInts[idx]);
+            offsetExprs.push_back(mlir::getAffineDimExpr(idx, context) + offsetInts[idx]);
         }
     }
-    auto offsetMap = mlir::AffineMap::get(sourceRank, offsetSymbolCount, offsetExprs, builder.getContext());
+    auto offsetMap = mlir::AffineMap::get(sourceRank, offsetSymbolCount, offsetExprs, context);
 
     // Compose offset(stride(input))
     auto strideAndOffsetMap = offsetMap.compose(strideMap);
@@ -527,54 +579,78 @@ void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, Val
         sourceLayoutMap = mlir::getStridedLinearLayoutMap(sourceMemRefType);
     }
 
-    // Currently, assume either the layout has no symbols or the source op is a view op which we know extract symbols from
-    std::vector<mlir::Value> sourceOperands = util::GetLayoutMapOperands(source);
-
     // This composition will make sourceLayoutMap's symbols occur first in the symbol list of finalViewLayoutMap
     auto finalViewLayoutMap = sourceLayoutMap.compose(strideAndOffsetMap);
 
     auto viewedMemrefType = mlir::MemRefType::get(sizeInts, sourceMemRefType.getElementType(), finalViewLayoutMap, sourceMemRefType.getMemorySpace());
 
-    build(builder, result, viewedMemrefType, source, sizes, offsets, strides, sourceOperands);
+    return viewedMemrefType;
 }
 
-void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ValueRange sizes, ValueRange offsets)
+MemRefType SplitDimOp::computeMemRefType(Value source, int64_t dim, Value size)
 {
-    build(builder, result, source, sizes, offsets, ValueRange{});
-}
+    auto context = source.getContext();
+    auto sourceMemRefType = source.getType().cast<mlir::MemRefType>();
+    auto sourceLayoutMap = sourceMemRefType.getLayout().getAffineMap();
+    auto sourceShape = sourceMemRefType.getShape();
+    auto sourceRank = sourceMemRefType.getRank();
+    auto destRank = sourceRank + 1;
+    auto elementType = sourceMemRefType.getElementType();
 
-void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ArrayRef<int64_t> sizes, ArrayRef<int64_t> offsets, ArrayRef<int64_t> strides)
-{
-    std::vector<mlir::Value> offsetVals;
-    std::vector<mlir::Value> sizeVals;
-    std::vector<mlir::Value> strideVals;
-    offsetVals.reserve(offsets.size());
-    sizeVals.reserve(sizes.size());
-    strideVals.reserve(strides.size());
-    auto makeConstIndex = [&](int64_t val) {
-        return builder.create<mlir::arith::ConstantIndexOp>(result.location, val);
-    };
-    std::transform(offsets.begin(), offsets.end(), std::back_inserter(offsetVals), makeConstIndex);
-    std::transform(sizes.begin(), sizes.end(), std::back_inserter(sizeVals), makeConstIndex);
-    std::transform(strides.begin(), strides.end(), std::back_inserter(strideVals), makeConstIndex);
-    build(builder, result, source, sizeVals, offsetVals, strideVals);
-}
+    // Ultimately the MLIR code is going to lower such that this memref's origin is the same as the source value's origin so we need to account for that
+    // To do that, we create a (N+1)-dimensional -> N-dimensional map where N is the source array rank
+    // as follows: (d0, ..., dN) -> (d0, ..., d(dim-1), d(dim) * size + d(dim+1), d(dim+2), ..., d(N-1))
+    // E.g. suppose we had a 3-D array of shape [S0, S1, S2], and we split the middle dimension by 8,
+    //      then our new array would have shape [S0, S1 // 8, 8, S2] and we would create the mapping
+    //      (d0, d1, d2, d3) -> (d0, d1*8 + d2, d3)
+    //      To map the post-split shape back to the pre-split shape
 
-void ViewOp::build(OpBuilder& builder, OperationState& result, Value source, ArrayRef<int64_t> sizes, ArrayRef<int64_t> offsets)
-{
-    build(builder, result, source, sizes, offsets, ArrayRef<int64_t>{});
-}
+    std::vector<mlir::AffineExpr> exprs;
+    std::vector<int64_t> newShape;
+    exprs.reserve(sourceRank);
+    newShape.reserve(destRank);
+    // The first (d0, ..., d(dim-1)) are just identity exprs
+    for (auto idx = 0; idx < dim; ++idx)
+    {
+        exprs.push_back(mlir::getAffineDimExpr(idx, context));
+        newShape.push_back(sourceShape[idx]);
+    }
 
-std::vector<mlir::Value> ViewOp::getLayoutMapOperands()
-{
-    // When composing mlir AffineMaps, mapA.compose(mapB) will place mapA's symbols before mapB's symbols in the new map
-    // So when we compose a view transformation onto a source memref, this ViewOp's new operands should come after the source memref operands
-    // Giving the layout map operand order: { sourceMemrefOperands, offset, stride, sizes }
-    std::vector<mlir::Value> layoutMapOperands;
-    layoutMapOperands.insert(layoutMapOperands.end(), sourceMemrefOperands().begin(), sourceMemrefOperands().end());
-    layoutMapOperands.insert(layoutMapOperands.end(), offsets().begin(), offsets().end());
-    layoutMapOperands.insert(layoutMapOperands.end(), strides().begin(), strides().end());
-    return layoutMapOperands;
+    // The middle expr is an un-splitting of the dimension we split
+    int64_t maybeStaticSize = util::TryParseStaticSize(size, util::DynamicSizeSentinelValue);
+
+    mlir::AffineExpr sizeExpr = mlir::getAffineConstantExpr(maybeStaticSize, context);
+    size_t numSymbols = 0;
+    if (maybeStaticSize == util::DynamicSizeSentinelValue)
+    {
+        sizeExpr = mlir::getAffineSymbolExpr(numSymbols++, context);
+    }
+    exprs.push_back(mlir::getAffineDimExpr(dim, context) * sizeExpr + mlir::getAffineDimExpr(dim + 1, context));
+
+    int64_t splitDimSize = util::DynamicSizeSentinelValue;
+    if (sourceShape[dim] != util::DynamicSizeSentinelValue && maybeStaticSize != util::DynamicSizeSentinelValue)
+    {
+        // TODO : do we need to require sourceShape[dim] % size == 0? Currently this will just clamp to a smaller volume if it doesn't evenly divide
+        splitDimSize = sourceShape[dim] / maybeStaticSize;
+    }
+    newShape.push_back(splitDimSize);
+    newShape.push_back(maybeStaticSize);
+
+    // The last (d(dim+2), ..., d(N-1)) are just identity exprs as well
+    for (auto idx = dim + 2; idx < destRank; ++idx)
+    {
+        exprs.push_back(mlir::getAffineDimExpr(idx, context));
+        newShape.push_back(sourceShape[idx - 1]);
+    }
+
+    auto unsplittingMap = mlir::AffineMap::get(destRank, numSymbols, exprs, context);
+
+    // Now compose sourceMap(unsplittingMap) to get the split layout -> source memory position map
+    auto destToSrcMemoryMap = sourceLayoutMap.compose(unsplittingMap);
+
+    auto resultMemRefType = mlir::MemRefType::get(newShape, elementType, destToSrcMemoryMap);
+
+    return resultMemRefType;
 }
 
 MMAOp::MMAOp(MMAShape shape_) :
@@ -706,7 +782,6 @@ std::vector<int64_t> MMAOp::getOperandShape(const MMAOperandType operandType) co
         return {};
     }
 }
-
 
 //===----------------------------------------------------------------------===//
 // MMA Ops

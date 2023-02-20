@@ -216,13 +216,13 @@ namespace value
         auto numRows = static_cast<int64_t>(data.size());
         if (numRows <= 0)
         {
-            throw InputException(InputExceptionErrors::invalidSize);
+            throw InputException(InputExceptionErrors::invalidSize, "Number of matrix rows (" + std::to_string(numRows) + ") must be a positive integer.");
         }
 
         auto numColumns = static_cast<int64_t>(data[0].size());
         if (numColumns <= 0)
         {
-            throw InputException(InputExceptionErrors::invalidSize);
+            throw InputException(InputExceptionErrors::invalidSize, "Number of matrix columns (" + std::to_string(numColumns) + ") must be a positive integer.");
         }
 
         std::vector<T> coalesced(numRows * numColumns);
@@ -231,7 +231,7 @@ namespace value
         {
             if (static_cast<int64_t>(row.size()) != numColumns)
             {
-                throw InputException(InputExceptionErrors::invalidSize);
+                throw InputException(InputExceptionErrors::invalidSize, "Number of elements in each row (" + std::to_string(row.size()) + ") must match the number of columns (" + std::to_string(numColumns) + ") of the matrix.");
             }
 
             it = std::copy(row.begin(), row.end(), it);
@@ -252,7 +252,7 @@ namespace value
         int size = static_cast<int>(data.size());
         if (size != numRows * numColumns)
         {
-            throw InputException(InputExceptionErrors::invalidSize);
+            throw InputException(InputExceptionErrors::invalidSize, "Number of elements in the input data vector must be equal to the product of the number of rows (" + std::to_string(numRows) + ") and columns (" + std::to_string(numColumns) + ") of the matrix.");
         }
         std::vector<T> coalesced = data; // non-const copy
         _value = Value(coalesced, MemoryLayout(numRows, numColumns));

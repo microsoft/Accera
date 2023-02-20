@@ -74,7 +74,7 @@ namespace value
             numColumns > currentLayout.GetActiveSize(1) ||
             numChannels > currentLayout.GetActiveSize(2))
         {
-            throw InputException(InputExceptionErrors::indexOutOfRange);
+            throw InputException(InputExceptionErrors::indexOutOfRange, "SubTensor size cannot be larger than the original Tensor.");
         }
 
         // Need to cast so that row and numRows are the same type (and similarly with columns and channels)
@@ -172,7 +172,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Tensor += Scalar", GetType(), s.GetType());
         }
 
         For(*this, [&, this](Scalar row, Scalar column, Scalar channel) {
@@ -186,7 +186,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Tensor -= Scalar", GetType(), s.GetType());
         }
 
         For(*this, [&, this](Scalar row, Scalar column, Scalar channel) {
@@ -200,7 +200,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Tensor *= Scalar", GetType(), s.GetType());
         }
 
         For(*this, [&, this](Scalar row, Scalar column, Scalar channel) {
@@ -214,7 +214,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Tensor /= Scalar", GetType(), s.GetType());
         }
 
         For(*this, [&, this](Scalar row, Scalar column, Scalar channel) {

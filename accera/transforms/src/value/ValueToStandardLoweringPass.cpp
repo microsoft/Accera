@@ -6,7 +6,7 @@
 
 #include "AcceraPasses.h"
 #include "ir/include/value/ValueEnums.h"
-#include "util/VectorizationUtil.h"
+#include "vectorization/VectorizationUtil.h"
 
 #include <ir/include/IRUtil.h>
 #include <ir/include/exec/ExecutionPlanAttributes.h>
@@ -1425,22 +1425,6 @@ LogicalResult OffsetOpLowering::matchAndRewrite(
     return success();
 }
 
-std::vector<mlir::OpFoldResult> ParsePartiallyStaticValues(mlir::OpBuilder& builder, mlir::ValueRange values)
-{
-    std::vector<mlir::OpFoldResult> partiallyStaticValues;
-    std::transform(values.begin(), values.end(), std::back_inserter(partiallyStaticValues), [&](mlir::Value val) -> mlir::OpFoldResult {
-        if (auto constantOp = val.getDefiningOp<mlir::arith::ConstantIndexOp>())
-        {
-            return builder.getI64IntegerAttr(constantOp.value());
-        }
-        else
-        {
-            return val;
-        }
-    });
-    return partiallyStaticValues;
-}
-
 LogicalResult ViewOpLowering::matchAndRewrite(
     ValueViewOp op,
     PatternRewriter& rewriter) const
@@ -1459,9 +1443,9 @@ LogicalResult ViewOpLowering::matchAndRewrite(
     else
     {
         // Convert the offsets, sizes, and strides to partially-static vectors of OpFoldResult (which is a PointerUnion<Attribute, Value>)
-        std::vector<mlir::OpFoldResult> partiallyStaticSizes = ParsePartiallyStaticValues(rewriter, op.sizes());
-        std::vector<mlir::OpFoldResult> partiallyStaticOffsets = ParsePartiallyStaticValues(rewriter, op.offsets());
-        std::vector<mlir::OpFoldResult> partiallyStaticStrides = ParsePartiallyStaticValues(rewriter, op.strides());
+        std::vector<mlir::OpFoldResult> partiallyStaticSizes = util::ParsePartiallyStaticValues(rewriter, op.sizes());
+        std::vector<mlir::OpFoldResult> partiallyStaticOffsets = util::ParsePartiallyStaticValues(rewriter, op.offsets());
+        std::vector<mlir::OpFoldResult> partiallyStaticStrides = util::ParsePartiallyStaticValues(rewriter, op.strides());
         rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, op.source(), partiallyStaticOffsets, partiallyStaticSizes, partiallyStaticStrides);
     }
 
@@ -1569,12 +1553,14 @@ LogicalResult SplitDimOpLowering::matchAndRewrite(
     auto loc = rewriter.getFusedLoc({ op.getLoc(), RC_FILE_LOC(rewriter) });
     auto source = op.source();
 
-    auto resultType = op.getType();
+    auto sourceMemRefType = source.getType().cast<mlir::MemRefType>();
+    auto sourceRank = sourceMemRefType.getRank();
+    auto destRank = sourceRank + 1;
 
+    // Compute the reassociation indices and the layout map now that we have possibly-static sizes where previously we had dynamic sizes
     // The reassociation indices for a split dim op are [[0], [1], ..., [dim, dim+1], [dim+2], ..., [rank - 1]]
 
     int64_t dim = static_cast<int64_t>(op.dim());
-    auto destRank = resultType.getRank();
     std::vector<mlir::ReassociationIndices> reassociationIndices;
     for (int64_t idx = 0; idx < dim; ++idx)
     {
@@ -1591,7 +1577,9 @@ LogicalResult SplitDimOpLowering::matchAndRewrite(
         reassociationIndices.push_back(unchangedIndices);
     }
 
-    auto result = rewriter.create<memref::ExpandShapeOp>(loc, resultType, source, reassociationIndices);
+    auto resultMemRefType = ValueSplitDimOp::computeMemRefType(op.source(), dim, op.size());
+
+    auto result = rewriter.create<memref::ExpandShapeOp>(loc, resultMemRefType, source, reassociationIndices);
 
     rewriter.replaceOp(op, { result });
 

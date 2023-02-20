@@ -4,6 +4,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "AcceraTypes.h"
+#include "value/include/ValueType.h"
 
 #include <value/include/FastMath.h>
 #include <value/include/ScalarOperations.h>
@@ -166,6 +167,32 @@ Args:
         });
         module.def("round", &value::Round);
         module.def("remainderf", &value::Remainderf);
+        module.def("type_size_bytes", [](value::ValueType type) {
+            switch (type)
+            {
+            case value::ValueType::Void:
+                return 0;
+            case value::ValueType::Boolean:
+            case value::ValueType::Byte:
+            case value::ValueType::Int8:
+                return 1;
+            case value::ValueType::Int16:
+            case value::ValueType::Uint16:
+            case value::ValueType::Float16:
+            case value::ValueType::BFloat16:
+                return 2;
+            case value::ValueType::Int32:
+            case value::ValueType::Uint32:
+            case value::ValueType::Float:
+                return 4;
+            case value::ValueType::Int64:
+            case value::ValueType::Uint64:
+            case value::ValueType::Double:
+                return 8;
+            default:
+                return -1;
+            }
+        });
     }
 
     void DefineArrayClass(py::module& module)
@@ -244,7 +271,7 @@ Args:
                 "Array element access operator. Sets the Scalar value that is at the specified index within the array")
             .def("_copy", &value::Array::Copy)
             .def(
-                "sub_array", [](value::Array& arr, const std::vector<value::Scalar>& offsets, const std::vector<int64_t>& shape, std::optional<std::vector<int64_t>> strides) {
+                "sub_array", [](value::Array& arr, const std::vector<value::Scalar>& offsets, const std::vector<value::Scalar>& shape, std::optional<std::vector<value::Scalar>> strides) {
                     return arr.SubArray(offsets, shape, strides);
                 },
                 "offsets"_a,
@@ -262,6 +289,14 @@ Args:
                     return arr.Reorder(order);
                 },
                 "order"_a)
+            .def(
+                "_reinterpret_cast", [](const value::Array& arr, value::ValueType type) {
+                    return arr.ReinterpretCast(type);
+                },
+                "element_type"_a)
+            .def("_get_memory_buffer", [](const value::Array& arr) {
+                return arr.ReinterpretCast(value::ValueType::Byte);
+            })
             .def_property_readonly("shape", [](const value::Array& arr) -> std::vector<int64_t> {
                 return arr.Shape().ToVector();
             })

@@ -45,7 +45,7 @@ namespace value
 
     void ForSequence(Scalar end, std::function<void(Scalar)> fn)
     {
-        throw LogicException(LogicExceptionErrors::notImplemented);
+        throw LogicException(LogicExceptionErrors::notImplemented, "ForSequence not implemented.");
     }
 
     void For(MemoryLayout layout, std::function<void(Scalar)> fn)

@@ -25,24 +25,6 @@ def ConvertExecutionPlanCacheRegion : Pass<"convert-exec-plan-cache-region"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ExecutionPlanVectorization
-//===----------------------------------------------------------------------===//
-
-def ConvertExecutionPlanVectorization : Pass<"convert-exec-plan-vectorize"> {
-  let summary = "Match and vectorize ExecPlan ops";
-  let constructor = "accera::transforms::executionPlan::createExecutionPlanVectorizationPass()";
-  let options = [
-    Option<"printVecOpDetails", "print-vec-details", "bool", /*default=*/"false",
-           "Print details about op vectorization">
-  ];
-  let dependentDialects = [
-    "accera::ir::value::ValueDialect",
-    "mlir::StandardOpsDialect",
-    "mlir::AffineDialect"
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // ExecutionPlanParallelization
 //===----------------------------------------------------------------------===//
 

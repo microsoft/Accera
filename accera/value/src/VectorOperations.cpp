@@ -32,11 +32,11 @@ namespace value
     {
         if (v1.Size() != v2.Size())
         {
-            throw InputException(InputExceptionErrors::sizeMismatch);
+            throw InputException(InputExceptionErrors::sizeMismatch, "Vector . Vector: Size of lhs (" + std::to_string(v1.Size()) + ") must match the size of rhs (" + std::to_string(v2.Size()) + ").");
         }
         if (v1.GetType() != v2.GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Vector . Vector", v1.GetType(), v2.GetType());
         }
 
         auto defaultImpl = [](Vector v1_, Vector v2_) {

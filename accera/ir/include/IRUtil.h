@@ -454,9 +454,12 @@ namespace util
     // If prependPlus is false, then the "+" is not prepended and it is assumed that feature contains the "+" or "-"
     bool ModuleSupportsTargetDeviceFeature(mlir::Operation* where, const std::string& feature, bool prependPlus = true);
 
+    int64_t TryParseStaticSize(mlir::Value value, int64_t dynamicSentinelValue);
     std::vector<int64_t> TryParseStaticSizes(mlir::ValueRange values, int64_t dynamicSentinelValue);
 
-    std::vector<mlir::Value> GetLayoutMapOperands(mlir::Value source);
+    std::vector<mlir::OpFoldResult> ParsePartiallyStaticValues(mlir::OpBuilder& builder, mlir::ValueRange values);
+
+    bool IsTerminalOp(mlir::Operation* op);
 
 } // namespace util
 } // namespace accera::ir

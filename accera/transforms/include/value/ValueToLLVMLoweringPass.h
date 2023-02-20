@@ -34,9 +34,10 @@ class RewritePatternSet;
 
 namespace accera::transforms::value
 {
-void populateValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
-void populateGlobalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
-void populateLocalValueToLLVMPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateGlobalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateLocalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateValueToLLVMMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
 
 const mlir::LowerToLLVMOptions& GetDefaultAcceraLLVMOptions(mlir::MLIRContext* context);
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueToLLVMPass(mlir::LowerToLLVMOptions options);

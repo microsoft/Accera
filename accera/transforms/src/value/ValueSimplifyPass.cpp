@@ -137,6 +137,42 @@ struct ValueSliceSimplifyPattern : public OpRewritePattern<ValueSliceOp>
     }
 };
 
+struct RedundantStoreSimplifyPattern : public OpRewritePattern<memref::StoreOp>
+{
+    using OpRewritePattern::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(
+        memref::StoreOp op,
+        PatternRewriter& rewriter) const final
+    {
+        // Look for a store where the value stored and location match a previous load, and no stores occur inbetween
+        auto value = op.getValueToStore();
+
+        if (auto loadOp = dyn_cast_or_null<memref::LoadOp>(value.getDefiningOp()))
+        {
+            auto storeMemref = op.getMemRef();
+            if (storeMemref == loadOp.getMemRef())
+            {
+                auto storeIndices = op.getIndices();
+                auto loadIndices = loadOp.getIndices();
+                if (storeIndices == loadIndices)
+                {
+                    if (auto block = op->getBlock(); block == loadOp->getBlock())
+                    {
+                        // Extremely conservative check: the op immediately previous to op is loadOp
+                        if (&(*std::next(mlir::Block::iterator(loadOp))) == op.getOperation())
+                        {
+                            rewriter.eraseOp(op);
+                        }
+                    }
+                }
+            }
+        }
+
+        return success();
+    }
+};
+
 struct ValueSimplifyPass : public ConvertValueSimplifyBase<ValueSimplifyPass>
 {
     void runOnOperation() final;
@@ -421,6 +457,24 @@ struct IndexCombinationBinOpLowering : public OpRewritePattern<ValueBinOp>
                 exprInputs.push_back(rhs);
             }
 
+            // MUL can only be turned into an affine expr if either lhs or rhs is constant
+            if (op.getPredicate() == BinaryOpPredicate::MUL)
+            {
+                if (!lhsExpr.isSymbolicOrConstant() && !rhsExpr.isSymbolicOrConstant())
+                {
+                    return failure();
+                }
+            }
+
+            // DIV and MOD can only be turned into an affine expr if rhs is constant
+            if (op.getPredicate() == BinaryOpPredicate::DIV || op.getPredicate() == BinaryOpPredicate::MOD)
+            {
+                if (!rhsExpr.isSymbolicOrConstant())
+                {
+                    return failure();
+                }
+            }
+
             // Replace this BinOp with an AffineApplyOp since it's just a combination of index types
             mlir::AffineExpr combinationExpr;
             switch (op.getPredicate())
@@ -468,6 +522,7 @@ void populateValueSimplifyPatterns(mlir::RewritePatternSet& patterns)
     populateWithGenerated(patterns);
     patterns.insert<CopyOpLowering,
                     ValueSliceSimplifyPattern,
+                    RedundantStoreSimplifyPattern,
                     IndexCombinationBinOpLowering,
                     BinOpCastOpExpandingPattern,
                     SequentialCastOpFoldingPattern>(context);

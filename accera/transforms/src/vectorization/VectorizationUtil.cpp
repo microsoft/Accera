@@ -3,8 +3,8 @@
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "util/VectorizationUtil.h"
-#include "util/VectorizedOp.h"
+#include "vectorization/VectorizationUtil.h"
+#include "vectorization/VectorizedOp.h"
 
 #include <ir/include/IRUtil.h>
 #include <ir/include/exec/ExecutionPlanOps.h>
@@ -1127,6 +1127,9 @@ std::optional<VectorizedOp> VectorizeOp(mlir::PatternRewriter& rewriter,
             })
             .Case([&](mlir::arith::ExtSIOp castOp) {
                 return VectorizeSignExtendIOp(rewriter, castOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
+            })
+            .Case([&](mlir::math::AbsOp absOp) {
+                return VectorizeAbsFOp(rewriter, absOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
             .Case([&](mlir::math::ExpOp expOp) {
                 return VectorizeExpOp(rewriter, expOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
@@ -2492,6 +2495,218 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
     return mlir::success();
 }
 
+mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
+                                            mlir::PatternRewriter& rewriter)
+{
+    auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
+        llvm::dbgs() << "[vectorizeMaskedLoadStore] While processing " << *op << ". " << message << "\n";
+        return rewriter.notifyMatchFailure(op, message);
+    };
+    std::stack<Operation*> matchedOps;
+
+    // Set the insertion point to the end of the loop (just before the terminator)
+    mlir::OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(loopOp.getBody(), loopOp.getBody()->getTerminator()->getIterator());
+
+
+    if (!loopOp.hasConstantBounds() || loopOp.getConstantLowerBound() != 0)
+    {
+        return reportMatchFailure(loopOp, "Failed: loop op either doesn't have constant bounds or lower bound is not equal to zero");
+    }
+
+    int64_t iter_begin = loopOp.getConstantLowerBound();
+    int64_t iter_end = loopOp.getConstantUpperBound();
+    int64_t iter_step = loopOp.getStep();
+    int64_t numIters = (iter_end - iter_begin) / iter_step;
+    int64_t unrollMax = std::min(numIters, (iter_end - iter_begin));
+    auto inductionVar = loopOp.getInductionVar();
+
+    // iterate on loop body from begin to end to match the ops list
+    auto loopBodyStart = loopOp.getBody()->begin();
+    auto loopBodyEnd = loopOp.getBody()->end();
+
+    // 1. accera cmp op to compare index with a constant value
+    if (loopBodyStart == loopBodyEnd || !isa<v::CmpOp>(*loopBodyStart))
+    {
+        return reportMatchFailure(loopOp, "Failed to match the accv compare op");
+    }
+
+    auto cmpOp = cast<v::CmpOp>(*loopBodyStart);
+    auto cmpOpResult = cmpOp.result();
+    matchedOps.push(cmpOp);
+   
+    loopBodyStart++; 
+
+    // 2. match scf.if op 
+    if (loopBodyStart == loopBodyEnd || !isa<mlir::scf::IfOp>(*loopBodyStart))
+    {
+        return reportMatchFailure(loopOp, "Failed to match the scf.if op");
+    }
+    auto ifOp = cast<mlir::scf::IfOp>(*loopBodyStart);
+    matchedOps.push(ifOp);
+
+    // get then and else block of scf.if op
+    auto thenBlock = ifOp.thenBlock();
+    auto elseBlock = ifOp.elseBlock();
+
+    // match ops in then block
+    auto thenOpsIter = thenBlock->getOperations().begin();
+    auto thenOpsEnd = thenBlock->getOperations().end();
+
+    if (thenOpsIter == thenOpsEnd || !isa<mlir::AffineLoadOp>(thenOpsIter))
+    {
+        return reportMatchFailure(ifOp, "Failed to match the load op in then block");
+    }
+
+    auto loadOp = cast<mlir::AffineLoadOp>(thenOpsIter++);
+    matchedOps.push(loadOp);
+
+    // Optionally allow casting the load value
+    mlir::Value loadVal = loadOp.getResult();
+    v::CastOp thenCastOp;
+
+    // Check if there's a cast after the load
+    if (thenOpsIter != thenOpsEnd && isa<v::CastOp>(thenOpsIter))
+    {
+        thenCastOp = cast<v::CastOp>(thenOpsIter++);
+        matchedOps.push(thenCastOp);
+        loadVal = thenCastOp.result();
+    }
+
+    if (thenOpsIter == thenOpsEnd || !isa<mlir::AffineStoreOp>(thenOpsIter))
+    {
+        return reportMatchFailure(ifOp, "Failed to match the store op in then block");
+    }
+    auto storeOp = cast<mlir::AffineStoreOp>(thenOpsIter++);
+    matchedOps.push(storeOp);
+
+    // match ops in else block
+    auto storeElemType = storeOp.getMemRefType().getElementType();
+    mlir::Value paddingOpValue = rewriter.create<mlir::arith::ConstantOp>(loopOp.getLoc(), rewriter.getZeroAttr(storeElemType));
+    v::CastOp elseCastOp;
+
+    if (elseBlock != nullptr)
+    {
+        auto elseOpsIter = elseBlock->getOperations().begin();
+        auto elseOpsEnd = elseBlock->getOperations().end();
+
+        // Optionally check if there is a cast of a zero constant value before it is stored
+        if (elseOpsIter != elseOpsEnd && isa<v::CastOp>(elseOpsIter))
+        {
+            elseCastOp = cast<v::CastOp>(elseOpsIter++);
+            mlir::Value castSource = elseCastOp.source();
+
+            // check if source of cast op is a constant
+            if (!castSource.getDefiningOp<mlir::arith::ConstantOp>())
+            {
+                return reportMatchFailure(elseCastOp, "Failed: source of cast op is not a cosntant");
+            }
+
+            matchedOps.push(elseCastOp);
+        }
+
+        if (elseOpsIter == elseOpsEnd || !isa<mlir::AffineStoreOp>(elseOpsIter))
+        {
+            return reportMatchFailure(ifOp, "Failed to match the store op in else block");
+        }
+        auto paddingOp = cast<mlir::AffineStoreOp>(elseOpsIter++);
+        mlir::Value paddingSource = paddingOp.getValueToStore();
+
+        if (!paddingSource.getDefiningOp<mlir::arith::ConstantOp>() &&
+            !paddingSource.getDefiningOp<v::CastOp>())
+        {
+            return reportMatchFailure(paddingOp, "Failed: source of affine.store op is neither a cosntant op nor a cast op");
+        }
+
+        matchedOps.push(paddingOp);
+        paddingOpValue = paddingOp.value();
+    }
+
+    // match successful, start rewriting here
+    // unroll cmp ops (create lanemappings)
+    std::vector<mlir::BlockAndValueMapping> laneMappings(unrollMax);
+    for (int64_t idx = iter_begin; idx < iter_end; idx += iter_step)
+    {
+        auto offsetMap = mlir::AffineMap::get(1, 0, rewriter.getAffineDimExpr(0) + (idx * iter_step));
+        auto offsetInductionVar = rewriter.create<AffineApplyOp>(cmpOp.getLoc(), offsetMap, ValueRange{ inductionVar });
+        laneMappings[idx].map(inductionVar, offsetInductionVar);
+    }
+
+    // create a vector<i1> cmpOp results = maskValue
+    auto cmpOpLoc = cmpOp.getLoc();
+    auto cmpOpType = cmpOpResult.getType();
+    auto vectorType = mlir::VectorType::get({ unrollMax }, cmpOpType);
+
+    auto zero = rewriter.create<mlir::arith::ConstantOp>(cmpOpLoc, cmpOpType, rewriter.getZeroAttr(cmpOpType));
+    mlir::Value mask = rewriter.create<mlir::vector::BroadcastOp>(cmpOpLoc, vectorType, zero);
+    for (int64_t i = 0; i < unrollMax; ++i)
+    {
+        auto elementCmp = rewriter.clone(*cmpOp.getOperation(), laneMappings[i]);
+        mlir::Value elementCmpResult = elementCmp->getResult(0);
+        mask = rewriter.create<mlir::vector::InsertElementOp>(cmpOpLoc, elementCmpResult, mask, rewriter.create<mlir::arith::ConstantIndexOp>(cmpOpLoc, i));
+    }
+
+    if (!IsUnrolledAccessSequential(rewriter, loadOp, laneMappings, unrollMax))
+    {
+        return reportMatchFailure(loadOp, "Failed: isUnrolledAcessSequential for load op in then block");
+    }
+
+    // create a cast op for source of transfer read's padding value
+    if (elseCastOp)
+    {
+        // clone elseCastOp
+        auto cloneElseCastOp = rewriter.clone(*elseCastOp.getOperation());
+        paddingOpValue = cloneElseCastOp->getResult(0);
+    }
+
+    auto loadLoc = loadOp.getLoc();
+    auto loadMemRefType = loadOp.getMemRefType();
+    auto loadElementType = loadMemRefType.getElementType();
+    auto loadVectorType = mlir::VectorType::get({ unrollMax }, loadElementType);
+
+    // type of padding op value may not be the same as what is required by transfer read op
+    // so, we need a cast here always.
+    auto finalPaddingOpValue = rewriter.create<v::CastOp>(loopOp.getLoc(), paddingOpValue, loadElementType);
+ 
+    // create transferRead op with mask value
+    mlir::AffineLoadOpAdaptor adaptor{ loadOp };
+    std::vector<mlir::Value> indices(adaptor.indices().begin(), adaptor.indices().end());
+    auto [flatCastMemref, flattenedPosition] = FlattenAccess(rewriter, loadOp, indices);
+
+    // create a default identity map for mapping 1:1 dimension
+    mlir::AffineMap permutationMap = mlir::AffineMap::getMinorIdentityMap(1, 1, rewriter.getContext());
+    llvm::SmallVector<bool, 1> inbound_init;
+    inbound_init.push_back(false);
+    auto inbounds = rewriter.getBoolArrayAttr(inbound_init);
+
+    mlir::Value valueToStore = rewriter.create<mlir::vector::TransferReadOp>(loadLoc, loadVectorType, flatCastMemref, mlir::ValueRange{ flattenedPosition }, permutationMap, finalPaddingOpValue, mask, inbounds);
+
+    // optional cast op
+    if (thenCastOp) // then cast op
+    {
+        // Create a cast to hold vector of values
+        auto castVecType = mlir::VectorType::get({ unrollMax }, thenCastOp.getType());
+        valueToStore = rewriter.create<v::CastOp>(loopOp.getLoc(), valueToStore, castVecType);
+    }
+
+    // create vector store op
+    mlir::AffineStoreOpAdaptor adaptorStore{ storeOp };
+    std::vector<mlir::Value> baseIndicesStore(adaptorStore.indices().begin(), adaptorStore.indices().end());
+
+    mlir::vector::StoreOp storeVecOp;
+    auto [flatCastMemRefStore, flattenedPosStore] = FlattenAccess(rewriter, storeOp, baseIndicesStore);
+
+
+    rewriter.create<mlir::vector::StoreOp>(storeOp.getLoc(), valueToStore, flatCastMemRefStore, mlir::ValueRange{ flattenedPosStore });
+
+    // Set the step size for vectorized loop
+    loopOp.setStep(iter_step * numIters);
+
+    ir::util::EraseOps(matchedOps, rewriter);
+
+    return mlir::success();
+}
+
 mlir::LogicalResult TryVectorizeKnownSubgraph(mlir::AffineForOp affineForOp,
                                               mlir::PatternRewriter& rewriter)
 {
@@ -2503,6 +2718,8 @@ mlir::LogicalResult TryVectorizeKnownSubgraph(mlir::AffineForOp affineForOp,
     if (succeeded(vectorizeTwoRowInterleavedPack(affineForOp, rewriter)))
         return success();
     if (succeeded(vectorizeInt16MatMul(affineForOp, rewriter)))
+        return success();
+    if (succeeded(vectorizeMaskedLoadStore(affineForOp, rewriter)))
         return success();
     return failure();
 }

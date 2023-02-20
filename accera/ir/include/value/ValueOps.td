@@ -11,8 +11,10 @@ include "ir/include/value/ValueBase.td"
 
 include "ir/include/value/ValueAttrs.td"
 
+include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
+include "mlir/Interfaces/ViewLikeInterface.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.td"
 
@@ -672,7 +674,7 @@ def accv_CallOp : accv_Op<"call", [CallOpInterface]> {
   }];
 }
 
-def accv_MemRefCastOp : accv_Op<"memref_cast", [SameOperandsAndResultShape]> {
+def accv_MemRefCastOp : accv_Op<"memref_cast", [NoSideEffect, DeclareOpInterfaceMethods<CastOpInterface>, ViewLikeOpInterface]> {
   let summary = "memref element casting operation";
   let description = [{
     The `accv.memref_cast` operation converts the elements in a memref to another
@@ -693,6 +695,9 @@ def accv_MemRefCastOp : accv_Op<"memref_cast", [SameOperandsAndResultShape]> {
     }
 
     MemRefType getType() { return getResult().getType().cast<MemRefType>(); }
+
+    /// ViewLikeOpInterface
+    Value getViewSource() { return source(); }
   }];
 }
 
@@ -716,6 +721,7 @@ def accv_CastOp : accv_Op<"cast", [NoSideEffect]> {
       build($_builder, $_state, destType, value, false);
     }]>];
   
+  let hasCanonicalizer = 1;
   let hasFolder = 1;
 }
 
@@ -765,7 +771,7 @@ def accv_OffsetOp : accv_Op<"offset", [NoSideEffect]> {
   }];
 }
 
-def accv_ViewOp : accv_Op<"view", [NoSideEffect, AttrSizedOperandSegments]> {
+def accv_ViewOp : accv_Op<"view", [NoSideEffect, AttrSizedOperandSegments, ViewLikeOpInterface]> {
   let summary = "memref view operation";
   let description = [{
     The `accv.view` operation converts a memref type to another memref type
@@ -779,15 +785,13 @@ def accv_ViewOp : accv_Op<"view", [NoSideEffect, AttrSizedOperandSegments]> {
     *) Sizes:   memref-rank number of dynamic sizes to create the dimensions
                 of the view memref with
     *) Strides: memref-rank number of dynamic strides to create the view memref with
-    *) SourceMemrefOperands: dynamic operands for the source memref
   }];
 
   let arguments = (ins
     AnyMemRef:$source,
     Variadic<Index>:$sizes,
     Variadic<Index>:$offsets,
-    Variadic<Index>:$strides,
-    Variadic<Index>:$sourceMemrefOperands // Dynamic operands for the source memref layout
+    Variadic<Index>:$strides
   );
   let results = (outs AnyMemRef);
 
@@ -813,8 +817,13 @@ def accv_ViewOp : accv_Op<"view", [NoSideEffect, AttrSizedOperandSegments]> {
     /// Returns as integer value the number of offset operands.
     int64_t getNumOffsets() { return llvm::size(offsets()); }
 
-    std::vector<mlir::Value> getLayoutMapOperands();
+    /// ViewLikeOpInterface
+    Value getViewSource() { return source(); }
+
+    static MemRefType computeMemRefType(Value source, ValueRange sizes, ValueRange offsets, ValueRange strides);
   }];
+
+  let hasCanonicalizer = 1;
 }
 
 def accv_SliceOp : accv_Op<"slice", [NoSideEffect]> {
@@ -895,7 +904,7 @@ def accv_MergeDimOp : accv_Op<"merge_dim", [NoSideEffect]> {
   }];
 }
 
-def accv_SplitDimOp : accv_Op<"split_dim", [NoSideEffect]> {
+def accv_SplitDimOp : accv_Op<"split_dim", [NoSideEffect, ViewLikeOpInterface]> {
   let summary = "memref split dimension operation";
   let description = [{
     The `accv.split_dim` operation converts a memref type to another memref type
@@ -905,9 +914,8 @@ def accv_SplitDimOp : accv_Op<"split_dim", [NoSideEffect]> {
 
   let arguments = (ins
     AnyMemRef:$source,
-    Variadic<Index>:$sourceMemrefOperands,
     I64Attr:$dim,
-    I64Attr:$size // TODO : support dynamic splits
+    Index:$size
   );
   let results = (outs AnyMemRef:$result);
 
@@ -920,8 +928,13 @@ def accv_SplitDimOp : accv_Op<"split_dim", [NoSideEffect]> {
     /// The result of a split_dim is always a memref.
     MemRefType getType() { return getResult().getType().cast<MemRefType>(); }
 
-    std::vector<mlir::Value> getLayoutMapOperands() { return std::vector<mlir::Value>(sourceMemrefOperands().begin(), sourceMemrefOperands().end()); }
+    /// ViewLikeOpInterface
+    Value getViewSource() { return source(); }
+
+    static MemRefType computeMemRefType(Value source, int64_t dim, Value size);
   }];
+
+  let hasCanonicalizer = 1;
 }
 
 def accv_StoreOp : accv_Op<"store",

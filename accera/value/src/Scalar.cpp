@@ -51,15 +51,16 @@ namespace value
             value = value.PointerTo();
         }
 
-        _value.Reset();
-        _value = std::move(value);
-        if (auto& layout = _value.GetLayout();
-            !_value.IsDefined() || !_value.IsConstrained() ||
+        if (auto& layout = value.GetLayout();
+            !value.IsDefined() || !value.IsConstrained() ||
             !(layout == ScalarLayout ||
               (layout.NumDimensions() == 1 && layout.GetExtent(0) == 1)))
         {
-            throw InputException(InputExceptionErrors::invalidArgument);
+            throw InputException(InputExceptionErrors::invalidArgument, "Value cannot be set on Scalar as it is invalid.");
         }
+
+        _value.Reset();
+        _value = std::move(value);
     }
 
     Scalar::~Scalar() = default;
@@ -110,7 +111,7 @@ namespace value
             {
                 _value = std::move(other._value);
             }
-            other._value.Clear();
+            other._value.Reset();
 
             _role = other.GetRole();
         }
@@ -120,7 +121,7 @@ namespace value
     void Scalar::Set(const Scalar& other)
     {
         if (_role == Role::Input)
-            throw LogicException(LogicExceptionErrors::illegalState);
+            throw LogicException(LogicExceptionErrors::illegalState, "Cannot modify an Input scalar.");
 
         *this = other;
     }
@@ -168,7 +169,7 @@ namespace value
             }
             else
             {
-                throw TypeMismatchException(GetType(), s.GetType());
+                throw TypeMismatchException("Scalar += Scalar", GetType(), s.GetType());
             }
         }
         else
@@ -191,7 +192,7 @@ namespace value
             }
             else
             {
-                throw TypeMismatchException(GetType(), s.GetType());
+                throw TypeMismatchException("Scalar -= Scalar", GetType(), s.GetType());
             }
         }
         else
@@ -217,7 +218,7 @@ namespace value
             }
             else
             {
-                throw TypeMismatchException(GetType(), s.GetType());
+                throw TypeMismatchException("Scalar *= Scalar", GetType(), s.GetType());
             }
         }
         else
@@ -243,7 +244,7 @@ namespace value
             }
             else
             {
-                throw TypeMismatchException(GetType(), s.GetType());
+                throw TypeMismatchException("Scalar /= Scalar", GetType(), s.GetType());
             }
         }
         else
@@ -269,7 +270,7 @@ namespace value
             }
             else
             {
-                throw TypeMismatchException(GetType(), s.GetType());
+                throw TypeMismatchException("Scalar %= Scalar", GetType(), s.GetType());
             }
         }
         else
@@ -356,7 +357,7 @@ namespace value
     {
         if (!s.GetValue().IsIntegral())
         {
-            throw LogicException(LogicExceptionErrors::illegalState);
+            throw LogicException(LogicExceptionErrors::illegalState, "Pre-increment operator can only be applied on integer types but got " + ToString(s.GetType()) + ".");
         }
 
         return s += Cast(1, s.GetType());
@@ -366,7 +367,7 @@ namespace value
     {
         if (!s.GetValue().IsIntegral())
         {
-            throw LogicException(LogicExceptionErrors::illegalState);
+            throw LogicException(LogicExceptionErrors::illegalState, "Post-increment operator can only be applied on integer types but got " + ToString(s.GetType()) + ".");
         }
 
         Scalar copy = s.Copy();
@@ -378,7 +379,7 @@ namespace value
     {
         if (!s.GetValue().IsIntegral())
         {
-            throw LogicException(LogicExceptionErrors::illegalState);
+            throw LogicException(LogicExceptionErrors::illegalState, "Pre-decrement operator can only be applied on integer types but got " + ToString(s.GetType()) + ".");
         }
 
         return s -= Cast(1, s.GetType());
@@ -388,7 +389,7 @@ namespace value
     {
         if (!s.GetValue().IsIntegral())
         {
-            throw LogicException(LogicExceptionErrors::illegalState);
+            throw LogicException(LogicExceptionErrors::illegalState, "Post-decrement operator can only be applied on integer types but got " + ToString(s.GetType()) + ".");
         }
 
         Scalar copy = s.Copy();
@@ -442,7 +443,7 @@ namespace value
     {
         if (!s1.GetValue().IsIntegral() || !s2.GetValue().IsIntegral())
         {
-            throw LogicException(LogicExceptionErrors::illegalState);
+            throw LogicException(LogicExceptionErrors::illegalState, "Logical AND (&&) operator can only be applied on integer types but got " + ToString(s1.GetType()) + " and " + ToString(s2.GetType()) + ".");
         }
         auto&& [lhs, rhs] = Scalar::MakeTypeCompatible(s1, s2);
 
@@ -453,17 +454,16 @@ namespace value
     {
         if (!s1.GetValue().IsIntegral() || !s2.GetValue().IsIntegral())
         {
-            throw LogicException(LogicExceptionErrors::illegalState);
+            throw LogicException(LogicExceptionErrors::illegalState, "Logical OR (||) operator can only be applied on integer types but got " + ToString(s1.GetType()) + " and " + ToString(s2.GetType()) + ".");
         }
         auto&& [lhs, rhs] = Scalar::MakeTypeCompatible(s1, s2);
 
         return GetContext().BinaryOperation(ValueBinaryOperation::logicalOr, lhs.GetValue(), rhs.GetValue());
     }
 
-    Scalar MakeScalar(ValueType type, const std::string&, Role role)
+    Scalar MakeScalar(ValueType type, const std::string& name, Role role)
     {
-        // TODO: figure out how to name these scalars
-        return Scalar(Value(type, ScalarLayout), "", role);
+        return Scalar(Value(type, ScalarLayout), name, role);
     }
 
 } // namespace value

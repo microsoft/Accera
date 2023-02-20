@@ -1448,44 +1448,51 @@ namespace util
         return featureListStr.find(checkString) != std::string::npos;
     }
 
+    int64_t TryParseStaticSize(mlir::Value value, int64_t dynamicSentinelValue)
+    {
+        if (auto constantOp = value.getDefiningOp<mlir::arith::ConstantIndexOp>())
+        {
+            return constantOp.value();
+        }
+        if (auto constantOp = value.getDefiningOp<mlir::arith::ConstantIntOp>())
+        {
+            if (constantOp.value() != dynamicSentinelValue)
+            {
+                return constantOp.value();
+            }
+        }
+        return dynamicSentinelValue;
+    }
+
     std::vector<int64_t> TryParseStaticSizes(mlir::ValueRange values, int64_t dynamicSentinelValue)
     {
         std::vector<int64_t> staticValues;
         std::transform(values.begin(), values.end(), std::back_inserter(staticValues), [&](mlir::Value val) {
-            if (auto constantOp = val.getDefiningOp<mlir::arith::ConstantIndexOp>())
-            {
-                return constantOp.value();
-            }
-            else
-            {
-                return dynamicSentinelValue;
-            }
+            return TryParseStaticSize(val, dynamicSentinelValue);
         });
         return staticValues;
     }
 
-    std::vector<mlir::Value> GetLayoutMapOperands(mlir::Value source)
+    std::vector<mlir::OpFoldResult> ParsePartiallyStaticValues(mlir::OpBuilder& builder, mlir::ValueRange values)
     {
-        auto sourceType = source.getType();
-        auto sourceMemRefType = sourceType.cast<mlir::MemRefType>();
-        auto sourceLayoutMap = sourceMemRefType.getLayout().getAffineMap();
-        if (sourceLayoutMap.getNumSymbols() > 0)
-        {
-            // TODO : better symbolic memory shape approach rather than handling individual op types
-            if (auto sourceViewOp = source.getDefiningOp<vir::ViewOp>())
+        std::vector<mlir::OpFoldResult> partiallyStaticValues;
+        std::transform(values.begin(), values.end(), std::back_inserter(partiallyStaticValues), [&](mlir::Value val) -> mlir::OpFoldResult {
+            if (auto constantOp = val.getDefiningOp<mlir::arith::ConstantIndexOp>())
             {
-                return sourceViewOp.getLayoutMapOperands();
-            }
-            else if (auto splitDimOpOp = source.getDefiningOp<vir::SplitDimOp>())
-            {
-                return splitDimOpOp.getLayoutMapOperands();
+                return builder.getI64IntegerAttr(constantOp.value());
             }
             else
             {
-                throw InputException(InputExceptionErrors::invalidArgument, "Only sub_array / ViewOp and split_dimension / SplitDimOp results are supported dynamic source operands");
+                return val;
             }
-        }
-        return {};
+        });
+        return partiallyStaticValues;
+    }
+
+    bool IsTerminalOp(mlir::Operation* op)
+    {
+        // TODO: change this to also look for terminator ops
+        return op->getNumResults() == 0;
     }
 
 } // namespace util

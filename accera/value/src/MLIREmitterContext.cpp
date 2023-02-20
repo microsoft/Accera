@@ -8,6 +8,7 @@
 #include "CompilerOptions.h"
 #include "ValueType.h"
 
+#include <cstdint>
 #include <ir/include/DialectRegistry.h>
 #include <ir/include/IRUtil.h>
 #include <ir/include/InitializeAccera.h>
@@ -18,7 +19,14 @@
 #include <ir/include/value/ValueAttributes.h>
 #include <ir/include/value/ValueFuncOp.h>
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/Conversion/LLVMCommon/MemRefBuilder.h>
+#include <mlir/IR/AffineExpr.h>
+#include <mlir/IR/AffineMap.h>
+#include <optional>
+#include <stdexcept>
+#include <sys/types.h>
 #include <transforms/include/value/ValueToStandardLoweringPass.h>
 
 #include <utilities/include/Exception.h>
@@ -31,6 +39,7 @@
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
+#include <mlir/Dialect/Affine/Utils.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
@@ -100,11 +109,6 @@ private:
     mlir::MLIRContext* _context;
 };
 
-MemoryLayout GetSubArrayLayout(const MemoryLayout& originalLayout, const MemoryShape& shape, const std::vector<int64_t>& stridesValue)
-{
-    return { originalLayout, shape, stridesValue };
-}
-
 MemoryLayout GetSliceLayout(const MemoryLayout& originalLayout, std::vector<int64_t> slicedDimensions)
 {
     std::sort(slicedDimensions.begin(), slicedDimensions.end(), std::greater<int64_t>());
@@ -120,11 +124,6 @@ MemoryLayout GetSliceLayout(const MemoryLayout& originalLayout, std::vector<int6
 MemoryLayout GetMergeDimLayout(const MemoryLayout& originalLayout, int64_t dim1, int64_t dim2)
 {
     return originalLayout.GetMergedDimensionsLayout(dim1, dim2);
-}
-
-MemoryLayout GetSplitDimLayout(const MemoryLayout& originalLayout, int64_t dim, int64_t size)
-{
-    return originalLayout.GetSplitDimensionLayout(dim, size);
 }
 
 mlir::MemRefType MemoryLayoutToMemRefType(mlir::OpBuilder& builder, const MemoryLayout& layout, ValueType valueType, bool useDynamicOffset, int pointerLevel)
@@ -531,6 +530,7 @@ MemoryLayout InferLayoutFromMLIRValue(mlir::Value value)
     }
     else if (auto shapedType = type.dyn_cast<mlir::ShapedType>())
     {
+        // TODO: Will assert for UnrankedMemRefType
         auto shape = shapedType.getShape();
         return MemoryLayout{ shape.vec() };
     }
@@ -538,6 +538,24 @@ MemoryLayout InferLayoutFromMLIRValue(mlir::Value value)
     {
         throw std::logic_error("Unknown value type");
     }
+}
+
+/// Gets the total number of elements in the memref, including those skipped over by strides
+/// Different from MemRefType.getNumElements, since that doesn't account for strides
+/// TODO: This is likely going to be a cause of friction as it's a fundamental diff between MemoryLayout and mlir's ShapedType
+std::optional<int64_t> ComputeMemrefTotalSize(mlir::MemRefType memrefType)
+{
+    auto shape = memrefType.getShape();
+    llvm::SmallVector<int64_t, 4> strides;
+    int64_t offset;
+    if (failed(getStridesAndOffset(memrefType, strides, offset)))
+    {
+        return std::nullopt;
+    }
+
+    auto maxStride = std::max_element(strides.begin(), strides.end());
+    auto size = (*maxStride) * (shape[maxStride - strides.begin()]);
+    return size;
 }
 } // namespace
 
@@ -1392,7 +1410,7 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
                             return suppliedValue.GetBaseType() == fnValue.GetBaseType();
                         }))
         {
-            throw InputException(InputExceptionErrors::invalidArgument, __FILE__ " : " + std::to_string(__LINE__));
+            throw InputException(InputExceptionErrors::invalidArgument, "CreateFunctionImpl: Passed in argument types do not match.");
         }
 
         auto& builder = _impl->builder;
@@ -1483,7 +1501,7 @@ EmitterContext::DefinedFunction MLIRContext::DeclareExternalFunctionImpl(Functio
                             return suppliedValue.GetBaseType() == fnValue.GetBaseType();
                         }))
         {
-            throw InputException(InputExceptionErrors::invalidArgument, __FILE__ " : " + std::to_string(__LINE__));
+            throw InputException(InputExceptionErrors::invalidArgument, "DeclareExternalFunctionImpl: Passed in argument types do not match.");
         }
 
         auto& builder = _impl->builder;
@@ -1940,15 +1958,12 @@ void MLIRContext::StoreImpl(const Value& sourceValue, Value& destValue, const st
     (void)builder.create<ir::value::StoreOp>(loc, source, dest, indexValues);
 }
 
-Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offsetsValue, const MemoryShape& shape, const std::vector<int64_t>& stridesValue)
+Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offsetsValue, const std::vector<Scalar>& shape, const std::vector<Scalar>& stridesValue)
 {
-    const MemoryLayout& currentLayout = sourceValue.GetLayout();
-    auto destLayout = GetSubArrayLayout(currentLayout, shape, stridesValue);
-
     auto& builder = _impl->builder;
     auto loc = builder.getUnknownLoc();
     std::vector<mlir::Value> offsets;
-    std::vector<mlir::Value> sizes; // TODO support dynamic sizes
+    std::vector<mlir::Value> sizes;
     std::vector<mlir::Value> strides;
     auto convertValueToMLIRIndexValue = [&](int64_t sentinelValue) {
         return [&](Scalar scalarValue) -> mlir::Value {
@@ -1974,12 +1989,11 @@ Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offset
     std::transform(stridesValue.begin(), stridesValue.end(), std::back_inserter(strides), convertValueToMLIRIndexValue(ir::util::DynamicStrideOrOffsetSentinelValue));
 
     auto source = ToMLIRValue(builder, sourceValue);
-    mlir::Value result = builder.create<ir::value::ViewOp>(loc, source, sizes, offsets, strides);
 
-    EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { sourceValue.GetBaseType(), 1 } });
-    Emittable emittable{ &emittableInfo };
+    std::vector<int64_t> dynamicSizes(sizes.size(), ir::util::DynamicSizeSentinelValue);
+    MemoryLayout dynamicLayout(dynamicSizes);
 
-    return { emittable, destLayout };
+    return Wrap(builder.create<ir::value::ViewOp>(loc, source, sizes, offsets, strides), dynamicLayout);
 }
 
 Value MLIRContext::SliceImpl(Value sourceValue, std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets)
@@ -2019,57 +2033,21 @@ Value MLIRContext::MergeDimensionsImpl(Value sourceValue, int64_t dim1, int64_t 
     return Wrap(builder.create<ir::value::MergeDimOp>(loc, resultMemRefType, source, dim1, dim2));
 }
 
-Value MLIRContext::SplitDimensionImpl(Value sourceValue, int64_t dim, int64_t size)
+Value MLIRContext::SplitDimensionImpl(Value sourceValue, int64_t dim, Scalar sizeValue)
 {
     auto& builder = _impl->builder;
     auto loc = builder.getUnknownLoc();
 
-    // TODO: assert there's no offset
-    const MemoryLayout& currentLayout = sourceValue.GetLayout();
-    auto destLayout = GetSplitDimLayout(currentLayout, dim, size);
-
-    auto mlirSourceValue = ToMLIRValue(builder, sourceValue);
-    auto sourceMemRefType = mlirSourceValue.getType().cast<mlir::MemRefType>();
-    auto sourceLayoutMap = sourceMemRefType.getLayout().getAffineMap();
-    auto sourceRank = sourceMemRefType.getRank();
-    auto destRank = sourceRank + 1;
-    auto elementType = sourceMemRefType.getElementType();
-
-    // Ultimately the MLIR code is going to lower such that this memref's origin is the same as the source value's origin so we need to account for that
-    // To do that, we create a (N+1)-dimensional -> N-dimensional map where N is the source array rank
-    // as follows: (d0, ..., dN) -> (d0, ..., d(dim-1), d(dim) * size + d(dim+1), d(dim+2), ..., d(N-1))
-    // E.g. suppose we had a 3-D array of shape [S0, S1, S2], and we split the middle dimension by 8,
-    //      then our new array would have shape [S0, S1 // 8, 8, S2] and we would create the mapping
-    //      (d0, d1, d2, d3) -> (d0, d1*8 + d2, d3)
-    //      To map the post-split shape back to the pre-split shape
-
-    std::vector<mlir::AffineExpr> exprs;
-    // The first (d0, ..., d(dim-1)) are just identity exprs
-    for (auto idx = 0; idx < dim; ++idx)
-    {
-        exprs.push_back(builder.getAffineDimExpr(idx));
-    }
-
-    // The middle expr is an un-splitting of the dimension we split
-    exprs.push_back(builder.getAffineDimExpr(dim) * size + builder.getAffineDimExpr(dim + 1));
-
-    // The last (d(dim+2), ..., d(N-1)) are just identity exprs as well
-    for (auto idx = dim + 2; idx < destRank; ++idx)
-    {
-        exprs.push_back(builder.getAffineDimExpr(idx));
-    }
-
-    auto unsplittingMap = mlir::AffineMap::get(destRank, 0 /* symbols */, exprs, builder.getContext());
-
-    // Now compose sourceMap(unsplittingMap) to get the split layout -> source memory position map
-    auto destToSrcMemoryMap = sourceLayoutMap.compose(unsplittingMap);
-
-    auto resultMemRefType = mlir::MemRefType::get(destLayout.GetActiveSize().ToVector(), elementType, destToSrcMemoryMap);
-
-    std::vector<mlir::Value> sourceOperands = ir::util::GetLayoutMapOperands(mlirSourceValue);
 
     auto source = ToMLIRValue(builder, sourceValue);
-    return Wrap(builder.create<ir::value::SplitDimOp>(loc, resultMemRefType, source, sourceOperands, dim, size));
+    auto size = ToMLIRValue(builder, sizeValue);
+    auto resultMemRefType = ir::value::SplitDimOp::computeMemRefType(source, dim, size);
+    auto resultMemRefShape = resultMemRefType.getShape();
+
+    std::vector<int64_t> newShape(resultMemRefShape.begin(), resultMemRefShape.end());
+
+    MemoryLayout possiblyDynamicLayout(newShape);
+    return Wrap(builder.create<ir::value::SplitDimOp>(loc, resultMemRefType, source, dim, size), possiblyDynamicLayout);
 }
 
 Value MLIRContext::ReshapeImpl(Value sourceValue, const MemoryLayout& destLayout)
@@ -2080,6 +2058,205 @@ Value MLIRContext::ReshapeImpl(Value sourceValue, const MemoryLayout& destLayout
     auto resultMemRefType = MemoryLayoutToMemRefType(builder, destLayout, sourceValue.GetBaseType());
     auto source = ToMLIRValue(builder, sourceValue);
     return Wrap(builder.create<ir::value::ReshapeOp>(loc, resultMemRefType, source));
+}
+
+// Case 1 -
+// Input: <MxNxT1>, where M, N are known dimension sizes, T1 is input element type [static sized]
+// Output <SxT2>, where S == M * N * sizeof(T1) / sizeof(T2), T2 is output element type
+// Case 2 -
+// Input: <Mx?xT1>, where M is known dimension size, T1 is input element type [known rank, dynamic sized]
+// Output: <?xT2>, where T2 is output element type
+// Case 3 -
+// Input: <*xT1>, where T1 is input element type [unranked] [WILL THROW]
+// Output: <?xT2>, where T2 is output element type
+Value MLIRContext::ReinterpretCastImpl(Value input, ValueType valueType)
+{
+    auto& builder = _impl->builder;
+    auto loc = builder.getUnknownLoc();
+    auto inputMlir = ToMLIRValue(builder, input);
+    assert(inputMlir);
+    auto inputMlirType = inputMlir.getType();
+
+    auto outputMlirElemType = ValueTypeToMLIRType(builder, valueType);
+    if (!outputMlirElemType.isIntOrFloat())
+    {
+        throw std::logic_error("Reinterpret cast destination element type must be int or float type. Index or other types are not valid.");
+    }
+
+    if (auto inputMemrefType = inputMlirType.dyn_cast<mlir::MemRefType>())
+    {
+        // Case 1 & 2
+        auto mlirCtx = builder.getContext();
+        auto inputElementBitwidth = inputMemrefType.getElementTypeBitWidth();
+        auto inputElementBytewidth = inputElementBitwidth / 8;
+        auto outputElementBitwidth = outputMlirElemType.getIntOrFloatBitWidth();
+        auto outputElementBytewidth = outputElementBitwidth / 8;
+
+        auto d0 = mlir::getAffineDimExpr(0, mlirCtx);
+        auto d1 = mlir::getAffineDimExpr(1, mlirCtx);
+
+        // The goal of these affine maps is to retain any transformations already applied to the source (e.g., dilations or offset)
+        // while mapping to the flat byte space of the destination memref with the specified element type.
+        // This is complicated further due to having to keep track of intra-element byte offsets, but not being able to encode them
+        // properly due to the lossy nature of floordiv operations. For this purpose, for many of the maps, we add an extra dimension
+        // that carries this information and uses it in the final compuation of the byte offset.
+        // Nomenclature:
+        //   Output element idx space - Index space of the output array returned by the reinterpret cast
+        //   Byte idx space - Byte index offset from the reinterpret casted buffer
+        //   Flat element idx space - Flattened index offset in the input buffer to reinterpret cast
+        //   Input element idx space - Index space of the input array to the reinterpret cast
+        //   Element memory space - Flattened element position in the underlying memory buffer
+        //   Byte memory space - Flattened byte position in the underlying memory buffer
+
+        // case 1: memref<4x2x2xf32> -> memref<64xi8>, index 13 => byte 13 [sizeof(outputElementType) < sizeof(inputElementType)]
+        // case 2: memref<4x2x2x4xi8> -> memref<16xf32>, index 13 => byte 52 [sizeof(outputElementType) > sizeof(inputElementType)]
+        // case 3: memref<4x2x2xf32> -> memref<16xi32>, index 13 => byte 52 [sizeof(outputElementType) == sizeof(inputElementType)]
+        // N.B.: cases are simplified and do not take into account offsets and strides that are part of the input memref
+
+        llvm::SmallVector<mlir::AffineMap> affineMaps;
+        // map0: (d0) -> (d0 * sizeof(outputElementType))
+        // => (output element idx space) -> (byte idx space)
+        // case 1: (13) -> (13 * 1)
+        // case 2: (13) -> (13 * 4)
+        // case 3: (13) -> (13 * 4)
+        auto map0 = mlir::AffineMap::get(1, 0, d0 * outputElementBytewidth);
+        affineMaps.push_back(map0);
+
+        // map1: (d0) -> (d0, d0)
+        // => (byte idx space) -> (byte idx space, byte idx space)
+        // case 1: (13) -> (13, 13)
+        // case 2: (52) -> (52, 52)
+        // case 3: (52) -> (52, 52)
+        auto map1 = mlir::AffineMap::get(1, 0, { d0, d0 }, mlirCtx);
+        affineMaps.push_back(map1);
+
+        // map2: (d0, d1) -> (d0 floordiv sizeof(inputElementType), d1)
+        // => (byte idx space, byte idx space) -> (flat element idx space, byte idx space)
+        // case 1: (13, 13) -> (13 floordiv 4, 13)
+        // case 2: (52, 52) -> (52 floordiv 1, 52)
+        // case 2: (52, 52) -> (52 floordiv 4, 52)
+        auto map2 = mlir::AffineMap::get(2, 0, { d0.floorDiv(inputElementBytewidth), d1 }, mlirCtx);
+        affineMaps.push_back(map2);
+
+        // map3: (d0, d1)[s0, s1, ..., sN] -> (
+        //   ( d0 floordiv (s1 * s2 * ... * sN) ) % s0,
+        //   ( d0 floordiv (s2 * s3 * ... * sN) ) % s1,
+        //   ...,
+        //   ( d0 floordiv sN ) % s(N-1),
+        //   d0 % sN,
+        //   d1)
+        // where [s0, s1, ..., sN] == shape of input memref
+        // => (flat element idx space, byte idx space) => (...input element idx space, byte idx space)
+        // case 1: (3, 13) -> (3 floordiv (2 * 2) % 4, 3 floordiv (2) % 2, 3 floordiv (1) % 2, 13)
+        // case 2: (52, 52) -> (52 floordiv (2 * 2 * 4) % 4, 52 floordiv (2 * 4) % 2, 52 floordiv (4) % 2, 52 floordiv (1) % 4, 52)
+        // case 3: (13, 52) -> (13 floordiv (2 * 2) % 4, 13 floordiv (2) % 2, 13 floordiv (1) % 2, 52)
+        llvm::SmallVector<mlir::AffineExpr> shape;
+        size_t numSyms = 0;
+        for (auto s : inputMemrefType.getShape())
+        {
+            if (s == mlir::ShapedType::kDynamicSize)
+            {
+                shape.push_back(mlir::getAffineSymbolExpr(numSyms++, mlirCtx));
+            }
+            else
+            {
+                shape.push_back(mlir::getAffineConstantExpr(s, mlirCtx));
+            }
+        }
+        
+        llvm::SmallVector<mlir::AffineExpr> map3Results(shape.size());
+        auto cumulativeStride = mlir::getAffineConstantExpr(1, mlirCtx);
+        for (size_t i = shape.size(); i-- > 0;)
+        {
+            map3Results[i] = d0.floorDiv(cumulativeStride) % shape[i];
+            cumulativeStride = cumulativeStride * shape[i];
+        }
+        map3Results.push_back(d1);
+        auto map3 = mlir::AffineMap::get(2, numSyms, map3Results, mlirCtx);
+        affineMaps.push_back(map3);
+
+        // map4: (...{input dims of rank N}, d{N+1}) -> (..., d{N+1})
+        // => (...input idx space, byte idx space) -> (element memory space, byte idx space)
+        // case 1: (0, 1, 1, 13) -> (3, 13)
+        // case 2: (3, 0, 1, 0, 52) -> (52, 52)
+        // case 2: (3, 0, 1, 52) -> (13, 52)
+        auto inputAffineMap = inputMemrefType.getLayout().getAffineMap();
+        if (inputAffineMap.isIdentity())
+        {
+            inputAffineMap = mlir::getStridedLinearLayoutMap(inputMemrefType);
+        }
+        assert(inputAffineMap.getNumResults() == 1);
+        auto map4 = mlir::AffineMap::get(
+            inputAffineMap.getNumDims() + 1,
+            inputAffineMap.getNumSymbols(),
+            { inputAffineMap.getResult(0),
+              mlir::getAffineDimExpr(inputAffineMap.getNumDims(), mlirCtx) },
+            mlirCtx);
+        affineMaps.push_back(map4);
+
+        // map5: (d0, d1) -> (d0 * sizeof(inputElementType), d1)
+        // => (element memory space, byte idx space) -> (byte memory space, byte idx space)
+        // case 1: (3, 13) -> (3 * 4, 13)
+        // case 2: (52, 52) -> (52 * 1, 52)
+        // case 3: (13, 52) -> (13 * 4, 52)
+        auto map5 = mlir::AffineMap::get(2, 0, { d0 * inputElementBytewidth, d1 }, mlirCtx);
+        affineMaps.push_back(map5);
+
+        // map6: (d0, d1) -> (d0 + (d1 % sizeof(inputElementType)))
+        // => (byte memory space, byte idx space) -> (byte memory space)
+        // case 1: (12, 13) -> (12 + (13 % 4))
+        // case 2: (52, 52) -> (52 + (52 % 1))
+        // case 3: (52, 52) -> (52 + (52 % 4))
+        auto map6 = mlir::AffineMap::get(2, 0, d0 + (d1 % inputElementBytewidth));
+        affineMaps.push_back(map6);
+
+        // case 1: actual: 13, expected: 13
+        // case 2: actual: 52, expected: 52
+        // case 2: actual: 52, expected: 52
+
+        auto reversedAffineMaps = llvm::reverse(affineMaps);
+        auto it = reversedAffineMaps.begin();
+        auto composedMap = *it++;
+        while (it != reversedAffineMaps.end())
+        {
+            composedMap = composedMap.compose(*it++);
+        }
+
+        // Case 2 by default
+        auto numElementsInOutput = mlir::ShapedType::kDynamicSize;
+        if (inputMemrefType.hasStaticShape())
+        {
+            // Case 1
+            auto numElementsIninput = inputMemrefType.getNumElements();
+            numElementsInOutput = (int64_t)(numElementsIninput * ((float)inputElementBytewidth / outputElementBytewidth));
+
+            if (numElementsInOutput <= 0)
+            {
+                throw std::logic_error("Reinterpret cast destination memref must have at least one element");
+            }
+        }
+
+        auto outputMemRefType = mlir::MemRefType::get({ numElementsInOutput }, outputMlirElemType, composedMap);
+        // Fetch a new memref type after normalizing the old memref to have an identity map layout.
+        outputMemRefType = normalizeMemRefType(outputMemRefType, builder, composedMap.getNumSymbols() /* ?? No idea if this is correct */);
+        auto returnVal = builder.create<accera::ir::value::MemRefCastOp>(loc, inputMlir, outputMemRefType);
+
+        return Wrap(returnVal, MemoryLayout{ numElementsInOutput });
+    }
+    else if (auto inputUnrankedMemrefType = inputMlirType.dyn_cast<mlir::UnrankedMemRefType>(); inputUnrankedMemrefType)
+    {
+        // Case 3
+        // auto outputMemRefType = mlir::UnrankedMemRefType::get(outputMlirElemType, inputUnrankedMemrefType.getMemorySpace());
+        // auto returnVal = builder.create<accera::ir::value::MemRefCastOp>(loc, inputMlir, outputMemRefType);
+
+        // TODO: This is going to assert because returnVal is of type UnrankedMemRefType and MemoryLayout doesn't support unranked
+        // return Wrap(returnVal);
+        throw std::logic_error("Unranked memrefs are not supported");
+    }
+    else
+    {
+        throw std::runtime_error{ "Value must have a memref type" };
+    }
 }
 
 Value MLIRContext::ReorderImpl(Value sourceValue, const DimensionOrder& order)
@@ -2458,7 +2635,7 @@ EmitterContext::IfContext MLIRContext::IfImpl(Scalar test, std::function<void()>
 
 void MLIRContext::WhileImpl(Scalar test, std::function<void()> fn)
 {
-    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "While is not implemented.");
 }
 
 std::optional<Value> MLIRContext::CallImpl(FunctionDeclaration func, std::vector<Value> args)
@@ -2558,7 +2735,7 @@ void MLIRContext::PrintProfileResults()
 
 void MLIRContext::PrefetchImpl(Value data, PrefetchType type, PrefetchLocality locality)
 {
-    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "Prefetch is not implemented.");
 }
 
 void MLIRContext::PrintImpl(ViewAdapter value, bool toStderr)
@@ -2583,17 +2760,12 @@ void MLIRContext::PrintRawMemoryImpl(ViewAdapter value)
         throw std::runtime_error{ "Value must have a memref type" };
     }
 
-    // compute the total size
-    auto shape = memType.getShape();
-    llvm::SmallVector<int64_t, 4> strides;
-    int64_t offset;
-    if (failed(getStridesAndOffset(memType, strides, offset)))
+    auto optSize = ComputeMemrefTotalSize(memType);
+    if (!optSize)
     {
         throw std::logic_error{ "Resource to be filled in must be valid memory" };
     }
-
-    auto maxStride = std::max_element(strides.begin(), strides.end());
-    auto size = (*maxStride) * (shape[maxStride - strides.begin()]);
+    auto size = *optSize;
 
     auto elemTy = memType.getElementType();
     auto identityLayout = mlir::MemRefLayoutAttrInterface{};
@@ -2614,22 +2786,22 @@ void MLIRContext::PrintImpl(const std::string& message, bool toStderr)
 
 void MLIRContext::DebugBreakImpl()
 {
-    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "DebugBreak not implemented");
 }
 
 void MLIRContext::DebugDumpImpl(Value value, std::string tag, std::ostream& stream) const
 {
-    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "DebugDump not implemented");
 }
 
 void MLIRContext::DebugDumpImpl(FunctionDeclaration fn, std::string tag, std::ostream& stream) const
 {
-    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "DebugDump not implemented");
 }
 
 void MLIRContext::DebugPrintImpl(std::string message)
 {
-    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "DebugPrint not implemented");
 }
 
 void MLIRContext::SetNameImpl(const Value& value, const std::string& name)
@@ -2660,7 +2832,7 @@ std::string MLIRContext::GetNameImpl(const Value& value) const
 
 void MLIRContext::ImportCodeFileImpl(std::string)
 {
-    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, __FILE__ " : " + std::to_string(__LINE__));
+    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "ImportCodeFile not implemented.");
 }
 
 Scalar MLIRContext::MaxImpl(Vector input)
@@ -2701,7 +2873,7 @@ std::string MLIRContext::GetScopeAdjustedName(GlobalAllocationScope scope, std::
         return GetCurrentFunctionScopedName(name);
     }
 
-    throw LogicException(LogicExceptionErrors::illegalState, __FILE__ " : " + std::to_string(__LINE__));
+    throw LogicException(LogicExceptionErrors::illegalState, "Invalid GlobalAllocationScope used.");
 }
 
 std::string MLIRContext::GetGlobalScopedName(std::string name) const
@@ -2826,12 +2998,11 @@ ViewAdapter Wrap(mlir::Value v, std::optional<MemoryLayout> layout /*= std::null
     auto type = v.getType();
     if (!layout)
     {
+        // TODO: InferLayoutFromMLIRValue will fail for UnrankedMemRefType
         layout = InferLayoutFromMLIRValue(v);
     }
     if (auto shapedType = type.dyn_cast<mlir::ShapedType>())
     {
-        assert(shapedType.hasStaticShape());
-
         auto eltType = shapedType.getElementType();
         auto eltValueType = MLIRTypeToValueType(eltType);
         assert(eltValueType != ValueType::Undefined);
@@ -2987,7 +3158,7 @@ void FillResource(ViewAdapter resourceView, Scalar fillValue)
         auto callSuffix = [&]() -> std::string {
             if (elemTy.isIntOrIndex()) return "DInt";
             if (elemTy.isF32()) return "DFloat";
-            throw LogicException(LogicExceptionErrors::illegalState, __FILE__ " : " + std::to_string(__LINE__));
+            throw LogicException(LogicExceptionErrors::illegalState, "Invalid fill resource type used.");
         }();
 
         (void)b.create<ir::value::LaunchFuncOp>(

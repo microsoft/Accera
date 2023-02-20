@@ -274,7 +274,7 @@ namespace value
         /// <param name="strides"> The strides of the view </param>
         /// <returns> A Value instance that refers to the sub-part of the input </returns>
         /// <remarks> source must be constrained and the number of items in offset must match the degree of source </remarks>
-        Value View(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape, const std::vector<int64_t>& strides);
+        Value View(Value source, const std::vector<Scalar>& offsets, const std::vector<Scalar>& newShape, const std::vector<Scalar>& strides);
 
         /// <summary> Returns a slice of a portion of a memory buffer </summary>
         /// <param name="source"> The source location </param>
@@ -303,13 +303,19 @@ namespace value
         /// The dimension being split must have full extent (and not be a sub-view of some other array)
         /// The extent (and size) of the dimension being split must be a multiple of the split size
         /// </remarks>
-        Value SplitDimension(Value source, int64_t dim, int64_t size);
+        Value SplitDimension(Value source, int64_t dim, Scalar size);
 
         /// <summary> Returns a view of a memory buffer using a different layout </summary>
         /// <param name="source"> The source location </param>
         /// <param name="layout"> The memory layout for the new result view to use </param>
         /// <remarks> The total memory size of the original layout and the new layout must match </remarks>
         Value Reshape(Value source, const MemoryLayout& layout);
+
+        /// <summary> Returns a view of a memory buffer using a different element type </summary>
+        /// <param name="source"> The source location </param>
+        /// <param name="type"> The element type for the new result view to use </param>
+        /// <remarks> This operation doesn't alter any memory: it just returns a view of the array with a different element type. </remarks>
+        Value ReinterpretCast(Value source, ValueType type);
 
         /// <summary> Get a view of a memory buffer using a different logical ordering of dimensions </summary>
         /// <param name="source"> The source location </param>
@@ -472,15 +478,17 @@ namespace value
 
         virtual void StoreImpl(const Value& source, Value& destination, const std::vector<int64_t>& indices) = 0;
 
-        virtual Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& newShape, const std::vector<int64_t>& strides) = 0;
+        virtual Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const std::vector<Scalar>& newShape, const std::vector<Scalar>& strides) = 0;
 
         virtual Value SliceImpl(Value source, std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets) = 0;
 
         virtual Value MergeDimensionsImpl(Value source, int64_t dim1, int64_t dim2) = 0;
 
-        virtual Value SplitDimensionImpl(Value source, int64_t dim, int64_t size) = 0;
+        virtual Value SplitDimensionImpl(Value source, int64_t dim, Scalar size) = 0;
 
         virtual Value ReshapeImpl(Value source, const MemoryLayout& layout) = 0;
+
+        virtual Value ReinterpretCastImpl(Value source, ValueType type) = 0;
 
         virtual Value ReorderImpl(Value source, const utilities::DimensionOrder& order) = 0;
 

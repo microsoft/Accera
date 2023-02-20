@@ -77,13 +77,23 @@ set(accaffine_include
   include/affine/AffineSimplifications.h
 )
 
+set(accvec_src
+  src/vectorization/VectorizationPass.cpp
+  src/vectorization/VectorizationUtil.cpp
+  src/vectorization/VectorizedOp.cpp
+)
+
+set(accvec_include
+  include/vectorization/VectorizationPass.h
+  include/vectorization/VectorizationUtil.h
+  include/vectorization/VectorizedOp.h
+)
+
 set(util_src
   src/util/DebugFunctionPass.cpp
   src/util/MathUtilities.cpp
   src/util/RangeValueUtilities.cpp
   src/util/SnapshotUtilities.cpp
-  src/util/VectorizationUtil.cpp
-  src/util/VectorizedOp.cpp
 
   # Disabled
   # src/util/DebugUtilities.cpp
@@ -94,8 +104,6 @@ set(util_include
   include/util/MathUtilities.h
   include/util/RangeValueUtilities.h
   include/util/SnapshotUtilities.h
-  include/util/VectorizationUtil.h
-  include/util/VectorizedOp.h
 
   # Disabled
   # include/util/DebugUtilities.h
@@ -110,6 +118,7 @@ set(src
     ${rcexec_src}
     ${rcgpu_src}
     ${accaffine_src}
+    ${accvec_src}
     ${util_src}
 )
 
@@ -120,6 +129,7 @@ set(include
     ${rcexec_include}
     ${rcgpu_include}
     ${accaffine_include}
+    ${accvec_include}
     ${util_include}
 )
 

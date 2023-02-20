@@ -35,7 +35,7 @@ namespace value
     {
         if (test.GetType() != ValueType::Boolean)
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw InputException(InputExceptionErrors::typeMismatch, "test variable for ElseIf must be of type Boolean but got " + ToString(test.GetType()) + " instead.");
         }
 
         _impl->ElseIf(test, fn);
@@ -47,7 +47,7 @@ namespace value
     {
         if (test.GetType() != ValueType::Boolean)
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw InputException(InputExceptionErrors::typeMismatch, "test variable for ElseIf must be of type Boolean but got " + ToString(test.GetType()) + " instead.");
         }
 
         _impl->ElseIf(test, fn);
@@ -108,9 +108,10 @@ namespace value
         if (auto globalValue = GetGlobalValue(scope, name))
         {
             Value value = globalValue.value();
-            if (layout.GetMemorySize() > value.GetLayout().GetMemorySize())
+            const auto globalMemSize = value.GetLayout().GetMemorySize();
+            if (layout.GetMemorySize() > globalMemSize)
             {
-                throw InputException(InputExceptionErrors::invalidSize);
+                throw InputException(InputExceptionErrors::invalidSize, "Size of global value (" + std::to_string(globalMemSize) + ") is less than that of the requested layout (" + std::to_string(layout.GetMemorySize()) + ").");
             }
             value.SetLayout(layout);
 
@@ -120,7 +121,10 @@ namespace value
         return std::nullopt;
     }
 
-    detail::ValueTypeDescription EmitterContext::GetType(Emittable emittable) { return GetTypeImpl(emittable); }
+    detail::ValueTypeDescription EmitterContext::GetType(Emittable emittable)
+    {
+        return GetTypeImpl(emittable);
+    }
 
     EmitterContext::DefinedFunction EmitterContext::CreateFunction(FunctionDeclaration decl, EmitterContext::DefinedFunction fn)
     {
@@ -137,7 +141,10 @@ namespace value
         return IsFunctionDefinedImpl(decl);
     }
 
-    Value EmitterContext::StoreConstantData(ConstantData data, MemoryLayout layout, const std::string& name) { return StoreConstantDataImpl(data, layout, name); }
+    Value EmitterContext::StoreConstantData(ConstantData data, MemoryLayout layout, const std::string& name)
+    {
+        return StoreConstantDataImpl(data, layout, name);
+    }
 
     bool EmitterContext::IsConstantData(Value v) const
     {
@@ -148,7 +155,10 @@ namespace value
         return IsConstantDataImpl(v);
     }
 
-    Value EmitterContext::ResolveConstantDataReference(Value source) { return ResolveConstantDataReferenceImpl(source); }
+    Value EmitterContext::ResolveConstantDataReference(Value source)
+    {
+        return ResolveConstantDataReferenceImpl(source);
+    }
 
     void EmitterContext::For(MemoryLayout layout, std::function<void(std::vector<Scalar>)> fn, const std::string& name)
     {
@@ -175,16 +185,22 @@ namespace value
         return ForImpl(start, stop, step, fn, name);
     }
 
-    void EmitterContext::MoveData(Value& source, Value& destination) { return MoveDataImpl(source, destination); }
+    void EmitterContext::MoveData(Value& source, Value& destination)
+    {
+        return MoveDataImpl(source, destination);
+    }
 
-    void EmitterContext::CopyData(const Value& source, Value& destination) { return CopyDataImpl(source, destination); }
+    void EmitterContext::CopyData(const Value& source, Value& destination)
+    {
+        return CopyDataImpl(source, destination);
+    }
 
     void EmitterContext::Store(const Value& source, Value& destination, const std::vector<int64_t>& indices)
     {
         return StoreImpl(source, destination, indices);
     }
 
-    Value EmitterContext::View(Value source, const std::vector<Scalar>& offsets, const MemoryShape& newShape, const std::vector<int64_t>& strides)
+    Value EmitterContext::View(Value source, const std::vector<Scalar>& offsets, const std::vector<Scalar>& newShape, const std::vector<Scalar>& strides)
     {
         return ViewImpl(source, offsets, newShape, strides);
     }
@@ -199,7 +215,7 @@ namespace value
         return MergeDimensionsImpl(source, dim1, dim2);
     }
 
-    Value EmitterContext::SplitDimension(Value source, int64_t dim, int64_t size)
+    Value EmitterContext::SplitDimension(Value source, int64_t dim, Scalar size)
     {
         return SplitDimensionImpl(source, dim, size);
     }
@@ -209,12 +225,20 @@ namespace value
         return ReshapeImpl(source, layout);
     }
 
+    Value EmitterContext::ReinterpretCast(Value source, ValueType type)
+    {
+        return ReinterpretCastImpl(source, type);
+    }
+
     Value EmitterContext::Reorder(Value source, const utilities::DimensionOrder& order)
     {
         return ReorderImpl(source, order);
     }
 
-    Value EmitterContext::UnaryOperation(ValueUnaryOperation op, Value value) { return UnaryOperationImpl(op, value); }
+    Value EmitterContext::UnaryOperation(ValueUnaryOperation op, Value value)
+    {
+        return UnaryOperationImpl(op, value);
+    }
 
     Value EmitterContext::BinaryOperation(ValueBinaryOperation op, Value source1, Value source2)
     {
@@ -225,12 +249,12 @@ namespace value
     {
         if (!source1.IsDefined() || !source2.IsDefined())
         {
-            throw InputException(InputExceptionErrors::invalidArgument);
+            throw InputException(InputExceptionErrors::invalidArgument, "Both operands must be defined before performing logical operation.");
         }
 
         if (source1.GetBaseType() != source2.GetBaseType() && !IsLogicalComparable(source1.GetBaseType(), source2.GetBaseType()))
         {
-            throw InputException(InputExceptionErrors::invalidArgument);
+            throw InputException(InputExceptionErrors::invalidArgument, "Both operands must have logically comparable base types (" + ToString(source1.GetBaseType()) + ", " + ToString(source2.GetBaseType()) + ").");
         }
 
         return LogicalOperationImpl(op, source1, source2);
@@ -284,7 +308,7 @@ namespace value
     {
         if (test.GetType() != ValueType::Boolean)
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw InputException(InputExceptionErrors::typeMismatch, "test variable for If must be of type Boolean but got " + ToString(test.GetType()) + " instead.");
         }
 
         return IfImpl(test, fn);
@@ -294,7 +318,7 @@ namespace value
     {
         if (test.GetType() != ValueType::Boolean)
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw InputException(InputExceptionErrors::typeMismatch, "test variable for While must be of type Boolean but got " + ToString(test.GetType()) + " instead.");
         }
 
         return WhileImpl(test, fn);
@@ -413,9 +437,15 @@ namespace value
         return *s_context;
     }
 
-    void SetContext(EmitterContext& context) { s_context = &context; }
+    void SetContext(EmitterContext& context)
+    {
+        s_context = &context;
+    }
 
-    void ClearContext() noexcept { s_context = nullptr; }
+    void ClearContext() noexcept
+    {
+        s_context = nullptr;
+    }
 
     ContextGuard<>::ContextGuard(EmitterContext& context) :
         _oldContext(s_context)
@@ -423,7 +453,10 @@ namespace value
         SetContext(context);
     }
 
-    ContextGuard<>::~ContextGuard() { _oldContext ? SetContext(*_oldContext) : ClearContext(); }
+    ContextGuard<>::~ContextGuard()
+    {
+        _oldContext ? SetContext(*_oldContext) : ClearContext();
+    }
 
     Value Allocate(ValueType type, size_t size, size_t align, AllocateFlags flags, const std::vector<ScalarDimension>& runtimeSizes)
     {
@@ -445,7 +478,10 @@ namespace value
         return GetContext().GlobalAllocate(name, type, layout, flags);
     }
 
-    EmitterContext::IfContext If(Scalar test, std::function<void()> fn) { return GetContext().If(test, fn); }
+    EmitterContext::IfContext If(Scalar test, std::function<void()> fn)
+    {
+        return GetContext().If(test, fn);
+    }
 
     void While(Scalar test, std::function<void()> fn)
     {
@@ -520,17 +556,17 @@ namespace value
 
     void MemCopy(ViewAdapter dest, ViewAdapter source, std::optional<Scalar> length)
     {
-        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented);
+        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "MemCopy not implemented");
     }
 
     void MemMove(ViewAdapter dest, ViewAdapter source, std::optional<Scalar> length)
     {
-        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented);
+        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "MemMove not implemented");
     }
 
     void MemSet(ViewAdapter dest, Scalar data, std::optional<Scalar> length)
     {
-        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented);
+        throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "MemSet not implemented");
     }
 
     void MemZero(ViewAdapter dest, std::optional<Scalar> length)

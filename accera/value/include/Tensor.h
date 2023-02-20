@@ -177,19 +177,19 @@ namespace value
         int numRows = static_cast<int>(data.size());
         if (numRows <= 0)
         {
-            throw InputException(InputExceptionErrors::invalidSize);
+            throw InputException(InputExceptionErrors::invalidSize, "Number of rows in Tensor must be a positive integer but got " + std::to_string(numRows) + " instead.");
         }
 
         int numColumns = static_cast<int>(data[0].size());
         if (numColumns <= 0)
         {
-            throw InputException(InputExceptionErrors::invalidSize);
+            throw InputException(InputExceptionErrors::invalidSize, "Number of columns in Tensor must be a positive integer but got " + std::to_string(numColumns) + " instead.");
         }
 
         int numChannels = static_cast<int>(data[0][0].size());
         if (numChannels <= 0)
         {
-            throw InputException(InputExceptionErrors::invalidSize);
+            throw InputException(InputExceptionErrors::invalidSize, "Number of channels in Tensor must be a positive integer but got " + std::to_string(numChannels) + " instead.");
         }
 
         std::vector<T> coalesced(numRows * numColumns * numChannels);
@@ -198,14 +198,14 @@ namespace value
         {
             if (static_cast<int>(row.size()) != numColumns)
             {
-                throw InputException(InputExceptionErrors::invalidSize);
+                throw InputException(InputExceptionErrors::invalidSize, "Number of items (" + std::to_string(row.size()) + ") in each row of the Tensor must be equal to the number of columns (" + std::to_string(numColumns) + ").");
             }
 
             for (const auto& column : row)
             {
                 if (static_cast<int>(column.size()) != numChannels)
                 {
-                    throw InputException(InputExceptionErrors::invalidSize);
+                    throw InputException(InputExceptionErrors::invalidSize, "Number of items (" + std::to_string(column.size()) + ") in each column of the Tensor must be equal to the number of channels (" + std::to_string(numChannels) + ").");
                 }
 
                 it = std::copy(column.begin(), column.end(), it);

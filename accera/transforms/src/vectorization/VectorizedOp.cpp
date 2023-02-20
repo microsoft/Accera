@@ -3,7 +3,7 @@
 //  Licensed under the MIT License. See LICENSE in the project root for license information.
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "util/VectorizedOp.h"
+#include "vectorization/VectorizedOp.h"
 
 #include <utilities/include/TypeTraits.h>
 

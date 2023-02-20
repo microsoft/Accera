@@ -8,6 +8,7 @@
 # python -m unittest discover -k "test_input_array" path_to_accera/test dsl_tests.py
 # python -m unittest discover -k "DSLTest_01" path_to_accera/test dsl_tests.py
 
+from functools import reduce
 import logging
 import sys
 import unittest
@@ -59,6 +60,7 @@ os.environ["OMP_DISPLAY_AFFINITY"] = "TRUE"
 
 
 class DSLTest_01Arrays(unittest.TestCase):
+
     def _verify_nest(self, nest, args: Tuple[Array], package_name, correctness_check_values=None) -> None:
 
         # create a HAT package and add the function to it
@@ -613,6 +615,63 @@ class DSLTest_01Arrays(unittest.TestCase):
         self._verify_nest(
             plan, (A, B), "test_interleaved_vectorize_store", correctness_check_values=correctness_check_values
         )
+
+    def test_reinterpret_cast(self) -> None:
+        package = Package()
+
+        arr = Array(
+            role=Role.INPUT_OUTPUT,
+            element_type=ScalarType.float32,
+            shape=(256, 256),
+        )
+
+        def reinterpret_arr_as_int32(array: Array):
+            # Assumes array is f32
+
+            num_elements = reduce(lambda x, y: x*y, array.shape, 1)
+            arr_mb = array._get_memory_buffer()
+            self.assertEqual(arr_mb.shape, [num_elements * 4])
+            self.assertEqual(arr_mb.element_type, ScalarType.uint8)
+            print(arr_mb.layout)
+
+            arr_as_int32 = arr_mb._reinterpret_cast(ScalarType.int32)
+            self.assertEqual(arr_as_int32.shape, [num_elements])
+            self.assertEqual(arr_as_int32.element_type, ScalarType.int32)
+            print(arr_as_int32.layout)
+
+            return arr_as_int32
+
+        # add a function that utilizes a subarray layout
+        def make_reinterpreted_fn(array):
+            reinterpreted = reinterpret_arr_as_int32(array)
+            nest = Nest(shape=reinterpreted.shape)
+            i = nest.get_indices()
+
+            @nest.iteration_logic
+            def _():
+                reinterpreted[i] += 10
+
+            return package.add(nest, args=(reinterpreted, ))
+
+        reinterpreted_fn = make_reinterpreted_fn(arr)
+
+        # add a function that instantiates a subarray of the input array and calls the function above
+        def main(array):
+            reinterpreted_array = reinterpret_arr_as_int32(array)
+            reinterpreted_fn(reinterpreted_array)
+
+        package.add(main, args=(arr, ))
+
+        package_name = "test_reinterpret_cast"
+
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
+            package.build(
+                package_name,
+                format=TEST_FORMAT,
+                mode=Package.Mode.RELEASE,
+                output_dir=TEST_PACKAGE_DIR,
+                _quiet=False
+            )
 
     def test_subarray(self) -> None:
         package = Package()
@@ -1259,7 +1318,6 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         self._verify_helper(package, test_name, function.name, correctness_check_values)
 
-
     #
     # This test is the implementation of range node that generates two functions
     # One is for getting the size of the output array, e.g. range_get_size()
@@ -1311,14 +1369,14 @@ class DSLTest_01Arrays(unittest.TestCase):
         limit_test = np.float32(5.0)
         delta_test = np.float32(0.5)
         size_test = np.floor((limit_test - start_test) / delta_test).astype(np.int64)
-        x_ref = np.random.random((size_test,)).astype(np.float32)
+        x_ref = np.random.random((size_test, )).astype(np.float32)
         y_ref = np.arange(start_test, limit_test, delta_test, dtype=np.float32)
 
-        outputDims_post_test = np.random.random((1,)).astype(np.int64)
+        outputDims_post_test = np.random.random((1, )).astype(np.int64)
         outputDims_post_test[0] = size_test
-        outputDims_pre_test = np.random.random((1,)).astype(np.int64)
-        start_array_pre_test = np.random.random((1,)).astype(np.float32)
-        start_array_post_test = np.random.random((1,)).astype(np.float32)
+        outputDims_pre_test = np.random.random((1, )).astype(np.int64)
+        start_array_pre_test = np.random.random((1, )).astype(np.float32)
+        start_array_post_test = np.random.random((1, )).astype(np.float32)
         start_array_pre_test[0] = start_test
         start_array_post_test[0] = start_test
 
@@ -1339,7 +1397,6 @@ class DSLTest_01Arrays(unittest.TestCase):
         }
 
         self._verify_helper(package, get_result_fn_name, get_result_fn.name, correctness_check_values)
-
 
     # This test is another implementation of range node using nested function calls
     def test_output_array_range_node2(self) -> None:
@@ -1421,6 +1478,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             Output = Array(shape=(IndicesDim0, IndicesDim1, DataDim1), role=Role.INPUT_OUTPUT)
 
             nest_dims_0 = Nest((1, ))
+
             @nest_dims_0.iteration_logic
             def _():
                 OutputDim0.set(IndicesDim0)
@@ -1466,6 +1524,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             # represents a runtime output-only array (dynamically allocated)
             Output = Array(shape=(DataDim0, IndicesDim0, IndicesDim1), role=Role.INPUT_OUTPUT)
             nest_dims_1 = Nest((1, ))
+
             @nest_dims_1.iteration_logic
             def _():
                 OutputDim0.set(DataDim0)
@@ -1511,7 +1570,9 @@ class DSLTest_01Arrays(unittest.TestCase):
         self._test_output_array_gather_node(0)
         self._test_output_array_gather_node(1)
 
+
 class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
+
     def _create_nest(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
         # helper function to create a nest so that we can focus on the logic function
         M, N, S = shape
@@ -1667,6 +1728,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
             @nest.iteration_logic
             def _():
+
                 def f1():
                     C[i, j] += A[i, k] + B[k, j]
 
@@ -2084,6 +2146,8 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             abs,
             sqrt,
             exp,
+            fast_exp,
+            fast_exp_mlas,
             log,
             log10,
             log2,
@@ -2097,8 +2161,6 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             tanh,
         )
 
-        # from accera._lang_python import fast_exp, fast_exp_mlas
-
         for t in FLOAT_TYPES:
 
             nest, A, B, C = self._create_nest((16, 10, 11), type=t)
@@ -2108,8 +2170,6 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             def _():
                 C[i, j] += abs(A[i, j])
                 C[i, j] += exp(A[i, j])
-                # C[i, j] += fast_exp(A[i, j])
-                # C[i, j] += fast_exp_mlas(A[i, j])
                 C[i, j] += log(B[j, k])
                 C[i, j] += log2(B[j, k])
                 C[i, j] += log10(A[i, j])
@@ -2122,6 +2182,9 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 C[i, j] += sinh(A[i, j])
                 C[i, j] += cosh(B[j, k])
                 C[i, j] += tanh(A[i, j])
+                if t == ScalarType.float32:
+                    C[i, j] += fast_exp(A[i, j])
+                    C[i, j] += fast_exp_mlas(A[i, j])
 
             self._build_nest(nest, [A, B, C], f"test_intrinsics_float_{t.name}")
 
@@ -2170,6 +2233,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
 
 class DSLTest_03Schedules(unittest.TestCase):
+
     def _create_nest(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
         M, N, S = shape
 
@@ -2728,6 +2792,7 @@ class DSLTest_03Schedules(unittest.TestCase):
 
 
 class DSLTest_04Fusing(unittest.TestCase):
+
     def _verify_func(
         self, package, function, package_name, correctness_check_values, quiet=True, mode=TEST_MODE
     ) -> None:
@@ -3890,6 +3955,7 @@ class DSLTest_04Fusing(unittest.TestCase):
 
 
 class DSLTest_05Targets(unittest.TestCase):
+
     def test_known_targets(self) -> None:
         intel_name = "Intel 6400"
         intel = Target(known_name=intel_name, num_threads=44)
@@ -3956,6 +4022,7 @@ class DSLTest_05Targets(unittest.TestCase):
 
 
 class DSLTest_06PlansCaching(unittest.TestCase):
+
     def _create_plan(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
         M, N, S = shape
 
@@ -4189,6 +4256,7 @@ class DSLTest_06PlansCaching(unittest.TestCase):
 
 
 class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
+
     def _verify_plan(self, plan, args: Tuple[int], package_name, correctness_check_values=None) -> None:
         package = Package()
         function = package.add(plan, args, base_name="vectorization_parallelization_test")
@@ -4510,6 +4578,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
 
 
 class DSLTest_08DeferredLayout(unittest.TestCase):
+
     def _verify_package(self, plan, args, package_name, correctness_check_values) -> None:
         package = Package()
         function = package.add(plan, args, base_name="deferred_layout")
@@ -4604,6 +4673,7 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
 
 
 class DSLTest_09Parameters(unittest.TestCase):
+
     def test_parameterization_1(self) -> None:
         from accera import create_parameters, Nest
 
@@ -5747,6 +5817,7 @@ class DSLTest_09Parameters(unittest.TestCase):
 
 
 class DSLTest_10Packages(unittest.TestCase):
+
     def _create_plan(self, target=Target.HOST) -> Function:
         A = Array(role=Role.INPUT_OUTPUT, shape=(64, ))
 
@@ -6204,6 +6275,7 @@ class DSLTest_10Packages(unittest.TestCase):
         self.assertEqual(hat_file.description.license_url, "https://mit-license.org")
 
     def test_logic_function_conditionals(self) -> None:
+
         def make_test_fn(package, A, B, C):
             T = Array(role=Role.TEMP, element_type=A.element_type, shape=A.shape)
 
@@ -6241,6 +6313,7 @@ class DSLTest_10Packages(unittest.TestCase):
 
 
 class DSLTest_11AutoPlan(unittest.TestCase):
+
     def _create_plan(self, shape: Tuple[int], type=ScalarType.float32) -> Tuple:
         M, N, S = shape
 

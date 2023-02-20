@@ -31,6 +31,7 @@ namespace xpir = accera::ir::executionPlan;
 
 namespace tr = accera::transforms;
 namespace lntr = accera::transforms::loopnest;
+namespace vectr = accera::transforms::vectorization;
 namespace vtr = accera::transforms::value;
 namespace xptr = accera::transforms::executionPlan;
 namespace affinetr = accera::transforms::affine;
@@ -302,10 +303,10 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
 
         {
             RewritePatternSet patterns(context);
-            xptr::populateExecutionPlanVectorizePatterns(printVecOpDetails, patterns);
+            vectr::populateVectorizePatterns(printVecOpDetails, patterns);
             utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
             (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
-            snapshotter.Snapshot("ExecutionPlanVectorize_Canonicalize", vFuncOp);
+            snapshotter.Snapshot("Vectorize_Canonicalize", vFuncOp);
         }
 
         {
@@ -317,10 +318,10 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
 
         {
             RewritePatternSet patterns(context);
-            xptr::populateExecutionPlanVectorizeUnrollPatterns(printVecOpDetails, patterns);
+            vectr::populateVectorizeUnrollPatterns(printVecOpDetails, patterns);
             utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
             (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
-            snapshotter.Snapshot("ExecutionPlanVectorizeUnroll_Canonicalize", vFuncOp);
+            snapshotter.Snapshot("VectorizeUnroll_Canonicalize", vFuncOp);
         }
 
         {

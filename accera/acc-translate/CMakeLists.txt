@@ -59,6 +59,11 @@ target_include_directories(${util_name} PRIVATE ${ACCERA_ROOT}/accera)
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(translation_libs GLOBAL PROPERTY MLIR_TRANSLATION_LIBS)
 
+add_dependencies(${util_name}
+  MLIRAcceraIntrinsicsIncGen
+  MLIRAcceraIntrinsics
+)
+
 target_link_libraries(
   ${util_name}
   PRIVATE MLIROptLib

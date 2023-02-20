@@ -74,6 +74,9 @@ class Nest:
         if names:
             indices = [idx for _, idx in self._shape]
             if len(self._shape) > 1:
+                if (len(names) == 1):
+                    basename = names[0]
+                    names = [basename+'_'+str(i) for i in range(len(indices))]
                 zipped_name_index = zip(names, indices)
                 for name, index in zipped_name_index:
                     if not index.name:
@@ -81,11 +84,10 @@ class Nest:
             else:
                 self._shape[0][1].name = names[0]
 
-        return (
-            [idx for _, idx in self._shape]
-            if len(self._shape) > 1
-            else self._shape[0][1]
-        )
+        if len(self._shape) > 1:
+            return [idx for _, idx in self._shape]
+        else:
+            return self._shape[0][1]
 
     def iteration_logic(self, logic: Callable = None, predicate=None, placement=None):
         """Adds iteration logic to the nest

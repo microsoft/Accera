@@ -51,7 +51,10 @@ namespace value
         return *this;
     }
 
-    Scalar Vector::operator[](Scalar index) { return (*this)(index); }
+    Scalar Vector::operator[](Scalar index)
+    {
+        return (*this)(index);
+    }
 
     Scalar Vector::operator()(Scalar index)
     {
@@ -60,7 +63,10 @@ namespace value
         return indexedValue;
     }
 
-    Value Vector::GetValue() const { return _value; }
+    Value Vector::GetValue() const
+    {
+        return _value;
+    }
 
     Vector Vector::SubVector(Scalar offset, int size, const int stride) const
     {
@@ -99,7 +105,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Vector += Scalar", GetType(), s.GetType());
         }
 
         For(*this, [this, &s](Scalar index) {
@@ -113,12 +119,12 @@ namespace value
     {
         if (v.Size() != Size())
         {
-            throw InputException(InputExceptionErrors::sizeMismatch);
+            throw InputException(InputExceptionErrors::sizeMismatch, "Vector += Vector: Size of lhs (" + std::to_string(Size()) + ") must match the size of rhs (" + std::to_string(v.Size()) + ").");
         }
 
         if (v.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Vector += Vector", GetType(), v.GetType());
         }
 
         For(v, [this, &v](Scalar index) {
@@ -132,7 +138,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Vector -= Scalar", GetType(), s.GetType());
         }
 
         For(*this, [this, &s](Scalar index) {
@@ -146,12 +152,12 @@ namespace value
     {
         if (v.Size() != Size())
         {
-            throw InputException(InputExceptionErrors::sizeMismatch);
+            throw InputException(InputExceptionErrors::sizeMismatch, "Vector -= Vector: Size of lhs (" + std::to_string(Size()) + ") must match the size of rhs (" + std::to_string(v.Size()) + ").");
         }
 
         if (v.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Vector -= Vector", GetType(), v.GetType());
         }
 
         For(v, [this, &v](Scalar index) {
@@ -165,7 +171,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Vector *= Scalar", GetType(), s.GetType());
         }
 
         For(*this, [this, &s](Scalar index) {
@@ -179,7 +185,7 @@ namespace value
     {
         if (s.GetType() != GetType())
         {
-            throw InputException(InputExceptionErrors::typeMismatch);
+            throw TypeMismatchException("Vector /= Scalar", GetType(), s.GetType());
         }
 
         For(*this, [this, &s](Scalar index) {

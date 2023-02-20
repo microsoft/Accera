@@ -15,18 +15,10 @@ namespace value
     {
     public:
         ScalarDimension(Role role = Role::Input);
-
         ScalarDimension(const std::string& name, Role role = Role::Input);
-
         ScalarDimension(Value value, const std::string& name = "", Role role = Role::Input);
 
-        virtual void SetName(const std::string& name) final;
-        virtual std::string GetName() const final;
-
         virtual void SetValue(Value value) final;
-
-    private:
-        std::string _name;
     };
 } // namespace value
 } // namespace accera

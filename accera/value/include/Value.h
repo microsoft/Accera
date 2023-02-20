@@ -30,8 +30,8 @@ namespace value
     class TypeMismatchException : public utilities::GenericException
     {
     public:
-        TypeMismatchException(ValueType expected, ValueType actual) :
-            GenericException(ToString(actual) + " type is incompatible with " + ToString(expected)) {}
+        TypeMismatchException(std::string exceptionPrefix, ValueType expected, ValueType actual) :
+            GenericException(exceptionPrefix + ": " + ToString(actual) + " type is incompatible with " + ToString(expected)) {}
     };
 
     class Value;
@@ -385,15 +385,6 @@ namespace value
         /// <param name="layout"> The MemoryLayout to be set on this instance </param>
         void SetLayout(MemoryLayout layout);
 
-        /// <summary> Clear the MemoryLayout, if any, on this instance </summary>
-        void ClearLayout();
-
-        /// <summary> Clear the data, if any, on this instance </summary>
-        void ClearData();
-
-        /// <summary> Resets this instance </summary>
-        void Clear();
-
         /// <summary> Increases the pointer level by 1. </summary>
         Value PointerTo() const;
 
@@ -425,7 +416,7 @@ namespace value
 
     private:
         UnderlyingDataType _data;
-
+        std::string _name{};
         detail::ValueTypeDescription _type{ ValueType::Undefined, 0 };
         std::optional<MemoryLayout> _layout = {};
         bool _hasName = false;

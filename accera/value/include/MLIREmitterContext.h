@@ -154,15 +154,17 @@ namespace value
 
         void StoreImpl(const Value& source, Value& destination, const std::vector<int64_t>& indices) override;
 
-        Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const utilities::MemoryShape& shape, const std::vector<int64_t>& strides) override;
+        Value ViewImpl(Value source, const std::vector<Scalar>& offsets, const std::vector<Scalar>& shape, const std::vector<Scalar>& strides) override;
 
         Value SliceImpl(Value source, std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets) override;
 
         Value MergeDimensionsImpl(Value source, int64_t dim1, int64_t dim2) override;
 
-        Value SplitDimensionImpl(Value source, int64_t dim, int64_t size) override;
+        Value SplitDimensionImpl(Value source, int64_t dim, Scalar size) override;
 
         Value ReshapeImpl(Value source, const MemoryLayout& layout) override;
+
+        Value ReinterpretCastImpl(Value source, ValueType type) override;
 
         Value ReorderImpl(Value source, const utilities::DimensionOrder& order) override;
 

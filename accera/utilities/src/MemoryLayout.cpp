@@ -370,7 +370,7 @@ namespace utilities
 
 #if BOUNDS_CHECK
         if (IsOutOfBounds(logicalCoordinates))
-            throw InputException(InputExceptionErrors::indexOutOfRange);
+            throw InputException(InputExceptionErrors::indexOutOfRange, "logical coordinates out-of-bounds.");
 #endif
 
         for (int index = 0; index < numDimensions; ++index)
@@ -409,7 +409,7 @@ namespace utilities
     {
         if (logicalDimension < 0 || logicalDimension >= _dimensionOrder.NumDimensions())
         {
-            throw InputException(InputExceptionErrors::indexOutOfRange);
+            throw InputException(InputExceptionErrors::indexOutOfRange, "Invalid logical dimension: " + std::to_string(logicalDimension));
         }
 
         if (auto it = std::find(_dimensionOrder.begin(), _dimensionOrder.end(), logicalDimension);
@@ -419,7 +419,7 @@ namespace utilities
         }
         else
         {
-            throw InputException(InputExceptionErrors::indexOutOfRange);
+            throw InputException(InputExceptionErrors::indexOutOfRange, "Logical dimension " + std::to_string(logicalDimension) + " not found.");
         }
     }
 
@@ -427,7 +427,7 @@ namespace utilities
     {
         if (physicalDimension < 0 || physicalDimension >= _dimensionOrder.NumDimensions())
         {
-            throw InputException(InputExceptionErrors::indexOutOfRange);
+            throw InputException(InputExceptionErrors::indexOutOfRange, "Invalid physical dimension: " + std::to_string(physicalDimension));
         }
 
         return _dimensionOrder[physicalDimension];
@@ -561,7 +561,7 @@ namespace utilities
 
     MemoryLayout MemoryLayout::GetSplitDimensionLayout(int dimension, int innerSize) const
     {
-        ThrowIf(_size[dimension] % innerSize != 0, InputExceptionErrors::invalidArgument, "Dimension to split must be a multiple of the split size");
+        ThrowIf(!IsVariableSized(dimension) && _size[dimension] % innerSize != 0, InputExceptionErrors::invalidArgument, "Dimension to split must be a multiple of the split size");
         ThrowIf(_offset[dimension] != 0, LogicExceptionErrors::illegalState, "Dimension to split should have an offset of 0"); // sanity check
 
         auto size = _size.ToVector();

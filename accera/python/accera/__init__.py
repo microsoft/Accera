@@ -17,8 +17,8 @@ from .Package import Package
 from .lang import *
 from ._lang_python import CompilerOptions, ScalarType, _GetTargetDeviceFromName, AllocateFlags, Role
 from ._lang_python import (
-    abs, max, min, ceil, floor, sqrt, exp, log, log10, log2, sin, cos, tan, sinh, cosh, tanh, logical_and, logical_or,
-    logical_not, cast, round, remainderf
+    abs, max, min, ceil, floor, sqrt, exp, fast_exp, fast_exp_mlas, log, log10, log2, sin, cos, tan, sinh, cosh, tanh, logical_and, logical_or,
+    logical_not, cast, round, remainderf, type_size_bytes
 )
 
 # Global initialization

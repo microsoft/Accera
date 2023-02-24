@@ -303,25 +303,9 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
 
         {
             RewritePatternSet patterns(context);
-            vectr::populateVectorizePatterns(printVecOpDetails, patterns);
-            utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
-            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
-            snapshotter.Snapshot("Vectorize_Canonicalize", vFuncOp);
-        }
-
-        {
-            RewritePatternSet patterns(context);
             tr::populateLoopSimplificationPatterns(patterns);
             (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
             snapshotter.Snapshot("LoopSimplification", vFuncOp);
-        }
-
-        {
-            RewritePatternSet patterns(context);
-            vectr::populateVectorizeUnrollPatterns(printVecOpDetails, patterns);
-            utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
-            (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
-            snapshotter.Snapshot("VectorizeUnroll_Canonicalize", vFuncOp);
         }
 
         {

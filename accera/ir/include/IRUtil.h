@@ -461,5 +461,7 @@ namespace util
 
     bool IsTerminalOp(mlir::Operation* op);
 
+    std::vector<mlir::Value> GetDynamicOffsetSymbols(mlir::Value val);
+
 } // namespace util
 } // namespace accera::ir

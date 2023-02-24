@@ -138,6 +138,34 @@ bool CanVectorizeOp(mlir::Operation* op,
     return result;
 }
 
+std::optional<VectorizedOp> VectorizeGenericOp(mlir::PatternRewriter& rewriter,
+                                               mlir::Operation* op,
+                                               const VectorizedOpMap& vectorizedOps,
+                                               std::vector<mlir::BlockAndValueMapping>& laneMappings,
+                                               mlir::Value inductionVar,
+                                               int64_t step,
+                                               int64_t vectorSize)
+{
+    if (op == nullptr || op->getNumResults() != 1)
+    {
+        return std::nullopt;
+    }
+
+    auto loc = op->getLoc();
+    auto opResult = op->getResult(0);
+    auto elementType = opResult.getType();
+    if (elementType.isa<mlir::VectorType>())
+    {
+        // Can't further vectorize this
+        return std::nullopt;
+    }
+    auto vectorType = mlir::VectorType::get({ vectorSize }, elementType);
+
+    auto result = rewriter.create<mlir::vector::BroadcastOp>(loc, vectorType, opResult);
+
+    return result.getOperation();
+}
+
 std::optional<VectorizedOp> GetVectorizedPredecessor(mlir::PatternRewriter& rewriter,
                                                      mlir::Operation* pred,
                                                      const VectorizedOpMap& vectorizedOps,
@@ -158,6 +186,12 @@ std::optional<VectorizedOp> GetVectorizedPredecessor(mlir::PatternRewriter& rewr
         {
             return vecOp;
         }
+    }
+
+    // If the predecessor op doesn't depend on this induction variable, then simply broadcast its result and return it
+    if (!ir::util::hasRecursiveUseOfOp(inductionVar, pred))
+    {
+        return VectorizeGenericOp(rewriter, pred, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
     }
 
     if (CanVectorizeOp(pred, vectorizedOps, laneMappings, inductionVar, step, vectorSize))
@@ -206,29 +240,6 @@ std::optional<VectorizedOp> GetVectorizedPredecessor(mlir::PatternRewriter& rewr
     }
 
     return std::nullopt;
-}
-
-std::optional<VectorizedOp> VectorizeGenericOp(mlir::PatternRewriter& rewriter,
-                                               mlir::Operation* op,
-                                               const VectorizedOpMap& vectorizedOps,
-                                               std::vector<mlir::BlockAndValueMapping>& laneMappings,
-                                               mlir::Value inductionVar,
-                                               int64_t step,
-                                               int64_t vectorSize)
-{
-    if (op == nullptr || op->getNumResults() != 1)
-    {
-        return std::nullopt;
-    }
-
-    auto loc = op->getLoc();
-    auto opResult = op->getResult(0);
-    auto elementType = opResult.getType();
-    auto vectorType = mlir::VectorType::get({ vectorSize }, elementType);
-
-    auto result = rewriter.create<mlir::vector::BroadcastOp>(loc, vectorType, opResult);
-
-    return result.getOperation();
 }
 
 std::optional<VectorizedOp> VectorizeAllocaOp(mlir::PatternRewriter& rewriter,
@@ -368,17 +379,21 @@ std::optional<int64_t> GetConstantStrideBetweenUnrolledAccesses(mlir::PatternRew
     // Check if the temporary clones are all accessing sequential memory
     auto accessMapComposition = ir::util::GetIndexToMemoryLocationMap(rewriter.getContext(), op);
 
+    // Memref offset / shape symbols occur first in the symbol list, so get the insert position for them
+    auto symStartIndex = accessMapComposition.getNumDims();
+
     // For dynamically shaped memrefs, currently we only handle identity-mapped memrefs,
     // general dynamic memref support will come later.
     auto memRefType = op.memref().getType().template cast<mlir::MemRefType>();
-    std::vector<mlir::Value> strideSymbols;
+    std::vector<mlir::Value> strideSymbols = ir::util::GetDynamicOffsetSymbols(op.memref());
     if (!memRefType.hasStaticShape())
     {
         if (!ir::util::HasIdentityLayout(op.memref()))
         {
             return std::nullopt;
         }
-        strideSymbols = ir::util::GetIdentityMemrefStrideSymbols(rewriter, loc, op.memref());
+        auto shapeSymbols = ir::util::GetIdentityMemrefStrideSymbols(rewriter, loc, op.memref());
+        strideSymbols.insert(strideSymbols.end(), shapeSymbols.begin(), shapeSymbols.end());
     }
 
     std::optional<int64_t> stride = std::nullopt;
@@ -388,8 +403,8 @@ std::optional<int64_t> GetConstantStrideBetweenUnrolledAccesses(mlir::PatternRew
         std::vector<mlir::Value> currentIndicesVec(temporaryClones[unrollIdx].indices().begin(), temporaryClones[unrollIdx].indices().end());
 
         // Append any dynamic stride symbols since we're dealing with a flattened layout map
-        prevIndicesVec.insert(prevIndicesVec.end(), strideSymbols.begin(), strideSymbols.end());
-        currentIndicesVec.insert(currentIndicesVec.end(), strideSymbols.begin(), strideSymbols.end());
+        prevIndicesVec.insert(prevIndicesVec.begin() + symStartIndex, strideSymbols.begin(), strideSymbols.end());
+        currentIndicesVec.insert(currentIndicesVec.begin() + symStartIndex, strideSymbols.begin(), strideSymbols.end());
 
         auto prevAccess = ir::util::MultiDimAffineApply(rewriter, loc, accessMapComposition, prevIndicesVec);
         auto currentAccess = ir::util::MultiDimAffineApply(rewriter, loc, accessMapComposition, currentIndicesVec);
@@ -501,13 +516,15 @@ std::pair<mlir::Value, mlir::Value> FlattenAccess(mlir::OpBuilder& builder, OpTy
     auto loc = accessOp->getLoc();
     auto flatCastMemref = FlattenMemRefCast(builder, loc, accessOp.memref());
     auto flattenMap = ir::util::GetIndexToMemoryLocationMap(builder.getContext(), accessOp);
-    std::vector<mlir::Value> strideSymbols;
+
+    auto symStartIndex = flattenMap.getNumDims();
+    std::vector<mlir::Value> strideSymbols = ir::util::GetDynamicOffsetSymbols(accessOp.memref());
     if (ir::util::HasIdentityLayout(accessOp.memref()))
     {
         strideSymbols = ir::util::GetIdentityMemrefStrideSymbols(builder, loc, accessOp.memref());
     }
     std::vector<mlir::Value> indicesAndStrideSymbols = indices;
-    indicesAndStrideSymbols.insert(indicesAndStrideSymbols.end(), strideSymbols.begin(), strideSymbols.end());
+    indicesAndStrideSymbols.insert(indicesAndStrideSymbols.begin() + symStartIndex, strideSymbols.begin(), strideSymbols.end());
     auto flatPosition = builder.create<mlir::AffineApplyOp>(loc, flattenMap, indicesAndStrideSymbols);
     return std::make_pair(flatCastMemref, flatPosition);
 }
@@ -1823,7 +1840,7 @@ mlir::LogicalResult vectorizeTwoRowInterleavedPack(mlir::AffineForOp affineForOp
 
     std::stack<mlir::Operation*> matchedOps;
     std::stack<mlir::Operation*> tempOps;
-    ir::util::TempOpCleanupGuard(&tempOps, rewriter);
+    ir::util::TempOpCleanupGuard tempOpGuard(&tempOps, rewriter);
 
     // Match j and k loop
     SmallVector<AffineForOp, 2> loops;
@@ -1860,6 +1877,10 @@ mlir::LogicalResult vectorizeTwoRowInterleavedPack(mlir::AffineForOp affineForOp
 
     int64_t unrollMax_jj = std::min(jj_numIters, (jj_end - jj_begin));
     int64_t unrollMax_kk = std::min(kk_numIters, (kk_end - kk_begin));
+
+    // Set the insertion point to the end of the inner loop (just before the terminator)
+    mlir::OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(innerLoop.getBody(), innerLoop.getBody()->getTerminator()->getIterator());
 
     // iterate on loop body from begin to end to match the ops list
     auto innerLoopBodyIter = innerLoop.getBody()->begin();
@@ -1953,10 +1974,6 @@ mlir::LogicalResult vectorizeTwoRowInterleavedPack(mlir::AffineForOp affineForOp
 
     // So now we can create the new vectorized version of the loops
 
-    // Set the insertion point to the end of the inner loop (just before the terminator)
-    mlir::OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(innerLoop.getBody(), innerLoop.getBody()->getTerminator()->getIterator());
-
     // 1. create vector load of the input rows
     auto inputMemRefType = loadOp.getMemRefType();
     auto inputElementType = inputMemRefType.getElementType();
@@ -1967,7 +1984,6 @@ mlir::LogicalResult vectorizeTwoRowInterleavedPack(mlir::AffineForOp affineForOp
     for (int64_t kk_idx = kk_begin; kk_idx < kk_end; kk_idx += kk_step)
     {
         auto unrolledInductionVar_kk = rewriter.create<mlir::arith::ConstantIndexOp>(loadLoc, kk_idx);
-        tempOps.push(unrolledInductionVar_kk);
         mlir::BlockAndValueMapping kIterMapping;
         kIterMapping.map(kk_inductionVar, unrolledInductionVar_kk);
         auto clonedLoadOp = mlir::cast<mlir::AffineLoadOp>(rewriter.clone(*(loadOp.getOperation()), kIterMapping));
@@ -2534,7 +2550,7 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
     auto cmpOp = cast<v::CmpOp>(*loopBodyStart);
     auto cmpOpResult = cmpOp.result();
     matchedOps.push(cmpOp);
-   
+
     loopBodyStart++; 
 
     // 2. match scf.if op 
@@ -2582,7 +2598,7 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
 
     // match ops in else block
     auto storeElemType = storeOp.getMemRefType().getElementType();
-    mlir::Value paddingOpValue = rewriter.create<mlir::arith::ConstantOp>(loopOp.getLoc(), rewriter.getZeroAttr(storeElemType));
+    mlir::Value paddingOpValue = rewriter.create<mlir::arith::ConstantOp>(loopOp.getLoc(), rewriter.getZeroAttr(ir::util::ToSignlessMLIRType(rewriter, storeElemType)));
     v::CastOp elseCastOp;
 
     if (elseBlock != nullptr)
@@ -2675,6 +2691,7 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
 
     // create a default identity map for mapping 1:1 dimension
     mlir::AffineMap permutationMap = mlir::AffineMap::getMinorIdentityMap(1, 1, rewriter.getContext());
+    mlir::AffineMapAttr permutationMapAttr = mlir::AffineMapAttr::get(permutationMap);
     llvm::SmallVector<bool, 1> inbound_init;
     inbound_init.push_back(false);
     auto inbounds = rewriter.getBoolArrayAttr(inbound_init);
@@ -2693,11 +2710,18 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
     mlir::AffineStoreOpAdaptor adaptorStore{ storeOp };
     std::vector<mlir::Value> baseIndicesStore(adaptorStore.indices().begin(), adaptorStore.indices().end());
 
-    mlir::vector::StoreOp storeVecOp;
     auto [flatCastMemRefStore, flattenedPosStore] = FlattenAccess(rewriter, storeOp, baseIndicesStore);
 
-
-    rewriter.create<mlir::vector::StoreOp>(storeOp.getLoc(), valueToStore, flatCastMemRefStore, mlir::ValueRange{ flattenedPosStore });
+    if (elseBlock)
+    {
+        // vector store op for buffer fill case
+        rewriter.create<mlir::vector::StoreOp>(storeOp.getLoc(), valueToStore, flatCastMemRefStore, mlir::ValueRange{ flattenedPosStore });
+    }
+    else
+    {
+        // masked store op
+        rewriter.create<mlir::vector::TransferWriteOp>(storeOp.getLoc(), valueToStore, flatCastMemRefStore, mlir::ValueRange{ flattenedPosStore }, permutationMapAttr, mask, inbounds);
+    }
 
     // Set the step size for vectorized loop
     loopOp.setStep(iter_step * numIters);

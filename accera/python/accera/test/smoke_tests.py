@@ -89,7 +89,6 @@ class SmokeTest(unittest.TestCase):
 
         schedule1 = nest1.create_schedule()
         schedule = fuse(schedule0, schedule1)
-        f, i, j = schedule.get_indices()
         plan = schedule.create_plan()
 
         # Create a package and add our function definition to it
@@ -126,8 +125,6 @@ class SmokeTest(unittest.TestCase):
 
         schedule1 = nest1.create_schedule()
         schedule = fuse(schedule0, schedule1)
-        f, i, j = schedule.get_indices()
-        schedule.reorder(i, j, f)
         plan = schedule.create_plan()
 
         # Create a package and add our function definition to it
@@ -165,7 +162,6 @@ class SmokeTest(unittest.TestCase):
         schedule1 = nest1.create_schedule()
 
         schedule = fuse((schedule0, schedule1), partial=2)
-        f, i, j, k = schedule.get_indices()
         plan = schedule.create_plan()
 
         # Create a package and add our function definition to it
@@ -203,8 +199,6 @@ class SmokeTest(unittest.TestCase):
         schedule1 = nest1.create_schedule()
 
         schedule = fuse((schedule0, schedule1), partial=2)
-        f, i, j, k = schedule.get_indices()
-        schedule.reorder(i, j, f, k)
         plan = schedule.create_plan()
 
         # Create a package and add our function definition to it
@@ -254,8 +248,6 @@ class SmokeTest(unittest.TestCase):
 
 
         schedule = fuse((schedule0, schedule1), partial=2)
-        f, i, j, ii0, k0, iii0, ii1 = schedule.get_indices()
-        schedule.reorder(i, j, f, ii0, k0, iii0, ii1)
         plan = schedule.create_plan()
 
         # Create a package and add our function definition to it
@@ -338,8 +330,7 @@ class SmokeTest(unittest.TestCase):
         schedule1.reorder(i1, k1, j1)
 
         schedule = fuse((schedule0, schedule1), partial=2)
-        f, i, j, k, l = schedule.get_indices()
-        schedule.reorder(i, j, f, k, l)
+        i, j, f, k, l = schedule.get_indices()
 
         ii, jj = schedule.tile({
             i: 4,
@@ -392,8 +383,6 @@ class SmokeTest(unittest.TestCase):
             B[i2] += accum[0] * 1.2
 
         fused = fuse((n.create_schedule() for n in [nest0, nest1, nest2]), partial=1)
-        f, i, j = fused.get_indices()
-        fused.reorder(i, f, j)
 
         plan = fused.create_plan()
 
@@ -423,7 +412,7 @@ class SmokeTest(unittest.TestCase):
         nest1 = Nest(shape=(4, 8, 12))
         nest2 = Nest(shape=(4, 8))
 
-        i0 = nest0.get_indices()
+        i0, = nest0.get_indices()
         i1, j1, k1 = nest1.get_indices()
         i2, j2 = nest2.get_indices()
 
@@ -440,22 +429,6 @@ class SmokeTest(unittest.TestCase):
             B[i2, j2] *= accum[0]
 
         fused0 = fuse((nest1.create_schedule(), nest2.create_schedule()), partial=2)
-        ff0, if0, jf0, kf0 = fused0.get_indices()
-
-        # equivalent:
-        # for ff0 in range(2):
-        #     if ff0 == 0:
-        #         for if0 in range(4):
-        #             for jf0 in range(8):
-        #                 for kf0 in range(12):
-        #                         accum[0] += A[if0, jf0, kf0] * 0.2
-        #     if ff0 == 1:
-        #         for if0 in range(4):
-        #             for jf0 in range(8):
-        #                 B[if0, jf0] *= accum[0]
-
-        fused0.reorder(if0, jf0, ff0, kf0)
-
         # equivalent:
         # for if0 in range(4):
         #     for jf0 in range(8):
@@ -467,23 +440,6 @@ class SmokeTest(unittest.TestCase):
         #                 B[if0, jf0] *= accum[0]
 
         fused1 = fuse((nest0.create_schedule(), fused0), partial=1)
-        ff1, if1, jf1, ff0f1, kf1 = fused1.get_indices()
-        # equivalent:
-        # for ff1 in range(2):
-        #     if ff1 == 0:
-        #         for if1 in range(4):
-        #             accum[0] = B[if1, 0] * A[if1, 0, 0]
-        #     if ff1 == 1:
-        #         for if1 in range(4):
-        #             for jf1 in range(8):
-        #                 for ff0f1 in range(2):
-        #                     if ff0f1 == 0:
-        #                         for kf0 in range(12):
-        #                             accum[0] += A[if0, jf0, kf0] * 0.2
-        #                     if ff0f1 == 1:
-        #                         B[if1, jf1] *= accum[0]
-
-        fused1.reorder(if1, ff1, jf1, ff0f1, kf1)
         # equivalent:
         # for if1 in range(4):
         #     for ff1 in range(2):
@@ -944,7 +900,7 @@ class SmokeTest(unittest.TestCase):
         schedule0.reorder(i0, j0, k0)
         schedule1.reorder(i1, k1, j1)
         schedule = acc.fuse((schedule0, schedule1), partial=2)
-        f, i, j, k0, j1 = schedule.get_indices()
+        i, j, f, k0, j1 = schedule.get_indices()
 
         # TODO: support parameters
         # m, n = acc.create_parameters()
@@ -1014,7 +970,7 @@ class SmokeTest(unittest.TestCase):
         schedule0.reorder(i0, j0, jj0, k0)
         schedule1.reorder(i1, k1, j1, kk1)
         schedule = acc.fuse((schedule0, schedule1), partial=2)
-        f, i, j, jj0, k0, j1, kk1 = schedule.get_indices()
+        i, j, f, jj0, k0, j1, kk1 = schedule.get_indices()
 
         # TODO: support parameters
         # m, s = acc.create_parameters()
@@ -1086,7 +1042,7 @@ class SmokeTest(unittest.TestCase):
         schedule1.reorder(i1, k1, j1, kk1)
         schedule = acc.fuse((schedule0, schedule1), partial=2)
 
-        f, i, j, jj0, k0, j1, kk1 = schedule.get_indices()
+        i, j, f, jj0, k0, j1, kk1 = schedule.get_indices()
 
         # TODO: support parameters
         # m, t = acc.create_parameters()
@@ -1248,7 +1204,7 @@ class SmokeTest(unittest.TestCase):
         package = Package()
 
         diagonal_fetch_nest = Nest(shape=(N,))
-        diagonal_idx = diagonal_fetch_nest.get_indices()
+        diagonal_idx, = diagonal_fetch_nest.get_indices()
         @diagonal_fetch_nest.iteration_logic
         def _diag_fetch():
             diag_vec = Output.sub_array(offsets=(0,), shape=(N,))
@@ -1306,7 +1262,7 @@ class SmokeTest(unittest.TestCase):
         package = Package()
 
         diagonal_fetch_nest = Nest(shape=(N,))
-        diagonal_idx = diagonal_fetch_nest.get_indices()
+        diagonal_idx, = diagonal_fetch_nest.get_indices()
         @diagonal_fetch_nest.iteration_logic
         def _diag_fetch():
             diag_vec = Output.sub_array(offsets=(0,), shape=(N,))
@@ -1365,7 +1321,7 @@ class SmokeTest(unittest.TestCase):
         package = Package()
 
         diagonal_fetch_nest = Nest(shape=(N,))
-        diagonal_idx = diagonal_fetch_nest.get_indices()
+        diagonal_idx, = diagonal_fetch_nest.get_indices()
         @diagonal_fetch_nest.iteration_logic
         def _diag_fetch():
             diag_vec = Output.sub_array(offsets=(0,), shape=(N,))
@@ -1435,7 +1391,7 @@ class SmokeTest(unittest.TestCase):
         package = Package()
 
         nest = Nest(shape=(N,))
-        idx = nest.get_indices()
+        idx, = nest.get_indices()
         @nest.iteration_logic
         def _fn():
             size = N - idx
@@ -1474,7 +1430,7 @@ class SmokeTest(unittest.TestCase):
         current_outer_idx, extent = create_dimensions()
 
         inner_nest = Nest(shape=(extent,))
-        inner_idx = inner_nest.get_indices()
+        inner_idx, = inner_nest.get_indices()
         @inner_nest.iteration_logic
         def _inner_fn():
             full_idx = current_outer_idx + inner_idx
@@ -1490,7 +1446,7 @@ class SmokeTest(unittest.TestCase):
             function_opts=INTERNAL_FUNCTION_OPTS)
 
         outer_nest = Nest(shape=(N,))
-        outer_idx = outer_nest.get_indices()
+        outer_idx, = outer_nest.get_indices()
         @outer_nest.iteration_logic
         def _outer_fn():
             extent_val = accmin(N - outer_idx, cast(tile_size, ScalarType.index))
@@ -2664,7 +2620,7 @@ class SmokeTest(unittest.TestCase):
         C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
 
         nest = Nest(shape=(N, ))
-        i = nest.get_indices()
+        i, = nest.get_indices()
 
         @nest.iteration_logic
         def _():
@@ -2710,7 +2666,7 @@ class SmokeTest(unittest.TestCase):
         C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
 
         nest = Nest(shape=(N, ))
-        i = nest.get_indices()
+        i, = nest.get_indices()
 
         @nest.iteration_logic
         def _():
@@ -2772,7 +2728,7 @@ class SmokeTest(unittest.TestCase):
         C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
 
         nest = Nest(shape=(N, ))
-        i = nest.get_indices()
+        i, = nest.get_indices()
 
         @nest.iteration_logic
         def _():
@@ -4038,7 +3994,7 @@ class SmokeTest(unittest.TestCase):
         C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
 
         nest = Nest(shape=(N, ))
-        i = nest.get_indices()
+        i, = nest.get_indices()
 
         @nest.iteration_logic
         def _():
@@ -6142,8 +6098,7 @@ class SmokeTest(unittest.TestCase):
         schedule1.reorder(i1, j1, k1, ii1, jj1, kk1)
 
         schedule = fuse((schedule0, schedule1), partial=3)
-        f, i, j, k, ii0, jj0, kk0, ii1, jj1, kk1 = schedule.get_indices()
-        schedule.reorder(i, j, k, f, ii0, jj0, kk0, ii1, jj1, kk1)
+        i, j, k, f, ii0, jj0, kk0, ii1, jj1, kk1 = schedule.get_indices()
         plan = schedule.create_plan()
         plan._erase_loops([kk1])
 
@@ -6165,7 +6120,7 @@ class SmokeTest(unittest.TestCase):
         output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
 
         nest = Nest((m_extent,))
-        i = nest.get_indices()
+        i, = nest.get_indices()
         @nest.iteration_logic
         def _():
             output_arr[i] += input_arr[i]
@@ -6209,7 +6164,7 @@ class SmokeTest(unittest.TestCase):
         output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
 
         nest = Nest((m_extent,))
-        i = nest.get_indices()
+        i, = nest.get_indices()
         @nest.iteration_logic
         def _():
             output_arr[i] += input_arr[i]
@@ -6253,7 +6208,7 @@ class SmokeTest(unittest.TestCase):
         output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
 
         nest = Nest((m_extent,))
-        i = nest.get_indices()
+        i, = nest.get_indices()
         @nest.iteration_logic
         def _():
             output_arr[i] += input_arr[i]
@@ -6297,7 +6252,7 @@ class SmokeTest(unittest.TestCase):
         output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
 
         nest = Nest((m_extent,))
-        i = nest.get_indices()
+        i, = nest.get_indices()
         @nest.iteration_logic
         def _():
             output_arr[i] += input_arr[i]
@@ -6341,7 +6296,7 @@ class SmokeTest(unittest.TestCase):
         Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output,))
         package = Package()
         nest = Nest(shape=(N_output,))
-        i = nest.get_indices()
+        i, = nest.get_indices()
 
         @nest.iteration_logic
         def _nest():
@@ -6369,7 +6324,7 @@ class SmokeTest(unittest.TestCase):
         Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output,))
         package = Package()
         nest = Nest(shape=(N_input,))
-        i = nest.get_indices()
+        i, = nest.get_indices()
 
         @nest.iteration_logic
         def _nest():
@@ -6395,7 +6350,7 @@ class SmokeTest(unittest.TestCase):
         Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output,))
         package = Package()
         nest = Nest(shape=(N_input,))
-        i = nest.get_indices()
+        i, = nest.get_indices()
 
         @nest.iteration_logic
         def _nest():

@@ -135,6 +135,18 @@ A scheduled (ordered) loop nest with no target-specific implementation details.
 * [`skew`](<classes/Schedule/skew.md>) `(index, reference_index)`
 * [`split`](<classes/Schedule/split.md>) `(index, size)`
 * [`tile`](<classes/Schedule/tile.md>) `(indices, sizes)`
+* [`get_indices`](<classes/Schedule/get_indices.md>) `()`
+
+---
+
+## `class accera.FusedSchedule`
+
+Child class of `class accera.Schedule` created as a result of fusing multiple schedules.
+
+### Methods (in addition to the inherited functions from `class accera.Schedule`)
+* [`get_fusing_index`](<classes/FusedSchedule/get_fusing_index.md>) `()`
+* [`get_fused_indices`](<classes/FusedSchedule/get_fused_indices.md>) `()`
+* [`get_unfused_indices`](<classes/FusedSchedule/get_unfused_indices.md>) `()`
 
 ---
 

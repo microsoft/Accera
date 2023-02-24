@@ -59,6 +59,10 @@ os.environ["OMP_DISPLAY_AFFINITY"] = "TRUE"
 # TODO: Remove all @expectedFailure decorators as implementation converges with spec
 
 
+def _get_test_mode(correctness_check: bool = False):
+    return Package.Mode.RELEASE if correctness_check else TEST_MODE
+
+
 class DSLTest_01Arrays(unittest.TestCase):
 
     def _verify_nest(self, nest, args: Tuple[Array], package_name, correctness_check_values=None) -> None:
@@ -70,7 +74,7 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir)
+            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -178,7 +182,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             package.build(
                 package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -263,7 +267,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             package.build(
                 package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -312,7 +316,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             package.build(
                 package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -329,7 +333,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             package.build(
                 package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
                 fail_on_error=True,
             )
@@ -363,7 +367,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             package.build(
                 package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -776,7 +780,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
             shutil.rmtree(output_dir, ignore_errors=True)
-            package.build(test_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir)
+            package.build(test_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
             if function_name and correctness_check_values:
                 v.check_correctness(
                     function_name,
@@ -819,7 +823,7 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         nest = Nest((M, ))
 
-        i = nest.get_indices()
+        i, = nest.get_indices()
 
         @nest.iteration_logic
         def _():
@@ -1456,7 +1460,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         package.build(
             "test_output_array_range_node2",
             format=TEST_FORMAT | Package.Format.MLIR_VERBOSE,
-            mode=TEST_MODE,
+            mode=_get_test_mode(),
             output_dir=TEST_PACKAGE_DIR
         )
 
@@ -1515,7 +1519,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             package.build(
                 "test_output_array_gather_node",
                 format=TEST_FORMAT | Package.Format.MLIR_VERBOSE,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR
             )
 
@@ -1562,7 +1566,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             package.build(
                 "test_output_array_gather_node",
                 format=TEST_FORMAT | Package.Format.MLIR_VERBOSE,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR
             )
 
@@ -1592,7 +1596,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
         # build the HAT package
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir, _quiet=quiet)
+            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir, _quiet=quiet)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -2204,7 +2208,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             package.build(
                 package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -2227,7 +2231,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             package.build(
                 package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -2252,7 +2256,7 @@ class DSLTest_03Schedules(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir)
+            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -2514,7 +2518,7 @@ class DSLTest_03Schedules(unittest.TestCase):
         A = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(I, ))
 
         nest = Nest(shape=(I, ))
-        i = nest.get_indices()
+        i, = nest.get_indices()
 
         @nest.iteration_logic
         def _():
@@ -2786,7 +2790,7 @@ class DSLTest_03Schedules(unittest.TestCase):
             package.build(
                 package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -2845,9 +2849,7 @@ class DSLTest_04Fusing(unittest.TestCase):
 
         # Create a fused schedule
         schedule = fuse(schedule0, schedule1)
-        f, i, j = schedule.get_indices()
-
-        schedule.reorder(i, j, f)
+        i, j, f = schedule.get_indices()
 
         A_test = np.random.random(A.shape).astype(np.float32)
         B_test = np.random.random(B.shape).astype(np.float32)
@@ -2910,8 +2912,7 @@ class DSLTest_04Fusing(unittest.TestCase):
         schedule1 = nest1.create_schedule()
 
         schedule = fuse((schedule0, schedule1), partial=2)
-        f, i, j, k = schedule.get_indices()
-        schedule.reorder(i, j, f, k)
+        i, j, f, k = schedule.get_indices()
 
         # unfused indices (k) must not precede the fusing index (f)
         with self.assertRaises(ValueError):
@@ -2957,9 +2958,8 @@ class DSLTest_04Fusing(unittest.TestCase):
         s1 = n1.create_schedule()
 
         fs = fuse((s0, s1), partial=1)
-        f, i, j = fs.get_indices()
+        i, f, j = fs.get_indices()
         jj = fs.split(j, 2)
-        fs.reorder(i, f, j, jj)
 
         A_test_pre = np.random.random(A.shape).astype(np.float32)
         B_test_pre = np.random.random(B.shape).astype(np.float32)
@@ -3008,8 +3008,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         # be automatically end-padded with no-ops
 
         schedule = fuse(schedule0, schedule1)
-        f, i, j = schedule.get_indices()
-        schedule.reorder(i, j, f)
 
         # Emitted fused loop should look like:
         # for i in range(0, 16):
@@ -3073,9 +3071,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         # be automatically end-padded with no-ops
 
         schedule = fuse(schedule0, schedule1)
-        f, i, j = schedule.get_indices()
-        schedule.reorder(i, j, f)
-
         # Emitted fused loop should look like:
         # for i in range(0, 16):
         #   for j in range(0, 10):
@@ -3138,7 +3133,7 @@ class DSLTest_04Fusing(unittest.TestCase):
         # Create a fused schedule: the smaller iteration space (nest1) should
         # be automatically end-padded with no-ops
         schedule = fuse(schedule0, schedule1)
-        f, i, j = schedule.get_indices()
+        i, j, f = schedule.get_indices()
 
         # computing the output block-by-block:
         #  first computing C[0:4, 0:4] += A[0:4, 0:4]
@@ -3418,7 +3413,7 @@ class DSLTest_04Fusing(unittest.TestCase):
 
         # Create nest0 and schedule
         nest0 = Nest(A.shape)
-        i0 = nest0.get_indices()
+        i0, = nest0.get_indices()
 
         @nest0.iteration_logic
         def _():
@@ -3426,7 +3421,7 @@ class DSLTest_04Fusing(unittest.TestCase):
 
         # Create nest1 and schedule1
         nest1 = Nest(B.shape)
-        i1 = nest1.get_indices()
+        i1, = nest1.get_indices()
 
         @nest1.iteration_logic
         def _():
@@ -3439,7 +3434,7 @@ class DSLTest_04Fusing(unittest.TestCase):
         fused1 = fuse([s0, s1], partial=0)
 
         nest2 = Nest(C.shape)
-        i2 = nest2.get_indices()
+        i2, = nest2.get_indices()
 
         @nest2.iteration_logic
         def _():
@@ -3450,7 +3445,7 @@ class DSLTest_04Fusing(unittest.TestCase):
         fused2 = fuse([fused1, s2], partial=0)
 
         nest3 = Nest(D.shape)
-        i3 = nest3.get_indices()
+        i3, = nest3.get_indices()
 
         @nest3.iteration_logic
         def _():
@@ -3607,8 +3602,6 @@ class DSLTest_04Fusing(unittest.TestCase):
         schedule1.reorder(i1, j1, ii1, jj1)
 
         schedule_01 = fuse((schedule0, schedule1), partial=2)
-        f, i, j, ii0, jj0, ii1, jj1 = schedule_01.get_indices()
-        schedule_01.reorder(i, j, f, ii0, jj0, ii1, jj1)
 
         # Create nest2 and schedule2
         nest2 = Nest(shape=(M, N))
@@ -3641,12 +3634,8 @@ class DSLTest_04Fusing(unittest.TestCase):
         schedule3.reorder(i3, j3, ii3, jj3)
 
         schedule_23 = fuse((schedule2, schedule3), partial=2)
-        f_23, i_23, j_23, ii2, jj2, ii3, jj3 = schedule_23.get_indices()
-        schedule_23.reorder(i_23, j_23, f_23, ii2, jj2, ii3, jj3)
 
         schedule_0123 = fuse((schedule_01, schedule_23), partial=1)
-        f_0123, i_0123, j_01, f_01, ii0, jj0, ii1, jj1, j_23, f_23, ii2, jj2, ii3, jj3 = schedule_0123.get_indices()
-        schedule_0123.reorder(i_0123, f_0123, j_01, f_01, ii0, jj0, ii1, jj1, j_23, f_23, ii2, jj2, ii3, jj3)
 
         plan = schedule_0123.create_plan()
 
@@ -3877,7 +3866,7 @@ class DSLTest_04Fusing(unittest.TestCase):
         )
 
         matmul_kernel_nest = Nest((n_kernel_dim, ))
-        mmk_j = matmul_kernel_nest.get_indices()
+        mmk_j, = matmul_kernel_nest.get_indices()
 
         @matmul_kernel_nest.iteration_logic
         def _matmul():
@@ -4054,7 +4043,7 @@ class DSLTest_06PlansCaching(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir)
+            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -4263,7 +4252,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir)
+            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -4303,7 +4292,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
         my_target = Target(category=Target.Category.CPU, vector_bytes=16, vector_registers=2)
 
         nest = Nest(shape=(64, ))
-        i = nest.get_indices()
+        i, = nest.get_indices()
 
         @nest.iteration_logic
         def _():
@@ -4585,7 +4574,7 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir)
+            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -4754,7 +4743,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -4819,7 +4808,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -4876,7 +4865,7 @@ class DSLTest_09Parameters(unittest.TestCase):
                     package.build(
                         package_name,
                         format=TEST_FORMAT,
-                        mode=TEST_MODE,
+                        mode=_get_test_mode(correctness_check_values),
                         output_dir=output_dir,
                     )
                     if correctness_check_values:
@@ -4959,7 +4948,7 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=output_dir)
+            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -5026,7 +5015,7 @@ class DSLTest_09Parameters(unittest.TestCase):
                 package.build(
                     package_name,
                     format=TEST_FORMAT,
-                    mode=TEST_MODE,
+                    mode=_get_test_mode(correctness_check_values),
                     output_dir=output_dir,
                 )
                 if correctness_check_values:
@@ -5057,7 +5046,7 @@ class DSLTest_09Parameters(unittest.TestCase):
                 package_ii.build(
                     package_name,
                     format=TEST_FORMAT,
-                    mode=TEST_MODE,
+                    mode=_get_test_mode(correctness_check_values),
                     output_dir=output_dir,
                 )
             if correctness_check_values:
@@ -5088,7 +5077,7 @@ class DSLTest_09Parameters(unittest.TestCase):
                 package_partial.build(
                     package_name,
                     format=TEST_FORMAT,
-                    mode=TEST_MODE,
+                    mode=_get_test_mode(correctness_check_values),
                     output_dir=output_dir,
                 )
                 if correctness_check_values:
@@ -5119,7 +5108,7 @@ class DSLTest_09Parameters(unittest.TestCase):
                 package_partial_inner.build(
                     package_name,
                     format=TEST_FORMAT,
-                    mode=TEST_MODE,
+                    mode=_get_test_mode(correctness_check_values),
                     output_dir=output_dir,
                 )
                 if correctness_check_values:
@@ -5170,7 +5159,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -5219,7 +5208,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -5281,7 +5270,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -5325,12 +5314,8 @@ class DSLTest_09Parameters(unittest.TestCase):
         jj0_up = s0_up.split(j0_up, 16)
 
         fs = fuse((s0, s1), partial=1)
-        f, i, j, jj = fs.get_indices()
-        fs.reorder(i, f, j, jj)
 
         fs_up = fuse((s0_up, s1), partial=1)
-        f_up, i_up, j_up, jj_up = fs_up.get_indices()
-        fs_up.reorder(i_up, f_up, j_up, jj_up)
 
         package = Package()
         package_name = "test_fusion_parameterization_1"
@@ -5365,7 +5350,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -5437,7 +5422,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -5470,7 +5455,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         jj0 = s0.split(j0, P0)
 
         fs = fuse((s0, s1), partial=1)
-        f, i, j, jj = fs.get_indices()
+        i, f, j, jj = fs.get_indices()
         ii = fs.split(i, P1)
         fs.reorder(f, i, j, ii, jj)
 
@@ -5497,7 +5482,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -5530,7 +5515,7 @@ class DSLTest_09Parameters(unittest.TestCase):
         jj0 = s0.split(j0, P0)
 
         fs = fuse((s0, s1), partial=1)
-        f, i, j, jj = fs.get_indices()
+        i, f, j, jj = fs.get_indices()
         ii = fs.split(i, P1)
         fs.reorder(i, f, j, ii, jj)
         jjj = fs.split(jj, P2)
@@ -5598,7 +5583,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -5644,7 +5629,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -5713,7 +5698,7 @@ class DSLTest_09Parameters(unittest.TestCase):
             package.build(
                 name=package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -5846,7 +5831,7 @@ class DSLTest_10Packages(unittest.TestCase):
             package.build(
                 package_name,
                 format=Package.Format.HAT_STATIC,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
                 platform=Package.Platform.RASPBIAN,
             )
@@ -5875,7 +5860,7 @@ class DSLTest_10Packages(unittest.TestCase):
         package.add(plan, args=(A, ), base_name="func2")
 
         with verifiers.VerifyPackage(self, package_name):
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE)
+            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode())
 
     def test_debug_mode_1(self) -> None:
         M = N = K = 16
@@ -5997,9 +5982,8 @@ class DSLTest_10Packages(unittest.TestCase):
         schedule1 = nest1.create_schedule()
 
         schedule = fuse(schedule0, schedule1, partial=1)
-        f, i, j0, j1 = schedule.get_indices()
+        i, f, j0, j1 = schedule.get_indices()
         ii = schedule.split(i, 2)
-        schedule.reorder(i, ii, f, j0, j1)
 
         package = Package()
         package_name = "MyFusionDebugPackage"
@@ -6051,16 +6035,12 @@ class DSLTest_10Packages(unittest.TestCase):
 
         schedule1 = nest1.create_schedule()
 
-        # Reorder schedule1 before fusing
-        schedule1.reorder(j1, i1)
-        # Fuse schedule0 with the reordered schedule1
-        schedule = fuse(schedule0, schedule1)
-        f, a, b = schedule.get_indices()
-
         # Deliberately break logical equivalence
         # before: C[1,0] = C[1,0] * B[1,0] + A[1,0]
         # after: C[1,0] = (C[1,0] + A[1,0]) * B[1,0]
-        schedule.reorder(a, b, f)
+        schedule1.reorder(j1, i1)
+        # Fuse schedule0 with the reordered schedule1
+        schedule = fuse(schedule0, schedule1)
 
         package = Package()
         package_name = "MyFusionDebugPackageIncorrect"
@@ -6116,8 +6096,6 @@ class DSLTest_10Packages(unittest.TestCase):
         schedule1 = nest1.create_schedule()
 
         schedule_f1 = fuse(schedule0, schedule1)
-        f, i, j = schedule_f1.get_indices()
-        schedule_f1.reorder(i, j, f)
 
         nest2 = Nest(shape=(M, N))
         i2, j2 = nest2.get_indices()
@@ -6182,8 +6160,6 @@ class DSLTest_10Packages(unittest.TestCase):
         schedule1 = nest1.create_schedule()
 
         schedule_f1 = fuse(schedule0, schedule1)
-        f, i, j = schedule_f1.get_indices()
-        schedule_f1.reorder(i, j, f)
 
         nest2 = Nest(shape=(M, N))
         i2, j2 = nest2.get_indices()
@@ -6260,7 +6236,7 @@ class DSLTest_10Packages(unittest.TestCase):
             package.build(
                 package_name,
                 format=TEST_FORMAT,
-                mode=TEST_MODE,
+                mode=_get_test_mode(),
                 output_dir=TEST_PACKAGE_DIR,
             )
 
@@ -6309,7 +6285,7 @@ class DSLTest_10Packages(unittest.TestCase):
         make_test_fn(package, A, B, C)
         package_name = "test_logic_function_conditionals"
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
-            package.build(package_name, format=TEST_FORMAT, mode=TEST_MODE, output_dir=TEST_PACKAGE_DIR)
+            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(), output_dir=TEST_PACKAGE_DIR)
 
 
 class DSLTest_11AutoPlan(unittest.TestCase):

@@ -7,6 +7,7 @@
 
 #include "AcceraPasses.h"
 #include "vectorization/VectorizationUtil.h"
+#include "nest/LoopNestToValue.h"
 
 #include <ir/include/IRUtil.h>
 #include <ir/include/value/ValueDialect.h>
@@ -34,6 +35,7 @@ namespace v = accera::ir::value;
 using namespace accera::transforms;
 using namespace accera::ir::util;
 using namespace accera::utilities;
+using namespace accera::transforms::vectorization;
 
 using namespace mlir;
 
@@ -582,17 +584,82 @@ LogicalResult InPlaceUnrollAffineForOpConversion::matchAndRewrite(AffineForOp af
     return success();
 }
 
+namespace vectr = accera::transforms::vectorization;
 
-// TODO : implement
-// struct VectorizationPass : public accera::transforms::AcceraVectorizationPassBase<VectorizationPass>
-// {
-//     void runOnOperation() final
-//     {
-//         auto* context = &getContext();
-//         auto op = getOperation();
-//         // TODO : implement with LoopNestToValueFunc vectorization sequence
-//     }
-// };
+struct VectorizationPass : public accera::transforms::AcceraVectorizationPassBase<VectorizationPass>
+{
+    VectorizationPass(const vectr::VectorizationPassOptions& options = {})
+    {
+        printVecOpDetails = options.printVecOpDetails;
+    }
+
+    void runOnOperation() final
+    {
+        auto* context = &getContext();
+        auto op = getOperation();
+
+        mlir::GreedyRewriteConfig topDownConfig; // Some patterns require a top-down handling of ops to ensure relative orders stay consistent
+        topDownConfig.useTopDownTraversal = true;
+
+        {
+            RewritePatternSet patterns(context);
+            populateLoopSimplificationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(op, std::move(patterns));
+        }
+
+        {
+            RewritePatternSet patterns(context);
+            populateVectorizePatterns(printVecOpDetails, patterns);
+            util::FillCanonicalPatternsRecursively(op, patterns);
+            (void)applyPatternsAndFoldGreedily(op, std::move(patterns), topDownConfig);
+        }
+
+        {
+            RewritePatternSet patterns(context);
+            populateLoopSimplificationPatterns(patterns);
+            populateLoopOptimizationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(op, std::move(patterns));
+        }
+    }
+};
+
+
+struct VectorizationUnrollPass : public accera::transforms::AcceraVectorizationUnrollPassBase<VectorizationUnrollPass>
+{
+    VectorizationUnrollPass(const vectr::VectorizationPassOptions& options = {})
+    {
+        printVecOpDetails = options.printVecOpDetails;
+    }
+
+    void runOnOperation() final
+    {
+        auto* context = &getContext();
+        auto op = getOperation();
+
+        mlir::GreedyRewriteConfig topDownConfig; // Some patterns require a top-down handling of ops to ensure relative orders stay consistent
+        topDownConfig.useTopDownTraversal = true;
+
+        {
+            RewritePatternSet patterns(context);
+            populateLoopSimplificationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(op, std::move(patterns));
+        }
+
+        {
+            RewritePatternSet patterns(context);
+            populateVectorizeUnrollPatterns(printVecOpDetails, patterns);
+            util::FillCanonicalPatternsRecursively(op, patterns);
+            (void)applyPatternsAndFoldGreedily(op, std::move(patterns), topDownConfig);
+        }
+
+        {
+            RewritePatternSet patterns(context);
+            populateLoopSimplificationPatterns(patterns);
+            populateLoopOptimizationPatterns(patterns);
+            (void)applyPatternsAndFoldGreedily(op, std::move(patterns));
+        }
+    }
+};
 
 } // namespace
 
@@ -608,9 +675,20 @@ void populateVectorizeUnrollPatterns(bool printVectorizationDetails, mlir::Rewri
     patterns.insert<InPlaceUnrollAffineForOpConversion>(patterns.getContext(), printVectorizationDetails);
 }
 
-// TODO : implement
-// std::unique_ptr<mlir::Pass> createVectorizationPass()
-// {
-//     return std::make_unique<VectorizationPass>();
-// }
+std::unique_ptr<mlir::Pass> createVectorizationPass(const VectorizationPassOptions& options)
+{
+    return std::make_unique<VectorizationPass>(options);
+}
+std::unique_ptr<mlir::Pass> createVectorizationPass()
+{
+    return std::make_unique<VectorizationPass>();
+}
+std::unique_ptr<mlir::Pass> createVectorizationUnrollPass(const VectorizationPassOptions& options)
+{
+    return std::make_unique<VectorizationUnrollPass>(options);
+}
+std::unique_ptr<mlir::Pass> createVectorizationUnrollPass()
+{
+    return std::make_unique<VectorizationUnrollPass>();
+}
 } // namespace accera::transforms::vectorization

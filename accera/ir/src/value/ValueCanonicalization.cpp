@@ -245,6 +245,55 @@ mlir::Value constantBuildHelper<mlir::arith::ConstantFloatOp>(mlir::OpBuilder& b
 
 struct ValueBinOpSimplification : public mlir::OpRewritePattern<v::BinOp>
 {
+    mlir::Value handlePartiallyConstantBoolOp(mlir::PatternRewriter& rewriter, v::BinaryOpPredicate pred, mlir::Value lhs, mlir::Value rhs) const
+    {
+        auto lhsCast = lhs.getDefiningOp<mlir::arith::ConstantIntOp>();
+        auto rhsCast = rhs.getDefiningOp<mlir::arith::ConstantIntOp>();
+        if ((lhsCast == nullptr && rhsCast == nullptr) ||
+            (lhsCast != nullptr && rhsCast != nullptr))
+        {
+            return nullptr;
+        }
+        // Only one is non-null
+        auto constOperand = lhsCast == nullptr ? rhsCast : lhsCast; 
+        auto otherOperand = lhsCast == nullptr ? lhs : rhs;
+        auto type = constOperand.getType();
+        if (!type.isa<mlir::IntegerType>() || type.cast<mlir::IntegerType>().getWidth() != 1)
+        {
+            return nullptr;
+        }
+
+        auto boolResult = constOperand.value() != 0;
+        auto loc = lhs.getLoc();
+        switch (pred)
+        {
+        case v::BinaryOpPredicate::LOGICAL_AND:
+            if (boolResult)
+            {
+                // (arg AND true) == (arg)
+                return otherOperand;
+            }
+            else
+            {
+                // (arg AND false) == (false)
+                return rewriter.create<mlir::arith::ConstantIntOp>(loc, static_cast<int64_t>(boolResult), 1 /* bitwidth = i1 for boolean values */);
+            }
+        case v::BinaryOpPredicate::LOGICAL_OR:
+            if (boolResult)
+            {
+                // (arg OR true) == (true)
+                return rewriter.create<mlir::arith::ConstantIntOp>(loc, static_cast<int64_t>(boolResult), 1 /* bitwidth = i1 for boolean values */);
+            }
+            else
+            {
+                // (arg OR false) == (arg)
+                return otherOperand;
+            }
+        default:
+            return nullptr;
+        }
+    }
+
     using OpRewritePattern::OpRewritePattern;
 
     mlir::arith::ConstantOp handleConstantBoolOp(mlir::PatternRewriter& rewriter, v::BinaryOpPredicate pred, mlir::arith::ConstantOp lhs, mlir::arith::ConstantOp rhs) const
@@ -314,6 +363,7 @@ struct ValueBinOpSimplification : public mlir::OpRewritePattern<v::BinOp>
         // TODO : if we lowered BinOps to MLIR earlier than other value dialect ops, the built-in arithmetic canonicalizations and lowerings would handle this
         auto lhs = op.lhs();
         auto rhs = op.rhs();
+        auto pred = op.getPredicate();
         auto resultElementType = accera::ir::util::GetElementType(op.result().getType());
         auto lhsElementType = accera::ir::util::GetElementType(lhs.getType());
         auto rhsElementType = accera::ir::util::GetElementType(rhs.getType());
@@ -327,27 +377,32 @@ struct ValueBinOpSimplification : public mlir::OpRewritePattern<v::BinOp>
         {
             if (auto rhsConstantOp = rhs.getDefiningOp<mlir::arith::ConstantOp>())
             {
-                if (mlir::Value intOp = handleConstantOp<mlir::arith::ConstantIntOp>(rewriter, op.getPredicate(), lhsConstantOp, rhsConstantOp))
+                if (mlir::Value intOp = handleConstantOp<mlir::arith::ConstantIntOp>(rewriter, pred, lhsConstantOp, rhsConstantOp))
                 {
                     rewriter.replaceOp(op, { intOp });
                     return mlir::success();
                 }
-                else if (mlir::Value indexOp = handleConstantOp<mlir::arith::ConstantIndexOp>(rewriter, op.getPredicate(), lhsConstantOp, rhsConstantOp))
+                else if (mlir::Value indexOp = handleConstantOp<mlir::arith::ConstantIndexOp>(rewriter, pred, lhsConstantOp, rhsConstantOp))
                 {
                     rewriter.replaceOp(op, { indexOp });
                     return mlir::success();
                 }
-                else if (mlir::Value floatOp = handleConstantOp<mlir::arith::ConstantFloatOp>(rewriter, op.getPredicate(), lhsConstantOp, rhsConstantOp))
+                else if (mlir::Value floatOp = handleConstantOp<mlir::arith::ConstantFloatOp>(rewriter, pred, lhsConstantOp, rhsConstantOp))
                 {
                     rewriter.replaceOp(op, { floatOp });
                     return mlir::success();
                 }
-                else if (mlir::Value boolOp = handleConstantBoolOp(rewriter, op.getPredicate(), lhsConstantOp, rhsConstantOp))
+                else if (mlir::Value boolOp = handleConstantBoolOp(rewriter, pred, lhsConstantOp, rhsConstantOp))
                 {
                     rewriter.replaceOp(op, { boolOp });
                     return mlir::success();
                 }
             }
+        }
+        if (auto partiallyConstReplaceVal = handlePartiallyConstantBoolOp(rewriter, pred, lhs, rhs))
+        {
+            rewriter.replaceOp(op, { partiallyConstReplaceVal });
+            return mlir::success();
         }
         return mlir::failure();
     }

@@ -84,10 +84,7 @@ class Nest:
             else:
                 self._shape[0][1].name = names[0]
 
-        if len(self._shape) > 1:
-            return [idx for _, idx in self._shape]
-        else:
-            return self._shape[0][1]
+        return [idx for _, idx in self._shape]
 
     def iteration_logic(self, logic: Callable = None, predicate=None, placement=None):
         """Adds iteration logic to the nest

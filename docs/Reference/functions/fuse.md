@@ -17,7 +17,7 @@ argument | description | type/default
 `partial` | The number of dimensions to fuse. If not specified, all dimensions will be fused | non-negative integer
 
 ## Returns
-The fused `Schedule`
+Instance of `FusedSchedule`
 
 ## Examples
 
@@ -26,10 +26,6 @@ Full fusing of same-shaped iteration spaces:
 ```python
 # Fuse all dimensions of schedule0 and schedule1
 schedule = acc.fuse(schedule0, schedule1)
-f, i, j = schedule.get_indices()
-
-# Reorder the indices so that the fused dimension is the innermost
-schedule.reorder(i, j, f)
 ```
 
 Partial iteration space fusing:
@@ -37,10 +33,6 @@ Partial iteration space fusing:
 ```python
 # Fuse the first two dimensions of schedule0 and schedule1
 schedule = acc.fuse((schedule0, schedule1), partial=2)
-f, i, j, k = schedule.get_indices()
-
-# Reorder the indices to interleave the schedules
-schedule.reorder(i, j, f, k)
 ```
 
 

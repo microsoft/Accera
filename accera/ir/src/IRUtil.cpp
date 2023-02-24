@@ -1304,34 +1304,54 @@ namespace util
             return shape;
         }
 
-        // Currently this utility only supports dynamic memrefs that are function arguments with dimension size handles which are
-        // also function arguments
-        if (!memref.isa<mlir::BlockArgument>())
+        // Currently this utility only supports dynamic memrefs that are alloc ops with shape args or
+        // function arguments with dimension size handles which are also function arguments
+        if (auto allocOp = memref.getDefiningOp<ir::value::AllocOp>())
         {
-            throw LogicException(LogicExceptionErrors::notImplemented, "Currently only supports function arguments for dynamic memref shape resolution");
+            // Assumes the operands to AllocOp are ordered in the logical shape order where they're needed
+            unsigned currentOperandIndex = 0;
+            auto allocOperands = allocOp.operands();
+            for (unsigned dimIdx = 0; dimIdx < memrefType.getRank(); ++dimIdx)
+            {
+                if (memrefType.isDynamicDim(dimIdx))
+                {
+                    shape.push_back(allocOperands[currentOperandIndex++]);
+                }
+                else
+                {
+                    shape.push_back(memrefType.getDimSize(dimIdx));
+                }
+            }
         }
-        auto memrefBlockArg = memref.cast<mlir::BlockArgument>();
-        auto memrefFuncArgIdx = memrefBlockArg.getArgNumber();
-        auto blockParentOp = memrefBlockArg.getOwner()->getParentOp();
-
-        auto allFuncArgs = memrefBlockArg.getOwner()->getArguments();
-        std::vector<mlir::Type> allFuncArgTypes;
-        allFuncArgTypes.reserve(allFuncArgs.size());
-        std::transform(allFuncArgs.begin(), allFuncArgs.end(), std::back_inserter(allFuncArgTypes), [](mlir::Value val) { return val.getType(); });
-
-        std::vector<std::vector<int64_t>> dynamicArgSizeRefs = ParseDynamicArgSizeReferences(blockParentOp, allFuncArgTypes);
-
-        for (unsigned dimIdx = 0; dimIdx < memrefType.getRank(); ++dimIdx)
+        else if (memref.isa<mlir::BlockArgument>())
         {
-            if (memrefType.isDynamicDim(dimIdx))
+            auto memrefBlockArg = memref.cast<mlir::BlockArgument>();
+            auto memrefFuncArgIdx = memrefBlockArg.getArgNumber();
+            auto blockParentOp = memrefBlockArg.getOwner()->getParentOp();
+
+            auto allFuncArgs = memrefBlockArg.getOwner()->getArguments();
+            std::vector<mlir::Type> allFuncArgTypes;
+            allFuncArgTypes.reserve(allFuncArgs.size());
+            std::transform(allFuncArgs.begin(), allFuncArgs.end(), std::back_inserter(allFuncArgTypes), [](mlir::Value val) { return val.getType(); });
+
+            std::vector<std::vector<int64_t>> dynamicArgSizeRefs = ParseDynamicArgSizeReferences(blockParentOp, allFuncArgTypes);
+
+            for (unsigned dimIdx = 0; dimIdx < memrefType.getRank(); ++dimIdx)
             {
-                auto shapeRefArgIdx = dynamicArgSizeRefs[memrefFuncArgIdx][dimIdx];
-                shape.push_back(allFuncArgs[shapeRefArgIdx]);
+                if (memrefType.isDynamicDim(dimIdx))
+                {
+                    auto shapeRefArgIdx = dynamicArgSizeRefs[memrefFuncArgIdx][dimIdx];
+                    shape.push_back(allFuncArgs[shapeRefArgIdx]);
+                }
+                else
+                {
+                    shape.push_back(memrefType.getDimSize(dimIdx));
+                }
             }
-            else
-            {
-                shape.push_back(memrefType.getDimSize(dimIdx));
-            }
+        }
+        else
+        {
+            throw LogicException(LogicExceptionErrors::notImplemented, "Currently only supports local allocations or function arguments for dynamic memref shape resolution");
         }
         return shape;
     }
@@ -1493,6 +1513,31 @@ namespace util
     {
         // TODO: change this to also look for terminator ops
         return op->getNumResults() == 0;
+    }
+
+    std::vector<mlir::Value> GetDynamicOffsetSymbols(mlir::Value val)
+    {
+        std::vector<mlir::Value> offsetSymbols;
+        // If there are dynamic offsets, get the source handle for those and incorporate them into the offsetSymbols
+        if (auto memrefSrcOp = val.getDefiningOp())
+        {
+            // Currently only handles value::SplitDimOp and value::ViewOp
+            while (auto splitDimOp = mlir::dyn_cast_or_null<ir::value::SplitDimOp>(memrefSrcOp))
+            {
+                memrefSrcOp = splitDimOp.getViewSource().getDefiningOp();
+            }
+            if (auto viewOp = mlir::dyn_cast_or_null<ir::value::ViewOp>(memrefSrcOp))
+            {
+                for (auto offset : viewOp.offsets())
+                {
+                    if (!offset.getDefiningOp<mlir::arith::ConstantOp>())
+                    {
+                        offsetSymbols.push_back(offset);
+                    }
+                }
+            }
+        }
+        return offsetSymbols;
     }
 
 } // namespace util

@@ -77,7 +77,7 @@ No installation is required. This will launch a Jupyter notebook with the quicks
     package.add(schedule, args=(A, B, C), base_name="matmul_relu_fusion_naive")
 
     # transform the schedule, add to the package
-    f, i, j, k = schedule.get_indices()
+    i, j, f, k = schedule.get_indices()
     ii, jj = schedule.tile({
         i: 16,
         j: 16

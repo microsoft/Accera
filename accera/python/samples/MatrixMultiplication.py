@@ -119,12 +119,10 @@ def MLAS_with_bias_and_alpha_scaling(
     bias_c_idxs = bias_stack_idxs + (bias_j, )
 
     if C is not None:
-
         @bias_nest.iteration_logic
         def _():
             Y[bias_y_idxs] = Scalar(beta) * C[bias_c_idxs]
     else:
-
         @bias_nest.iteration_logic
         def _():
             Y[bias_y_idxs] = Scalar(0.0)
@@ -172,17 +170,12 @@ def MLAS_with_bias_and_alpha_scaling(
         compute_schedule,
         scale_schedule,
     ), partial=len(stack) + 2)
-    idxs_f0 = fused0.get_indices()
-    f0, stack_f0, i_f0, j_f0, k_f0 = idxs_f0[0], tuple(idxs_f0[1:-3]), *idxs_f0[-3:]
-    fused0.reorder(*stack_f0, i_f0, j_f0, f0, k_f0)
 
     fused1 = fuse((bias_schedule, fused0), partial=len(stack) + 2)
-    idxs_f1 = fused1.get_indices()
-    f1, stack_f1, i_f1, j_f1, f0_f1, k_f1 = idxs_f1[0], tuple(idxs_f1[1:-4]), *idxs_f1[-4:]
-
-    fused_Y_idxs = stack_f1 + (i_f1, j_f1)
-    fused_A_idxs = stack_f1 + (i_f1, k_f1) if not transA else (k_f1, i_f1)
-    fused_B_idxs = stack_f1 + (k_f1, j_f1) if not transB else (j_f1, k_f1)
+    f1 = fused1.get_fusing_index()
+    fused_dims = fused1.get_fused_indices()
+    stack_f1, i_f1, j_f1 = tuple(fused_dims[:-2]), *fused_dims[-2:]
+    f0_f1, k_f1 = fused1.get_unfused_indices()
 
     jj = fused1.split(j_f1, column_block)
 
@@ -331,14 +324,10 @@ def MLAS_with_bias(
 
     fused_schedule = fuse((bias_schedule, compute_schedule), partial=len(stack) + 2)
 
-    fused_idxs = fused_schedule.get_indices()
-    f, fused_stack_idxs, fused_i, fused_j, k = fused_idxs[0], tuple(fused_idxs[1:-3]), *fused_idxs[-3:]
-
-    fused_Y_idxs = fused_stack_idxs + (fused_i, fused_j)
-    fused_A_idxs = fused_stack_idxs + \
-        (fused_i, k) if not transA else (k, fused_i)
-    fused_B_idxs = fused_stack_idxs + \
-        (k, fused_j) if not transB else (fused_j, k)
+    f = fused_schedule.get_fusing_index()
+    k = fused_schedule.get_unfused_indices()[0]
+    fused_indices = fused_schedule.get_fused_indices()
+    fused_stack_idxs, fused_i, fused_j = tuple(fused_indices[:-2]), *fused_indices[-2:]
 
     jj = fused_schedule.split(fused_j, column_block)
     kk = fused_schedule.split(k, inner_dim_block)

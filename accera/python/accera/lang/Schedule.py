@@ -46,13 +46,7 @@ class Schedule:
         self._nest = nest
         self._delayed_calls = {}
         self._parameterized_index_map = {}
-
-        # nest.get_indices gives us a single index if there's only one index
         self._indices = nest.get_indices()
-        try:
-            _ = iter(self._indices)
-        except TypeError:
-            self._indices: List[LoopIndex] = [self._indices]
 
         shape = nest.get_shape()
         if any([isinstance(s, DelayedParameter) for s in shape]):
@@ -631,6 +625,8 @@ class FusedSchedule(Schedule):
         self._indices = (
             [self._fusing_index] + self._common_indices + self._unfused_indices
         )
+
+        self.reorder(self._common_indices + [self._fusing_index] + self._unfused_indices)
 
     def print(self, per_index_fn: Callable[[LoopIndex], List[str]] = None):
         # TODO

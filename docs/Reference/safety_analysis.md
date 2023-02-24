@@ -15,12 +15,12 @@ Fusing is another way to create a schedule (see [Section 4 of the Accera manual]
 ```python
 schedule = acc.fuse((schedule0, schedule1, ...), partial=m)
 ```
-At this point, `schedule` is equivalent to sequentially executing the individual schedules. However, is the fused `schedule` safe? In other words, does `schedule` guarantee the preservation of underlying logic, regardless of the applied transformation?
+At this point, `schedule` is equivalent to sequentially executing the individual schedules for each iteration of the fused dimensions. However, is the fused `schedule` safe? In other words, does `schedule` guarantee the preservation of underlying logic, regardless of the applied transformation?
 
 The dimensions of `schedule` fall into three categories:
 
-* *Fusing dimensions*: at first, this category contains a single dimension, the first dimension of `schedule`. However, if this dimension is split, its derived dimensions are added to this category.
 * *Fused dimensions*: at first, this category contains the next *m* dimensions of `schedule`. If any of these dimensions are split, the derived dimensions are also added to this category.
+* *Fusing dimensions*: at first, this category contains a single dimension, the first dimension of `schedule`. However, if this dimension is split, its derived dimensions are added to this category.
 * *Unfused dimensions*: all the remaining dimensions.
 
 Note that the individual schedules being fused may have been created by previous fusing operations. The categories above relate to the role of each dimension in the *current* fusing operation.
@@ -39,7 +39,7 @@ To make the theorem less abstract, we demonstrate how it applies to a simple exa
 i0, j0, k0 = schedule0.get_indices() # redundant operation, included for clarity
 i1, j1, k1 = schedule1.get_indices() # redundant operation, included for clarity
 schedule = acc.fuse((schedule0, schedule1), partial=2)
-f, i, j, k0, k1 = schedule.get_indices()
+i, j, f, k0, k1 = schedule.get_indices()
 ```
 Next, say that we transform `schedule` by tiling dimensions `j` and `k0` to reorder the dimensions as follows:
 ```python

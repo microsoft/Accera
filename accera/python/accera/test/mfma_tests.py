@@ -315,7 +315,7 @@ class TensorizeTest(unittest.TestCase):
         matmul_sched = matmul_nest.create_schedule()
         relu_sched = relu_nest.create_schedule()
         schedule = acc.fuse(matmul_sched, relu_sched, partial = 2)
-        f, i, j, k = schedule.get_indices()
+        i, j, f, k = schedule.get_indices()
 
         ii, jj, kk = schedule.tile({
             i: block_tile[0],

@@ -152,7 +152,11 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     pmAdaptor.addPass(value::createValueFuncToTargetPass({ options.dumpIntraPassIR.getValue(), options.basename + "ValueFuncToTargetPass_Subpasses" }));
     pmAdaptor.addPass(createSymbolDCEPass());
     pmAdaptor.addPass(affine::createAffineSimplificationPass());
+    pmAdaptor.addPass(createCanonicalizerPass());
+    pmAdaptor.addPass(vectorization::createVectorizationPass({ options.printVecOpDetails.getValue() }));
+    pmAdaptor.addPass(vectorization::createVectorizationUnrollPass({ options.printVecOpDetails.getValue() }));
     pmAdaptor.addPass(value::createValueUnrollingPass());
+    pmAdaptor.addPass(affine::createAffineSimplificationPass());
 
     auto funcOpPM = pmAdaptor.nestPassManager([&]() -> OpPassManager& { return pm.nest<v::ValueModuleOp>().nest<FuncOp>(); });
     funcOpPM.addPass(createConvertLinalgToAffineLoopsPass());

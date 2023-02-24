@@ -332,6 +332,57 @@ def LoopNestToValueFunc : Pass<"loopnest-to-value-func", "accera::ir::value::Val
   ];
 }
 
+
+//===----------------------------------------------------------------------===//
+// AcceraVectorizationPass
+//===----------------------------------------------------------------------===//
+
+def AcceraVectorizationPass : Pass<"acc-vectorize", "::mlir::ModuleOp"> {
+  let summary = "Vectorize AffineForOps marked for vectorization";
+  let description = [{
+      This pass finds AffineForOps marked for vectorization and vectorizes the ops in those loops
+    }];
+  let constructor = "accera::transforms::vectorization::createVectorizationPass()";
+  let options = [
+    Option<"printVecOpDetails", "print-vec-details", "bool", /*default=*/"false",
+           "Print details about op vectorization">
+  ];
+  let dependentDialects = [
+    "accera::ir::value::ValueDialect",
+    "mlir::StandardOpsDialect",
+    "mlir::AffineDialect",
+    "mlir::scf::SCFDialect",
+    "mlir::vector::VectorDialect",
+    "mlir::memref::MemRefDialect"
+  ];
+}
+
+
+//===----------------------------------------------------------------------===//
+// AcceraVectorizationUnrollPass
+//===----------------------------------------------------------------------===//
+
+def AcceraVectorizationUnrollPass : Pass<"acc-vectorize-unroll", "::mlir::ModuleOp"> {
+  let summary = "Unroll AffineForOps marked for vectorized unroll";
+  let description = [{
+      This pass finds AffineForOps marked for vectorized unroll and unrolls those loops op-by-op
+    }];
+  let constructor = "accera::transforms::vectorization::createVectorizationUnrollPass()";
+  let options = [
+    Option<"printVecOpDetails", "print-vec-details", "bool", /*default=*/"false",
+           "Print details about op vectorization">
+  ];
+  let dependentDialects = [
+    "accera::ir::value::ValueDialect",
+    "mlir::StandardOpsDialect",
+    "mlir::AffineDialect",
+    "mlir::scf::SCFDialect",
+    "mlir::vector::VectorDialect",
+    "mlir::memref::MemRefDialect"
+  ];
+}
+
+
 //===----------------------------------------------------------------------===//
 // ConvertVulkanLaunchFuncToVulkanCallsWithTiming
 //===----------------------------------------------------------------------===//

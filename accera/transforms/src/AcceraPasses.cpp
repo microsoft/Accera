@@ -153,6 +153,14 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     pmAdaptor.addPass(createSymbolDCEPass());
     pmAdaptor.addPass(affine::createAffineSimplificationPass());
     pmAdaptor.addPass(createCanonicalizerPass());
+    pmAdaptor.addPass(createCSEPass());
+    pmAdaptor.addPass(affine::createAcceraAffineLoopNormalizePass());
+
+    pmAdaptor.addPass(createCanonicalizerPass());
+    pmAdaptor.addPass(createCSEPass());
+    pmAdaptor.addPass(affine::createAffineSimplificationPass());
+    pmAdaptor.addPass(createCanonicalizerPass());
+    pmAdaptor.addPass(createCSEPass());
     pmAdaptor.addPass(vectorization::createVectorizationPass({ options.printVecOpDetails.getValue() }));
     pmAdaptor.addPass(vectorization::createVectorizationUnrollPass({ options.printVecOpDetails.getValue() }));
     pmAdaptor.addPass(value::createValueUnrollingPass());

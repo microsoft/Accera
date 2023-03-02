@@ -7,6 +7,8 @@
 #pragma once
 
 #include "affine/AffineSimplifications.h"
+#include "affine/AffineLoopNormalize.h"
+#include "affine/CheckBoundsPass.h"
 #include "exec/ExecutionPlanToAffineLoweringPass.h"
 #include "gpu/AcceraToGPUPass.h"
 #include "gpu/AcceraVulkanPasses.h"

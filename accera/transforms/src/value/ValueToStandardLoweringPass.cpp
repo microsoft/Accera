@@ -412,6 +412,16 @@ public:
         PatternRewriter& rewriter) const override;
 };
 
+using ValueVHADDOp = vir::vhadd;
+struct VhaddLowering : public OpRewritePattern<ValueVHADDOp>
+{
+    using OpRewritePattern<ValueVHADDOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(
+        ValueVHADDOp op,
+        PatternRewriter& rewriter) const override;
+};
+
 using vir::EnterProfileRegionOp;
 using vir::ExitProfileRegionOp;
 using vir::PrintProfileResultsOp;
@@ -2630,6 +2640,67 @@ LogicalResult PrintOpLowering::matchAndRewrite(
     return success();
 }
 
+LogicalResult VhaddLowering::matchAndRewrite(ValueVHADDOp op, PatternRewriter& rewriter) const
+{
+    // vphaddd(ymm0, ymm1) -> [ymm0[0]+ymm0[1], ymm0[2]+ymm0[3], 
+    //                         ymm1[0]+ymm1[1], ymm1[2]+ymm1[3], 
+    //                         ymm0[4]+ymm0[5], ymm0[6]+ymm0[7], 
+    //                         ymm1[4]+ymm1[5], ymm1[6]+ymm1[7]]
+    // this is equivalent to 
+    // tmp0 = shuffle ymm0, ymm1 : [0, 2, 8, 10, 4, 6, 12, 14]
+    // tmp1 = shuffle ymm0, ymm1 : [1, 3, 9, 11, 5, 7, 13, 15]
+    // res = tmp0 + tmp1
+    // (And similarly for other element types within 256-bit vectors)
+
+    auto loc = op.getLoc();
+
+    auto lhs = op.lhs();
+    auto rhs = op.rhs();
+
+    auto vecType = lhs.getType().cast<mlir::VectorType>();
+    auto rank = vecType.getRank();
+    assert(rank == 1 && "vhadd only supports rank-1 vectors");
+    auto elementType = vecType.getElementType();
+    auto elementCount = vecType.getNumElements();
+    auto bitwidth = elementType.getIntOrFloatBitWidth();
+    assert((bitwidth == 16 || bitwidth == 32 || bitwidth == 64) && "vhadd only supports 16-bit, 32-bit, and 64-bit elements");
+
+    auto elementsPerGroup = 64 / bitwidth;
+    const size_t groups = static_cast<size_t>(elementCount * bitwidth) / 64; // 2 groups for 128 bits, 4 groups for 256 bits
+
+    //          Group 0      Group 1         Group 2        Group 3
+    // 64-bit: [          0,              4,             2,              6 ]
+    // 32-bit: [       0, 2,          8, 10,          4, 6,         12, 14 ]
+    // 16-bit: [ 0, 2, 4, 6, 16, 18, 20, 22, 8, 10, 12, 14, 24, 26, 28, 30 ]
+    std::vector<int64_t> evensMask;
+    evensMask.reserve(elementsPerGroup * groups);
+
+    //          Group 0      Group 1         Group 2        Group 3
+    // 64-bit: [          1,              5,             3,              7 ]
+    // 32-bit: [       1, 3,          9, 11,          5, 7,         13, 15 ]
+    // 16-bit: [ 1, 3, 5, 7, 17, 19, 21, 23, 9, 11, 13, 15, 25, 27, 29, 31 ]
+    std::vector<int64_t> oddsMask; 
+    oddsMask.reserve(elementsPerGroup * groups);
+
+    for (size_t groupIdx = 0; groupIdx < groups; ++groupIdx)
+    {
+        auto groupOffset = (groupIdx % 2) * elementCount; // Every odd group is from the second vector, and so is offset by a vectors-worth of elements
+        auto offsetInVector = (groupIdx / 2) * elementsPerGroup; // Each pair of groups is from the same section of their respective original vectors
+        for (size_t elementIdx = 0; elementIdx < elementsPerGroup; ++elementIdx)
+        {
+            evensMask.push_back(static_cast<int64_t>(groupOffset + (elementIdx + offsetInVector) * 2));
+            oddsMask.push_back(static_cast<int64_t>(groupOffset + (elementIdx + offsetInVector) * 2 + 1));
+        }
+    }
+    
+    auto evenShuffleOp = rewriter.create<mlir::vector::ShuffleOp>(loc, vecType, lhs, rhs, rewriter.getI64ArrayAttr(evensMask));
+    auto oddShuffleOp = rewriter.create<mlir::vector::ShuffleOp>(loc, vecType, lhs, rhs, rewriter.getI64ArrayAttr(oddsMask));
+
+    rewriter.replaceOpWithNewOp<vir::BinOp>(op, vir::BinaryOpPredicate::ADD, evenShuffleOp, oddShuffleOp);
+
+    return success();
+}
+
 void ValueToStdLoweringPass::runOnModule()
 {
     auto module = getOperation();
@@ -2764,7 +2835,8 @@ void populateValueToStandardPatterns(bool enableProfiling, mlir::RewritePatternS
         StoreOpLowering,
         TerminatorLowering,
         UnaryOpLowering,
-        ViewOpLowering>(context);
+        ViewOpLowering,
+        VhaddLowering>(context);
 
     patterns.insert<EnterProfileRegionOpLowering,
                     PrintProfileResultsOpLowering,

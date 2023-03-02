@@ -463,5 +463,7 @@ namespace util
 
     std::vector<mlir::Value> GetDynamicOffsetSymbols(mlir::Value val);
 
+    bool AncestorOpContainsAttrOfName(mlir::Operation* op, const mlir::StringRef& name);
+
 } // namespace util
 } // namespace accera::ir

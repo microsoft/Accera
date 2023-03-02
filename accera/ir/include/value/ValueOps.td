@@ -1577,5 +1577,42 @@ def accv_vminps : accv_Op<"vminps", [NoSideEffect]>{
   let results = (outs AnyVector:$result);
 }
 
+def accv_vhadd : accv_Op<"vhadd", [NoSideEffect, SameOperandsAndResultShape, SameOperandsAndResultType]>{
+  let summary = "Vector horizontal interleaved add operation";
+
+  let description = [{
+    The `accv.vhadd` operation lowers to differently sized vector instructions depending on the element type in the vector operands.
+
+    For 32-bit operands the interleaving and adding follows the pattern:
+      vhadd( A[0...7], B[0...7] ) ->
+        [ A[0]+A[1],
+          A[2]+A[3],
+          B[0]+B[1],
+          B[2]+B[3],
+          A[4]+A[5],
+          A[6]+A[7],
+          B[4]+B[5],
+          B[6]+B[7] ]
+
+    For different bit-width operands, the corresponding byte positions are kept consistent as with the 32-bit operands.
+    i.e. for i16, the first 4 elements are the pairwise sums of the first 8 elements of A, as opposed to 2 and 4 with i32's
+         for f64, the first 1 element is the sum of the first 2 elements of A, as opposed to 2 and 4 with f32's
+
+    Supported operand / result types and their corresponding AVX instructions:
+    Operand / Result Type | Instruction
+    ----------------------|-------------
+       vector<8xi32>      |   vphaddd
+       vector<16xi16>     |   vphaddw
+       vector<8xf32>      |   vhaddps
+       vector<4xf64>      |   vhaddpd
+
+    Note: this lowers to MLIR vector dialect ops, so a particular target architecture is not required,
+          and instructions other than those listed above are possible on other architectures
+  }];
+
+  let arguments = (ins AnyVector:$lhs, AnyVector:$rhs);
+  let results = (outs AnyVector:$result);
+}
+
 
 #endif // ACCERA_accv_OPS

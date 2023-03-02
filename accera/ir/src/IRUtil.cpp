@@ -1540,5 +1540,18 @@ namespace util
         return offsetSymbols;
     }
 
+    bool AncestorOpContainsAttrOfName(mlir::Operation* op, const mlir::StringRef& name)
+    {
+        while (op != nullptr)
+        {
+            if (op->getAttr(name) != nullptr)
+            {
+                return true;
+            }
+            op = op->getParentOp();
+        }
+        return false;
+    }
+
 } // namespace util
 } // namespace accera::ir

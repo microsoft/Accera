@@ -2210,6 +2210,11 @@ Value MLIRContext::ReinterpretCastImpl(Value input, ValueType valueType)
         auto map6 = mlir::AffineMap::get(2, 0, d0 + (d1 % inputElementBytewidth));
         affineMaps.push_back(map6);
 
+        // map7: (d0) -> (d0 floordiv sizeof(outputElementType))
+        // => (byte memory space) -> (output element space)
+        auto map7 = mlir::AffineMap::get(1, 0, d0.floorDiv(outputElementBytewidth));
+        affineMaps.push_back(map7);
+
         // case 1: actual: 13, expected: 13
         // case 2: actual: 52, expected: 52
         // case 2: actual: 52, expected: 52
@@ -2227,8 +2232,8 @@ Value MLIRContext::ReinterpretCastImpl(Value input, ValueType valueType)
         if (inputMemrefType.hasStaticShape())
         {
             // Case 1
-            auto numElementsIninput = inputMemrefType.getNumElements();
-            numElementsInOutput = (int64_t)(numElementsIninput * ((float)inputElementBytewidth / outputElementBytewidth));
+            auto numElementsInInput = inputMemrefType.getNumElements();
+            numElementsInOutput = (int64_t)(numElementsInInput * ((float)inputElementBytewidth / outputElementBytewidth));
 
             if (numElementsInOutput <= 0)
             {

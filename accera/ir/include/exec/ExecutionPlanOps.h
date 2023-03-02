@@ -100,9 +100,6 @@ namespace executionPlan
 namespace accera::ir::executionPlan
 {
 
-// Unit attr name for controlling whether bounds checking is done for ops within a marked op
-const mlir::StringRef AccessBoundsCheckAttrName = "accxp.access_bounds_check";
-
 //
 // Utility functions and EDSC-type intrinsics
 //

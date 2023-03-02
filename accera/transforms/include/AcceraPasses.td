@@ -209,6 +209,24 @@ def AcceraAffineSimplification : Pass<"acc-affine-simplify"> {
   ];
 }
 
+
+//===----------------------------------------------------------------------===//
+// AcceraAffineLoopNormalize
+//===----------------------------------------------------------------------===//
+
+def AcceraAffineLoopNormalize : Pass<"acc-affine-loop-normalize"> {
+  let summary = "Normalize affine for ops";
+  let constructor = "accera::transforms::affine::createAcceraAffineLoopNormalizePass()";
+  let dependentDialects = [
+    "mlir::StandardOpsDialect",
+    "mlir::AffineDialect",
+    "mlir::linalg::LinalgDialect",
+    "mlir::memref::MemRefDialect",
+    "mlir::math::MathDialect",
+    "mlir::scf::SCFDialect",
+    "mlir::gpu::GPUDialect"
+  ];
+}
 //===----------------------------------------------------------------------===//
 // BarrierOpt
 //===----------------------------------------------------------------------===//

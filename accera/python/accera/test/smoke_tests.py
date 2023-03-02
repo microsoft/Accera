@@ -5,6 +5,7 @@
 ####################################################################################################
 
 import inspect
+from itertools import product
 import os
 import sys
 import unittest
@@ -42,7 +43,10 @@ else:
     DEV_MODE = True
     sys.path.insert(1, os.getcwd())
 
-INTERNAL_FUNCTION_OPTS = { "no_inline_into": True, "public": False }
+INTERNAL_FUNCTION_OPTS = {
+    "no_inline_into": True,
+    "public": False
+}
 
 from accera import Package, ScalarType, Nest, Array, Constants, Scalar, fuse, create_parameters, cast, Target, Role
 from accera._lang_python._lang import _MemorySpace, _MMAShape, Dimension
@@ -210,7 +214,6 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
-
     def test_differently_split_fused_schedules(self) -> None:
         # Split a dimension twice in one schedule and once in another schedule, then fuse the outermost split indices
 
@@ -246,7 +249,6 @@ class SmokeTest(unittest.TestCase):
         ii1 = schedule1.split(i1, 16)
         schedule1.reorder(i1, j1, ii1)
 
-
         schedule = fuse((schedule0, schedule1), partial=2)
         plan = schedule.create_plan()
 
@@ -258,7 +260,6 @@ class SmokeTest(unittest.TestCase):
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
-
 
     def test_partial_fusion_matmul3_naive(self) -> None:
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(16, 11))
@@ -518,6 +519,102 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
             package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=TEST_PACKAGE_DIR)
 
+    def _test_transpose_MxN(self, M: int, N: int):
+        In = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        Out = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, M))
+
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            Out[j, i] = In[i, j]
+
+        sched = nest.create_schedule()
+        ii = sched.split(i, 8)
+        jj = sched.split(j, 4)
+        sched.reorder(i, j, ii, jj)
+
+        plan = sched.create_plan()
+        plan.vectorize(ii)
+        plan.vectorize(jj)
+
+        In_test = np.arange(stop=M * N, dtype=np.float32).reshape(M, N)
+        Out_test = np.random.rand(N, M).astype(np.float32)
+        Out_ref = In_test.T
+
+        # Create a package and add our function definition to it
+        package_name = f"test_transpose_{M}x{N}"
+        package = Package()
+        function = package.add(plan, args=(In, Out), base_name=f"test_transpose_{M}x{N}")
+
+        # Build the HAT package
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
+            package.build(
+                package_name,
+                format=self.PACKAGE_FORMAT,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+                _quiet=False
+            )
+
+            v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
+
+    def test_transpose_8x4(self):
+        self._test_transpose_MxN(8, 4)
+
+    def test_transpose_16x4(self):
+        self._test_transpose_MxN(16, 4)
+
+    def test_transpose_32x32(self):
+        self._test_transpose_MxN(32, 32)
+
+    def test_transpose_31x31(self):
+        self._test_transpose_MxN(31, 31)
+
+    def test_transpose_16x4_packed(self):
+        In = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(16, 4))
+        Out = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(4, 2, 8))
+
+        nest = Nest(shape=(16, 4))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            Out[j, (i / 8) % 2, i % 8] = In[i, j]
+
+        sched = nest.create_schedule()
+        ii = sched.split(i, 8)
+
+        plan = sched.create_plan()
+        plan.unroll(i)
+        plan.vectorize(ii)
+        plan.vectorize(j)
+
+        In_test = np.arange(stop=16 * 4, dtype=np.float32).reshape(16, 4)
+        Out_test = np.random.rand(4, 2, 8).astype(np.float32)
+        Out_ref = np.ndarray(shape=Out_test.shape, dtype=Out_test.dtype)
+        for i_ in range(16):
+            for j_ in range(4):
+                Out_ref[j_, (i_ // 8) % 2, i_ % 8] = In_test[i_, j_]
+
+        # Create a package and add our function definition to it
+        package_name = "test_transpose_16x4_packed"
+        package = Package()
+        function = package.add(plan, args=(In, Out), base_name="test_transpose_16x4_packed")
+
+        # Build the HAT package
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
+            package.build(
+                package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+                _quiet=False
+            )
+
+            v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
+
     def test_emittime_cache_mlas_matmul(self) -> None:
         from accera.samples.OfflineCacheMatrixMultiplication import EmitTimeCacheMLAS
 
@@ -653,6 +750,7 @@ class SmokeTest(unittest.TestCase):
 
         @nest.iteration_logic
         def _():
+
             def if_block():
                 C[i, j] += A[i, k] * B[k, j]
 
@@ -1196,32 +1294,35 @@ class SmokeTest(unittest.TestCase):
 
         test_name = "test_offset_sub_array_packing_flat"
         N = 8
-        output_size = N*N + N
+        output_size = N * N + N
 
         Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
-        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(output_size,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(output_size, ))
 
         package = Package()
 
-        diagonal_fetch_nest = Nest(shape=(N,))
+        diagonal_fetch_nest = Nest(shape=(N, ))
         diagonal_idx, = diagonal_fetch_nest.get_indices()
+
         @diagonal_fetch_nest.iteration_logic
         def _diag_fetch():
-            diag_vec = Output.sub_array(offsets=(0,), shape=(N,))
+            diag_vec = Output.sub_array(offsets=(0, ), shape=(N, ))
             diag_vec[diagonal_idx] = Input[diagonal_idx, diagonal_idx]
 
         diag_fn = package.add(diagonal_fetch_nest, args=(Input, Output), base_name="diagonal_fetch_fn")
 
         transpose_nest = Nest(shape=(N, N))
         transpose_i, transpose_j = transpose_nest.get_indices()
+
         @transpose_nest.iteration_logic
         def _transpose():
-            packed_output = Output.sub_array(offsets=(N,), shape=(N*N,))
-            packed_output[transpose_j*N + transpose_i] = Input[transpose_i, transpose_j]
+            packed_output = Output.sub_array(offsets=(N, ), shape=(N * N, ))
+            packed_output[transpose_j * N + transpose_i] = Input[transpose_i, transpose_j]
 
         transpose_fn = package.add(transpose_nest, args=(Input, Output), base_name="transpose_fn")
 
-        outer_nest = Nest(shape=(1,))
+        outer_nest = Nest(shape=(1, ))
+
         @outer_nest.iteration_logic
         def _():
             diag_fn(Input, Output)
@@ -1237,12 +1338,12 @@ class SmokeTest(unittest.TestCase):
 
             # correctness check
             test_input = np.random.random([N, N]).astype(np.float32)
-            test_output = np.random.random([N*N + N]).astype(np.float32)
-            test_output_ref = np.random.random([N*N + N]).astype(np.float32)
+            test_output = np.random.random([N * N + N]).astype(np.float32)
+            test_output_ref = np.random.random([N * N + N]).astype(np.float32)
             for i in range(N):
                 test_output_ref[i] = test_input[i, i]
                 for j in range(N):
-                    test_output_ref[N + (i*N + j)] = test_input[j, i]
+                    test_output_ref[N + (i * N + j)] = test_input[j, i]
             v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
 
     def test_offset_sub_array_packing_split_dim(self) -> None:
@@ -1254,33 +1355,36 @@ class SmokeTest(unittest.TestCase):
         test_name = "test_offset_sub_array_packing_split_dim"
 
         N = 4
-        output_size = N*N + N
+        output_size = N * N + N
 
         Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
-        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(output_size,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(output_size, ))
 
         package = Package()
 
-        diagonal_fetch_nest = Nest(shape=(N,))
+        diagonal_fetch_nest = Nest(shape=(N, ))
         diagonal_idx, = diagonal_fetch_nest.get_indices()
+
         @diagonal_fetch_nest.iteration_logic
         def _diag_fetch():
-            diag_vec = Output.sub_array(offsets=(0,), shape=(N,))
+            diag_vec = Output.sub_array(offsets=(0, ), shape=(N, ))
             diag_vec[diagonal_idx] = Input[diagonal_idx, diagonal_idx]
 
         diag_fn = package.add(diagonal_fetch_nest, args=(Input, Output), base_name="diagonal_fetch_fn")
 
         transpose_nest = Nest(shape=(N, N))
         transpose_i, transpose_j = transpose_nest.get_indices()
+
         @transpose_nest.iteration_logic
         def _transpose():
-            packed_output = Output.sub_array(offsets=(N,), shape=(N*N,))
+            packed_output = Output.sub_array(offsets=(N, ), shape=(N * N, ))
             packed_output_split = packed_output._split_dimension(0, cast(N, ScalarType.index))
             packed_output_split[transpose_j, transpose_i] = Input[transpose_i, transpose_j]
 
         transpose_fn = package.add(transpose_nest, args=(Input, Output), base_name="transpose_fn")
 
-        outer_nest = Nest(shape=(1,))
+        outer_nest = Nest(shape=(1, ))
+
         @outer_nest.iteration_logic
         def _():
             diag_fn(Input, Output)
@@ -1296,12 +1400,12 @@ class SmokeTest(unittest.TestCase):
 
             # correctness check
             test_input = np.random.random([N, N]).astype(np.float32)
-            test_output = np.random.random([N*N + N]).astype(np.float32)
-            test_output_ref = np.random.random([N*N + N]).astype(np.float32)
+            test_output = np.random.random([N * N + N]).astype(np.float32)
+            test_output_ref = np.random.random([N * N + N]).astype(np.float32)
             for i in range(N):
                 test_output_ref[i] = test_input[i, i]
                 for j in range(N):
-                    test_output_ref[N + (i*N + j)] = test_input[j, i]
+                    test_output_ref[N + (i * N + j)] = test_input[j, i]
             v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
 
     def test_offset_sub_array_packing_multiple_split_dim(self) -> None:
@@ -1313,28 +1417,30 @@ class SmokeTest(unittest.TestCase):
         test_name = "test_offset_sub_array_packing_multiple_split_dim"
         N = 4
         N_inner = 2
-        output_size = N*N + N
+        output_size = N * N + N
 
         Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
-        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(output_size,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(output_size, ))
 
         package = Package()
 
-        diagonal_fetch_nest = Nest(shape=(N,))
+        diagonal_fetch_nest = Nest(shape=(N, ))
         diagonal_idx, = diagonal_fetch_nest.get_indices()
+
         @diagonal_fetch_nest.iteration_logic
         def _diag_fetch():
-            diag_vec = Output.sub_array(offsets=(0,), shape=(N,))
+            diag_vec = Output.sub_array(offsets=(0, ), shape=(N, ))
             diag_vec[diagonal_idx] = Input[diagonal_idx, diagonal_idx]
 
         diag_fn = package.add(diagonal_fetch_nest, args=(Input, Output), base_name="diagonal_fetch_fn")
 
         transpose_nest = Nest(shape=(N // N_inner, N // N_inner, N_inner, N_inner))
         transpose_i, transpose_j, transpose_ii, transpose_jj = transpose_nest.get_indices()
+
         @transpose_nest.iteration_logic
         def _transpose():
             # packed_output is an offset vector with shape [ 16 ]
-            packed_output = Output.sub_array(offsets=(N,), shape=(N*N,))
+            packed_output = Output.sub_array(offsets=(N, ), shape=(N * N, ))
 
             # packed_output_split_0 is an offset array with shape [ 4, 4 ]
             packed_output_split_0 = packed_output._split_dimension(0, cast(N, ScalarType.index))
@@ -1351,7 +1457,8 @@ class SmokeTest(unittest.TestCase):
 
         transpose_fn = package.add(transpose_nest, args=(Input, Output), base_name="transpose_fn")
 
-        outer_nest = Nest(shape=(1,))
+        outer_nest = Nest(shape=(1, ))
+
         @outer_nest.iteration_logic
         def _():
             diag_fn(Input, Output)
@@ -1367,35 +1474,38 @@ class SmokeTest(unittest.TestCase):
 
             # correctness check
             test_input = np.random.random([N, N]).astype(np.float32)
-            test_output = np.random.random([N*N + N]).astype(np.float32)
-            test_output_ref = np.random.random([N*N + N]).astype(np.float32)
+            test_output = np.random.random([N * N + N]).astype(np.float32)
+            test_output_ref = np.random.random([N * N + N]).astype(np.float32)
             for i in range(0, N, N_inner):
                 for j in range(0, N, N_inner):
                     for ii in range(N_inner):
-                        test_output_ref[i + ii] = test_input[i+ii, i+ii] # fill the beginning with the diagonal elements
+                        test_output_ref[i + ii] = test_input[i + ii,
+                                                             i + ii]    # fill the beginning with the diagonal elements
                         for jj in range(N_inner):
                             # output[i, j, jj, ii] = input[i+ii, j+jj]
                             # output[i*((N//N_inner) * N_inner * N_inner) + j*(N_inner * N_inner) + jj*(N_inner) + ii] = input[i+ii, j+jj]
                             # Then offset output by N to account for the beginning diagonal elements
                             # Note that since i and j each step by N_inner, there's already one multiplication by N_inner accounted for in their values
-                            test_output_ref[N + (i*((N//N_inner)*N_inner) + j*(N_inner) + jj*(N_inner) + ii)] = test_input[i + ii, j + jj]
+                            test_output_ref[N + (i * ((N // N_inner) * N_inner) + j * (N_inner) + jj *
+                                                 (N_inner) + ii)] = test_input[i + ii, j + jj]
             v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
 
     def test_shifting_shrinking_sub_array(self) -> None:
         N = 64
 
         test_name = "test_shifting_shrinking_sub_array"
-        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N,))
-        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N,))
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
 
         package = Package()
 
-        nest = Nest(shape=(N,))
+        nest = Nest(shape=(N, ))
         idx, = nest.get_indices()
+
         @nest.iteration_logic
         def _fn():
             size = N - idx
-            sub_arr = Input.sub_array(offsets=(idx,), shape=(size,))
+            sub_arr = Input.sub_array(offsets=(idx, ), shape=(size, ))
             Output[0] = sub_arr[0]
 
         function = package.add(nest, args=(Input, Output), base_name=test_name)
@@ -1419,23 +1529,24 @@ class SmokeTest(unittest.TestCase):
         test_name = "test_dynamic_sub_array_split_dim_subfunction"
 
         N = 64
-        tile_size = 20 # Intentionally does not divide N
+        tile_size = 20    # Intentionally does not divide N
         inner_split_size = 2
 
         package = Package()
 
-        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N,))
-        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N,))
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
 
         current_outer_idx, extent = create_dimensions()
 
-        inner_nest = Nest(shape=(extent,))
+        inner_nest = Nest(shape=(extent, ))
         inner_idx, = inner_nest.get_indices()
+
         @inner_nest.iteration_logic
         def _inner_fn():
             full_idx = current_outer_idx + inner_idx
             tile_remaining_elts = accmin(N - current_outer_idx, cast(tile_size, ScalarType.index))
-            sub_arr = Output.sub_array(offsets=(current_outer_idx,), shape=(tile_remaining_elts,))
+            sub_arr = Output.sub_array(offsets=(current_outer_idx, ), shape=(tile_remaining_elts, ))
             split_arr = sub_arr._split_dimension(0, cast(inner_split_size, ScalarType.index))
             split_arr[inner_idx / inner_split_size, inner_idx % inner_split_size] = Input[full_idx]
 
@@ -1443,10 +1554,12 @@ class SmokeTest(unittest.TestCase):
             inner_nest,
             args=(extent, Input, Output, current_outer_idx),
             base_name=f"{test_name}_inner_fn",
-            function_opts=INTERNAL_FUNCTION_OPTS)
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
-        outer_nest = Nest(shape=(N,))
+        outer_nest = Nest(shape=(N, ))
         outer_idx, = outer_nest.get_indices()
+
         @outer_nest.iteration_logic
         def _outer_fn():
             extent_val = accmin(N - outer_idx, cast(tile_size, ScalarType.index))
@@ -1457,14 +1570,16 @@ class SmokeTest(unittest.TestCase):
         outer_sched.reorder(outer_idx, outer_idx_inner)
         outer_plan = outer_sched.create_plan()
         outer_plan._erase_loops([outer_idx_inner])
-        
+
         function = package.add(outer_plan, args=(Input, Output), base_name=test_name)
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
 
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
-            package.build(name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+            package.build(
+                name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
 
             # correctness check
             test_input = np.random.random([N]).astype(np.float32)
@@ -1481,8 +1596,8 @@ class SmokeTest(unittest.TestCase):
 
         # Take in the data as a packed flat buffer, interpret it as a matrix and copy it in tiles
         # Copy a matrix by tiles that does not evenly divide the matrix shape
-        M = 76 # Multiple of m_tile_inner, but not m_tile_outer
-        N = 92 # Multiple of n_tile_inner, but not n_tile_outer
+        M = 76    # Multiple of m_tile_inner, but not m_tile_outer
+        N = 92    # Multiple of n_tile_inner, but not n_tile_outer
 
         m_tile_outer = 16
         m_tile_inner = 2
@@ -1498,13 +1613,14 @@ class SmokeTest(unittest.TestCase):
         package = Package()
 
         Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
-        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M*N,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M * N, ))
 
         current_outer_i, current_outer_j = create_dimensions()
         extent_i, extent_j = create_dimensions()
 
         inner_nest = Nest(shape=(extent_i, extent_j))
         inner_i, inner_j = inner_nest.get_indices()
+
         @inner_nest.iteration_logic
         def _inner_fn():
             full_i = current_outer_i + inner_i
@@ -1512,9 +1628,11 @@ class SmokeTest(unittest.TestCase):
             remaining_m_tile = accmin(M - current_outer_i, cast(m_tile_outer, ScalarType.index))
             remaining_n_tile = accmin(N - current_outer_j, cast(n_tile_outer, ScalarType.index))
             output_offset_pos = current_outer_i * N + current_outer_j * remaining_m_tile
-            remaining_mn_tile = accmin(remaining_m_tile * remaining_n_tile, cast(m_tile_outer * n_tile_outer, ScalarType.index))
+            remaining_mn_tile = accmin(
+                remaining_m_tile * remaining_n_tile, cast(m_tile_outer * n_tile_outer, ScalarType.index)
+            )
 
-            sub_arr = Output.sub_array(offsets=(output_offset_pos,), shape=(remaining_mn_tile,))
+            sub_arr = Output.sub_array(offsets=(output_offset_pos, ), shape=(remaining_mn_tile, ))
 
             # Split [512] -> [128, 4] (main)
             # Split [448] -> [112, 4] (cleanup 1)
@@ -1535,20 +1653,19 @@ class SmokeTest(unittest.TestCase):
             dynamic_j_split = remaining_n_tile / n_tile_inner
             split_arr_3 = split_arr_2._split_dimension(0, cast(dynamic_j_split, ScalarType.index))
 
-            split_arr_3[inner_i / m_tile_inner, 
-                        inner_j / n_tile_inner,
-                        inner_i % m_tile_inner,
+            split_arr_3[inner_i / m_tile_inner, inner_j / n_tile_inner, inner_i % m_tile_inner,
                         inner_j % n_tile_inner] = Input[full_i, full_j]
 
         inner_fn = package.add(
             inner_nest,
             args=(extent_i, extent_j, Input, Output, current_outer_i, current_outer_j),
             base_name=f"{test_name}_inner_fn",
-            function_opts=INTERNAL_FUNCTION_OPTS)
-
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         outer_nest = Nest(shape=(M, N))
         outer_i, outer_j = outer_nest.get_indices()
+
         @outer_nest.iteration_logic
         def _outer_fn():
             extent_i_val = accmin(M - outer_i, cast(m_tile_outer, ScalarType.index))
@@ -1567,22 +1684,27 @@ class SmokeTest(unittest.TestCase):
         shutil.rmtree(output_dir, ignore_errors=True)
 
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
-            package.build(name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+            package.build(
+                name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
 
             # correctness check
             test_input = np.random.random([M, N]).astype(np.float32)
-            test_output = np.random.random([M*N]).astype(np.float32)
-            test_output_ref = np.random.random([M*N]).astype(np.float32)
+            test_output = np.random.random([M * N]).astype(np.float32)
+            test_output_ref = np.random.random([M * N]).astype(np.float32)
+
             # m_tile_outer does not divide M and n_tile_outer does not divide N, so we have cleanup cases there
             # However, m_tile_inner and n_tile_inner do divide M and N respectively, so we won't need cleanup cases there
             def partition_value(range_val, split):
                 return (range_val // split) * split
+
             M_pv = partition_value(M, m_tile_outer)
             N_pv = partition_value(N, n_tile_outer)
             m_tile_outer_cleanup = M - M_pv
             n_tile_outer_cleanup = N - N_pv
+
             def packed_index(i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset, n_tile_outer_clamped):
-                return tile_offset + i_middle*n_tile_outer_clamped + j_middle*m_tile_inner + i_inner*n_tile_inner + j_inner
+                return tile_offset + i_middle * n_tile_outer_clamped + j_middle * m_tile_inner + i_inner * n_tile_inner + j_inner
 
             for i_outer in range(0, M_pv, m_tile_outer):
                 for j_outer in range(0, N_pv, n_tile_outer):
@@ -1591,7 +1713,10 @@ class SmokeTest(unittest.TestCase):
                         for j_middle in range(0, n_tile_outer, n_tile_inner):
                             for i_inner in range(m_tile_inner):
                                 for j_inner in range(n_tile_inner):
-                                    test_output_ref[packed_index(i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset, n_tile_outer)] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
+                                    test_output_ref[packed_index(
+                                        i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset,
+                                        n_tile_outer
+                                    )] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
                 # j_outer cleanup
                 for j_outer in range(N_pv, N, n_tile_outer):
                     tile_offset = i_outer * N + j_outer * m_tile_outer
@@ -1599,7 +1724,10 @@ class SmokeTest(unittest.TestCase):
                         for j_middle in range(0, n_tile_outer_cleanup, n_tile_inner):
                             for i_inner in range(m_tile_inner):
                                 for j_inner in range(n_tile_inner):
-                                    test_output_ref[packed_index(i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset, n_tile_outer_cleanup)] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
+                                    test_output_ref[packed_index(
+                                        i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset,
+                                        n_tile_outer_cleanup
+                                    )] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
             # i_outer cleanup
             for i_outer in range(M_pv, M, m_tile_outer):
                 for j_outer in range(0, N_pv, n_tile_outer):
@@ -1608,7 +1736,10 @@ class SmokeTest(unittest.TestCase):
                         for j_middle in range(0, n_tile_outer, n_tile_inner):
                             for i_inner in range(m_tile_inner):
                                 for j_inner in range(n_tile_inner):
-                                    test_output_ref[packed_index(i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset, n_tile_outer)] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
+                                    test_output_ref[packed_index(
+                                        i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset,
+                                        n_tile_outer
+                                    )] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
                 # j_outer cleanup
                 for j_outer in range(N_pv, N, n_tile_outer):
                     tile_offset = i_outer * N + j_outer * m_tile_outer_cleanup
@@ -1616,7 +1747,10 @@ class SmokeTest(unittest.TestCase):
                         for j_middle in range(0, n_tile_outer_cleanup, n_tile_inner):
                             for i_inner in range(m_tile_inner):
                                 for j_inner in range(n_tile_inner):
-                                    test_output_ref[packed_index(i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset, n_tile_outer_cleanup)] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
+                                    test_output_ref[packed_index(
+                                        i_outer, i_middle, i_inner, j_outer, j_middle, j_inner, tile_offset,
+                                        n_tile_outer_cleanup
+                                    )] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
             v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
 
     def test_padded_nchwc_conv2d_manual_cache(self) -> None:
@@ -1968,9 +2102,7 @@ class SmokeTest(unittest.TestCase):
 
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.LAST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
-        C = Array(
-            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.LAST_MAJOR
-        )
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.LAST_MAJOR)
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -2995,10 +3127,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -3081,10 +3210,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -3163,10 +3289,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -3196,14 +3319,18 @@ class SmokeTest(unittest.TestCase):
 
         self._verify_matrix_multiplication_function(function, package, test_name)
 
-    def _matmul_cache_element_type_common(self, test_name, array_element_types, cache_element_types, check_correctness=True) -> None:
+    def _matmul_cache_element_type_common(
+        self, test_name, array_element_types, cache_element_types, check_correctness=True
+    ) -> None:
         M = 256
         N = 256
         K = 256
 
         A = Array(role=Role.INPUT, element_type=array_element_types[0], shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=array_element_types[1], shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
-        C = Array(role=Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        C = Array(
+            role=Role.INPUT_OUTPUT, element_type=array_element_types[2], shape=(M, N), layout=Array.Layout.FIRST_MAJOR
+        )
 
         nest = Nest(shape=(M, N, K))
         i, j, k = nest.get_indices()
@@ -3232,7 +3359,6 @@ class SmokeTest(unittest.TestCase):
 
         self._verify_matrix_multiplication_function(function, package, test_name, check_correctness=check_correctness)
 
-
     # TODO : move vpmaddwd tests to a different test file
     def test_signextend_int16_matmul_vpmaddwd(self):
         from accera import AllocateFlags, create_dimensions
@@ -3252,7 +3378,7 @@ class SmokeTest(unittest.TestCase):
 
         M_kernel_tile = 6
         N_kernel_tile = 16
-        
+
         N_vector_tile = 8
         K_vector_tile = 2
 
@@ -3260,32 +3386,40 @@ class SmokeTest(unittest.TestCase):
         B = Array(role=Role.INPUT, element_type=ScalarType.uint8, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
 
-        A_cache = Array(role=Role.TEMP,
-                        element_type=ScalarType.int16,
-                        shape=(M_tile, K_tile),
-                        layout=Array.Layout.FIRST_MAJOR,
-                        flags=AllocateFlags.HEAP)
-        B_cache = Array(role=Role.TEMP,
-                        element_type=ScalarType.uint8,
-                        shape=(N_tile // N_kernel_tile, K_tile // K_vector_tile, N_kernel_tile, K_vector_tile),
-                        layout=Array.Layout.FIRST_MAJOR,
-                        flags=AllocateFlags.HEAP)
+        A_cache = Array(
+            role=Role.TEMP,
+            element_type=ScalarType.int16,
+            shape=(M_tile, K_tile),
+            layout=Array.Layout.FIRST_MAJOR,
+            flags=AllocateFlags.HEAP
+        )
+        B_cache = Array(
+            role=Role.TEMP,
+            element_type=ScalarType.uint8,
+            shape=(N_tile // N_kernel_tile, K_tile // K_vector_tile, N_kernel_tile, K_vector_tile),
+            layout=Array.Layout.FIRST_MAJOR,
+            flags=AllocateFlags.HEAP
+        )
 
-        C_cache = Array(role=Role.TEMP,
-                        element_type=ScalarType.int32,
-                        shape=(M_kernel_tile, N_kernel_tile),
-                        layout=Array.Layout.FIRST_MAJOR,
-                        flags=AllocateFlags.STACK) # Stack allocate the small accumulation cache
+        C_cache = Array(
+            role=Role.TEMP,
+            element_type=ScalarType.int32,
+            shape=(M_kernel_tile, N_kernel_tile),
+            layout=Array.Layout.FIRST_MAJOR,
+            flags=AllocateFlags.STACK
+        )    # Stack allocate the small accumulation cache
 
         io_A_cache = inout_array(A_cache)
         io_B_cache = inout_array(B_cache)
         io_C_cache = inout_array(C_cache)
 
-        B_ext = Array(role=Role.TEMP,
-                        element_type=ScalarType.int16,
-                        shape=(N_kernel_tile, K_vector_tile),
-                        layout=Array.Layout.FIRST_MAJOR,
-                        flags=AllocateFlags.STACK)
+        B_ext = Array(
+            role=Role.TEMP,
+            element_type=ScalarType.int16,
+            shape=(N_kernel_tile, K_vector_tile),
+            layout=Array.Layout.FIRST_MAJOR,
+            flags=AllocateFlags.STACK
+        )
 
         io_B_ext = inout_array(B_ext)
 
@@ -3299,6 +3433,7 @@ class SmokeTest(unittest.TestCase):
         ### Matmul inner kernel tile
         mmi_nest = Nest(shape=(n_kernel_dim, k_kernel_dim))
         mmi_j, mmi_k = mmi_nest.get_indices()
+
         @mmi_nest.iteration_logic
         def _matmul_inner():
             mmi_i = i_vector_idx
@@ -3313,16 +3448,20 @@ class SmokeTest(unittest.TestCase):
         mmi_sched.reorder(mmi_j, mmi_k, mmi_jj, mmi_jjj, mmi_kk)
         mmi_plan = mmi_sched.create_plan()
         mmi_plan.vectorize(mmi_jjj)
-        mmi_fn = package.add(mmi_plan,
-            args=(n_kernel_dim, k_kernel_dim,
-                io_A_cache, io_B_ext, io_C_cache,
-                i_kernel_idx, j_kernel_idx, k_kernel_idx, i_vector_idx),
+        mmi_fn = package.add(
+            mmi_plan,
+            args=(
+                n_kernel_dim, k_kernel_dim, io_A_cache, io_B_ext, io_C_cache, i_kernel_idx, j_kernel_idx, k_kernel_idx,
+                i_vector_idx
+            ),
             base_name="matmul_kernel",
-            function_opts=INTERNAL_FUNCTION_OPTS)
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         ### B element zero extend
         bext_nest = Nest((n_kernel_dim, k_kernel_dim))
         bext_j, bext_k = bext_nest.get_indices()
+
         @bext_nest.iteration_logic
         def _bext():
             tile_j = j_kernel_idx
@@ -3335,17 +3474,17 @@ class SmokeTest(unittest.TestCase):
         bext_sched.reorder(bext_j, bext_k, bext_jj, bext_jjj, bext_kk)
         bext_plan = bext_sched.create_plan()
         bext_plan.vectorize(bext_jjj)
-        bext_fn = package.add(bext_plan,
-            args=(n_kernel_dim, k_kernel_dim,
-                io_B_cache, io_B_ext,
-                j_kernel_idx, k_kernel_idx),
+        bext_fn = package.add(
+            bext_plan,
+            args=(n_kernel_dim, k_kernel_dim, io_B_cache, io_B_ext, j_kernel_idx, k_kernel_idx),
             base_name="b_ext_kernel",
-            function_opts=INTERNAL_FUNCTION_OPTS)
-
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         ### Matmul outer kernel tile
         mmo_nest = Nest(shape=(m_kernel_dim, k_tile_dim))
         mmo_i, mmo_k = mmo_nest.get_indices()
+
         @mmo_nest.iteration_logic
         def _matmul():
 
@@ -3358,7 +3497,9 @@ class SmokeTest(unittest.TestCase):
             k_kernel_extent = accmin(k_tile_dim - mmo_k, cast(K_vector_tile, ScalarType.index))
 
             bext_fn(n_kernel_dim, k_kernel_extent, io_B_cache, B_ext, j_kernel_idx, mmo_k)
-            mmi_fn(n_kernel_dim, k_kernel_extent, io_A_cache, B_ext, io_C_cache, i_kernel_idx, j_kernel_idx, mmo_k, mmo_i)
+            mmi_fn(
+                n_kernel_dim, k_kernel_extent, io_A_cache, B_ext, io_C_cache, i_kernel_idx, j_kernel_idx, mmo_k, mmo_i
+            )
 
         mmo_sched = mmo_nest.create_schedule()
         mmo_ii, mmo_kk = mmo_sched.tile(dict(zip([mmo_i, mmo_k], [M_kernel_tile, K_tile])))
@@ -3366,28 +3507,33 @@ class SmokeTest(unittest.TestCase):
         mmo_sched.reorder(mmo_k, mmo_i, mmo_kk, mmo_ii, mmo_kkk)
         mmo_plan = mmo_sched.create_plan()
         mmo_plan._erase_loops([mmo_kkk])
-        mmo_fn = package.add(mmo_plan,
-            args=(m_kernel_dim, n_kernel_dim, k_tile_dim,
-                io_A_cache, io_B_cache, io_C_cache,
-                i_kernel_idx, j_kernel_idx),
+        mmo_fn = package.add(
+            mmo_plan,
+            args=(
+                m_kernel_dim, n_kernel_dim, k_tile_dim, io_A_cache, io_B_cache, io_C_cache, i_kernel_idx, j_kernel_idx
+            ),
             base_name="matmul_kernel",
-            function_opts=INTERNAL_FUNCTION_OPTS)
-
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         ### C cache init
         cci_nest = Nest(shape=(M_kernel_tile, N_kernel_tile))
         cci_i, cci_j = cci_nest.get_indices()
+
         @cci_nest.iteration_logic
         def _cci():
             io_C_cache[cci_i, cci_j] = 0
 
         cci_sched = cci_nest.create_schedule()
         cci_plan = cci_sched.create_plan()
-        cci_fn = package.add(cci_plan, args=(io_C_cache,), base_name="c_cache_init_kernel", function_opts=INTERNAL_FUNCTION_OPTS)
+        cci_fn = package.add(
+            cci_plan, args=(io_C_cache, ), base_name="c_cache_init_kernel", function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         ### C cache reduce
         ccr_nest = Nest(shape=(m_kernel_dim, n_kernel_dim))
         ccr_i, ccr_j = ccr_nest.get_indices()
+
         @ccr_nest.iteration_logic
         def _ccr():
             global_i = i_tile_idx + i_kernel_idx + ccr_i
@@ -3399,17 +3545,17 @@ class SmokeTest(unittest.TestCase):
         ccr_sched.reorder(ccr_i, ccr_j, ccr_ii, ccr_jj)
         ccr_plan = ccr_sched.create_plan()
         ccr_plan.vectorize(ccr_ii)
-        ccr_fn = package.add(ccr_plan,
-            args=(m_kernel_dim, n_kernel_dim,
-                C, io_C_cache,
-                i_tile_idx, j_tile_idx,
-                i_kernel_idx, j_kernel_idx),
+        ccr_fn = package.add(
+            ccr_plan,
+            args=(m_kernel_dim, n_kernel_dim, C, io_C_cache, i_tile_idx, j_tile_idx, i_kernel_idx, j_kernel_idx),
             base_name="c_cache_reduce_kernel",
-            function_opts=INTERNAL_FUNCTION_OPTS)
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         ### A cache pack
         pa_nest = Nest(shape=(m_tile_dim, k_tile_dim))
         pa_i, pa_k = pa_nest.get_indices()
+
         @pa_nest.iteration_logic
         def _pack_a():
             global_i = i_tile_idx + pa_i
@@ -3420,22 +3566,23 @@ class SmokeTest(unittest.TestCase):
         pa_ii, pa_kk = pa_sched.tile(dict(zip([pa_i, pa_k], [M_tile, K_tile])))
         pa_sched.reorder(pa_i, pa_k, pa_ii, pa_kk)
         pa_plan = pa_sched.create_plan()
-        pa_fn = package.add(pa_plan,
-            args=(m_tile_dim, k_tile_dim,
-                A, io_A_cache,
-                i_tile_idx, k_tile_idx),
+        pa_fn = package.add(
+            pa_plan,
+            args=(m_tile_dim, k_tile_dim, A, io_A_cache, i_tile_idx, k_tile_idx),
             base_name="pack_a",
-            function_opts=INTERNAL_FUNCTION_OPTS)
-
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         ### B cache pack
         pb_nest = Nest(shape=(n_tile_dim, k_tile_dim))
         pb_j, pb_k = pb_nest.get_indices()
+
         @pb_nest.iteration_logic
         def _pack_b():
             global_j = j_tile_idx + pb_j
             global_k = k_tile_idx + pb_k
-            io_B_cache[pb_j / N_kernel_tile, pb_k / K_vector_tile, pb_j % N_kernel_tile, pb_k % K_vector_tile] = B[global_k, global_j]
+            io_B_cache[pb_j / N_kernel_tile, pb_k / K_vector_tile, pb_j % N_kernel_tile,
+                       pb_k % K_vector_tile] = B[global_k, global_j]
 
         pb_sched = pb_nest.create_schedule()
         pb_jj, pb_kk = pb_sched.tile(dict(zip([pb_j, pb_k], [N_tile, K_tile])))
@@ -3443,31 +3590,32 @@ class SmokeTest(unittest.TestCase):
         pb_sched.reorder(pb_j, pb_k, pb_jj, pb_kk, pb_jjj, pb_kkk)
         pb_plan = pb_sched.create_plan()
         pb_plan.vectorize(pb_jjj)
-        pb_fn = package.add(pb_plan,
-            args=(n_tile_dim, k_tile_dim,
-                B, io_B_cache,
-                j_tile_idx, k_tile_idx),
+        pb_fn = package.add(
+            pb_plan,
+            args=(n_tile_dim, k_tile_dim, B, io_B_cache, j_tile_idx, k_tile_idx),
             base_name="pack_b",
-            function_opts=INTERNAL_FUNCTION_OPTS)
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
+        compute_kernel_nest = Nest(shape=(1, ))
 
-        compute_kernel_nest = Nest(shape=(1,))
         @compute_kernel_nest.iteration_logic
         def _hack():
-            cci_fn(C_cache) # Don't need to range-clamp this, we can just zero out the full buffer every time
+            cci_fn(C_cache)    # Don't need to range-clamp this, we can just zero out the full buffer every time
             mmo_fn(m_kernel_dim, n_kernel_dim, k_tile_dim, io_A_cache, io_B_cache, C_cache, i_kernel_idx, j_kernel_idx)
             ccr_fn(m_kernel_dim, n_kernel_dim, C, C_cache, i_tile_idx, j_tile_idx, i_kernel_idx, j_kernel_idx)
 
         compute_kernel_sched = compute_kernel_nest.create_schedule()
         compute_kernel_plan = compute_kernel_sched.create_plan()
-        compute_kernel_fn = package.add(compute_kernel_plan,
+        compute_kernel_fn = package.add(
+            compute_kernel_plan,
             args=(
-                m_kernel_dim, n_kernel_dim, k_tile_dim,
-                io_A_cache, io_B_cache, C,
-                i_tile_idx, j_tile_idx, k_tile_idx,
-                i_kernel_idx, j_kernel_idx),
+                m_kernel_dim, n_kernel_dim, k_tile_dim, io_A_cache, io_B_cache, C, i_tile_idx, j_tile_idx, k_tile_idx,
+                i_kernel_idx, j_kernel_idx
+            ),
             base_name="compute_kernel_fn",
-            function_opts=INTERNAL_FUNCTION_OPTS)
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         tile_nest = Nest(shape=(m_tile_dim, n_tile_dim))
         tile_i, tile_j = tile_nest.get_indices()
@@ -3476,24 +3624,29 @@ class SmokeTest(unittest.TestCase):
         def _tile():
             m_kernel_extent = accmin(m_tile_dim - tile_i, cast(M_kernel_tile, ScalarType.index))
             n_kernel_extent = accmin(n_tile_dim - tile_j, cast(N_kernel_tile, ScalarType.index))
-            compute_kernel_fn(m_kernel_extent, n_kernel_extent, k_tile_dim,
-                io_A_cache, io_B_cache, C,
-                i_tile_idx, j_tile_idx, k_tile_idx,
-                tile_i, tile_j)
+            compute_kernel_fn(
+                m_kernel_extent, n_kernel_extent, k_tile_dim, io_A_cache, io_B_cache, C, i_tile_idx, j_tile_idx,
+                k_tile_idx, tile_i, tile_j
+            )
 
         tile_sched = tile_nest.create_schedule()
-        tile_ii, tile_jj = tile_sched.tile({ tile_i: M_tile, tile_j: N_tile })
-        tile_iii, tile_jjj = tile_sched.tile({ tile_ii: M_kernel_tile, tile_jj: N_kernel_tile })
+        tile_ii, tile_jj = tile_sched.tile({
+            tile_i: M_tile,
+            tile_j: N_tile
+        })
+        tile_iii, tile_jjj = tile_sched.tile({
+            tile_ii: M_kernel_tile,
+            tile_jj: N_kernel_tile
+        })
         tile_sched.reorder(tile_i, tile_j, tile_ii, tile_jj, tile_iii, tile_jjj)
         tile_plan = tile_sched.create_plan()
         tile_plan._erase_loops([tile_iii, tile_jjj])
-        tile_fn = package.add(tile_plan,
-            args=(m_tile_dim, n_tile_dim, k_tile_dim,
-                io_A_cache, io_B_cache, C,
-                i_tile_idx, j_tile_idx, k_tile_idx),
+        tile_fn = package.add(
+            tile_plan,
+            args=(m_tile_dim, n_tile_dim, k_tile_dim, io_A_cache, io_B_cache, C, i_tile_idx, j_tile_idx, k_tile_idx),
             base_name="tile_fn",
-            function_opts=INTERNAL_FUNCTION_OPTS)
-
+            function_opts=INTERNAL_FUNCTION_OPTS
+        )
 
         global_nest = Nest(shape=(M, N, K))
         global_i, global_j, global_k = global_nest.get_indices()
@@ -3509,13 +3662,17 @@ class SmokeTest(unittest.TestCase):
             tile_fn(m_tile_extent, n_tile_extent, k_tile_extent, A_cache, B_cache, C, global_i, global_j, global_k)
 
         global_sched = global_nest.create_schedule()
-        global_ii, global_jj, global_kk = global_sched.tile({ global_i: M_tile, global_j: N_tile, global_k: K_tile })
+        global_ii, global_jj, global_kk = global_sched.tile({
+            global_i: M_tile,
+            global_j: N_tile,
+            global_k: K_tile
+        })
         global_sched.reorder(global_i, global_j, global_k, global_ii, global_jj, global_kk)
         global_plan = global_sched.create_plan()
         global_plan._erase_loops([global_ii, global_jj, global_kk])
 
         function = package.add(global_plan, args=(A, B, C), base_name=test_name)
-        
+
         A_test = np.random.random((M, K)).astype(np.int16)
         B_test = np.random.random((K, N)).astype(np.uint8)
         C_test = np.random.random((M, N)).astype(np.int32)
@@ -3529,13 +3686,17 @@ class SmokeTest(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
-            package.build(test_name, format=Package.Format.DEFAULT | Package.Format.MLIR, mode=Package.Mode.RELEASE, output_dir=output_dir)
+            package.build(
+                test_name,
+                format=Package.Format.DEFAULT | Package.Format.MLIR,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
             v.check_correctness(
                 function.name,
                 before=correctness_check_values["pre"],
                 after=correctness_check_values["post"],
             )
-
 
     def test_int16_matmul_vpmaddwd(self):
         test_name = "test_int16_matmul_vpmaddwd"
@@ -3555,24 +3716,32 @@ class SmokeTest(unittest.TestCase):
             C[i, j] += A[i, k] * B[k, j]
 
         schedule = nest.create_schedule()
-        ii, jj, kk = schedule.tile({ i: 24, j: 128, k: 128 })
-        iii, jjj, kkk = schedule.tile({ ii: 6, jj: 16, kk: 4 })
-        jjjj, kkkk = schedule.tile({ jjj: 8, kkk: 2 })
+        ii, jj, kk = schedule.tile({
+            i: 24,
+            j: 128,
+            k: 128
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 6,
+            jj: 16,
+            kk: 4
+        })
+        jjjj, kkkk = schedule.tile({
+            jjj: 8,
+            kkk: 2
+        })
 
-        schedule.reorder(i, j, k,
-                         ii, jj, kk,
-                         kkk, iii, jjj,
-                         jjjj, kkkk)
+        schedule.reorder(i, j, k, ii, jj, kk, kkk, iii, jjj, jjjj, kkkk)
 
         plan = schedule.create_plan()
-        plan.cache(A, index = ii, element_type = ScalarType.int16, vectorize=False)
-        plan.cache(B, index = jjjj, trigger_index = jj, layout = Array.Layout.LAST_MAJOR, vectorize=False)
+        plan.cache(A, index=ii, element_type=ScalarType.int16, vectorize=False)
+        plan.cache(B, index=jjjj, trigger_index=jj, layout=Array.Layout.LAST_MAJOR, vectorize=False)
         plan.cache(C, iii)
         plan.vectorize(jjjj)
 
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
-        
+
         A_test = np.random.random((M, K)).astype(np.int16)
         B_test = np.random.random((K, N)).astype(np.int16)
         C_test = np.random.random((M, N)).astype(np.int32)
@@ -3593,8 +3762,10 @@ class SmokeTest(unittest.TestCase):
                 after=correctness_check_values["post"],
             )
 
-
-    @expectedFailure(FailedReason.INVALID, "generated x86_64 lib not readable by MacOS arm64 build tools", sys.platform == "darwin" and platform.machine() == "arm64")
+    @expectedFailure(
+        FailedReason.INVALID, "generated x86_64 lib not readable by MacOS arm64 build tools", sys.platform == "darwin"
+        and platform.machine() == "arm64"
+    )
     def test_int16_matmul_vpmaddwd_16_element_avx512(self):
         test_name = "test_int16_matmul_vpmaddwd_16_element_avx512"
         M = 240
@@ -3613,20 +3784,28 @@ class SmokeTest(unittest.TestCase):
             C[i, j] += A[i, k] * B[k, j]
 
         schedule = nest.create_schedule()
-        ii, jj, kk = schedule.tile({ i: 24, j: 128, k: 128 })
-        iii, jjj, kkk = schedule.tile({ ii: 6, jj: 32, kk: 4 })
-        jjjj, kkkk = schedule.tile({ jjj: 16, kkk: 2 })
+        ii, jj, kk = schedule.tile({
+            i: 24,
+            j: 128,
+            k: 128
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 6,
+            jj: 32,
+            kk: 4
+        })
+        jjjj, kkkk = schedule.tile({
+            jjj: 16,
+            kkk: 2
+        })
 
-        schedule.reorder(i, j, k,
-                         ii, jj, kk,
-                         kkk, iii, jjj,
-                         jjjj, kkkk)
+        schedule.reorder(i, j, k, ii, jj, kk, kkk, iii, jjj, jjjj, kkkk)
 
         # The Intel 8351N is a known Xeon Platinum with AVX-512 support
         target = KNOWN_DEVICES[Target.Category.CPU]["Intel 8351N"]
         plan = schedule.create_plan(target)
-        plan.cache(A, index = ii, element_type = ScalarType.int16, vectorize=False)
-        plan.cache(B, index = jjjj, trigger_index = jj, layout = Array.Layout.LAST_MAJOR, vectorize=False)
+        plan.cache(A, index=ii, element_type=ScalarType.int16, vectorize=False)
+        plan.cache(B, index=jjjj, trigger_index=jj, layout=Array.Layout.LAST_MAJOR, vectorize=False)
         plan.cache(C, iii)
         plan.vectorize(jjjj)
 
@@ -3639,8 +3818,6 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
             package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir)
             # Don't check correctness as we've set a target that we may not be running the tests on
-
-
 
     def test_int16_matmul_vpmaddwd_16_element_host(self):
         test_name = "test_int16_matmul_vpmaddwd_16_element_host"
@@ -3660,18 +3837,26 @@ class SmokeTest(unittest.TestCase):
             C[i, j] += A[i, k] * B[k, j]
 
         schedule = nest.create_schedule()
-        ii, jj, kk = schedule.tile({ i: 24, j: 128, k: 128 })
-        iii, jjj, kkk = schedule.tile({ ii: 6, jj: 32, kk: 4 })
-        jjjj, kkkk = schedule.tile({ jjj: 16, kkk: 2 })
+        ii, jj, kk = schedule.tile({
+            i: 24,
+            j: 128,
+            k: 128
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 6,
+            jj: 32,
+            kk: 4
+        })
+        jjjj, kkkk = schedule.tile({
+            jjj: 16,
+            kkk: 2
+        })
 
-        schedule.reorder(i, j, k,
-                         ii, jj, kk,
-                         kkk, iii, jjj,
-                         jjjj, kkkk)
+        schedule.reorder(i, j, k, ii, jj, kk, kkk, iii, jjj, jjjj, kkkk)
 
         plan = schedule.create_plan()
-        plan.cache(A, index = ii, element_type = ScalarType.int16, vectorize=False)
-        plan.cache(B, index = jjjj, trigger_index = jj, layout = Array.Layout.LAST_MAJOR, vectorize=False)
+        plan.cache(A, index=ii, element_type=ScalarType.int16, vectorize=False)
+        plan.cache(B, index=jjjj, trigger_index=jj, layout=Array.Layout.LAST_MAJOR, vectorize=False)
         plan.cache(C, iii)
         plan.vectorize(jjjj)
 
@@ -3716,24 +3901,32 @@ class SmokeTest(unittest.TestCase):
             C[i, j] += cast(A[i, k], ScalarType.int32) * cast(B[k, j], ScalarType.int32)
 
         schedule = nest.create_schedule()
-        ii, jj, kk = schedule.tile({ i: 24, j: 128, k: 128 })
-        iii, jjj, kkk = schedule.tile({ ii: 6, jj: 16, kk: 4 })
-        jjjj, kkkk = schedule.tile({ jjj: 8, kkk: 2 })
+        ii, jj, kk = schedule.tile({
+            i: 24,
+            j: 128,
+            k: 128
+        })
+        iii, jjj, kkk = schedule.tile({
+            ii: 6,
+            jj: 16,
+            kk: 4
+        })
+        jjjj, kkkk = schedule.tile({
+            jjj: 8,
+            kkk: 2
+        })
 
-        schedule.reorder(i, j, k,
-                         ii, jj, kk,
-                         kkk, iii, jjj,
-                         jjjj, kkkk)
+        schedule.reorder(i, j, k, ii, jj, kk, kkk, iii, jjj, jjjj, kkkk)
 
         plan = schedule.create_plan()
-        plan.cache(A, index = ii, element_type = ScalarType.int16, vectorize=False)
-        plan.cache(B, index = jjjj, trigger_index = jj, layout = Array.Layout.LAST_MAJOR, vectorize=False)
+        plan.cache(A, index=ii, element_type=ScalarType.int16, vectorize=False)
+        plan.cache(B, index=jjjj, trigger_index=jj, layout=Array.Layout.LAST_MAJOR, vectorize=False)
         plan.cache(C, iii)
         plan.vectorize(jjjj)
 
         package = Package()
         function = package.add(plan, args=(A, B, C), base_name=test_name)
-        
+
         A_test = np.random.random((M, K)).astype(np.int16)
         B_test = np.random.random((K, N)).astype(np.int16)
         C_test = np.random.random((M, N)).astype(np.int32)
@@ -3760,7 +3953,7 @@ class SmokeTest(unittest.TestCase):
         N = 16
 
         A = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M,), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M, ), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N))
         i, j = nest.get_indices()
@@ -3776,11 +3969,11 @@ class SmokeTest(unittest.TestCase):
 
         package = Package()
         function = package.add(plan, args=(A, B), base_name=test_name)
-        
-        A_test = np.random.random((M, N)).astype(np.int32)
-        B_test = np.random.random((M,)).astype(np.int32)
 
-        B_ref = np.zeros((M,)).astype(np.int32)
+        A_test = np.random.random((M, N)).astype(np.int32)
+        B_test = np.random.random((M, )).astype(np.int32)
+
+        B_ref = np.zeros((M, )).astype(np.int32)
         B_ref[:] = B_test[:]
         for j in range(N):
             B_ref[:] += A_test[:, j]
@@ -3807,7 +4000,7 @@ class SmokeTest(unittest.TestCase):
         N = 16
 
         A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M,), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M, ), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N))
         i, j = nest.get_indices()
@@ -3824,12 +4017,11 @@ class SmokeTest(unittest.TestCase):
 
         package = Package()
         function = package.add(plan, args=(A, B), base_name=test_name)
-        
-        A_test = np.random.random((M, N)).astype(np.int16)
-        B_test = np.random.random((M,)).astype(np.int32)
 
-        B_ref = np.zeros((M,)).astype(np.int32)
-        B_ref[:] = B_test[:]
+        A_test = np.random.random((M, N)).astype(np.int16)
+        B_test = np.random.random((M, )).astype(np.int32)
+
+        B_ref = B_test.copy()
         for j in range(N):
             B_ref[:] += A_test[:, j]
 
@@ -3842,7 +4034,63 @@ class SmokeTest(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
-            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir)
+            package.build(
+                test_name,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+            v.check_correctness(
+                function.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
+    def test_int16_to_int32_horizontal_vector_1_row(self):
+        test_name = "test_int16_to_int32_horizontal_vector_1_row"
+        M = 1
+        N = 16
+
+        A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M, ), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i] += A[i, j]
+
+        schedule = nest.create_schedule()
+        plan = schedule.create_plan()
+        plan.vectorize(i)
+        plan.vectorize(j)
+
+        package = Package()
+        function = package.add(plan, args=(A, B), base_name=test_name)
+
+        A_test = np.random.random((M, N)).astype(np.int16)
+        B_test = np.random.random((M, )).astype(np.int32)
+
+        B_ref = B_test.copy()
+        for j in range(N):
+            B_ref[:] += A_test[:, j]
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_test, B_ref),
+        }
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                test_name,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
             v.check_correctness(
                 function.name,
                 before=correctness_check_values["pre"],
@@ -3850,135 +4098,271 @@ class SmokeTest(unittest.TestCase):
             )
 
 
+    def test_int32_horizontal_vector_add_simple(self):
+        test_name = "test_int32_horizontal_vector_add_simple"
+        M = 256
+        N = 8
+
+        A = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M, ), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i] += A[i, j]
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.reorder(i, ii, j)
+        plan = schedule.create_plan()
+        plan.vectorize(ii)
+
+        package = Package()
+        function = package.add(plan, args=(A, B), base_name=test_name)
+
+        A_test = np.random.random((M, N)).astype(np.int32)
+        B_test = np.random.random((M, )).astype(np.int32)
+
+        B_ref = B_test.copy()
+        for j in range(N):
+            B_ref[:] += A_test[:, j]
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_test, B_ref),
+        }
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                test_name,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+            v.check_correctness(
+                function.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
+    def test_float32_horizontal_vector_add_simple(self):
+        test_name = "test_float32_horizontal_vector_add_simple"
+        M = 256
+        N = 8
+
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, ), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i] += A[i, j]
+
+        schedule = nest.create_schedule()
+        ii = schedule.split(i, 4)
+        schedule.reorder(i, ii, j)
+        plan = schedule.create_plan()
+        plan.vectorize(ii)
+
+        package = Package()
+        function = package.add(plan, args=(A, B), base_name=test_name)
+
+        A_test = np.random.random((M, N)).astype(np.float32)
+        B_test = np.random.random((M, )).astype(np.float32)
+
+        B_ref = B_test.copy()
+        for j in range(N):
+            B_ref[:] += A_test[:, j]
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_test, B_ref),
+        }
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                test_name,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+            v.check_correctness(
+                function.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
     # Cache widening the type
     def test_matmul_input_cache_element_type_widen(self) -> None:
         test_name = "test_matmul_input_cache_element_type_widen"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16),
-                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int16))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16),
+            cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int16)
+        )
 
     def test_matmul_output_cache_element_type_widen(self) -> None:
         test_name = "test_matmul_output_cache_element_type_widen"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16),
-                                               cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int32))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16),
+            cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int32)
+        )
 
     def test_matmul_input_output_cache_element_type_widen(self) -> None:
         test_name = "test_matmul_input_output_cache_element_type_widen"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16),
-                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32))
-
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16),
+            cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32)
+        )
 
     # Cache narrowing the type
     def test_matmul_input_cache_element_type_narrow(self) -> None:
         test_name = "test_matmul_input_cache_element_type_narrow"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
-                                               cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int32))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+            cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int32)
+        )
 
     def test_matmul_output_cache_element_type_narrow(self) -> None:
         test_name = "test_matmul_output_cache_element_type_narrow"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
-                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int16))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+            cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int16)
+        )
 
     def test_matmul_input_output_cache_element_type_narrow(self) -> None:
         test_name = "test_matmul_input_output_cache_element_type_narrow"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
-                                               cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16))
-
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+            cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int16)
+        )
 
     # Cache converting the type from int to float
     def test_matmul_input_cache_element_type_int_to_float(self) -> None:
         test_name = "test_matmul_input_cache_element_type_int_to_float"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
-                                               cache_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.int32))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+            cache_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.int32)
+        )
 
     def test_matmul_output_cache_element_type_int_to_float(self) -> None:
         test_name = "test_matmul_output_cache_element_type_int_to_float"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
-                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.float32))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+            cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.float32)
+        )
 
     def test_matmul_input_output_cache_element_type_int_to_float(self) -> None:
         test_name = "test_matmul_input_output_cache_element_type_int_to_float"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
-                                               cache_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32))
-
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+            cache_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32)
+        )
 
     # Cache converting the type from float to int
     def test_matmul_input_cache_element_type_float_to_int(self) -> None:
         test_name = "test_matmul_input_cache_element_type_float_to_int"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32),
-                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.float32),
-                                               check_correctness=False) # float to int results in so much rounding that correctness checks are not useful
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32),
+            cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.float32),
+            check_correctness=False
+        )    # float to int results in so much rounding that correctness checks are not useful
 
     def test_matmul_output_cache_element_type_float_to_int(self) -> None:
         test_name = "test_matmul_output_cache_element_type_float_to_int"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32),
-                                               cache_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.int32),
-                                               check_correctness=False) # float to int results in so much rounding that correctness checks are not useful
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32),
+            cache_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.int32),
+            check_correctness=False
+        )    # float to int results in so much rounding that correctness checks are not useful
 
     def test_matmul_input_output_cache_element_type_float_to_int(self) -> None:
         test_name = "test_matmul_input_output_cache_element_type_float_to_int"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32),
-                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
-                                               check_correctness=False) # float to int results in so much rounding that correctness checks are not useful
-
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.float32, ScalarType.float32, ScalarType.float32),
+            cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+            check_correctness=False
+        )    # float to int results in so much rounding that correctness checks are not useful
 
     # Cache converting the type from int to uint
     def test_matmul_input_cache_element_type_int_to_uint(self) -> None:
         test_name = "test_matmul_input_cache_element_type_int_to_uint"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
-                                               cache_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.int32))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+            cache_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.int32)
+        )
 
     def test_matmul_output_cache_element_type_int_to_uint(self) -> None:
         test_name = "test_matmul_output_cache_element_type_int_to_uint"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
-                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.uint32))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+            cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.uint32)
+        )
 
     def test_matmul_input_output_cache_element_type_int_to_uint(self) -> None:
         test_name = "test_matmul_input_output_cache_element_type_int_to_uint"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
-                                               cache_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32))
-
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32),
+            cache_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32)
+        )
 
     # Cache converting the type from uint to int
     def test_matmul_input_cache_element_type_uint_to_int(self) -> None:
         test_name = "test_matmul_input_cache_element_type_uint_to_int"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32),
-                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.uint32))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32),
+            cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.uint32)
+        )
 
     def test_matmul_output_cache_element_type_uint_to_int(self) -> None:
         test_name = "test_matmul_output_cache_element_type_uint_to_int"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32),
-                                               cache_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.int32))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32),
+            cache_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.int32)
+        )
 
     def test_matmul_input_output_cache_element_type_uint_to_int(self) -> None:
         test_name = "test_matmul_input_output_cache_element_type_uint_to_int"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32),
-                                               cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32))
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.uint32, ScalarType.uint32, ScalarType.uint32),
+            cache_element_types=(ScalarType.int32, ScalarType.int32, ScalarType.int32)
+        )
 
     # Cache converting the type from uint to int and sign extending
     def test_matmul_input_cache_element_type_uint_to_int(self) -> None:
         test_name = "test_matmul_input_cache_element_type_uint8_to_int16"
-        self._matmul_cache_element_type_common(test_name,
-                                               array_element_types=(ScalarType.uint8, ScalarType.uint8, ScalarType.int32),
-                                               cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int32))
-
+        self._matmul_cache_element_type_common(
+            test_name,
+            array_element_types=(ScalarType.uint8, ScalarType.uint8, ScalarType.int32),
+            cache_element_types=(ScalarType.int16, ScalarType.int16, ScalarType.int32)
+        )
 
     def test_gpu_barrier_opt(self) -> None:
         from accera import Array, Nest, Package, ScalarType, Target
@@ -5122,10 +5506,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(S, M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(S, K, N), layout=Array.Layout.LAST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(S, M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(S, M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(S, M, N, K))
@@ -5171,15 +5552,11 @@ class SmokeTest(unittest.TestCase):
 
             # Function decl
             checker.check_label('accv.func nested @test_gpu_cache_different_input_layouts_')
-            checker.check_same(
-                '%[[Array_A:[a-z0-9_]+]]: memref<4x2560x2048xf32>'
-            )
+            checker.check_same('%[[Array_A:[a-z0-9_]+]]: memref<4x2560x2048xf32>')
             checker.check_same(
                 '%[[Array_B:[a-z0-9_]+]]: memref<4x2048x1536xf32, affine_map<(d0, d1, d2) -> (d0 + d1 * 4 + d2 * 8192)>>'
             )
-            checker.check_same(
-                '%[[Array_C:[a-z0-9_]+]]: memref<4x2560x1536xf32>'
-            )
+            checker.check_same('%[[Array_C:[a-z0-9_]+]]: memref<4x2560x1536xf32>')
 
             # Block X/Y
             checker.check('%[[Block_Y:[0-9_]+]] = gpu.block_id y')
@@ -5251,10 +5628,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -5339,10 +5713,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -5401,7 +5772,8 @@ class SmokeTest(unittest.TestCase):
             package,
             package_name,
             file_check_fn=file_check_fn,
-            check_correctness=False, # We expect this test to produce incorrect gemm results since we are caching output in shared memory and every thread is repeating each others's work.
+            check_correctness=
+            False,    # We expect this test to produce incorrect gemm results since we are caching output in shared memory and every thread is repeating each others's work.
             file_list=[f"{package_name}.cu", f"{package_name}.hat"],
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
@@ -5428,10 +5800,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.LAST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -5561,10 +5930,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -5646,10 +6012,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -5832,10 +6195,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -5899,10 +6259,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float16, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -5986,10 +6343,7 @@ class SmokeTest(unittest.TestCase):
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
-            role=Role.INPUT_OUTPUT,
-            element_type=ScalarType.float32,
-            shape=(M, N),
-            layout=Array.Layout.FIRST_MAJOR
+            role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N), layout=Array.Layout.FIRST_MAJOR
         )
 
         nest = Nest(shape=(M, N, K))
@@ -6058,7 +6412,6 @@ class SmokeTest(unittest.TestCase):
             package_format=Package.Format.DEFAULT | Package.Format.MLIR
         )
 
-
     def test_loop_erase_hack(self) -> None:
         # We want to fuse two nests along at least one dimension that only one of them should actually have, but for positioning reasons
         # it must exist in both. We therefore fuse along all the dimensions and erase the inner unfused loops that we don't actually need
@@ -6082,7 +6435,11 @@ class SmokeTest(unittest.TestCase):
             C[i0, j0] += A[i0, k0] * B[k0, j0]
 
         schedule0 = nest0.create_schedule()
-        ii0, jj0, kk0 = schedule0.tile({ i0: M_tile, j0: N_tile, k0: K_tile })
+        ii0, jj0, kk0 = schedule0.tile({
+            i0: M_tile,
+            j0: N_tile,
+            k0: K_tile
+        })
         schedule0.reorder(i0, j0, k0, ii0, jj0, kk0)
 
         # Create nest1 and schedule1
@@ -6094,7 +6451,11 @@ class SmokeTest(unittest.TestCase):
             C[i1, j1] = C[i1, j1] * Scalar(0.2)
 
         schedule1 = nest1.create_schedule()
-        ii1, jj1, kk1 = schedule1.tile({ i1: M_tile, j1: N_tile, k1: K_tile })
+        ii1, jj1, kk1 = schedule1.tile({
+            i1: M_tile,
+            j1: N_tile,
+            k1: K_tile
+        })
         schedule1.reorder(i1, j1, k1, ii1, jj1, kk1)
 
         schedule = fuse((schedule0, schedule1), partial=3)
@@ -6116,11 +6477,12 @@ class SmokeTest(unittest.TestCase):
         split_size = 32
 
         m_extent = Dimension(name='m_extent')
-        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
-        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent, ))
+        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent, ))
 
-        nest = Nest((m_extent,))
+        nest = Nest((m_extent, ))
         i, = nest.get_indices()
+
         @nest.iteration_logic
         def _():
             output_arr[i] += input_arr[i]
@@ -6137,8 +6499,8 @@ class SmokeTest(unittest.TestCase):
         fn = package.add(plan, args=(m_extent, input_arr, output_arr), base_name=package_name)
 
         M_test = np.int64(67)
-        input_test = np.random.random((M_test,)).astype(np.float32)
-        output_test = np.random.random((M_test,)).astype(np.float32)
+        input_test = np.random.random((M_test, )).astype(np.float32)
+        output_test = np.random.random((M_test, )).astype(np.float32)
         correctness_check_values = {
             "pre": [M_test, input_test, output_test],
             "post": [M_test, input_test, output_test + input_test],
@@ -6160,11 +6522,12 @@ class SmokeTest(unittest.TestCase):
         split_size = 1
 
         m_extent = Dimension("m_extent")
-        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
-        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent, ))
+        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent, ))
 
-        nest = Nest((m_extent,))
+        nest = Nest((m_extent, ))
         i, = nest.get_indices()
+
         @nest.iteration_logic
         def _():
             output_arr[i] += input_arr[i]
@@ -6181,8 +6544,8 @@ class SmokeTest(unittest.TestCase):
         fn = package.add(plan, args=(m_extent, input_arr, output_arr), base_name=package_name)
 
         M_test = np.int64(1)
-        input_test = np.random.random((M_test,)).astype(np.float32)
-        output_test = np.random.random((M_test,)).astype(np.float32)
+        input_test = np.random.random((M_test, )).astype(np.float32)
+        output_test = np.random.random((M_test, )).astype(np.float32)
         correctness_check_values = {
             "pre": [M_test, input_test, output_test],
             "post": [M_test, input_test, output_test + input_test],
@@ -6191,7 +6554,9 @@ class SmokeTest(unittest.TestCase):
         # Build the HAT package
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+            package.build(
+                package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
 
             v.check_correctness(
                 fn.name,
@@ -6204,11 +6569,12 @@ class SmokeTest(unittest.TestCase):
         split_size = 1
 
         m_extent = Dimension("m_extent")
-        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
-        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent, ))
+        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent, ))
 
-        nest = Nest((m_extent,))
+        nest = Nest((m_extent, ))
         i, = nest.get_indices()
+
         @nest.iteration_logic
         def _():
             output_arr[i] += input_arr[i]
@@ -6224,8 +6590,8 @@ class SmokeTest(unittest.TestCase):
         fn = package.add(plan, args=(m_extent, input_arr, output_arr), base_name=package_name)
 
         M_test = np.int64(1)
-        input_test = np.random.random((M_test,)).astype(np.float32)
-        output_test = np.random.random((M_test,)).astype(np.float32)
+        input_test = np.random.random((M_test, )).astype(np.float32)
+        output_test = np.random.random((M_test, )).astype(np.float32)
         correctness_check_values = {
             "pre": [M_test, input_test, output_test],
             "post": [M_test, input_test, output_test + input_test],
@@ -6234,7 +6600,9 @@ class SmokeTest(unittest.TestCase):
         # Build the HAT package
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+            package.build(
+                package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
 
             v.check_correctness(
                 fn.name,
@@ -6248,11 +6616,12 @@ class SmokeTest(unittest.TestCase):
         inner_split_size = 1
 
         m_extent = Dimension("m_extent")
-        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent,))
-        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent,))
+        input_arr = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(m_extent, ))
+        output_arr = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(m_extent, ))
 
-        nest = Nest((m_extent,))
+        nest = Nest((m_extent, ))
         i, = nest.get_indices()
+
         @nest.iteration_logic
         def _():
             output_arr[i] += input_arr[i]
@@ -6270,8 +6639,8 @@ class SmokeTest(unittest.TestCase):
         fn = package.add(plan, args=(m_extent, input_arr, output_arr), base_name=package_name)
 
         M_test = np.int64(37)
-        input_test = np.random.random((M_test,)).astype(np.float32)
-        output_test = np.random.random((M_test,)).astype(np.float32)
+        input_test = np.random.random((M_test, )).astype(np.float32)
+        output_test = np.random.random((M_test, )).astype(np.float32)
         correctness_check_values = {
             "pre": [M_test, input_test, output_test],
             "post": [M_test, input_test, output_test + input_test],
@@ -6280,7 +6649,9 @@ class SmokeTest(unittest.TestCase):
         # Build the HAT package
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False)
+            package.build(
+                package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
 
             v.check_correctness(
                 fn.name,
@@ -6292,18 +6663,21 @@ class SmokeTest(unittest.TestCase):
         from accera._lang_python._lang import _If
         N_input = 5
         N_output = 8
-        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input,))
-        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output,))
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output, ))
         package = Package()
-        nest = Nest(shape=(N_output,))
+        nest = Nest(shape=(N_output, ))
         i, = nest.get_indices()
 
         @nest.iteration_logic
         def _nest():
+
             def store_value():
                 Output[i] = Input[i]
+
             def store_zero():
                 Output[i] = 0
+
             _If(i < N_input, store_value).Else(store_zero)
 
         sched = nest.create_schedule()
@@ -6314,24 +6688,31 @@ class SmokeTest(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE, mode=self.PACKAGE_MODE, output_dir=output_dir)
-    
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
     def test_vectorized_masked_store(self) -> None:
         from accera._lang_python._lang import _If
         N_input = 8
         N_output = 5
-        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input,))
-        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output,))
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output, ))
         package = Package()
-        nest = Nest(shape=(N_input,))
+        nest = Nest(shape=(N_input, ))
         i, = nest.get_indices()
 
         @nest.iteration_logic
         def _nest():
+
             def store_value():
                 Output[i] = Input[i]
+
             _If(i < N_output, store_value)
-      
+
         sched = nest.create_schedule()
         plan = sched.create_plan()
         plan.vectorize(i)
@@ -6340,22 +6721,29 @@ class SmokeTest(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE, mode=self.PACKAGE_MODE, output_dir=output_dir)
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
 
     def test_vectorized_masked_accumulate(self) -> None:
         from accera._lang_python._lang import _If
         N_input = 8
         N_output = 5
-        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input,))
-        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output,))
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output, ))
         package = Package()
-        nest = Nest(shape=(N_input,))
+        nest = Nest(shape=(N_input, ))
         i, = nest.get_indices()
 
         @nest.iteration_logic
         def _nest():
+
             def store_value():
                 Output[i] += Input[i]
+
             _If(i < N_output, store_value)
 
         sched = nest.create_schedule()
@@ -6366,7 +6754,112 @@ class SmokeTest(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(name=package_name, format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE, mode=self.PACKAGE_MODE, output_dir=output_dir)
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+    def test_packing_floordiv_mod_no_splits(self) -> None:
+        package_name = "test_packing_floordiv_mod_no_splits"
+        M = 256
+        M_inner = 16
+        N = 64
+        N_inner = 8
+        input_shape = (M, N)
+        packed_shape = (M // M_inner, N // N_inner, M_inner, N_inner)
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=input_shape)
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=packed_shape)
+
+        package = Package()
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+            Output[i // M_inner, j // N_inner, i % M_inner, j % N_inner] = Input[i, j]
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        fn = package.add(plan, args=(Input, Output), base_name=package_name)
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+    def test_packing_floordiv_mod_splits(self) -> None:
+        package_name = "test_packing_floordiv_mod_splits"
+        M = 256
+        M_inner = 16
+        N = 64
+        N_inner = 8
+        input_shape = (M, N)
+        packed_shape = (M // M_inner, N // N_inner, M_inner, N_inner)
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=input_shape)
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=packed_shape)
+
+        package = Package()
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+            Output[i // M_inner, j // N_inner, i % M_inner, j % N_inner] = Input[i, j]
+
+        sched = nest.create_schedule()
+        ii, jj = sched.tile(dict(zip([i, j], [M_inner, N_inner])))
+        plan = sched.create_plan()
+        fn = package.add(plan, args=(Input, Output), base_name=package_name)
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+    def test_packing_floordiv_mod_splits_vectorize(self) -> None:
+        package_name = "test_packing_floordiv_mod_splits_vectorize"
+        M = 256
+        M_inner = 16
+        N = 64
+        N_inner = 8
+        input_shape = (M, N)
+        packed_shape = (M // M_inner, N // N_inner, M_inner, N_inner)
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=input_shape)
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=packed_shape)
+
+        package = Package()
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+            Output[i // M_inner, j // N_inner, i % M_inner, j % N_inner] = Input[i, j]
+
+        sched = nest.create_schedule()
+        ii, jj = sched.tile(dict(zip([i, j], [M_inner, N_inner])))
+        plan = sched.create_plan()
+        plan.vectorize(jj)
+        fn = package.add(plan, args=(Input, Output), base_name=package_name)
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=10)

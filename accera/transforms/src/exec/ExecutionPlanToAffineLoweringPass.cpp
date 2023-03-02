@@ -5,7 +5,9 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "exec/ExecutionPlanToAffineLoweringPass.h"
+
 #include "AcceraPasses.h"
+#include "affine/CheckBoundsPass.h"
 
 #include <ir/include/IRUtil.h>
 #include <ir/include/exec/ExecutionOptions.h>
@@ -77,7 +79,6 @@ namespace
 // in internal utilities as well as MLIR APIs as a mlir::StringRef. Note that mlir::StringRef
 // has a constructor that takes a const std::string& for convenience
 
-const std::string BoundsCheckedAttrName = "accxp_bounds_checked";
 const std::string BaseArrayAccessMapAttrName = "accxp_base_array_access_map";
 const std::string BaseArrayAccessIndicesAttrName = "accxp_base_array_access_indices";
 
@@ -256,33 +257,6 @@ struct HoistScalingToCacheReduceRewrite : public OpRewritePattern<mlir::AffineSt
     LogicalResult matchAndRewrite(mlir::AffineStoreOp affineStoreOp, PatternRewriter& rewriter) const final;
 };
 
-struct OutOfBoundsLoadRewrite : public OpRewritePattern<mlir::memref::LoadOp>
-{
-    using OpRewritePattern<mlir::memref::LoadOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir::memref::LoadOp loadOp, PatternRewriter& rewriter) const final;
-};
-
-struct OutOfBoundsAffineLoadRewrite : public OpRewritePattern<mlir::AffineLoadOp>
-{
-    using OpRewritePattern<mlir::AffineLoadOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir::AffineLoadOp affineLoadOp, PatternRewriter& rewriter) const final;
-};
-
-struct OutOfBoundsStoreRewrite : public OpRewritePattern<mlir::memref::StoreOp>
-{
-    using OpRewritePattern<mlir::memref::StoreOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir::memref::StoreOp toreOp, PatternRewriter& rewriter) const final;
-};
-
-struct OutOfBoundsAffineStoreRewrite : public OpRewritePattern<mlir::AffineStoreOp>
-{
-    using OpRewritePattern<mlir::AffineStoreOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir::AffineStoreOp affineStoreOp, PatternRewriter& rewriter) const final;
-};
 
 struct ConvertLoadsToAffineRewrite : public OpRewritePattern<mlir::memref::LoadOp>
 {
@@ -511,58 +485,7 @@ std::optional<int64_t> GetDimSizeForBaseIndices(const std::vector<Index>& baseIn
     return dimSize;
 }
 
-bool IsBoundsChecked(Operation* op)
-{
-    return op->getAttr(BoundsCheckedAttrName) != nullptr;
-}
 
-void SetBoundsChecked(OpBuilder& builder, Operation* op)
-{
-    op->setAttr(BoundsCheckedAttrName, builder.getUnitAttr());
-}
-
-template <typename LoadOrStoreOp>
-bool HasOutOfBoundsAccess(LoadOrStoreOp op, mlir::Location loc)
-{
-    // This is a pared down version of mlir::boundCheckLoadOrStoreOp, which has a bug currently where it only returns failure (out of bounds)
-    // if the last thing it checks has a failure, rather than anything it checks.
-
-    mlir::MemRefRegion accessRegion(loc);
-    auto memRefType = op.getMemRefType();
-    unsigned rank = memRefType.getRank();
-    (void)accessRegion.compute(op, 0, nullptr /*sliceState*/, false /*addMemRefDimBounds */);
-    bool outOfBounds = false;
-
-    // TODO : handle dynamic dimension out of bounds checks generically
-    if (!memRefType.hasStaticShape())
-    {
-        return false;
-    }
-
-    // For each dimension, check for out of bounds.
-    for (unsigned dim = 0; dim < rank; ++dim)
-    {
-        // Intersect memory region with constraint capturing out of bounds (both out
-        // of upper and out of lower), and check if the constraint system is
-        // feasible. If it is, there is at least one point out of bounds.
-
-        // Check for overflow: d_i >= memref dim size.
-        FlatAffineValueConstraints upperConstraints(*accessRegion.getConstraints());
-        int64_t dimSize = memRefType.getDimSize(dim);
-        upperConstraints.addBound(FlatAffineConstraints::LB, dim, dimSize);
-
-        // Check for a negative index: d_i <= -1.
-        FlatAffineValueConstraints lowerConstraints(*accessRegion.getConstraints());
-        lowerConstraints.addBound(FlatAffineConstraints::UB, dim, -1);
-
-        if (!upperConstraints.isEmpty() || !lowerConstraints.isEmpty())
-        {
-            outOfBounds = true;
-            break;
-        }
-    }
-    return outOfBounds;
-}
 
 // Returns whether left and right contain the same elements (possibly reordered)
 template <typename ElementType>
@@ -2533,7 +2456,7 @@ LogicalResult ActiveElementCacheCopyOpRewrite::matchAndRewrite(ActiveElementCach
     auto copyOrder = copyScheduleOp.getOrder();
     for (const auto& loopIndex : copyOrder)
     {
-        copyScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
+        copyScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(affine::AccessBoundsCheckAttrName), rewriter.getUnitAttr());
     }
 
     if (execTarget == v::ExecutionTarget::GPU && !IsMemspaceLocal(dstMemRefSpace))
@@ -3000,7 +2923,7 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
             auto copyOrder = copyScheduleOp.getOrder();
             for (const auto& loopIndex : copyOrder)
             {
-                copyScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
+                copyScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(affine::AccessBoundsCheckAttrName), rewriter.getUnitAttr());
             }
         }
     }
@@ -3179,7 +3102,7 @@ LogicalResult ActiveBlockCacheReduceOpRewrite::matchAndRewrite(ActiveBlockCacheR
             auto copyOrder = reduceScheduleOp.getOrder();
             for (const auto& loopIndex : copyOrder)
             {
-                reduceScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
+                reduceScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(affine::AccessBoundsCheckAttrName), rewriter.getUnitAttr());
             }
         }
         else
@@ -3272,7 +3195,7 @@ LogicalResult ActiveElementCacheReduceOpRewrite::matchAndRewrite(ActiveElementCa
     auto reduceOrder = reduceScheduleOp.getOrder();
     for (const auto& loopIndex : reduceOrder)
     {
-        reduceScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(AccessBoundsCheckAttrName), rewriter.getUnitAttr());
+        reduceScheduleOp.addLoopAttribute(loopIndex, rewriter.getStringAttr(affine::AccessBoundsCheckAttrName), rewriter.getUnitAttr());
     }
 
     rewriter.eraseOp(cacheReduceOp);
@@ -7023,215 +6946,7 @@ LogicalResult HoistScalingToCacheReduceRewrite::matchAndRewrite(mlir::AffineStor
     return success();
 }
 
-bool AncestorOpContainsAttrOfName(Operation* op, const mlir::StringRef& name)
-{
-    while (op != nullptr)
-    {
-        if (op->getAttr(name) != nullptr)
-        {
-            return true;
-        }
-        op = op->getParentOp();
-    }
-    return false;
-}
 
-LogicalResult OutOfBoundsLoadRewriteCommon(mlir::AffineLoadOp affineLoadOp, PatternRewriter& rewriter)
-{
-    if (IsBoundsChecked(affineLoadOp))
-    {
-        return success();
-    }
-    auto loc = affineLoadOp.getLoc();
-    mlir::AffineLoadOp::Adaptor adaptor{ affineLoadOp };
-
-    if (HasOutOfBoundsAccess(affineLoadOp, loc))
-    {
-        // This load has a potential out-of-bounds access, so replace it with a conditional load
-
-        auto accessMapAttr = affineLoadOp.getAffineMapAttr();
-        auto accessMap = accessMapAttr.getValue();
-        auto loadSrc = affineLoadOp.memref();
-        auto loadSrcType = loadSrc.getType();
-        assert(loadSrcType.isa<mlir::MemRefType>());
-        auto memRefType = loadSrcType.cast<mlir::MemRefType>();
-
-        auto loadResultType = affineLoadOp.result().getType();
-
-        std::vector<mlir::AffineExpr> constraintExprs;
-        constraintExprs.reserve(accessMap.getNumResults() * 2); // One lower bound and one upper bound check per src dimension
-        std::vector<mlir::Value> accessIndices(adaptor.indices().begin(), adaptor.indices().end());
-        auto resolvedAccessIndices = util::MultiDimAffineApply(rewriter, loc, accessMap, accessIndices);
-        SmallVector<bool, 4> constraintEqFlags(accessMap.getNumResults() * 2, false);
-        for (size_t srcDim = 0; srcDim < accessMap.getNumResults(); srcDim++)
-        {
-            // Lower bound check
-            constraintExprs.push_back(rewriter.getAffineDimExpr(srcDim)); // Will check whether this index is >= 0
-
-            // Upper bound check
-            constraintExprs.push_back(memRefType.getDimSize(srcDim) - rewriter.getAffineDimExpr(srcDim) - rewriter.getAffineConstantExpr(1)); // Will check whether (this dimSize - this index - 1) >= 0 (note: -1 since we're doing a >= check with 0-based indices)
-        }
-
-        std::vector<int64_t> tmpBufferShape{ 1 }; // only one element of type loadResultType
-        mlir::MemRefType tmpElementType;
-        std::optional<v::ExecutionTarget> execTargetOpt = util::ResolveExecutionTarget(affineLoadOp);
-        assert(execTargetOpt.has_value());
-        auto execTarget = *execTargetOpt;
-        mlir::Value tmpBuffer;
-        if (execTarget == v::ExecutionTarget::GPU)
-        {
-            tmpElementType = mlir::MemRefType::get(tmpBufferShape, loadResultType, {}, static_cast<unsigned>(v::MemorySpace::Private));
-            tmpBuffer = rewriter.create<v::AllocOp>(loc, tmpElementType, llvm::None);
-        }
-        else
-        {
-            tmpElementType = mlir::MemRefType::get(tmpBufferShape, loadResultType);
-            tmpBuffer = rewriter.create<mlir::memref::AllocaOp>(loc, tmpElementType, mlir::ValueRange{}, rewriter.getI64IntegerAttr(AVX2Alignment));
-        }
-
-        auto zeroIndex = rewriter.create<arith::ConstantIndexOp>(loc, 0);
-
-        auto srcBoundsCheckSet = mlir::IntegerSet::get(resolvedAccessIndices.size(), 0, constraintExprs, constraintEqFlags);
-        auto ifOp = rewriter.create<mlir::AffineIfOp>(loc, srcBoundsCheckSet, ValueRange{ resolvedAccessIndices }, true); // true indicating we want an "else" region
-
-        auto thenBuilder = ifOp.getThenBodyBuilder();
-        auto newLoadOp = thenBuilder.create<mlir::AffineLoadOp>(loc, loadSrc, accessMap, accessIndices);
-        SetBoundsChecked(thenBuilder, newLoadOp);
-
-        auto thenStoreOp = thenBuilder.create<mlir::memref::StoreOp>(loc, newLoadOp.getResult(), tmpBuffer, ValueRange{ zeroIndex });
-        SetBoundsChecked(thenBuilder, thenStoreOp);
-
-        auto elseBuilder = ifOp.getElseBodyBuilder();
-        // TODO : support user-specified padding value rather than always using 0
-        auto constantZero = elseBuilder.create<arith::ConstantOp>(loc, elseBuilder.getZeroAttr(loadResultType));
-        auto elseStoreOp = elseBuilder.create<mlir::memref::StoreOp>(loc, constantZero.getResult(), tmpBuffer, ValueRange{ zeroIndex });
-        SetBoundsChecked(elseBuilder, elseStoreOp);
-
-        auto tmpSlotLoad = rewriter.create<mlir::memref::LoadOp>(loc, tmpBuffer, ValueRange{ zeroIndex });
-        SetBoundsChecked(rewriter, tmpSlotLoad);
-
-        affineLoadOp.replaceAllUsesWith(tmpSlotLoad.getResult());
-        rewriter.eraseOp(affineLoadOp);
-    }
-
-    return success();
-}
-
-LogicalResult OutOfBoundsLoadRewrite::matchAndRewrite(mlir::memref::LoadOp loadOp, PatternRewriter& rewriter) const
-{
-    // Only check for out-of-bounds-accesses inside of ops that are marked for bounds checking
-    if (!AncestorOpContainsAttrOfName(loadOp, AccessBoundsCheckAttrName))
-    {
-        return success();
-    }
-
-    if (IsBoundsChecked(loadOp))
-    {
-        return success();
-    }
-    // Convert std.load to affine.load with an identity map
-    auto loc = loadOp.getLoc();
-    mlir::memref::LoadOp::Adaptor adaptor{ loadOp };
-    auto memRefType = adaptor.memref().getType().cast<mlir::MemRefType>();
-    auto affineLoadOp = rewriter.create<mlir::AffineLoadOp>(loc, adaptor.memref(), rewriter.getMultiDimIdentityMap(memRefType.getRank()), adaptor.indices());
-    loadOp.replaceAllUsesWith(affineLoadOp.getResult());
-    auto result = OutOfBoundsLoadRewriteCommon(affineLoadOp, rewriter);
-    rewriter.eraseOp(loadOp);
-    return result;
-}
-
-LogicalResult OutOfBoundsAffineLoadRewrite::matchAndRewrite(mlir::AffineLoadOp affineLoadOp, PatternRewriter& rewriter) const
-{
-    // Only check for out-of-bounds-accesses inside of ops that are marked for bounds checking
-    if (!AncestorOpContainsAttrOfName(affineLoadOp, AccessBoundsCheckAttrName))
-    {
-        return success();
-    }
-
-    return OutOfBoundsLoadRewriteCommon(affineLoadOp, rewriter);
-}
-
-LogicalResult OutOfBoundsStoreRewriteCommon(mlir::AffineStoreOp affineStoreOp, PatternRewriter& rewriter)
-{
-    if (IsBoundsChecked(affineStoreOp))
-    {
-        return success();
-    }
-
-    auto loc = affineStoreOp.getLoc();
-    mlir::AffineStoreOp::Adaptor adaptor{ affineStoreOp };
-
-    if (HasOutOfBoundsAccess(affineStoreOp, loc))
-    {
-        // This store has a potential out-of-bounds access, so replace it with a conditional store
-
-        auto accessMapAttr = affineStoreOp.getAffineMapAttr();
-        auto accessMap = accessMapAttr.getValue();
-        auto storeDst = affineStoreOp.memref();
-        auto storeDstType = storeDst.getType();
-        assert(storeDstType.isa<mlir::MemRefType>());
-        auto memRefType = storeDstType.cast<mlir::MemRefType>();
-
-        // TODO : de-dupe affine.if constraint code with load case
-        std::vector<mlir::AffineExpr> constraintExprs;
-        constraintExprs.reserve(accessMap.getNumResults() * 2); // One lower bound and one upper bound check per src dimension
-        std::vector<mlir::Value> accessIndices(adaptor.indices().begin(), adaptor.indices().end());
-        auto resolvedAccessIndices = util::MultiDimAffineApply(rewriter, loc, accessMap, accessIndices);
-        SmallVector<bool, 4> constraintEqFlags(accessMap.getNumResults() * 2, false);
-        for (size_t srcDim = 0; srcDim < accessMap.getNumResults(); srcDim++)
-        {
-            // Lower bound check
-            constraintExprs.push_back(rewriter.getAffineDimExpr(srcDim)); // Will check whether this index is >= 0
-
-            // Upper bound check
-            constraintExprs.push_back(memRefType.getDimSize(srcDim) - rewriter.getAffineDimExpr(srcDim) - rewriter.getAffineConstantExpr(1)); // Will check whether (this dimSize - this index - 1) >= 0 (note: -1 since we're doing a >= check with 0-based indices)
-        }
-
-        auto srcBoundsCheckSet = mlir::IntegerSet::get(resolvedAccessIndices.size(), 0, constraintExprs, constraintEqFlags);
-        auto ifOp = rewriter.create<mlir::AffineIfOp>(loc, srcBoundsCheckSet, ValueRange{ resolvedAccessIndices }, true); // true indicating we want an "else" region
-
-        auto thenBuilder = ifOp.getThenBodyBuilder();
-        auto newStoreOp = thenBuilder.create<mlir::AffineStoreOp>(loc, affineStoreOp.value(), affineStoreOp.memref(), accessMap, accessIndices);
-        SetBoundsChecked(thenBuilder, newStoreOp);
-
-        rewriter.eraseOp(affineStoreOp);
-    }
-
-    return success();
-}
-
-LogicalResult OutOfBoundsStoreRewrite::matchAndRewrite(mlir::memref::StoreOp storeOp, PatternRewriter& rewriter) const
-{
-    // Only check for out-of-bounds-accesses inside of ops that are marked for bounds checking
-    if (!AncestorOpContainsAttrOfName(storeOp, AccessBoundsCheckAttrName))
-    {
-        return success();
-    }
-
-    if (IsBoundsChecked(storeOp))
-    {
-        return success();
-    }
-    // Convert std.store to affine.store with an identity map
-    auto loc = storeOp.getLoc();
-    mlir::memref::StoreOp::Adaptor adaptor{ storeOp };
-    auto memRefType = adaptor.memref().getType().cast<mlir::MemRefType>();
-    auto affineStoreOp = rewriter.create<mlir::AffineStoreOp>(loc, adaptor.value(), adaptor.memref(), rewriter.getMultiDimIdentityMap(memRefType.getRank()), adaptor.indices());
-    auto result = OutOfBoundsStoreRewriteCommon(affineStoreOp, rewriter);
-    rewriter.eraseOp(storeOp);
-    return result;
-}
-
-LogicalResult OutOfBoundsAffineStoreRewrite::matchAndRewrite(mlir::AffineStoreOp affineStoreOp, PatternRewriter& rewriter) const
-{
-    // Only check for out-of-bounds-accesses inside of ops that are marked for bounds checking
-    if (!AncestorOpContainsAttrOfName(affineStoreOp, AccessBoundsCheckAttrName))
-    {
-        return success();
-    }
-
-    return OutOfBoundsStoreRewriteCommon(affineStoreOp, rewriter);
-}
 
 template <typename OpType>
 LogicalResult ConvertStoreToAffine(PatternRewriter& rewriter, OpType op)
@@ -7469,7 +7184,7 @@ void OutOfBoundsAccessHandlingPass::runOnOperation()
     ConversionTarget target(getContext());
 
     RewritePatternSet patterns(&getContext());
-    accera::transforms::executionPlan::populateOutOfBoundsAccessHandlingPatterns(patterns);
+    accera::transforms::affine::populateBoundsCheckingPatterns(patterns);
 
     if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
         signalPassFailure();
@@ -7599,14 +7314,6 @@ void populateExecutionPlanParallelizePatterns(mlir::RewritePatternSet& patterns)
 void populateExecutionPlanScaleHoistingPatterns(mlir::RewritePatternSet& patterns)
 {
     patterns.insert<HoistScalingToCacheReduceRewrite>(patterns.getContext());
-}
-
-void populateOutOfBoundsAccessHandlingPatterns(mlir::RewritePatternSet& patterns)
-{
-    patterns.insert<OutOfBoundsLoadRewrite,
-                    OutOfBoundsStoreRewrite,
-                    OutOfBoundsAffineLoadRewrite,
-                    OutOfBoundsAffineStoreRewrite>(patterns.getContext());
 }
 
 void populateConvergeLoadStoresPatterns(mlir::RewritePatternSet& patterns)

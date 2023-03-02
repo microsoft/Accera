@@ -10,6 +10,13 @@
 #include <ir/include/exec/ExecutionPlanOps.h>
 #include <ir/include/value/ValueDialect.h>
 
+#include <iterator>
+#include <llvm/ADT/Sequence.h>
+#include <llvm/ADT/SmallVector.h>
+#include <mlir/IR/AffineExpr.h>
+#include <mlir/IR/AffineMap.h>
+#include <mlir/IR/OperationSupport.h>
+#include <mlir/Support/LogicalResult.h>
 #include <utilities/include/TypeTraits.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
@@ -28,6 +35,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <map>
+#include <numeric>
 #include <stack>
 #include <stdexcept>
 
@@ -40,6 +48,19 @@ namespace v = accera::ir::value;
 
 // TODO : plumb through a sufficient target enum / bitmap so we can dynamically enable/disable vpmaddwd and other pattern matchers
 #define MATCH_VPMADDWD_INTRINSIC 1
+
+namespace
+{
+mlir::LogicalResult reportMatchOpFailure(mlir::Operation* op, const std::string& message, const std::string& tag = "")
+{
+    if (!tag.empty())
+    {
+        llvm::dbgs() << "[" << tag << "] ";
+    }
+    llvm::dbgs() << "While processing " << *op << ". " << message << "\n";
+    return mlir::failure();
+}
+} // namespace
 
 namespace accera::transforms
 {
@@ -1100,6 +1121,19 @@ std::optional<mlir::Operation*> VectorizeReferenceGlobalOp(mlir::PatternRewriter
     return clonedOp;
 }
 
+std::optional<mlir::Operation*> VectorizeMemrefReinterpretCastGlobalOp(mlir::PatternRewriter& rewriter,
+                                                                       mlir::memref::ReinterpretCastOp op,
+                                                                       const VectorizedOpMap& vectorizedOps,
+                                                                       std::vector<mlir::BlockAndValueMapping>& laneMappings,
+                                                                       mlir::Value inductionVar,
+                                                                       int64_t step,
+                                                                       int64_t vectorSize)
+{
+    // This is just a passthrough -- just clone it
+    auto clonedOp = rewriter.clone(*op);
+    return clonedOp;
+}
+
 std::optional<VectorizedOp> VectorizeOp(mlir::PatternRewriter& rewriter,
                                         mlir::Operation* op,
                                         const VectorizedOpMap& vectorizedOps,
@@ -1169,6 +1203,9 @@ std::optional<VectorizedOp> VectorizeOp(mlir::PatternRewriter& rewriter,
             .Case([&](v::ReferenceGlobalOp refGlobalOp) {
                 return VectorizeReferenceGlobalOp(rewriter, refGlobalOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
+            .Case([&](mlir::memref::ReinterpretCastOp reinterpretCastOp) {
+                return VectorizeMemrefReinterpretCastGlobalOp(rewriter, reinterpretCastOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
+            })
             .Default([&](mlir::Operation* defaultOp) -> std::optional<VectorizedOp> {
                 if (op->getNumResults() > 0)
                 {
@@ -1184,6 +1221,497 @@ std::optional<VectorizedOp> VectorizeOp(mlir::PatternRewriter& rewriter,
             });
 
     return resultOp;
+}
+
+std::vector<mlir::BlockAndValueMapping> CreateLoopIterationMappings(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value iv, int64_t begin, int64_t end, int64_t step, std::stack<mlir::Operation*>* tempOps = nullptr)
+{
+    auto iterCount = (end - begin) / step;
+    std::vector<mlir::BlockAndValueMapping> mappings(iterCount);
+    for (int64_t idx = begin; idx < end; idx += step)
+    {
+        auto offsetMap = mlir::AffineMap::get(1, 0, builder.getAffineDimExpr(0) + (idx * step));
+        auto offsetInductionVar = builder.create<AffineApplyOp>(loc, offsetMap, ValueRange{ iv });
+        if (tempOps)
+        {
+            tempOps->push(offsetInductionVar);
+        }
+        mappings[idx].map(iv, offsetInductionVar);
+    }
+    return mappings;
+}
+
+std::vector<mlir::BlockAndValueMapping> CreateLoopIterationMappings(mlir::OpBuilder& builder, mlir::Location loc, mlir::AffineForOp forOp, std::stack<mlir::Operation*>* tempOps = nullptr)
+{
+    int64_t begin = forOp.getConstantLowerBound();
+    int64_t end = forOp.getConstantUpperBound();
+    int64_t step = forOp.getStep();
+    auto iv = forOp.getInductionVar();
+
+    return CreateLoopIterationMappings(builder, loc, iv, begin, end, step, tempOps);
+}
+
+LogicalResult MatchOptionalCast(mlir::Block::iterator& loopBodyIter, mlir::Value expectedInputVal, mlir::Type& castType, v::CastOp& castOp, mlir::Value& castResultVal, std::stack<mlir::Operation*>& matchedOps)
+{
+    if (isa<v::CastOp>(*loopBodyIter))
+    {
+        castOp = cast<v::CastOp>(*loopBodyIter++);
+        if (castOp.source() != expectedInputVal)
+        {
+            return failure();
+        }
+        auto castedValue = castOp.result();
+        castType = castedValue.getType();
+        castResultVal = castedValue;
+        matchedOps.push(castOp);
+    }
+    return success();
+}
+
+template <typename FailureFn>
+LogicalResult CheckOptionalRedundantLoadStore(mlir::PatternRewriter& rewriter, mlir::Block::iterator& loopBodyIter, mlir::Block::iterator& loopBodyEnd, std::stack<mlir::Operation*>& matchedOps, FailureFn&& reportMatchFailure)
+{
+    if (loopBodyIter != loopBodyEnd && isa<mlir::AffineLoadOp>(*loopBodyIter))
+    {
+        auto loadOp = cast<mlir::AffineLoadOp>(*loopBodyIter++);
+        matchedOps.push(loadOp);
+        if (loopBodyIter != loopBodyEnd && isa<mlir::AffineStoreOp>(*loopBodyIter))
+        {
+            auto storeOp = cast<mlir::AffineStoreOp>(*loopBodyIter++);
+            if (storeOp.getMemRef() != loadOp.getMemRef())
+            {
+                return reportMatchFailure(storeOp, "Extraneous load/store aren't to the same memref");
+            }
+
+            auto strideOpt = GetConstantStrideBetweenAccesses(rewriter, loadOp, storeOp);
+            if (!strideOpt.has_value() || *strideOpt != 0)
+            {
+                return reportMatchFailure(storeOp, "Extraneous load/store aren't to the same location");
+            }
+
+            matchedOps.push(storeOp);
+        }
+        else
+        {
+            return reportMatchFailure(loadOp, "Failed to match extraneous store");
+        }
+    }
+    return success();
+}
+
+std::pair<mlir::Value, mlir::Value> GetLowHighSeparately(mlir::OpBuilder& builder, mlir::Location loc, mlir::Value vec)
+{
+    auto reductionVecType = vec.getType().cast<mlir::VectorType>();
+    assert(reductionVecType.getRank() == 1 && "Can only separate low and high halfs of a 1-D vector");
+    auto vecSize = reductionVecType.getNumElements();
+    assert(vecSize % 2 == 0 && "Can only separate low and high halfs of a vector with an even number of elements");
+    auto halfVecType = mlir::VectorType::get({ vecSize / 2 }, reductionVecType.getElementType());
+    std::vector<int64_t> extractLowMask(vecSize / 2);
+    std::vector<int64_t> extractHighMask(vecSize / 2);
+    std::iota(extractLowMask.begin(), extractLowMask.end(), 0); // { 0, 1, 2, 3 }
+    std::iota(extractHighMask.begin(), extractHighMask.end(), vecSize / 2); // { 4, 5, 6, 7 }
+    mlir::Value low = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, vec, vec, builder.getI64ArrayAttr(extractLowMask));
+    mlir::Value high = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, vec, vec, builder.getI64ArrayAttr(extractHighMask));
+    return std::make_pair(low, high);
+}
+
+mlir::LogicalResult vectorize2DHorizontalSumReduction(mlir::AffineForOp affineForOp, mlir::PatternRewriter& rewriter)
+{
+    // Special case for a 2-loop vectorization of a 4x16 i16 horizontal sum reduction to a 4x1 i32
+    // Try to match a pattern like:
+    // for indices
+    // for i = 0...4:
+    //     for j = 0...16:
+    //         x = load(input[..., i, j]) : memref<?? x M, T1> -> T1
+    //         y = load(output[..., i]) : memref<??, T1> (doesn't depend on j) -> T1
+    //         z = x + y
+    //         store(z, output[..., i]) : (same position as load)
+
+    // And replace it with a precise sequence of vector ops that will reduce the 4 lanes simultaneously
+    // Copied from onnxruntime for 4x16 i16 -> i32 case
+    //      vpmaddwd ymm0,ymm0,ymm8             # horizontal word+word=dword per row
+    //      vpmaddwd ymm1,ymm1,ymm8
+    //      vphaddd ymm0,ymm0,ymm1              # reduce and interleave Sum1/Sum0
+    //      vpmaddwd ymm2,ymm2,ymm8
+    //      vpmaddwd ymm3,ymm3,ymm8
+    //      vphaddd ymm1,ymm2,ymm3              # reduce and interleave Sum3/Sum2
+    //      vphaddd ymm0,ymm0,ymm1              # reduce and interleave Sum3/Sum2/Sum1/Sum0
+    //      vextracti128 xmm1,ymm0,1            # extract high dwords
+    //      vpaddd  xmm0,xmm0,xmm1              # reduce low/high dwords
+    //      vmovdqu XMMWORD PTR [r9],xmm0
+
+    // The 4x8 i32 case should just be a subset of these instructions:
+    //      vphaddd ymm0,ymm0,ymm1
+    //      vphaddd ymm1,ymm2,ymm3
+    //      vphaddd ymm0,ymm0,ymm1
+    //      vextracti128 xmm1,ymm0,1
+    //      vpaddd  xmm0,xmm0,xmm1
+    //      vmovdqu XMMWORD PTR [r9],xmm0
+
+    // The 4x8 f32 case should be the same pattern, but with slightly different assembly instructions (but the same MLIR ops):
+    //      vhaddps ymm0,ymm0,ymm1
+    //      vhaddps ymm1,ymm2,ymm3
+    //      vhaddps ymm0,ymm0,ymm1
+    //      vextractf128 xmm1,ymm0,1
+    //      vaddps  xmm0,xmm0,xmm1
+    //      vmovups XMMWORD PTR [r9],xmm0
+
+    // Implement the matcher
+    auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
+        return reportMatchOpFailure(op, message, "vectorize2DHorizontalSumReduction");
+    };
+
+    auto avx2Support = ir::util::ModuleSupportsTargetDeviceFeature(affineForOp, "avx2");
+    if (!avx2Support)
+    {
+        // We're going to use the vpmaddwd instruction directly in this vectorization pattern and
+        // the vpmaddwd instruction is only supported on machines with the AVX2 or AVX512 instruction set extensions
+        return reportMatchFailure(affineForOp, "Target device does not support vpmaddwd instruction");
+    }
+
+    std::stack<mlir::Operation*> matchedOps;
+    std::stack<mlir::Operation*> tempOps;
+    ir::util::TempOpCleanupGuard tempOpGuard(&tempOps, rewriter);
+
+    auto loc = affineForOp.getLoc();
+
+    SmallVector<AffineForOp, 2> loops;
+    mlir::getPerfectlyNestedLoops(loops, affineForOp);
+    if (loops.size() != 2) // there should be exactly 2 loops in the nest being vectorized
+    {
+        return failure();
+    }
+
+    for (auto& loop : loops)
+    {
+        if (!loop.hasConstantBounds() || loop.getConstantLowerBound() != 0)
+        {
+            return failure();
+        }
+    }
+
+    auto outerLoop = loops.front(); // jj loop
+    int64_t outerLoopBegin = outerLoop.getConstantLowerBound();
+    int64_t outerLoopEnd = outerLoop.getConstantUpperBound();
+    int64_t outerLoopStep = outerLoop.getStep();
+    int64_t outerLoopNumIters = (outerLoopEnd - outerLoopBegin) / outerLoopStep;
+
+    if (outerLoopNumIters != 4)
+    {
+        return failure();
+    }
+
+    auto innerLoop = loops.back(); // the innermost loop, kk
+    int64_t innerLoopBegin = innerLoop.getConstantLowerBound();
+    int64_t innerLoopEnd = innerLoop.getConstantUpperBound();
+    int64_t innerLoopStep = innerLoop.getStep();
+    int64_t innerLoopNumIters = (innerLoopEnd - innerLoopBegin) / innerLoopStep;
+
+    std::vector<mlir::Type> supportedBaseInputElementTypes;
+    std::vector<mlir::Type> supportedCastInputElementTypes{ rewriter.getI32Type(), rewriter.getF32Type() };
+    bool reduce16To8 = false;
+    if (innerLoopNumIters == 16)
+    {
+        supportedBaseInputElementTypes.push_back(rewriter.getIntegerType(16));
+        reduce16To8 = true;
+    }
+    else if (innerLoopNumIters == 8)
+    {
+        supportedBaseInputElementTypes.push_back(rewriter.getI32Type());
+        supportedBaseInputElementTypes.push_back(rewriter.getF32Type());
+    }
+    else
+    {
+        return reportMatchFailure(affineForOp, "Unsupported number of inner loop iterations");
+    }
+
+    auto isInputTypeSupported = [&supportedBaseInputElementTypes, &supportedCastInputElementTypes](const mlir::Type& type, bool baseInputType) {
+        if (baseInputType)
+            return std::find(supportedBaseInputElementTypes.begin(), supportedBaseInputElementTypes.end(), type) != supportedBaseInputElementTypes.end();
+        else
+            return std::find(supportedCastInputElementTypes.begin(), supportedCastInputElementTypes.end(), type) != supportedCastInputElementTypes.end();
+    };
+
+    // iterate on loop body from begin to end to match the ops list
+    auto loopBodyIter = innerLoop.getBody()->begin();
+    auto loopBodyEnd = innerLoop.getBody()->end();
+
+    auto vectorSize = innerLoopNumIters;
+    auto unrollMax = vectorSize;
+
+    // Set up sequential mappings for the inner loop
+    std::vector<mlir::BlockAndValueMapping> innerLoopLaneMappings = CreateLoopIterationMappings(rewriter, loc, innerLoop, &tempOps);
+
+    // 1. load from lhs array
+    if (loopBodyIter == loopBodyEnd || !isa<mlir::AffineLoadOp>(*loopBodyIter))
+    {
+        return reportMatchFailure(affineForOp, "Failed to match the lhs load op");
+    }
+
+    auto lhsLoadOp = cast<mlir::AffineLoadOp>(*loopBodyIter++);
+    auto lhsLoadVal = lhsLoadOp.getResult(); // Keep the loaded val separate from the current lhs val for mapping later
+    auto lhsVal = lhsLoadVal;
+    matchedOps.push(lhsLoadOp);
+
+    bool lhsLoadIsLoopSequential = IsUnrolledAccessSequential(rewriter, lhsLoadOp, innerLoopLaneMappings, unrollMax);
+    bool lhsLoadIsLoopConstant = IsUnrolledAccessConstant(rewriter, lhsLoadOp, innerLoopLaneMappings, unrollMax);
+
+    // 1a. (optional) cast
+    v::CastOp lhsLoadCastOp;
+    mlir::Type lhsCastType;
+    if (failed(MatchOptionalCast(loopBodyIter, lhsVal, lhsCastType, lhsLoadCastOp, lhsVal, matchedOps)))
+    {
+        return reportMatchFailure(lhsLoadCastOp, "Cast after lhs load isn't casting the loaded value");
+    }
+
+    // 2. load from rhs array
+    if (loopBodyIter == loopBodyEnd || !isa<mlir::AffineLoadOp>(*loopBodyIter))
+    {
+        return reportMatchFailure(affineForOp, "Failed to match the rhs load op");
+    }
+
+    auto rhsLoadOp = cast<mlir::AffineLoadOp>(*loopBodyIter++);
+    auto rhsLoadVal = rhsLoadOp.getResult();
+    auto rhsVal = rhsLoadVal;
+    matchedOps.push(rhsLoadOp);
+
+    bool rhsLoadIsLoopSequential = IsUnrolledAccessSequential(rewriter, rhsLoadOp, innerLoopLaneMappings, unrollMax);
+    bool rhsLoadIsLoopConstant = IsUnrolledAccessConstant(rewriter, rhsLoadOp, innerLoopLaneMappings, unrollMax);
+
+    // 2a. (optional) cast
+    v::CastOp rhsLoadCastOp;
+    mlir::Type rhsCastType;
+    if (failed(MatchOptionalCast(loopBodyIter, rhsVal, rhsCastType, rhsLoadCastOp, rhsVal, matchedOps)))
+    {
+        return reportMatchFailure(rhsLoadCastOp, "Cast after rhs load isn't casting the loaded value");
+    }
+
+    // 3. bin op
+    if (loopBodyIter == loopBodyEnd || !isa<v::BinOp>(*loopBodyIter))
+    {
+        return reportMatchFailure(affineForOp, "Failed to match the bin op");
+    }
+    auto binOp = cast<v::BinOp>(*loopBodyIter++);
+    if (binOp.getPredicate() != v::BinaryOpPredicate::ADD)
+    {
+        // The specific instructions this lowering produces only works for add reductions
+        return reportMatchFailure(binOp, "Bin op isn't an add");
+    }
+    auto binOpVal = binOp.getResult();
+    bool lhsRhsLineUp = (binOp.lhs() == lhsVal) && (binOp.rhs() == rhsVal);
+    bool lhsRhsSwap = (binOp.lhs() == rhsVal) && (binOp.rhs() == lhsVal);
+    if (!lhsRhsLineUp && !lhsRhsSwap)
+    {
+        return reportMatchFailure(affineForOp, "Bin op isn't using loaded lhs and rhs values");
+    }
+    matchedOps.push(binOp);
+
+    // 4. store to output array
+    if (loopBodyIter == loopBodyEnd || !isa<mlir::AffineStoreOp>(*loopBodyIter))
+    {
+        return reportMatchFailure(affineForOp, "Failed to match the store op");
+    }
+
+    auto storeOp = cast<mlir::AffineStoreOp>(*loopBodyIter++);
+    auto storedVal = storeOp.value();
+    matchedOps.push(storeOp);
+
+    // Check that the value being stored is the result of the BinOp
+    if (storedVal != binOpVal)
+    {
+        return reportMatchFailure(storeOp, "Store op isn't storing the result of the bin op");
+    }
+
+    // Check that store is constant wrt to the inner loop
+    bool storeIsLoopConstant = IsUnrolledAccessConstant(rewriter, storeOp, innerLoopLaneMappings, unrollMax);
+    if (!storeIsLoopConstant)
+    {
+        return reportMatchFailure(storeOp, "Store op isn't constant wrt the inner loop being vectorized");
+    }
+
+    // Check which load is sequential wrt the loop and which is constant and which one is being stored to
+
+    mlir::AffineLoadOp outputLoadOp;
+    mlir::AffineLoadOp reductionLoadOp;
+    v::CastOp outputCastOp;
+    v::CastOp reductionCastOp;
+    if (storeOp.getMemRef() == lhsLoadOp.getMemRef())
+    {
+        if (!lhsLoadIsLoopConstant)
+        {
+            return reportMatchFailure(lhsLoadOp, "LHS load op isn't constant wrt the loop being vectorized but is the same memref being stored to");
+        }
+        if (!rhsLoadIsLoopSequential)
+        {
+            return reportMatchFailure(rhsLoadOp, "RHS load op isn't sequential when LHS load is constant");
+        }
+        outputLoadOp = lhsLoadOp;
+        outputCastOp = lhsLoadCastOp;
+
+        reductionLoadOp = rhsLoadOp;
+        reductionCastOp = rhsLoadCastOp;
+    }
+    else if (storeOp.getMemRef() == rhsLoadOp.getMemRef())
+    {
+        if (!rhsLoadIsLoopConstant)
+        {
+            return reportMatchFailure(rhsLoadOp, "RHS load op isn't constant wrt the loop being vectorized but is the same memref being stored to");
+        }
+        if (!lhsLoadIsLoopSequential)
+        {
+            return reportMatchFailure(lhsLoadOp, "LHS load op isn't sequential when RHS load is constant");
+        }
+        outputLoadOp = rhsLoadOp;
+        outputCastOp = rhsLoadCastOp;
+
+        reductionLoadOp = lhsLoadOp;
+        reductionCastOp = lhsLoadCastOp;
+    }
+    else
+    {
+        return reportMatchFailure(storeOp, "Store op isn't storing to the same memref as either load");
+    }
+
+    // Check that the output load and store are at the same position
+
+    auto strideOpt = GetConstantStrideBetweenAccesses(rewriter, outputLoadOp, storeOp);
+    if (!strideOpt.has_value() || *strideOpt != 0)
+    {
+        return reportMatchFailure(storeOp, "Output load and store ops aren't at the same location");
+    }
+
+    // Check that the reduction memref has the right element type and that the store op memref has the right element type
+    auto inputReductionElementType = reductionLoadOp.getMemRefType().getElementType();
+    if (!isInputTypeSupported(inputReductionElementType, true /* baseInput */))
+    {
+        return reportMatchFailure(reductionLoadOp, "Reduction load op is not from a supported memref element type");
+    }
+    if (!isInputTypeSupported(outputLoadOp.getMemRefType().getElementType(), false /* not baseInput */))
+    {
+        return reportMatchFailure(outputLoadOp, "Output load op is not from a supported memref element type");
+    }
+
+    // Check that all that remains are optionally redundant load-stores and the yield op
+
+    // match the final pair of redundant load and store ops
+    auto redundantLoadStoreResult = CheckOptionalRedundantLoadStore(rewriter, loopBodyIter, loopBodyEnd, matchedOps, reportMatchFailure);
+    if (failed(redundantLoadStoreResult))
+    {
+        return redundantLoadStoreResult;
+    }
+
+    // Ignore the yield op at the end
+    if (loopBodyIter != loopBodyEnd && isa<mlir::AffineYieldOp>(*loopBodyIter))
+    {
+        (void)loopBodyIter++;
+    }
+
+    if (loopBodyIter != loopBodyEnd)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "Found additional instructions after the store");
+        return failure();
+    }
+
+    // Now replace the matched ops with the multi vector load and parallel reduction sequence
+
+    // Set the insertion point inside the loop so we can safely refer to loop induction vars
+    mlir::OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(innerLoop.getBody(), innerLoop.getBody()->getTerminator()->getIterator());
+
+    // Set up sequential mappings for the outer loop
+    std::vector<mlir::BlockAndValueMapping> outerLoopLaneMappings = CreateLoopIterationMappings(rewriter, loc, outerLoop);
+
+    // Unroll and vectorize the reduction operand loads wrt the outer loop
+    std::vector<mlir::Value> origVectorValsToReduce;
+    std::vector<mlir::Value> currentVectorValsToReduce;
+    origVectorValsToReduce.reserve(outerLoopNumIters);
+    currentVectorValsToReduce.reserve(outerLoopNumIters);
+    for (auto& mapping : outerLoopLaneMappings)
+    {
+        // Handle LHS load
+        auto outerUnrollsReductionLoadOp = mlir::cast<mlir::AffineLoadOp>(rewriter.clone(*reductionLoadOp.getOperation(), mapping));
+        tempOps.push(outerUnrollsReductionLoadOp);
+        auto vecReductionLoadOp = VectorizeAffineLoadOpHelper(rewriter, outerUnrollsReductionLoadOp, vectorSize);
+        mlir::Value origVecReductionLoadOpVal = vecReductionLoadOp.getResult();
+        mlir::Value vecReductionLoadOpVal = origVecReductionLoadOpVal;
+        if (reductionCastOp)
+        {
+            auto castVecType = mlir::VectorType::get({ vectorSize }, reductionCastOp.getResult().getType());
+            vecReductionLoadOpVal = rewriter.create<v::CastOp>(lhsLoadCastOp.getLoc(), vecReductionLoadOpVal, castVecType);
+        }
+        origVectorValsToReduce.push_back(origVecReductionLoadOpVal);
+        currentVectorValsToReduce.push_back(vecReductionLoadOpVal);
+    }
+
+    // Now create the vectorized reduction following:
+    //      vpmaddwd ymm0,ymm0,ymm8             # horizontal word+word=dword per row
+    //      vpmaddwd ymm1,ymm1,ymm8
+    //      vphaddd ymm0,ymm0,ymm1              # reduce and interleave Sum1/Sum0
+    //      vpmaddwd ymm2,ymm2,ymm8
+    //      vpmaddwd ymm3,ymm3,ymm8
+    //      vphaddd ymm1,ymm2,ymm3              # reduce and interleave Sum3/Sum2
+    //      vphaddd ymm0,ymm0,ymm1              # reduce and interleave Sum3/Sum2/Sum1/Sum0
+    //      vextracti128 xmm1,ymm0,1            # extract high dwords
+    //      vpaddd  xmm0,xmm0,xmm1              # reduce low/high dwords
+    //      vmovdqu XMMWORD PTR [r9],xmm0
+
+    auto inputVecType = mlir::VectorType::get({ vectorSize }, inputReductionElementType);
+    auto reductionVecType = inputVecType;
+    if (reduce16To8)
+    {
+        // Reduces 4x16xi16 -> 4x8xi32
+
+        // Create a buffer of int16 1's
+        auto one = rewriter.create<mlir::arith::ConstantIntOp>(affineForOp.getLoc(), 1, rewriter.getIntegerType(16));
+        mlir::Value vecOnes = rewriter.create<mlir::vector::BroadcastOp>(affineForOp.getLoc(), inputVecType, one);
+
+        // Create a vpmaddwd for each row with the vector of ones
+        auto i32sPerVec = vectorSize / 2;
+        reductionVecType = mlir::VectorType::get({ i32sPerVec }, rewriter.getI32Type());
+        currentVectorValsToReduce[0] = rewriter.create<v::vpmaddwd>(binOp.getLoc(), reductionVecType, origVectorValsToReduce[0], vecOnes);
+        currentVectorValsToReduce[1] = rewriter.create<v::vpmaddwd>(binOp.getLoc(), reductionVecType, origVectorValsToReduce[1], vecOnes);
+        currentVectorValsToReduce[2] = rewriter.create<v::vpmaddwd>(binOp.getLoc(), reductionVecType, origVectorValsToReduce[2], vecOnes);
+        currentVectorValsToReduce[3] = rewriter.create<v::vpmaddwd>(binOp.getLoc(), reductionVecType, origVectorValsToReduce[3], vecOnes);
+    }
+
+    // Reduce and interleave (row0, row1) and then (row2, row3), then reduce and interleave those results together
+    // vphaddd(ymm0, ymm1) -> [ymm0[0]+ymm0[1], ymm0[2]+ymm0[3],
+    //                         ymm1[0]+ymm1[1], ymm1[2]+ymm1[3],
+    //                         ymm0[4]+ymm0[5], ymm0[6]+ymm0[7],
+    //                         ymm1[4]+ymm1[5], ymm1[6]+ymm1[7]]
+
+    // Reduce and interleave (row0, row1) and (row2, row3)
+    mlir::Value row01_interleaved = rewriter.create<v::vhadd>(binOp.getLoc(), currentVectorValsToReduce[0], currentVectorValsToReduce[1]);
+    mlir::Value row23_interleaved = rewriter.create<v::vhadd>(binOp.getLoc(), currentVectorValsToReduce[2], currentVectorValsToReduce[3]);
+
+    // Reduce and interleave ((row0, row1), (row2, row3))
+    mlir::Value row0123_interleaved = rewriter.create<v::vhadd>(binOp.getLoc(), row01_interleaved, row23_interleaved);
+
+    // Now the elements of row0123_interleaved are from rows [ 0, 1, 2, 3, 0, 1, 2, 3 ]
+    // So separate the low 4 elements and the high 4 elements separately and add them together elementwise
+
+    auto [low_row0123_interleaved, high_row0123_interleaved] = GetLowHighSeparately(rewriter, binOp.getLoc(), row0123_interleaved);
+
+    mlir::Value reduced_4x1 = rewriter.create<v::BinOp>(binOp.getLoc(), v::BinaryOpPredicate::ADD, low_row0123_interleaved, high_row0123_interleaved);
+
+    // Now load the original values and add the reduced tile
+    auto vecOrigValues = VectorizeAffineLoadOpHelper(rewriter, outputLoadOp, outerLoopNumIters);
+    auto finalAccumulation = rewriter.create<v::BinOp>(binOp.getLoc(), v::BinaryOpPredicate::ADD, vecOrigValues, reduced_4x1);
+
+    // Vectorize the store op and store the finalAccumulation vector of results
+
+    mlir::AffineStoreOpAdaptor storeAdaptor{ storeOp };
+    std::vector<mlir::Value> storeIndices(storeAdaptor.indices().begin(), storeAdaptor.indices().end());
+    auto [flatCastOutputMemRef, flattenedOutputPos] = FlattenAccess(rewriter, storeOp, storeIndices);
+    rewriter.create<mlir::vector::StoreOp>(storeOp.getLoc(), finalAccumulation, flatCastOutputMemRef, mlir::ValueRange{ flattenedOutputPos });
+
+    // Set the step size for the vectorized loops such that they each have a single iteration and will later get simplified away while replacing any IV usage with their begin value
+    outerLoop.setStep(outerLoopStep * outerLoopNumIters);
+    innerLoop.setStep(innerLoopStep * innerLoopNumIters);
+
+    // Erase the original non-vectorized ops
+    ir::util::EraseOps(matchedOps, rewriter);
+
+    return mlir::success();
 }
 
 // TODO : support multi-dim vector reductions
@@ -1222,13 +1750,12 @@ mlir::LogicalResult vectorizeHorizontalReduction(mlir::AffineForOp affineForOp, 
 
     // Implement the matcher
     auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
-        llvm::dbgs() << "[vectorizeHorizontalReduction] While processing " << *op << ". " << message << "\n";
-        return rewriter.notifyMatchFailure(op, message);
+        return reportMatchOpFailure(op, message, "vectorizeHorizontalReduction");
     };
 
     std::stack<mlir::Operation*> matchedOps;
     std::stack<mlir::Operation*> tempOps;
-    ir::util::TempOpCleanupGuard(&tempOps, rewriter);
+    ir::util::TempOpCleanupGuard tempGuard(&tempOps, rewriter);
 
     SmallVector<AffineForOp, 2> loops;
     mlir::getPerfectlyNestedLoops(loops, affineForOp);
@@ -1263,7 +1790,7 @@ mlir::LogicalResult vectorizeHorizontalReduction(mlir::AffineForOp affineForOp, 
     }
 
     auto lhsLoadOp = cast<mlir::AffineLoadOp>(*loopBodyIter++);
-    auto lhsLoadVal = lhsLoadOp.getResult(); // Keep the laoded val separate from the current lhs val for mapping later
+    auto lhsLoadVal = lhsLoadOp.getResult(); // Keep the loaded val separate from the current lhs val for mapping later
     auto lhsVal = lhsLoadVal;
     matchedOps.push(lhsLoadOp);
 
@@ -1481,7 +2008,7 @@ mlir::LogicalResult vectorizeHorizontalReduction(mlir::AffineForOp affineForOp, 
     //  - store BinOp result to location Y
 
     // Check that all that remains are optionally redundant load-stores and the yield op
-    
+
     // match the final pair of redundant load and store ops
     if (loopBodyIter != loopBodyEnd && isa<mlir::AffineLoadOp>(*loopBodyIter))
     {
@@ -1494,7 +2021,7 @@ mlir::LogicalResult vectorizeHorizontalReduction(mlir::AffineForOp affineForOp, 
             {
                 return reportMatchFailure(storeOp, "Extraneous load/store aren't to the same memref");
             }
-            
+
             auto strideOpt = GetConstantStrideBetweenAccesses(rewriter, loadOp, storeOp);
             if (!strideOpt.has_value() || *strideOpt != 0)
             {
@@ -1530,55 +2057,95 @@ mlir::LogicalResult vectorizeHorizontalReduction(mlir::AffineForOp affineForOp, 
 
     // LHS Load
     mlir::Value vecLhsVal;
+    mlir::Value vecLhsLoadVal;
     if (lhsLoadIsLoopSequential)
     {
         auto lhsLoadVecOp = VectorizeAffineLoadOpHelper(rewriter, lhsLoadOp, vectorSize);
-        vecLhsVal = lhsLoadVecOp.getResult();
-        mappings.map(lhsLoadVal, vecLhsVal);
+        vecLhsLoadVal = lhsLoadVecOp.getResult();
     }
     else
     {
-        vecLhsVal = mlir::cast<mlir::AffineLoadOp>(rewriter.clone(*lhsLoadOp.getOperation(), mappings));
+        vecLhsLoadVal = mlir::cast<mlir::AffineLoadOp>(rewriter.clone(*lhsLoadOp.getOperation(), mappings));
     }
-    mappings.map(lhsLoadVal, vecLhsVal);
+    vecLhsVal = vecLhsLoadVal;
+    mappings.map(lhsLoadVal, vecLhsLoadVal);
 
     // Optional cast
     if (lhsLoadCastOp)
     {
         // Create a vector cast
         auto castVecType = mlir::VectorType::get({ vectorSize }, lhsCastType);
-        vecLhsVal = rewriter.create<v::CastOp>(lhsLoadCastOp.getLoc(), vecLhsVal, castVecType);
+        vecLhsVal = rewriter.create<v::CastOp>(lhsLoadCastOp.getLoc(), vecLhsLoadVal, castVecType);
     }
     mappings.map(lhsVal, vecLhsVal);
 
     // RHS Load
     mlir::Value vecRhsVal;
+    mlir::Value vecRhsLoadVal;
     if (rhsLoadIsLoopSequential)
     {
         auto rhsLoadVecOp = VectorizeAffineLoadOpHelper(rewriter, rhsLoadOp, vectorSize);
-        vecRhsVal = rhsLoadVecOp.getResult();
-        mappings.map(rhsLoadVal, vecRhsVal);
+        vecRhsLoadVal = rhsLoadVecOp.getResult();
     }
     else
     {
-        vecRhsVal = mlir::cast<mlir::AffineLoadOp>(rewriter.clone(*rhsLoadOp.getOperation(), mappings));
+        vecRhsLoadVal = mlir::cast<mlir::AffineLoadOp>(rewriter.clone(*rhsLoadOp.getOperation(), mappings));
     }
-    mappings.map(rhsLoadVal, vecRhsVal);
+    vecRhsVal = vecRhsLoadVal;
+    mappings.map(rhsLoadVal, vecRhsLoadVal);
 
     // Optional cast
     if (rhsLoadCastOp)
     {
         // Create a vector cast
         auto castVecType = mlir::VectorType::get({ vectorSize }, rhsCastType);
-        vecRhsVal = rewriter.create<v::CastOp>(rhsLoadCastOp.getLoc(), vecRhsVal, castVecType);
+        vecRhsVal = rewriter.create<v::CastOp>(rhsLoadCastOp.getLoc(), vecRhsLoadVal, castVecType);
     }
     mappings.map(rhsVal, vecRhsVal);
 
     // Now create the appropriate vector reduce given the bin op type and apply it to either the LHS vector val or RHS vector val, whichever is the loaded vector
     auto vectorValToReduce = lhsLoadIsLoopSequential ? vecLhsVal : vecRhsVal;
-    auto reduceOp = rewriter.create<mlir::vector::ReductionOp>(binOp.getLoc(), storeElementType, mlir::vector::stringifyEnum(reductionKind), vectorValToReduce, mlir::ValueRange{} /* optional accumulate values */);
-    
-    mlir::Value reducedVal = reduceOp.getResult();
+    auto loadedVectorValToReduce = lhsLoadIsLoopSequential ? vecLhsLoadVal : vecRhsLoadVal;
+    auto initReductionElementType = lhsLoadIsLoopSequential ? lhsLoadVal.getType() : rhsLoadVal.getType();
+
+    mlir::Value reducedVal;
+    if (binOp.getPredicate() == v::BinaryOpPredicate::ADD &&
+        storeElementType.isInteger(32) &&
+        initReductionElementType.isInteger(16) &&
+        vectorSize == 16 &&
+        ir::util::ModuleSupportsTargetDeviceFeature(affineForOp, "avx2"))
+    {
+        // Special handling for 16-element i16 sum reduction on AVX2+ machines
+        // ymm2 = fill(1, i16)
+        // ymm0 = load vec
+        // vpmaddwd ymm0,ymm0,ymm2      [0, 1, 2, 3, ..., 14, 15] (16xi16)                  -> [0+1, 2+3, 4+5, ..., 14+15] (8xi32)
+        // vextracti128 xmm1,ymm0,1     [0+1, 2+3, 4+5, ..., 14+15] (8xi32)                 -> [0+1, ..., 6+7] (4xi32), [8+9, ..., 14+15] (4xi32)
+        // vpaddd  xmm0,xmm0,xmm1       [0+1, ..., 6+7] (4xi32), [8+9, ..., 14+15] (4xi32)  -> [0+1+8+9, 2+3+10+11, 4+5+12+13, 6+7+14+15] (4xi32)
+        // vphaddd xmm0,xmm0,xmm0       [0+1+8+9, 2+3+10+11, 4+5+12+13, 6+7+14+15] (4xi32)  -> [0+1+8+9+2+3+10+11, 4+5+12+13+6+7+14+15, (duplicate 0...), (duplicate 1...)] (4xi32)
+        // vphaddd xmm0,xmm0,xmm0       [0+1+8+9+2+3+10+11, 4+5+12+13+6+7+14+15, (duplicate 0...), (duplicate 1...)] (4xi32) -> [0+1+8+9+2+3+10+11+4+5+12+13+6+7+14+15, (duplicate 0...), (duplicate 0...), (duplicate 0...)] (4xi32)
+
+        // Create a buffer of int16 1's
+        auto one = rewriter.create<mlir::arith::ConstantIntOp>(affineForOp.getLoc(), 1, rewriter.getIntegerType(16));
+        auto inputVecType = mlir::VectorType::get({ vectorSize }, rewriter.getIntegerType(16));
+        mlir::Value vecOnes = rewriter.create<mlir::vector::BroadcastOp>(affineForOp.getLoc(), inputVecType, one);
+
+        auto i32sPerVec = vectorSize / 2;
+        auto reductionVecType = mlir::VectorType::get({ i32sPerVec }, rewriter.getI32Type());
+        mlir::Value reduced_8xi32 = rewriter.create<v::vpmaddwd>(binOp.getLoc(), reductionVecType, loadedVectorValToReduce, vecOnes);
+
+        auto [low_reduced_4xi32, high_reduced_4xi32] = GetLowHighSeparately(rewriter, binOp.getLoc(), reduced_8xi32);
+        mlir::Value reduced_4xi32 = rewriter.create<v::BinOp>(binOp.getLoc(), v::BinaryOpPredicate::ADD, low_reduced_4xi32, high_reduced_4xi32);
+
+        reduced_4xi32 = rewriter.create<v::vhadd>(binOp.getLoc(), reduced_4xi32, reduced_4xi32);
+        reduced_4xi32 = rewriter.create<v::vhadd>(binOp.getLoc(), reduced_4xi32, reduced_4xi32);
+        auto zeroPos = rewriter.create<mlir::arith::ConstantIndexOp>(binOp.getLoc(), 0);
+        reducedVal = rewriter.create<mlir::vector::ExtractElementOp>(binOp.getLoc(), reduced_4xi32, zeroPos);
+    }
+    else
+    {
+        reducedVal = rewriter.create<mlir::vector::ReductionOp>(binOp.getLoc(), storeElementType, mlir::vector::stringifyEnum(reductionKind), vectorValToReduce, mlir::ValueRange{} /* optional accumulate values */);
+    }
+
     auto scalarValThatWasReduced = lhsLoadIsLoopSequential ? lhsVal : rhsVal;
     mappings.map(scalarValThatWasReduced, reducedVal);
 
@@ -1628,13 +2195,12 @@ mlir::LogicalResult vectorizeSequentialCast(mlir::AffineForOp affineForOp, mlir:
 
     // Implement the matcher
     auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
-        llvm::dbgs() << "[vectorizeSequentialCast] While processing " << *op << ". " << message << "\n";
-        return rewriter.notifyMatchFailure(op, message);
+        return reportMatchOpFailure(op, message, "vectorizeSequentialCast");
     };
 
     std::stack<mlir::Operation*> matchedOps;
     std::stack<mlir::Operation*> tempOps;
-    ir::util::TempOpCleanupGuard(&tempOps, rewriter);
+    ir::util::TempOpCleanupGuard tempGuard(&tempOps, rewriter);
 
     // Match j and k loop
     SmallVector<AffineForOp, 2> loops;
@@ -1834,8 +2400,7 @@ mlir::LogicalResult vectorizeTwoRowInterleavedPack(mlir::AffineForOp affineForOp
 
     // Implement the matcher
     auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
-        llvm::dbgs() << "[vectorizeTwoRowInterleavedPack] While processing " << *op << ". " << message << "\n";
-        return rewriter.notifyMatchFailure(op, message);
+        return reportMatchOpFailure(op, message, "vectorizeTwoRowInterleavedPack");
     };
 
     std::stack<mlir::Operation*> matchedOps;
@@ -2035,8 +2600,7 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
 {
     // Implement the matcher
     auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
-        llvm::dbgs() << "[vectorizeInt16MatMul] While processing " << *op << ". " << message << "\n";
-        return rewriter.notifyMatchFailure(op, message);
+        return reportMatchOpFailure(op, message, "vectorizeInt16MatMul");
     };
 
     auto avx2Support = ir::util::ModuleSupportsTargetDeviceFeature(affineForOp, "avx2");
@@ -2047,8 +2611,8 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
         return reportMatchFailure(affineForOp, "Target device does not support vpmaddwd instruction");
     }
 
-    std::vector<mlir::Type> supportedBaseInputElementTypes { rewriter.getIntegerType(8), rewriter.getIntegerType(8, false /* isSigned */), rewriter.getIntegerType(16) };
-    std::vector<mlir::Type> supportedCastInputElementTypes { rewriter.getIntegerType(16), rewriter.getIntegerType(32) };
+    std::vector<mlir::Type> supportedBaseInputElementTypes{ rewriter.getIntegerType(8), rewriter.getIntegerType(8, false /* isSigned */), rewriter.getIntegerType(16) };
+    std::vector<mlir::Type> supportedCastInputElementTypes{ rewriter.getIntegerType(16), rewriter.getIntegerType(32) };
     auto isInputTypeSupported = [&supportedBaseInputElementTypes, &supportedCastInputElementTypes](const mlir::Type& type, bool baseInputType) {
         if (baseInputType)
             return std::find(supportedBaseInputElementTypes.begin(), supportedBaseInputElementTypes.end(), type) != supportedBaseInputElementTypes.end();
@@ -2061,6 +2625,7 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
 
     std::stack<Operation*> matchedOps;
     std::stack<mlir::Operation*> tempOps;
+    ir::util::TempOpCleanupGuard tempGuard(&tempOps, rewriter);
 
     // Match jj and kk loop in int16 matmul for vectorization rewrite rules
     SmallVector<AffineForOp, 2> loops;
@@ -2398,8 +2963,8 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
     evenMaskVec.reserve(vectorSize / 2);
     for (int64_t i = 0; i < vectorSize / 2; ++i)
     {
-        oddMaskVec.push_back(i*2 + 1);
-        evenMaskVec.push_back(i*2);
+        oddMaskVec.push_back(i * 2 + 1);
+        evenMaskVec.push_back(i * 2);
     }
     auto oddMask = rewriter.getI64ArrayAttr(oddMaskVec);
     auto evenMask = rewriter.getI64ArrayAttr(evenMaskVec);
@@ -2428,7 +2993,6 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
 
         return { loadVecVal, oddShuffleVal, evenShuffleVal };
     };
-
 
     // If there's only one broadcasted load, make sure it happens first for better vpmaddwd matching
     mlir::Value firstLoadVec;
@@ -2512,18 +3076,17 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
 }
 
 mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
-                                            mlir::PatternRewriter& rewriter)
+                                             mlir::PatternRewriter& rewriter)
 {
     auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
-        llvm::dbgs() << "[vectorizeMaskedLoadStore] While processing " << *op << ". " << message << "\n";
-        return rewriter.notifyMatchFailure(op, message);
+        return reportMatchOpFailure(op, message, "vectorizeMaskedLoadStore");
     };
+
     std::stack<Operation*> matchedOps;
 
     // Set the insertion point to the end of the loop (just before the terminator)
     mlir::OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(loopOp.getBody(), loopOp.getBody()->getTerminator()->getIterator());
-
 
     if (!loopOp.hasConstantBounds() || loopOp.getConstantLowerBound() != 0)
     {
@@ -2551,9 +3114,9 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
     auto cmpOpResult = cmpOp.result();
     matchedOps.push(cmpOp);
 
-    loopBodyStart++; 
+    loopBodyStart++;
 
-    // 2. match scf.if op 
+    // 2. match scf.if op
     if (loopBodyStart == loopBodyEnd || !isa<mlir::scf::IfOp>(*loopBodyStart))
     {
         return reportMatchFailure(loopOp, "Failed to match the scf.if op");
@@ -2569,6 +3132,7 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
     auto thenOpsIter = thenBlock->getOperations().begin();
     auto thenOpsEnd = thenBlock->getOperations().end();
 
+    // load op
     if (thenOpsIter == thenOpsEnd || !isa<mlir::AffineLoadOp>(thenOpsIter))
     {
         return reportMatchFailure(ifOp, "Failed to match the load op in then block");
@@ -2577,11 +3141,10 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
     auto loadOp = cast<mlir::AffineLoadOp>(thenOpsIter++);
     matchedOps.push(loadOp);
 
-    // Optionally allow casting the load value
     mlir::Value loadVal = loadOp.getResult();
-    v::CastOp thenCastOp;
 
     // Check if there's a cast after the load
+    v::CastOp thenCastOp;
     if (thenOpsIter != thenOpsEnd && isa<v::CastOp>(thenOpsIter))
     {
         thenCastOp = cast<v::CastOp>(thenOpsIter++);
@@ -2589,6 +3152,57 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
         loadVal = thenCastOp.result();
     }
 
+    // match second load op for accumulation case
+
+    mlir::AffineLoadOp loadOp2;
+    mlir::Value loadVal2;
+    if (thenOpsIter != thenOpsEnd && isa<mlir::AffineLoadOp>(thenOpsIter))
+    {
+        loadOp2 = cast<mlir::AffineLoadOp>(thenOpsIter++);
+        loadVal2 = loadOp2.getResult();
+        matchedOps.push(loadOp2);
+    }
+
+    // Optionally allow casting the second load value
+    v::CastOp thenCastOp2;
+
+    // Check if there's a cast after the seond load
+    if (thenOpsIter != thenOpsEnd && isa<v::CastOp>(thenOpsIter))
+    {
+        thenCastOp2 = cast<v::CastOp>(thenOpsIter++);
+        matchedOps.push(thenCastOp2);
+        loadVal2 = thenCastOp2.result();
+    }
+
+    // binary add op for accumulation case
+    v::BinOp accOp;
+    if (thenOpsIter != thenOpsEnd && isa<v::BinOp>(thenOpsIter))
+    {
+        accOp = cast<v::BinOp>(thenOpsIter++);
+    }
+
+    // Check that the operands for the accumulation op are in fact the values from load ops
+    mlir::Value accVal;
+    if (accOp)
+    {
+        if (!((accOp.lhs() == loadVal && accOp.rhs() == loadVal2) || (accOp.rhs() == loadVal && accOp.lhs() == loadVal2)))
+        {
+            return reportMatchFailure(accOp, "Failed to match the accumulation operands");
+        }
+        matchedOps.push(accOp);
+        accVal = accOp.getResult();
+    }
+
+    // optionally check if there is a cast op after accumulation op
+    v::CastOp thenCastOp3;
+    if (thenOpsIter != thenOpsEnd && isa<v::CastOp>(thenOpsIter))
+    {
+        thenCastOp3 = cast<v::CastOp>(thenOpsIter++);
+        matchedOps.push(thenCastOp3);
+        accVal = thenCastOp3.result();
+    }
+
+    // store op
     if (thenOpsIter == thenOpsEnd || !isa<mlir::AffineStoreOp>(thenOpsIter))
     {
         return reportMatchFailure(ifOp, "Failed to match the store op in then block");
@@ -2621,6 +3235,7 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
             matchedOps.push(elseCastOp);
         }
 
+        // store op
         if (elseOpsIter == elseOpsEnd || !isa<mlir::AffineStoreOp>(elseOpsIter))
         {
             return reportMatchFailure(ifOp, "Failed to match the store op in else block");
@@ -2638,6 +3253,12 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
         paddingOpValue = paddingOp.value();
     }
 
+    if (loadOp && loadOp2 && elseBlock)
+    {
+        return reportMatchFailure(loopOp, "Failed: case of two conditional load ops cannot have an else block");
+    }
+
+    //////////////////////////////////////
     // match successful, start rewriting here
     // unroll cmp ops (create lanemappings)
     std::vector<mlir::BlockAndValueMapping> laneMappings(unrollMax);
@@ -2683,7 +3304,7 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
     // type of padding op value may not be the same as what is required by transfer read op
     // so, we need a cast here always.
     auto finalPaddingOpValue = rewriter.create<v::CastOp>(loopOp.getLoc(), paddingOpValue, loadElementType);
- 
+
     // create transferRead op with mask value
     mlir::AffineLoadOpAdaptor adaptor{ loadOp };
     std::vector<mlir::Value> indices(adaptor.indices().begin(), adaptor.indices().end());
@@ -2692,8 +3313,15 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
     // create a default identity map for mapping 1:1 dimension
     mlir::AffineMap permutationMap = mlir::AffineMap::getMinorIdentityMap(1, 1, rewriter.getContext());
     mlir::AffineMapAttr permutationMapAttr = mlir::AffineMapAttr::get(permutationMap);
+
+    // The inbound vector for a Transfer(Read|Write)Op has one entry per dimension and indicates whether the access
+    // in that dimension may go out of bounds. We are controlling for out-of-bounds accesses by creating a mask
+    // and trusting the rest of our infrastructure and DSL authoring, so we don't need the vector dialect to generate
+    // runtime inbounds checks for every element.
+    // Therefore, we set inbound = true here, under the assumption that our mask is sufficient to prevent an out of bounds
+    // access.
     llvm::SmallVector<bool, 1> inbound_init;
-    inbound_init.push_back(false);
+    inbound_init.push_back(true);
     auto inbounds = rewriter.getBoolArrayAttr(inbound_init);
 
     mlir::Value valueToStore = rewriter.create<mlir::vector::TransferReadOp>(loadLoc, loadVectorType, flatCastMemref, mlir::ValueRange{ flattenedPosition }, permutationMap, finalPaddingOpValue, mask, inbounds);
@@ -2704,6 +3332,43 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
         // Create a cast to hold vector of values
         auto castVecType = mlir::VectorType::get({ unrollMax }, thenCastOp.getType());
         valueToStore = rewriter.create<v::CastOp>(loopOp.getLoc(), valueToStore, castVecType);
+    }
+
+    // create vector masked load op from second load op
+
+    if (loadOp2)
+    {
+        auto loadLoc2 = loadOp2.getLoc();
+        auto loadMemRefType2 = loadOp2.getMemRefType();
+        auto loadElementType2 = loadMemRefType2.getElementType();
+        auto loadVectorType2 = mlir::VectorType::get({ unrollMax }, loadElementType2);
+
+        auto finalPaddingOpValue2 = rewriter.create<v::CastOp>(loopOp.getLoc(), paddingOpValue, loadElementType2);
+        mlir::AffineLoadOpAdaptor adaptor2{ loadOp2 };
+        std::vector<mlir::Value> indices2(adaptor2.indices().begin(), adaptor2.indices().end());
+        auto [flatCastMemref2, flattenedPosition2] = FlattenAccess(rewriter, loadOp2, indices2);
+
+        mlir::Value accumulateOperand2 = rewriter.create<mlir::vector::TransferReadOp>(loadLoc2, loadVectorType2, flatCastMemref2, mlir::ValueRange{ flattenedPosition2 }, permutationMap, finalPaddingOpValue2, mask, inbounds);
+
+        // optional cast op after second vector transfer read op
+        if (thenCastOp2) // then cast op
+        {
+            // Create a cast to hold vector of values
+            auto castVecType2 = mlir::VectorType::get({ unrollMax }, thenCastOp2.getType());
+            accumulateOperand2 = rewriter.create<v::CastOp>(loopOp.getLoc(), accumulateOperand2, castVecType2);
+        }
+
+        // if there is a second masked load, accumulation operator must follow before final store
+        // create binary add op to accumulate results from first and second masked load ops
+        valueToStore = rewriter.create<v::BinOp>(accOp.getLoc(), v::BinaryOpPredicate::ADD, valueToStore, accumulateOperand2);
+
+        // optional cast op after accumulation op
+        if (thenCastOp3) // then cast op
+        {
+            // Create a cast to hold vector of values
+            auto castVecType3 = mlir::VectorType::get({ unrollMax }, thenCastOp3.getType());
+            valueToStore = rewriter.create<v::CastOp>(loopOp.getLoc(), valueToStore, castVecType3);
+        }
     }
 
     // create vector store op
@@ -2719,7 +3384,7 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
     }
     else
     {
-        // masked store op
+        // masked store op for first masked loaded value or accumulated result
         rewriter.create<mlir::vector::TransferWriteOp>(storeOp.getLoc(), valueToStore, flatCastMemRefStore, mlir::ValueRange{ flattenedPosStore }, permutationMapAttr, mask, inbounds);
     }
 
@@ -2731,10 +3396,285 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
     return mlir::success();
 }
 
+mlir::LogicalResult vectorizeTranspose8x4f32(mlir::AffineForOp affineForOp,
+                                             mlir::PatternRewriter& rewriter)
+{
+    // Implement the matcher
+    auto reportMatchFailure = [&](mlir::Operation* op, std::string message) -> LogicalResult {
+        return reportMatchOpFailure(op, message, "vectorizeTranspose8x4f32");
+    };
+
+    // TODO: Relax this constraint, as it might still work on other systems
+    auto avx2Support = ir::util::ModuleSupportsTargetDeviceFeature(affineForOp, "avx2");
+    if (!avx2Support)
+    {
+        return reportMatchFailure(affineForOp, "Target device does not support avx2 instructions");
+    }
+
+    // TODO: Check to see what behavior is like with i32 since it has the same bitwidth
+    std::vector<mlir::Type> supportedBaseInputElementTypes{ rewriter.getF32Type() };
+    auto isInputTypeSupported = [&supportedBaseInputElementTypes](const mlir::Type& type) {
+        return std::find(supportedBaseInputElementTypes.begin(), supportedBaseInputElementTypes.end(), type) != supportedBaseInputElementTypes.end();
+    };
+
+    std::stack<Operation*> matchedOps;
+    // std::stack<mlir::Operation*> tempOps;
+    // ir::util::TempOpCleanupGuard tempGuard(&tempOps, rewriter);
+
+    // Match loops in transpose for vectorization rewrite rules
+    SmallVector<AffineForOp, 2> loops;
+    mlir::getPerfectlyNestedLoops(loops, affineForOp);
+    if (loops.size() != 2) // there should be exactly 2 loops in the nest
+    {
+        return failure();
+    }
+
+    for (auto& loop : loops)
+    {
+        // TODO: Relax LB constraint
+        if (!loop.hasConstantBounds() || loop.getConstantLowerBound() != 0)
+        {
+            return failure();
+        }
+    }
+
+    // order of nested loops we are looking for is
+    // i {0 to 8} followed by j {0 to 4}
+    auto outerLoop = loops.front(); // i loop
+    int64_t i_begin = outerLoop.getConstantLowerBound();
+    int64_t i_end = outerLoop.getConstantUpperBound();
+    int64_t i_step = outerLoop.getStep();
+    int64_t i_numIters = (i_end - i_begin) / i_step;
+    if (i_numIters != 8)
+        return failure();
+    auto i_inductionVar = outerLoop.getInductionVar();
+
+    auto innerLoop = loops.back(); // the innermost loop, j
+    int64_t j_begin = innerLoop.getConstantLowerBound();
+    int64_t j_end = innerLoop.getConstantUpperBound();
+    int64_t j_step = innerLoop.getStep();
+    int64_t j_numIters = (j_end - j_begin) / j_step;
+    if (j_numIters != 4)
+        return failure();
+    auto j_inductionVar = innerLoop.getInductionVar();
+
+    // get unroll max for i and j
+    int64_t unrollMax_i = std::min(i_numIters, (i_end - i_begin));
+    int64_t unrollMax_j = std::min(j_numIters, (j_end - j_begin));
+
+    // create IV map for i and j
+    auto inductionVarMap_i = AffineMap::get(1, 1, rewriter.getAffineDimExpr(0) + i_step * rewriter.getAffineSymbolExpr(0));
+    auto inductionVarMap_j = AffineMap::get(1, 1, rewriter.getAffineDimExpr(0) + j_step * rewriter.getAffineSymbolExpr(0));
+
+    // iterate on loop body from begin to end to match the ops list
+    auto innerLoopBodyIter = innerLoop.getBody()->begin();
+    auto innerLoopBodyEnd = innerLoop.getBody()->end();
+
+    // 1. load from source matrix
+    if (innerLoopBodyIter == innerLoopBodyEnd || !isa<mlir::AffineLoadOp>(*innerLoopBodyIter))
+    {
+        return reportMatchFailure(affineForOp, "Failed to match the load from the source array");
+    }
+    auto loadOp = cast<mlir::AffineLoadOp>(*innerLoopBodyIter++);
+    auto loadLoc = loadOp.getLoc();
+    auto loadElementType = loadOp.getMemRefType().getElementType();
+
+    if (!isInputTypeSupported(loadElementType))
+    {
+        return reportMatchFailure(affineForOp, "Load array element type is not a supported type");
+    }
+
+    // 2. store to destination matrix
+    if (innerLoopBodyIter == innerLoopBodyEnd || !isa<mlir::AffineStoreOp>(*innerLoopBodyIter))
+    {
+        return reportMatchFailure(affineForOp, "Failed to match the store to the destination array");
+    }
+    auto storeOp = cast<mlir::AffineStoreOp>(*innerLoopBodyIter++);
+    if (storeOp.getValueToStore() != loadOp)
+    {
+        return reportMatchFailure(storeOp, "Failed to match the store");
+    }
+
+    // Ignore the yield op at the end
+    if (innerLoopBodyIter != innerLoopBodyEnd && isa<mlir::AffineYieldOp>(*innerLoopBodyIter))
+    {
+        (void)innerLoopBodyIter++;
+    }
+
+    if (innerLoopBodyIter != innerLoopBodyEnd)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "While processing " << *innerLoopBodyIter << ". The store was not the last instruction\n";
+                   llvm::dbgs() << "affine for : " << *affineForOp << "\n";
+                   llvm::dbgs() << "current inst " << *innerLoopBodyIter << "\n");
+        return failure();
+    }
+
+    // Set the insertion point to the end of the inner loop (just before the terminator)
+    mlir::OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(innerLoop.getBody(), innerLoop.getBody()->getTerminator()->getIterator());
+
+    // create lanemappings for i, j
+    std::vector<mlir::BlockAndValueMapping> laneMappings_i(unrollMax_i);
+    std::vector<mlir::BlockAndValueMapping> laneMappings_j(unrollMax_j);
+
+    for (int64_t i_idx = i_begin; i_idx < i_end; i_idx += i_step)
+    {
+        auto offset_i = rewriter.create<arith::ConstantIndexOp>(outerLoop.getLoc(), i_idx);
+        auto offsetInductionVar_i = rewriter.create<AffineApplyOp>(outerLoop.getLoc(), inductionVarMap_i, ValueRange{ i_inductionVar, offset_i });
+        // TODO: Update if assumption of i_begin == 0 is relaxed
+        laneMappings_i[i_idx].map(i_inductionVar, offsetInductionVar_i);
+    }
+    for (int64_t j_idx = j_begin; j_idx < j_end; j_idx += j_step)
+    {
+        auto offset_j = rewriter.create<arith::ConstantIndexOp>(innerLoop.getLoc(), j_idx);
+        auto offsetInductionVar_j = rewriter.create<AffineApplyOp>(innerLoop.getLoc(), inductionVarMap_j, ValueRange{ j_inductionVar, offset_j });
+        // TODO: Update if assumption of j_begin == 0 is relaxed
+        laneMappings_j[j_idx].map(j_inductionVar, offsetInductionVar_j);
+    }
+
+    int64_t inputVectorSize = unrollMax_j;
+    if (!IsUnrolledAccessSequential(rewriter, loadOp, laneMappings_j, inputVectorSize))
+    {
+        return reportMatchFailure(loadOp, "Failed: isUnrolledAcessSequential for load");
+    }
+    matchedOps.push(loadOp);
+
+    int64_t outputVectorSize = unrollMax_i;
+    if (!IsUnrolledAccessSequential(rewriter, storeOp, laneMappings_i, outputVectorSize))
+    {
+        return reportMatchFailure(loadOp, "Failed: isUnrolledAcessSequential for store");
+    }
+    matchedOps.push(storeOp);
+
+    // At this point we know:
+    //  - there are 2 nested loops, the inner of which has 4 iterations
+    //  - the loops have constant bounds
+    //  - the innermost loop contains a load that is sequential wrt the inner loop
+    //  - the innermost loop contains a store of the loaded value that is sequential wrt the outer loop
+    //  - there are no other ops in the innermost loop (other than a loop terminator op)
+
+    // So now we can create the new vectorized version of the loops
+
+    // 1. create vector load of the input rows
+    auto inputMemRefType = loadOp.getMemRefType();
+    auto inputElementType = inputMemRefType.getElementType();
+    auto inputVectorType = mlir::VectorType::get({ inputVectorSize }, inputElementType);
+
+    // Clone the load op for each iteration of the i loop and vectorize each of those loads wrt the j loop
+    // lea     rax,[rsi+rdx*2]
+    // vmovups xmm0,XMMWORD PTR [rsi]                  // Load 4 floats [0, 0...3] into xmm0 from rsi
+    // vmovups xmm1,XMMWORD PTR [rsi+rdx]              // Load 4 floats [1, 0...3] into xmm1 from rsi + rdx
+    // lea     rsi,[rax+rdx*2]
+    // vmovups xmm2,XMMWORD PTR [rax]                  // Load 4 floats [2, 0...3] into xmm2 from rax
+    // vmovups xmm3,XMMWORD PTR [rax+rdx]              // Load 4 floats [3, 0...3] into xmm3 from rax + rdx
+    // lea     rax,[rsi+rdx*2]
+    std::vector<mlir::Value> loadedVecs;
+    for (int64_t i_idx = i_begin; i_idx < i_end; i_idx += i_step)
+    {
+        auto clonedLoadOp = mlir::cast<mlir::AffineLoadOp>(rewriter.clone(*(loadOp.getOperation()), laneMappings_i[i_idx]));
+
+        mlir::AffineLoadOpAdaptor loadAdaptor{ clonedLoadOp };
+        std::vector<mlir::Value> loadIndices(loadAdaptor.indices().begin(), loadAdaptor.indices().end());
+
+        auto [flatCastInputMemRef, flattenedInputPos] = FlattenAccess(rewriter, clonedLoadOp, loadIndices);
+        mlir::Value loadedVec = rewriter.create<mlir::vector::LoadOp>(loadOp.getLoc(), inputVectorType, flatCastInputMemRef, mlir::ValueRange{ flattenedInputPos });
+        loadedVecs.push_back(loadedVec);
+    }
+    assert(loadedVecs.size() == 8);
+
+    // 2. create a vector.shuffle ops to transpose the inputs
+
+    // shuffle mask is {0, 1, ... N, N + 1, ... 2N - 1}, where N is the number of j iterations
+    auto concatMask = rewriter.getI64ArrayAttr(llvm::to_vector(llvm::seq<int64_t>(0, unrollMax_j * 2)));
+    auto outputMemRefType = storeOp.getMemRefType();
+    auto outputElementType = outputMemRefType.getElementType();
+    auto outputVectorType = mlir::VectorType::get({ outputVectorSize }, outputElementType);
+
+    // Merge the loaded vectors in loadedVec
+    // vinsertf128 ymm0,ymm0,XMMWORD PTR [rsi],1       // ymm0[0..3] = xmm0, ymm0[4..7] = 4 floats [4, 0...3] from rsi
+    // vinsertf128 ymm1,ymm1,XMMWORD PTR [rsi+rdx],1   // ymm1[0..3] = xmm1, ymm1[4..7] = 4 floats [5, 0...3] from rsi + rdx
+    // vinsertf128 ymm2,ymm2,XMMWORD PTR [rax],1       // ymm2[0..3] = xmm2, ymm2[4..7] = 4 floats [6, 0...3] from rax
+    // vinsertf128 ymm3,ymm3,XMMWORD PTR [rax+rdx],1   // ymm3[0..3] = xmm3, ymm3[4..7] = 4 floats [7, 0...3] from rax + rdx
+    llvm::SmallVector<mlir::vector::ShuffleOp> shuffleLoadOps;
+    for (int64_t loadIdx = 0; loadIdx < unrollMax_j; ++loadIdx)
+    {
+        auto shuffledRowsOp = rewriter.create<mlir::vector::ShuffleOp>(loadLoc, outputVectorType, loadedVecs[loadIdx], loadedVecs[loadIdx + unrollMax_j], concatMask);
+        shuffleLoadOps.push_back(shuffledRowsOp);
+    }
+    assert(shuffleLoadOps.size() == 4);
+
+    // Interleave the 8-byte loaded vectors
+    // vunpcklps ymm4,ymm0,ymm1                                    // ymm0: [ 0000 4444 ] ymm1: [ 1111 5555 ] -> ymm4: [ 0101 4545 ]
+    // vunpckhps ymm5,ymm0,ymm1                                    // ymm0: [ 0000 4444 ] ymm1: [ 1111 5555 ] -> ymm5: [ 0101 4545 ]
+    // vunpcklps ymm0,ymm2,ymm3                                    // ymm2: [ 2222 6666 ] ymm3: [ 3333 7777 ] -> ymm0: [ 2323 6767 ]
+    // vunpckhps ymm1,ymm2,ymm3                                    // ymm2: [ 2222 6666 ] ymm3: [ 3333 7777 ] -> ymm1: [ 2323 6767 ]
+    auto lowByteInterleaveMaskF32 = rewriter.getI64ArrayAttr({ 0, outputVectorSize + 0, 1, outputVectorSize + 1, 4, outputVectorSize + 4, 5, outputVectorSize + 5 });
+    auto highByteInterleaveMaskF32 = rewriter.getI64ArrayAttr({ 2, outputVectorSize + 2, 3, outputVectorSize + 3, 6, outputVectorSize + 6, 7, outputVectorSize + 7 });
+    llvm::SmallVector<mlir::vector::ShuffleOp> intermediateShuffledOps;
+    for (int64_t loadIdx = 0; loadIdx < 4; loadIdx += 2)
+    {
+        intermediateShuffledOps.push_back(
+            rewriter.create<mlir::vector::ShuffleOp>(loadLoc, outputVectorType, shuffleLoadOps[loadIdx], shuffleLoadOps[loadIdx + 1], lowByteInterleaveMaskF32));
+        intermediateShuffledOps.push_back(
+            rewriter.create<mlir::vector::ShuffleOp>(loadLoc, outputVectorType, shuffleLoadOps[loadIdx], shuffleLoadOps[loadIdx + 1], highByteInterleaveMaskF32));
+    }
+
+    // Interleave the vectors again
+    // vunpcklpd ymm2,ymm4,ymm0                                    // ymm4: [ 0101 4545 ] ymm0: [ 2323 6767 ] -> ymm2: [ 0123 4567 ]
+    // vunpckhpd ymm3,ymm4,ymm0                                    // ymm4: [ 0101 4545 ] ymm0: [ 2323 6767 ] -> ymm3: [ 0123 4567 ]
+    // vunpcklpd ymm0,ymm5,ymm1                                    // ymm5: [ 0101 4545 ] ymm1: [ 2323 6767 ] ymm0: [ 0123 4567]
+    // vunpckhpd ymm4,ymm5,ymm1                                    // ymm5: [ 0101 4545 ] ymm1: [ 2323 6767 ] ymm4: [ 0123 4567]
+    auto lowByteInterleaveMaskF64 = rewriter.getI64ArrayAttr({ 0, 1, 8, 9, 4, 5, 12, 13 });
+    auto highByteInterleaveMaskF64 = rewriter.getI64ArrayAttr({ 2, 3, 10, 11, 6, 7, 14, 15 });
+    llvm::SmallVector<mlir::vector::ShuffleOp> finalOutputShuffledOps;
+    for (int64_t idx = 0; idx < 2; ++idx)
+    {
+        finalOutputShuffledOps.push_back(
+            rewriter.create<mlir::vector::ShuffleOp>(loadLoc, outputVectorType, intermediateShuffledOps[idx], intermediateShuffledOps[idx + 2], lowByteInterleaveMaskF64));
+        finalOutputShuffledOps.push_back(
+            rewriter.create<mlir::vector::ShuffleOp>(loadLoc, outputVectorType, intermediateShuffledOps[idx], intermediateShuffledOps[idx + 2], highByteInterleaveMaskF64));
+    }
+
+    auto storeLoc = storeOp.getLoc();
+    {
+        // Cloning the store ops creates a dependency on the original load op, which means the load ops can't be
+        // erased unless the temporary store ops are erased first. So we introduce a new scope to ensure any temporary
+        // dependents are cleaned up before the main matching ops are erased
+        std::stack<mlir::Operation*> tempStoreOps;
+        ir::util::TempOpCleanupGuard storeGuard(&tempStoreOps, rewriter);
+
+        // 3. create a vector store op of the transposed rows
+        // Clone the store op for each iteration of the j loop and vectorize each of those stores wrt the i loop
+        for (int64_t j_idx = j_begin, iter_idx = 0; j_idx < j_end; j_idx += j_step, ++iter_idx)
+        {
+            auto unrolledInductionVar_j = rewriter.create<mlir::arith::ConstantIndexOp>(storeLoc, j_idx);
+            mlir::BlockAndValueMapping jIterMapping;
+            jIterMapping.map(j_inductionVar, unrolledInductionVar_j);
+            auto clonedStoreOp = mlir::cast<mlir::AffineStoreOp>(rewriter.clone(*(storeOp.getOperation()), jIterMapping));
+            tempStoreOps.push(clonedStoreOp);
+
+            mlir::AffineStoreOpAdaptor storeAdaptor{ clonedStoreOp };
+            std::vector<mlir::Value> storeIndices(storeAdaptor.indices().begin(), storeAdaptor.indices().end());
+
+            auto [flatCastOutputMemRef, flattenedOutputPos] = FlattenAccess(rewriter, clonedStoreOp, storeIndices);
+            (void)rewriter.create<mlir::vector::StoreOp>(storeLoc, finalOutputShuffledOps[iter_idx], flatCastOutputMemRef, mlir::ValueRange{ flattenedOutputPos });
+        }
+    }
+    // Set the step size for the vectorized loops such that they each have a single iteration and will later get simplified away while replacing any IV usage with their begin value
+    outerLoop.setStep(i_step * i_numIters);
+    innerLoop.setStep(j_step * j_numIters);
+
+    // Erase the original non-vectorized ops
+    ir::util::EraseOps(matchedOps, rewriter);
+    return mlir::success();
+}
+
 mlir::LogicalResult TryVectorizeKnownSubgraph(mlir::AffineForOp affineForOp,
                                               mlir::PatternRewriter& rewriter)
 {
     // TODO : convert these to rewrite pattern structs with benefit weights
+    if (succeeded(vectorize2DHorizontalSumReduction(affineForOp, rewriter)))
+        return success();
     if (succeeded(vectorizeHorizontalReduction(affineForOp, rewriter)))
         return success();
     if (succeeded(vectorizeSequentialCast(affineForOp, rewriter)))
@@ -2744,6 +3684,8 @@ mlir::LogicalResult TryVectorizeKnownSubgraph(mlir::AffineForOp affineForOp,
     if (succeeded(vectorizeInt16MatMul(affineForOp, rewriter)))
         return success();
     if (succeeded(vectorizeMaskedLoadStore(affineForOp, rewriter)))
+        return success();
+    if (succeeded(vectorizeTranspose8x4f32(affineForOp, rewriter)))
         return success();
     return failure();
 }

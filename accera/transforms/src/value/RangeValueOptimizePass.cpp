@@ -146,6 +146,26 @@ CmpIOpClassification classifyCmpIOp(RangeValueAnalysis& rangeValue, arith::CmpIO
             return CmpIOpClassification::AlwaysFalse;
         }
         break;
+    case arith::CmpIPredicate::eq:
+        if (lhsRange.icmp(CmpInst::Predicate::ICMP_EQ, rhsRange))
+        {
+            return CmpIOpClassification::AlwaysTrue;
+        }
+        else if (lhsRange.icmp(CmpInst::Predicate::ICMP_NE, rhsRange))
+        {
+            return CmpIOpClassification::AlwaysFalse;
+        }
+        break;
+    case arith::CmpIPredicate::ne:
+        if (lhsRange.icmp(CmpInst::Predicate::ICMP_NE, rhsRange))
+        {
+            return CmpIOpClassification::AlwaysTrue;
+        }
+        else if (lhsRange.icmp(CmpInst::Predicate::ICMP_EQ, rhsRange))
+        {
+            return CmpIOpClassification::AlwaysFalse;
+        }
+        break;
     default:
         break;
     }

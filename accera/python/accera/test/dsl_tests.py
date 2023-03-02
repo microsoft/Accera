@@ -65,7 +65,7 @@ def _get_test_mode(correctness_check: bool = False):
 
 class DSLTest_01Arrays(unittest.TestCase):
 
-    def _verify_nest(self, nest, args: Tuple[Array], package_name, correctness_check_values=None) -> None:
+    def _verify_nest(self, nest, args: Tuple[Array], package_name, correctness_check_values=None, quiet=True) -> None:
 
         # create a HAT package and add the function to it
         package = Package()
@@ -74,7 +74,7 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
+            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir, _quiet=quiet)
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -667,13 +667,13 @@ class DSLTest_01Arrays(unittest.TestCase):
         package.add(main, args=(arr, ))
 
         package_name = "test_reinterpret_cast"
-
-        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR):
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        with verifiers.VerifyPackage(self, package_name, output_dir):
             package.build(
                 package_name,
                 format=TEST_FORMAT,
                 mode=Package.Mode.RELEASE,
-                output_dir=TEST_PACKAGE_DIR,
+                output_dir=output_dir,
                 _quiet=False
             )
 
@@ -6131,6 +6131,7 @@ class DSLTest_10Packages(unittest.TestCase):
                 function.name,
                 before=[A_test, B_test, C_test],
                 after=[A_test, B_test, (C_test + A_test) * B_test - 1.0],
+                tolerance=1e-4
             )
 
     def test_debug_mode_fusion_cascading_2(self) -> None:

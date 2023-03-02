@@ -289,9 +289,9 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
 
         {
             RewritePatternSet patterns(context);
-            xptr::populateOutOfBoundsAccessHandlingPatterns(patterns);
+            affinetr::populateBoundsCheckingPatterns(patterns);
             (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
-            snapshotter.Snapshot("OutOfBoundsAccessHandling", vFuncOp);
+            snapshotter.Snapshot("Caching_OutOfBoundsAccessHandling", vFuncOp);
         }
 
         {

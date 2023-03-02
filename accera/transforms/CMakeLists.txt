@@ -70,11 +70,15 @@ set(rcgpu_include
 )
 
 set(accaffine_src
+  src/affine/AffineLoopNormalize.cpp
   src/affine/AffineSimplifications.cpp
+  src/affine/CheckBoundsPass.cpp
 )
 
 set(accaffine_include
+  include/affine/AffineLoopNormalize.h
   include/affine/AffineSimplifications.h
+  include/affine/CheckBoundsPass.h
 )
 
 set(accvec_src

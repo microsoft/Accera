@@ -479,7 +479,7 @@ class Package:
                 del self._fns[name]
 
     def _add_debug_utilities(self, tolerance):
-        from .Debug import get_args_to_debug, add_debugging_functions
+        from .Debug import get_args_to_debug, add_debugging_functions, check_args_order
 
         # add_check_all_close will modify the self._fns dictionary (because
         # it is adding debug functions), to avoid this, we first gather information
@@ -576,10 +576,13 @@ class Package:
         accc_opts = accc.Options.NONE
         if options & Package._Options.DISABLE_AUTO_UNROLL:
             accc_opts |= accc.Options.DISABLE_AUTO_UNROLL
-        if options & Package._Options.HIGH_PRECISION_FLOATING_POINT_OPS:
-            accc_opts |= accc.Options.HIGH_PRECISION_FLOATING_POINT_OPS
         return accc_opts
 
+    def _apply_options_to_funcs(self, options: _Options):
+        if options & Package._Options.HIGH_PRECISION_FLOATING_POINT_OPS:
+            for f in self._fns.values():
+                if f.high_precision_fp is None:
+                    f.high_precision_fp = True
 
     def build(
         self,
@@ -590,6 +593,7 @@ class Package:
         tolerance: float = 1e-5,
         output_dir: str = None,
         fail_on_error: bool = False,
+        profile: bool = False,
         _opts: _Options = _Options.NONE,
         _quiet=True,
     ):
@@ -653,6 +657,7 @@ class Package:
 
         # Create the package module
         package_module = _lang_python._Module(name=name, options=compiler_options)
+        self._apply_options_to_funcs(_opts)
         self._add_functions_to_module(package_module, fail_on_error)
 
         # Emit the package module
@@ -705,6 +710,7 @@ class Package:
 
         proj.generate_and_emit(
             build_config=mode.value,
+            profile=profile,
             system_target=target_device.device_name,
             runtime=target.runtime.name,
             dump_all_passes=dump_ir,

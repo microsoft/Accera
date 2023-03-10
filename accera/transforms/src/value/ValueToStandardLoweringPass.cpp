@@ -13,6 +13,7 @@
 #include <ir/include/exec/VectorizationInfo.h>
 #include <ir/include/value/ValueDialect.h>
 
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <utilities/include/MathUtil.h>
 
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
@@ -590,7 +591,7 @@ struct CastOpLowering : public OpRewritePattern<ValueCastOp>
         CAST_FROM_TO_WITH_OP_IF(mlir::IntegerType, mlir::IntegerType, mlir::arith::ExtUIOp, (fromElementType.getIntOrFloatBitWidth() < toElementType.getIntOrFloatBitWidth() && unsignedFromElementType));
         if (fromElementType.isa<mlir::IntegerType>() && toElementType.isa<mlir::IntegerType>() && (fromElementType.getIntOrFloatBitWidth() == toElementType.getIntOrFloatBitWidth()))
         {
-            rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(op, toElementType, signlessFromValue);
+            rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(op, toType, signlessFromValue);
             return success();
         }
 
@@ -1059,26 +1060,42 @@ LogicalResult BinOpLowering::matchAndRewrite(
         using accera::ir::value::BinaryOpPredicate;
         if (auto pred = op.getPredicate(); elementType.isa<FloatType>())
         {
-            switch (pred)
+            auto fpOp = [&]() -> mlir::Operation* {
+                switch (pred)
+                {
+                case BinaryOpPredicate::ADD:
+                    return rewriter.create<arith::AddFOp>(loc, ValueRange{ lhs, rhs });
+                case BinaryOpPredicate::DIV:
+                    return rewriter.create<arith::DivFOp>(loc, ValueRange{ lhs, rhs });
+                case BinaryOpPredicate::MOD:
+                    return rewriter.create<arith::RemFOp>(loc, ValueRange{ lhs, rhs });
+                case BinaryOpPredicate::MUL:
+                    return rewriter.create<arith::MulFOp>(loc, ValueRange{ lhs, rhs });
+                case BinaryOpPredicate::SUB:
+                    return rewriter.create<arith::SubFOp>(loc, ValueRange{ lhs, rhs });
+                case BinaryOpPredicate::MAX:
+                    return rewriter.create<arith::MaxFOp>(loc, ValueRange{ lhs, rhs });
+                case BinaryOpPredicate::MIN:
+                    return rewriter.create<arith::MinFOp>(loc, ValueRange{ lhs, rhs });
+                default:
+                    assert(false);
+                    return nullptr;
+                }
+            }();
+            if (auto parentFuncOp = op->getParentOfType<mlir::FuncOp>())
             {
-            case BinaryOpPredicate::ADD:
-                return rewriter.create<arith::AddFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
-            case BinaryOpPredicate::DIV:
-                return rewriter.create<arith::DivFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
-            case BinaryOpPredicate::MOD:
-                return rewriter.create<arith::RemFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
-            case BinaryOpPredicate::MUL:
-                return rewriter.create<arith::MulFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
-            case BinaryOpPredicate::SUB:
-                return rewriter.create<arith::SubFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
-            case BinaryOpPredicate::MAX:
-                return rewriter.create<arith::MaxFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
-            case BinaryOpPredicate::MIN:
-                return rewriter.create<arith::MinFOp>(loc, ValueRange{ lhs, rhs }, rewriter.getNamedAttr("RelaxedPrecision", rewriter.getUnitAttr()));
-            default:
-                assert(false);
-                return {};
+                auto fpPrecision = parentFuncOp->getAttrOfType<mlir::LLVM::FMFAttr>(mlir::LLVM::FMFAttr::getMnemonic());
+                auto fastMathAttrName = "fastmathFlags";
+                if (fpPrecision)
+                {
+                    fpOp->setAttr(fastMathAttrName, fpPrecision);
+                }
             }
+            else // GPU
+            {
+                fpOp->setAttr("RelaxedPrecision", rewriter.getUnitAttr());
+            }
+            return fpOp->getResult(0);
         }
         else
         {
@@ -2642,11 +2659,11 @@ LogicalResult PrintOpLowering::matchAndRewrite(
 
 LogicalResult VhaddLowering::matchAndRewrite(ValueVHADDOp op, PatternRewriter& rewriter) const
 {
-    // vphaddd(ymm0, ymm1) -> [ymm0[0]+ymm0[1], ymm0[2]+ymm0[3], 
-    //                         ymm1[0]+ymm1[1], ymm1[2]+ymm1[3], 
-    //                         ymm0[4]+ymm0[5], ymm0[6]+ymm0[7], 
+    // vphaddd(ymm0, ymm1) -> [ymm0[0]+ymm0[1], ymm0[2]+ymm0[3],
+    //                         ymm1[0]+ymm1[1], ymm1[2]+ymm1[3],
+    //                         ymm0[4]+ymm0[5], ymm0[6]+ymm0[7],
     //                         ymm1[4]+ymm1[5], ymm1[6]+ymm1[7]]
-    // this is equivalent to 
+    // this is equivalent to
     // tmp0 = shuffle ymm0, ymm1 : [0, 2, 8, 10, 4, 6, 12, 14]
     // tmp1 = shuffle ymm0, ymm1 : [1, 3, 9, 11, 5, 7, 13, 15]
     // res = tmp0 + tmp1
@@ -2679,7 +2696,7 @@ LogicalResult VhaddLowering::matchAndRewrite(ValueVHADDOp op, PatternRewriter& r
     // 64-bit: [          1,              5,             3,              7 ]
     // 32-bit: [       1, 3,          9, 11,          5, 7,         13, 15 ]
     // 16-bit: [ 1, 3, 5, 7, 17, 19, 21, 23, 9, 11, 13, 15, 25, 27, 29, 31 ]
-    std::vector<int64_t> oddsMask; 
+    std::vector<int64_t> oddsMask;
     oddsMask.reserve(elementsPerGroup * groups);
 
     for (size_t groupIdx = 0; groupIdx < groups; ++groupIdx)
@@ -2692,7 +2709,7 @@ LogicalResult VhaddLowering::matchAndRewrite(ValueVHADDOp op, PatternRewriter& r
             oddsMask.push_back(static_cast<int64_t>(groupOffset + (elementIdx + offsetInVector) * 2 + 1));
         }
     }
-    
+
     auto evenShuffleOp = rewriter.create<mlir::vector::ShuffleOp>(loc, vecType, lhs, rhs, rewriter.getI64ArrayAttr(evensMask));
     auto oddShuffleOp = rewriter.create<mlir::vector::ShuffleOp>(loc, vecType, lhs, rhs, rewriter.getI64ArrayAttr(oddsMask));
 

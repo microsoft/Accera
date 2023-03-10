@@ -138,7 +138,7 @@ namespace value
 
     Scalar Fma(Scalar a, Scalar b, Scalar c)
     {
-        return (a * b) + c;
+        return ScalarOpBuilder<mlir::math::FmaOp>(a, b, c);
     }
 
     Scalar Abs(Scalar s)

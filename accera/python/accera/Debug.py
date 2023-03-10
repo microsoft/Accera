@@ -12,6 +12,22 @@ from ._lang_python import Role
 from ._lang_python._lang import Dimension
 
 
+def check_args_order(func: Function):
+    try:
+        for arg in func.requested_args:
+            if isinstance(arg, Array):
+                for dim in arg.shape:
+                    if isinstance(dim, Dimension):
+                        assert func.requested_args.index(dim) < func.requested_args.index(arg)
+    except Exception as e:
+        if isinstance(e, AssertionError):
+            assert False, "Dimension arguments need to precede the array argument in Debug mode"
+        else:
+            # Swallow the exception in this function when the array's dimension is absent from the arg list,
+            # let this function only focus on the arg order check.
+            return         
+
+
 def get_args_to_debug(func: Function) -> List[Array]:
     """Gets the arguments of interest to debugging
     For example, INPUT_OUTPUT Arrays

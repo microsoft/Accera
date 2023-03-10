@@ -337,6 +337,7 @@ type | description
 `accera.Target.Model.INTEL_11700K` | Intel 11700K
 `accera.Target.Model.INTEL_11700KF` | Intel 11700KF
 `accera.Target.Model.INTEL_11700T` | Intel 11700T
+`accera.Target.Model.INTEL_11850H` | Intel 11850H
 `accera.Target.Model.INTEL_1185G7` | Intel 1185G7
 `accera.Target.Model.INTEL_11900` | Intel 11900
 `accera.Target.Model.INTEL_11900F` | Intel 11900F
@@ -555,6 +556,8 @@ type | description
 `accera.Target.Model.INTEL_E5_1660_V3` | Intel E5-1660 v3
 `accera.Target.Model.INTEL_E5_1680_V2` | Intel E5-1680 v2
 `accera.Target.Model.INTEL_E5_1680_V3` | Intel E5-1680 v3
+`accera.Target.Model.INTEL_E5_2620_V3` | Intel E5-2620 v3
+`accera.Target.Model.INTEL_E5_2673_V4` | Intel E5-2673 v4
 `accera.Target.Model.INTEL_G3900` | Intel G3900
 `accera.Target.Model.INTEL_G3900T` | Intel G3900T
 `accera.Target.Model.INTEL_G3900TE` | Intel G3900TE

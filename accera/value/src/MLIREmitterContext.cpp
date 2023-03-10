@@ -6,6 +6,7 @@
 
 #include "MLIREmitterContext.h"
 #include "CompilerOptions.h"
+#include "FunctionDeclaration.h"
 #include "ValueType.h"
 
 #include <cstdint>
@@ -39,8 +40,8 @@
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
-#include <mlir/Dialect/Affine/Utils.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Affine/Utils.h>
 #include <mlir/Dialect/Arithmetic/IR/Arithmetic.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -1224,6 +1225,16 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
             {
                 fnOp->setAttr(ir::NoInlineIntoAttrName, b.getUnitAttr());
             }
+            // Ref https://llvm.org/docs/LangRef.html#fastmath
+            switch (decl.FloatingPointPrecision())
+            {
+            case FpPrecision::high:
+                // No specific flag to set, this is the default for LLVM
+                break;
+            case FpPrecision::low:
+                fnOp->setAttr(mlir::LLVM::FMFAttr::getMnemonic(), mlir::LLVM::FMFAttr::get(b.getContext(), mlir::LLVM::FastmathFlags::fast));
+                break;
+            }
 
             // Set dynamic arg size references. This is a vector<vector<int>>, where each entry is either a reference to another
             // argument's position or is -1. The outer vector has one entry per function argument, and each inner vector has one
@@ -2038,7 +2049,6 @@ Value MLIRContext::SplitDimensionImpl(Value sourceValue, int64_t dim, Scalar siz
     auto& builder = _impl->builder;
     auto loc = builder.getUnknownLoc();
 
-
     auto source = ToMLIRValue(builder, sourceValue);
     auto size = ToMLIRValue(builder, sizeValue);
     auto resultMemRefType = ir::value::SplitDimOp::computeMemRefType(source, dim, size);
@@ -2163,7 +2173,7 @@ Value MLIRContext::ReinterpretCastImpl(Value input, ValueType valueType)
                 shape.push_back(mlir::getAffineConstantExpr(s, mlirCtx));
             }
         }
-        
+
         llvm::SmallVector<mlir::AffineExpr> map3Results(shape.size());
         auto cumulativeStride = mlir::getAffineConstantExpr(1, mlirCtx);
         for (size_t i = shape.size(); i-- > 0;)

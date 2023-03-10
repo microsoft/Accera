@@ -462,6 +462,10 @@ KNOWN_CPUS = [
     ["Intel E5-1680 v3",  "Haswell", "Xeon E5", 3.2, 3.8, 8, 16, [48, 256, 20 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
     ["Intel E5-2620 v3",  "Haswell", "Xeon E5", 2.4, 3.2, 6, 12, [48, 256, 15 * 1024], [64, 64, 64], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
 
+    # Intel Broadwell
+    # ref: https://en.wikichip.org/wiki/intel/xeon_e5/e5-2673_v4
+    ["Intel E5-2673 v4",  "Broadwell", "Xeon E5", 2.3, 2.6, 20, 40, [20, 20, 20], [32, 256, 2.5*1024], 32, 16, ["SSE4.1", "SSE4.2", "AVX2"], "X86_64", "OPENMP"],
+
     # AMD Zen
     # ref: https://en.wikipedia.org/wiki/Zen_(first_generation)
     # ref: https://en.wikichip.org/wiki/amd/microarchitectures/zen

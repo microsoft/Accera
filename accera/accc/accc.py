@@ -100,9 +100,6 @@ DEFAULT_ACC_TRANSLATE_ARGS = []
 
 DEFAULT_MLIR_TRANSLATE_ARGS = ["--mlir-print-op-on-diagnostic", "--acc-to-llvmir"]
 
-DEFAULT_LOW_PRECISION_FLOAT_OPTS = ["-fp-contract=fast", "--enable-unsafe-fp-math"]
-DEFAULT_HIGH_PRECISION_FLOAT_OPTS = ["-fp-contract=on"]
-
 OPT_DISABLE_LOOP_UNROLLING_ARGS = ["--disable-loop-unrolling"]
 
 LLVM_KEEP_DEBUG_INFO_ARGS = ["--frame-pointer=all"]
@@ -128,10 +125,6 @@ LLVM_TOOLING_OPTS = {
 }
 
 DEFAULT_LLVM_TOOLING_OPTS = [
-    '--enable-no-infs-fp-math',
-    '--enable-no-nans-fp-math',
-    '--enable-no-signed-zeros-fp-math',
-    '--enable-no-trapping-fp-math'
 ]
 
 DEFAULT_OPT_ARGS = DEFAULT_LLVM_TOOLING_OPTS + []
@@ -139,9 +132,8 @@ DEFAULT_OPT_ARGS = DEFAULT_LLVM_TOOLING_OPTS + []
 DEFAULT_LLC_ARGS = DEFAULT_LLVM_TOOLING_OPTS + ["-relocation-model=pic"]
 
 class Options(Flag):
-    NONE = auto() # (enable auto unroll | low precision float | no debug info)
+    NONE = auto() # (enable auto unroll | no debug info)
     DISABLE_AUTO_UNROLL = auto()
-    HIGH_PRECISION_FLOATING_POINT_OPS = auto()
     KEEP_DEBUG_INFO = auto()
 
 def _get_common_debug_info_options_args(options: Options):
@@ -150,19 +142,12 @@ def _get_common_debug_info_options_args(options: Options):
     else:
         return []
 
-def _get_common_fp_options_args(options: Options):
-    if options & Options.HIGH_PRECISION_FLOATING_POINT_OPS:
-        return DEFAULT_HIGH_PRECISION_FLOAT_OPTS
-    else:
-        return DEFAULT_LOW_PRECISION_FLOAT_OPTS
-
 def _get_options_opt_args(options: Options):
     args = []
 
     if options & Options.DISABLE_AUTO_UNROLL:
         args += OPT_DISABLE_LOOP_UNROLLING_ARGS
 
-    args += _get_common_fp_options_args(options)
     args += _get_common_debug_info_options_args(options)
 
     return args
@@ -170,7 +155,6 @@ def _get_options_opt_args(options: Options):
 def _get_options_llc_args(options: Options):
     args = []
 
-    args += _get_common_fp_options_args(options)
     args += _get_common_debug_info_options_args(options)
 
     return args

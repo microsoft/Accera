@@ -615,6 +615,61 @@ class SmokeTest(unittest.TestCase):
 
             v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
 
+    def _test_fast_exp_mlas(self, func_level_precision: bool):
+        from accera import fast_exp_mlas, fast_exp
+
+        M = 64
+        N = 64
+
+        In = Array(role=Role.INPUT, element_type=float, shape=(M, N))
+        Out = Array(role=Role.INPUT_OUTPUT, element_type=float, shape=(M, N))
+
+        nest = Nest((M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            Out[i, j] = fast_exp_mlas(In[i, j])
+
+        sched = nest.create_schedule()
+        jj = sched.split(j, 8)
+
+        plan = sched.create_plan(Target("Intel 6700"))    # avx2
+        plan.vectorize(jj)
+
+        In_test = np.random.rand(M, N).astype(np.float32)
+        Out_test = np.random.rand(M, N).astype(np.float32)
+        Out_ref = np.exp(In_test)
+
+        func_opt = {
+            'high_precision_fp': True
+        } if func_level_precision else {}
+        pkg_opt = Package._Options.NONE if func_level_precision else Package._Options.HIGH_PRECISION_FLOATING_POINT_OPS
+
+        # Create a package and add our function definition to it
+        package_name = "test_fast_exp_mlas"
+        package = Package()
+        function = package.add(plan, args=(In, Out), base_name="test_fast_exp_mlas", function_opts=func_opt)
+
+        # Build the HAT package
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
+            package.build(
+                package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+                _opts=pkg_opt,
+                _quiet=False
+            )
+
+            v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
+
+    def test_fast_exp_mlas_w_func_level_precision(self):
+        self._test_fast_exp_mlas(True)
+
+    def test_fast_exp_mlas_w_pkg_level_precision(self):
+        self._test_fast_exp_mlas(False)
+
     def test_emittime_cache_mlas_matmul(self) -> None:
         from accera.samples.OfflineCacheMatrixMultiplication import EmitTimeCacheMLAS
 
@@ -4046,13 +4101,13 @@ class SmokeTest(unittest.TestCase):
                 after=correctness_check_values["post"],
             )
 
-    def test_int16_to_int32_horizontal_vector_1_row(self):
-        test_name = "test_int16_to_int32_horizontal_vector_1_row"
+    def test_int16_to_int32_horizontal_vector_add_1_row(self):
+        test_name = "test_int16_to_int32_horizontal_vector_add_1_row"
         M = 1
         N = 16
 
         A = Array(role=Role.INPUT, element_type=ScalarType.int16, shape=(M, N), layout=Array.Layout.FIRST_MAJOR)
-        B = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(M, ), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(M, ), layout=Array.Layout.FIRST_MAJOR)
 
         nest = Nest(shape=(M, N))
         i, j = nest.get_indices()
@@ -4097,6 +4152,103 @@ class SmokeTest(unittest.TestCase):
                 after=correctness_check_values["post"],
             )
 
+    def test_f32_horizontal_vector_add_1_row(self):
+        test_name = "test_f32_horizontal_vector_add_1_row"
+        N = 8
+
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N,), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(1, ), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(N,))
+        i, = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[0] += A[i]
+
+        schedule = nest.create_schedule()
+        plan = schedule.create_plan()
+        plan.vectorize(i)
+
+        package = Package()
+        function = package.add(plan, args=(A, B), base_name=test_name)
+
+        A_test = np.random.random((N,)).astype(np.float32)
+        B_test = np.random.random((1,)).astype(np.float32)
+
+        B_ref = B_test.copy()
+        for i in range(N):
+            B_ref[0] += A_test[i]
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_test, B_ref),
+        }
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                test_name,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+            v.check_correctness(
+                function.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
+
+    def test_i32_horizontal_vector_add_1_row(self):
+        test_name = "test_i32_horizontal_vector_add_1_row"
+        N = 8
+
+        A = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N,), layout=Array.Layout.FIRST_MAJOR)
+        B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(1, ), layout=Array.Layout.FIRST_MAJOR)
+
+        nest = Nest(shape=(N,))
+        i, = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[0] += A[i]
+
+        schedule = nest.create_schedule()
+        plan = schedule.create_plan()
+        plan.vectorize(i)
+
+        package = Package()
+        function = package.add(plan, args=(A, B), base_name=test_name)
+
+        A_test = np.random.random((N,)).astype(np.int32)
+        B_test = np.random.random((1,)).astype(np.int32)
+
+        B_ref = B_test.copy()
+        for i in range(N):
+            B_ref[0] += A_test[i]
+
+        correctness_check_values = {
+            "pre": (A_test, B_test),
+            "post": (A_test, B_ref),
+        }
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                test_name,
+                format=Package.Format.MLIR | Package.Format.DEFAULT,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir
+            )
+            v.check_correctness(
+                function.name,
+                before=correctness_check_values["pre"],
+                after=correctness_check_values["post"],
+            )
 
     def test_int32_horizontal_vector_add_simple(self):
         test_name = "test_int32_horizontal_vector_add_simple"

@@ -563,6 +563,26 @@ struct ValueMemRefCastOpLowering : public ValueLLVMOpConversionPattern<MemRefCas
 {
     using ValueLLVMOpConversionPattern::ValueLLVMOpConversionPattern;
 
+    mlir::Value GetLLVMCompatibleSource(mlir::Value src) const
+    {
+        if (LLVM::isCompatibleType(src.getType()))
+        {
+            return src;
+        }
+        else
+        {
+            // Check if the source is an unrealized conversion cast from a compatible type
+            if (auto castOp = src.getDefiningOp<mlir::UnrealizedConversionCastOp>())
+            {
+                if (castOp.inputs().size() == 1)
+                {
+                    return GetLLVMCompatibleSource(castOp.inputs()[0]);
+                }
+            }
+            return nullptr;
+        }
+    }
+
     LogicalResult matchAndRewrite(
         MemRefCastOp op,
         OpAdaptor adaptor,
@@ -570,6 +590,9 @@ struct ValueMemRefCastOpLowering : public ValueLLVMOpConversionPattern<MemRefCas
     {
         auto src = adaptor.source();
         auto srcType = op.getViewSource().getType().cast<MemRefType>();
+        auto llvmCompatibleSrc = GetLLVMCompatibleSource(src);
+        if (!llvmCompatibleSrc)
+            return failure();
 
         auto dstType = op.getType();
         auto targetMemSpace = dstType.getMemorySpaceAsInt();
@@ -580,7 +603,7 @@ struct ValueMemRefCastOpLowering : public ValueLLVMOpConversionPattern<MemRefCas
 
         auto loc = op.getLoc();
 
-        MemRefDescriptor srcMemrefDesc(src);
+        MemRefDescriptor srcMemrefDesc(llvmCompatibleSrc);
         auto targetMemrefDesc = MemRefDescriptor::undef(rewriter, loc, targetStructType);
 
         targetMemrefDesc.setAllocatedPtr(

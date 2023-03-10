@@ -74,6 +74,7 @@ class Function:
     definition: Callable = None
     no_inline: bool = False # no_inline == True means that this function cannot be inlined into other functions
     no_inline_into: bool = False # no_inline_into == True means that this function cannot have other functions inlined into it
+    high_precision_fp: bool = None # high_precision_fp == True means that precision will not be sacrificed for performance
     auxiliary: dict = field(default_factory=dict)
     target: Target = Target.HOST
     output_verifiers: list = field(default_factory=list)
@@ -102,6 +103,7 @@ class Function:
 
         self._native_fn.inlinable(not self.no_inline)
         self._native_fn.inlinable_into(not self.no_inline_into)
+        self._native_fn.high_precision_fp(bool(self.high_precision_fp))
 
         sig = signature(self.definition)
 

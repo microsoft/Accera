@@ -37,7 +37,7 @@ module @test_bin_op_cast_op_folding_module {
     // CHECK-NEXT:    %0 = affine.load %arg0[0] : memref<1xf32>
     // CHECK-NEXT:    %1 = affine.load %arg1[0] : memref<1xi32>
     // CHECK-NEXT:    %2 = arith.sitofp %1 : i32 to f32
-    // CHECK-NEXT:    %3 = arith.mulf %0, %2 {RelaxedPrecision} : f32
+    // CHECK-NEXT:    %3 = arith.mulf %0, %2 : f32
     // CHECK-NEXT:    %4 = arith.fptosi %3 : f32 to i32
     // CHECK-NEXT:    affine.store %4, %arg2[0] : memref<1xi32>
     builtin.func @bin_op_cast_input_to_f32(%arg0: memref<1xf32>, %arg1: memref<1xi32>, %arg2: memref<1xi32>) {

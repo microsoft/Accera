@@ -35,4 +35,4 @@ class ComponentInstall(utils.ComponentInstallBase):
 # runs cmake in the repo root to install the component
 setup(ext_modules=[utils.CMakeExtension("_lang_python", utils.repo_root())],
       cmdclass=dict(build_ext=ComponentBuild, install_lib=ComponentInstall),
-      use_scm_version=utils.scm_version(str(SCRIPT_DIR / "_version.py")))
+      use_scm_version=None)

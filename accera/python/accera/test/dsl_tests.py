@@ -28,7 +28,8 @@ else:
 from accera import ScalarType, Array, Function, Nest, Target, Package, algorithms, cast, AllocateFlags, Role
 from accera.test import verifiers
 from accera.test.test_utils import expectedFailure, FailedReason
-from accera._lang_python._lang import Dimension
+from accera._lang_python._lang import Dimension, EnterProfileRegion, ExitProfileRegion, PrintProfileResults
+
 
 INTERNAL_FUNCTION_OPTS = {
     "no_inline_into": True,
@@ -503,6 +504,12 @@ class DSLTest_01Arrays(unittest.TestCase):
             layout=Array.Layout.FIRST_MAJOR,
             element_type=ScalarType.int16,
         )
+        C = Array(
+            shape=(256, 32),
+            role=Role.INPUT_OUTPUT,
+            layout=Array.Layout.FIRST_MAJOR,
+            element_type=ScalarType.int8,
+        )
 
         nest = Nest(shape=(256, 32))
         i, j = nest.get_indices()
@@ -510,6 +517,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         @nest.iteration_logic
         def _():
             B[i, j] = A[i, j]
+            C[i, j] = cast(A[i, j], ScalarType.int8)
 
         sched = nest.create_schedule()
         ii = sched.split(i, 4)
@@ -520,14 +528,17 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         A_test = np.random.random((256, 32)).astype(np.uint8)
         B_test = np.random.random((256, 32)).astype(np.int16)
+        C_test = np.random.random((256, 32)).astype(np.int8)
         B_expected = np.ndarray((256, 32)).astype(np.int16)
+        C_expected = np.ndarray((256, 32)).astype(np.int8)
         B_expected[:, :] = A_test[:, :]
+        C_expected[:, :] = A_test[:, :]
 
         correctness_check_values = {
-            "pre": (A_test, B_test),
-            "post": (A_test, B_expected),
+            "pre": (A_test, B_test, C_test),
+            "post": (A_test, B_expected, C_expected),
         }
-        self._verify_nest(plan, (A, B), "test_array_vectorize_cast", correctness_check_values=correctness_check_values)
+        self._verify_nest(plan, (A, B, C), "test_array_vectorize_cast", correctness_check_values=correctness_check_values)
 
     def test_interleaved_vectorize_cast(self) -> None:
         shape = (64, 32, 8, 2)
@@ -667,6 +678,34 @@ class DSLTest_01Arrays(unittest.TestCase):
         package.add(main, args=(arr, ))
 
         package_name = "test_reinterpret_cast"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        with verifiers.VerifyPackage(self, package_name, output_dir):
+            package.build(
+                package_name,
+                format=TEST_FORMAT,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir,
+                _quiet=False
+            )
+
+    def test_heap_alloc_reinterpret_cast(self) -> None:
+        package = Package()
+
+        temp = Array(role=Role.TEMP, element_type=ScalarType.int32, shape=(32,), flags=AllocateFlags.HEAP)
+        output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(32,))
+
+        nest = Nest(shape=output.shape)
+        i, = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            temp_mb = temp._get_memory_buffer()
+            cast_temp = temp_mb._reinterpret_cast(ScalarType.float32)
+            output[i] = cast_temp[i]
+        
+        package.add(nest, args=(output, ))
+
+        package_name = "test_heap_alloc_reinterpret_cast"
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir):
             package.build(
@@ -6356,6 +6395,113 @@ class DSLTest_11AutoPlan(unittest.TestCase):
         # A total of 12 functions will be created, one for each unique combination of
         # index and layout value.
         self._verify_autoplan(plan_3, [A, B, C], "test_autoplan_for_caching_4", 12)
+
+
+class DSLTest_12Profiling(unittest.TestCase):
+    def _verify_func(
+        self, package, function, package_name, correctness_check_values, quiet=True, mode=TEST_MODE
+    ) -> None:
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+
+        # build the HAT package
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(package_name, format=TEST_FORMAT, mode=mode, output_dir=output_dir, _quiet=quiet, profile=True)
+            if correctness_check_values:
+                v.check_correctness(
+                    function.name,
+                    before=correctness_check_values["pre"],
+                    after=correctness_check_values["post"],
+                )
+
+    @expectedFailure(FailedReason.NOT_IN_CORE, "Fail to lower to llvm")
+    def test_profiling_nested_function_calls(self):
+        test_name = "test_profiling_nested_function_calls"
+
+        M = 20
+        N = 32
+        K = 12
+        M_tile = 4
+        N_tile = 16
+        K_tile = 3
+
+        package = Package()
+
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K))
+        B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N))
+        C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        B_temp = Array(role=Role.TEMP, element_type=ScalarType.float32, shape=(K_tile, N_tile))
+        io_B_temp = Array(role=Role.INPUT_OUTPUT, element_type=B_temp.element_type, shape=B_temp.shape)
+
+        i_tile_idx = Dimension()
+        j_tile_idx = Dimension()
+        k_tile_idx = Dimension()
+
+        pack_b_nest = Nest([K_tile, N_tile])
+        pb_k, pb_j = pack_b_nest.get_indices()
+
+        @pack_b_nest.iteration_logic
+        def _pack_b():
+            full_k = pb_k + k_tile_idx
+            full_j = pb_j + j_tile_idx
+            io_B_temp[pb_k, pb_j] = B[full_k, full_j]
+
+        pack_b_fn = package.add(pack_b_nest, args=(B, io_B_temp, j_tile_idx, k_tile_idx), base_name="pack_b_tile_fn")
+
+        matmul_nest = Nest([M_tile, N_tile, K_tile])
+        mm_i, mm_j, mm_k = matmul_nest.get_indices()
+
+        @matmul_nest.iteration_logic
+        def _matmul():
+            full_i = mm_i + i_tile_idx
+            full_j = mm_j + j_tile_idx
+            full_k = mm_k + k_tile_idx
+            C[full_i, full_j] += A[full_i, full_k] * io_B_temp[mm_k, mm_j]
+
+        matmul_sched = matmul_nest.create_schedule()
+        mm_jj = matmul_sched.split(mm_j, 8)
+        matmul_sched.reorder(mm_k, mm_i, mm_j, mm_jj)
+        matmul_plan = matmul_sched.create_plan()
+        matmul_plan.vectorize(mm_jj)
+        matmul_fn = package.add(
+            matmul_plan, args=(A, B, C, io_B_temp, i_tile_idx, j_tile_idx, k_tile_idx), base_name="matmul_tile_fn"
+        )
+
+        tile_nest = Nest([M, N, K])
+        i, j, k = tile_nest.get_indices()
+
+        @tile_nest.iteration_logic
+        def _tile_logic():
+            EnterProfileRegion("pack_b_fn")
+            pack_b_fn(B, B_temp, j, k)
+            ExitProfileRegion("pack_b_fn")
+        
+            EnterProfileRegion("matmul_fn")
+            matmul_fn(A, B, C, B_temp, i, j, k)
+            ExitProfileRegion("matmul_fn")
+
+            PrintProfileResults()
+
+        tile_sched = tile_nest.create_schedule()
+        ii, jj, kk = tile_sched.tile(dict(zip([i, j, k], [M_tile, N_tile, K_tile])))
+        tile_sched.reorder(i, j, k, ii, jj, kk)
+        tile_plan = tile_sched.create_plan()
+        tile_plan._erase_loops([ii, jj, kk])
+        full_fn = package.add(tile_plan, args=(A, B, C), base_name="full_matmul_fn")
+
+        A_test = np.random.random(A.shape).astype(np.float32)
+        B_test = np.random.random(B.shape).astype(np.float32)
+        C_test = np.random.random(C.shape).astype(np.float32)
+
+        A_ref = A_test
+        B_ref = B_test
+        C_ref = A_test @ B_test + C_test
+
+        correctness_check_values = {
+            "pre": [A_test, B_test, C_test],
+            "post": [A_ref, B_ref, C_ref],
+        }
+        self._verify_func(package, full_fn, test_name, correctness_check_values, mode=Package.Mode.RELEASE)
 
 
 if __name__ == "__main__":

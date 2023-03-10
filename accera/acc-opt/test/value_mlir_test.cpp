@@ -553,7 +553,7 @@ TEST_CASE("mlir_test13")
 // CHECK-NEXT: accv.module "test_emit_c_interface" {
 TEST_CASE("test_emit_c_interface")
 {
-    // CHECK-NEXT:    accv.func nested @external_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.usages = [], exec_target = 0 : i64, llvm.emit_c_interface} {
+    // CHECK-NEXT:    accv.func nested @external_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.usages = [], exec_target = 0 : i64, fastmath = #llvm.fastmath<fast>, llvm.emit_c_interface} {
     auto externDecl = DeclareFunction("external_func_decl")
                           .External(true)
                           .CWrapper(true)
@@ -561,7 +561,7 @@ TEST_CASE("test_emit_c_interface")
                           // CHECK-NEXT:    }
                           .Define([] {});
 
-    // CHECK-NEXT:    accv.func nested @internal_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.usages = [], exec_target = 0 : i64, llvm.emit_c_interface} {
+    // CHECK-NEXT:    accv.func nested @internal_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.usages = [], exec_target = 0 : i64, fastmath = #llvm.fastmath<fast>, llvm.emit_c_interface} {
     DeclareFunction("internal_func_decl")
         .External(false)
         .CWrapper(true)
@@ -577,7 +577,7 @@ TEST_CASE("test_emit_c_interface")
 // CHECK-NEXT: accv.module "test_raw_pointer_api" {
 TEST_CASE("test_raw_pointer_api")
 {
-    // CHECK-NEXT:    accv.func nested @external_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.emit_raw_pointer_api, accv.usages = [], exec_target = 0 : i64} {
+    // CHECK-NEXT:    accv.func nested @external_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.emit_raw_pointer_api, accv.usages = [], exec_target = 0 : i64, fastmath = #llvm.fastmath<fast>} {
     auto externDecl = DeclareFunction("external_func_decl")
                           .External(true)
                           .RawPointerAPI(true)
@@ -585,7 +585,7 @@ TEST_CASE("test_raw_pointer_api")
                           // CHECK-NEXT:    }
                           .Define([] {});
 
-    // CHECK-NEXT:    accv.func nested @internal_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.emit_raw_pointer_api, accv.usages = [], exec_target = 0 : i64} {
+    // CHECK-NEXT:    accv.func nested @internal_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.emit_raw_pointer_api, accv.usages = [], exec_target = 0 : i64, fastmath = #llvm.fastmath<fast>} {
     DeclareFunction("internal_func_decl")
         .External(false)
         .RawPointerAPI(true)
@@ -601,7 +601,7 @@ TEST_CASE("test_raw_pointer_api")
 // CHECK-NEXT: accv.module "test_emit_header_decl" {
 TEST_CASE("test_emit_header_decl")
 {
-    // CHECK-NEXT:    accv.func nested @external_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.emit_header_decl, accv.usages = [], exec_target = 0 : i64} {
+    // CHECK-NEXT:    accv.func nested @external_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.emit_header_decl, accv.usages = [], exec_target = 0 : i64, fastmath = #llvm.fastmath<fast>} {
     auto externDecl = DeclareFunction("external_func_decl")
                           .External(true)
                           .HeaderDecl(true)
@@ -609,7 +609,7 @@ TEST_CASE("test_emit_header_decl")
                           // CHECK-NEXT:    }
                           .Define([] {});
 
-    // CHECK-NEXT:    accv.func nested @internal_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.emit_header_decl, accv.usages = [], exec_target = 0 : i64} {
+    // CHECK-NEXT:    accv.func nested @internal_func_decl_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.emit_header_decl, accv.usages = [], exec_target = 0 : i64, fastmath = #llvm.fastmath<fast>} {
     DeclareFunction("internal_func_decl")
         .External(false)
         .HeaderDecl(true)
@@ -625,13 +625,13 @@ TEST_CASE("test_emit_header_decl")
 // CHECK-NEXT: accv.module "test_function_tags" {
 TEST_CASE("test_function_tags")
 {
-    // CHECK-NEXT:    accv.func nested @no_func_tags_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.usages = [], exec_target = 0 : i64} {
+    // CHECK-NEXT:    accv.func nested @no_func_tags_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.usages = [], exec_target = 0 : i64, fastmath = #llvm.fastmath<fast>} {
     auto externDecl = DeclareFunction("no_func_tags")
                           // CHECK: return
                           // CHECK-NEXT:    }
                           .Define([] {});
 
-    // CHECK-NEXT:    accv.func nested @has_func_tags_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.function_tags = {tag_a, tag_b}, accv.usages = [], exec_target = 0 : i64} {
+    // CHECK-NEXT:    accv.func nested @has_func_tags_{{[0-9]+}}() attributes {accv.dyn_arg_size_refs = [], accv.function_tags = {tag_a, tag_b}, accv.usages = [], exec_target = 0 : i64, fastmath = #llvm.fastmath<fast>} {
     DeclareFunction("has_func_tags")
         .AddTag("tag_a")
         .AddTag("tag_b")

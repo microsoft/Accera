@@ -87,7 +87,10 @@ void DefineOperations(py::module& module)
             "reduce_fn"_a)
         .def("CheckAllClose", &value::CheckAllClose)
         .def("Return", py::overload_cast<value::ViewAdapter>(&value::Return), "view"_a = value::ViewAdapter{})
-        .def("GetTime", &value::GetTime);
+        .def("GetTime", &value::GetTime)
+        .def("EnterProfileRegion", py::overload_cast<const std::string&>(&value::EnterProfileRegion), "regionName"_a)
+        .def("ExitProfileRegion", py::overload_cast<const std::string&>(&value::ExitProfileRegion), "regionName"_a)
+        .def("PrintProfileResults", &value::PrintProfileResults);
 
     auto getFromGPUIndex = [](value::GPUIndex idx, std::string pos) -> value::Scalar {
         if (pos == "x")

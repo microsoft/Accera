@@ -147,6 +147,7 @@ bool CanVectorizeOp(mlir::Operation* op,
             .Case([](mlir::math::AbsOp) { return true; })
             // .Case([&](mlir::AffineApplyOp) { return true; }) // TODO: either enable or remove this
             .Case([](mlir::math::ExpOp) { return true; })
+            .Case([](mlir::math::FmaOp) { return true; })
             .Case([](v::CastOp) { return true; })
             .Case([vectorSize](v::RoundOp) { return v::RoundOp::SupportsVectorization(vectorSize); })
             .Case([](v::BitcastOp) { return true; })
@@ -989,6 +990,31 @@ std::optional<mlir::Operation*> VectorizeExpOp(mlir::PatternRewriter& rewriter,
     return result;
 }
 
+std::optional<mlir::Operation*> VectorizeFmaOp(mlir::PatternRewriter& rewriter,
+                                               mlir::math::FmaOp op,
+                                               const VectorizedOpMap& vectorizedOps,
+                                               std::vector<mlir::BlockAndValueMapping>& laneMappings,
+                                               mlir::Value inductionVar,
+                                               int64_t step,
+                                               int64_t vectorSize)
+{
+    // Get (vector) arguments from map
+    auto argA = op.getA();
+    auto argB = op.getB();
+    auto argC = op.getC();
+    auto vecArgA = GetVectorizedPredecessor(rewriter, argA, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
+    auto vecArgB = GetVectorizedPredecessor(rewriter, argB, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
+    auto vecArgC = GetVectorizedPredecessor(rewriter, argC, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
+    if (!vecArgA || !vecArgB || !vecArgC)
+    {
+        return std::nullopt;
+    }
+
+    auto loc = op.getLoc();
+    auto result = rewriter.create<mlir::vector::FMAOp>(loc, vecArgA->GetVectorResult(), vecArgB->GetVectorResult(), vecArgC->GetVectorResult());
+    return result;
+}
+
 std::optional<VectorizedOp> VectorizeBinOp(mlir::PatternRewriter& rewriter,
                                            v::BinOp op,
                                            const VectorizedOpMap& vectorizedOps,
@@ -1184,6 +1210,9 @@ std::optional<VectorizedOp> VectorizeOp(mlir::PatternRewriter& rewriter,
             })
             .Case([&](mlir::math::ExpOp expOp) {
                 return VectorizeExpOp(rewriter, expOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
+            })
+            .Case([&](mlir::math::FmaOp fmaOp) {
+                return VectorizeFmaOp(rewriter, fmaOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
             .Case([&](v::BinOp binOp) {
                 return VectorizeBinOp(rewriter, binOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
@@ -2109,11 +2138,14 @@ mlir::LogicalResult vectorizeHorizontalReduction(mlir::AffineForOp affineForOp, 
     auto initReductionElementType = lhsLoadIsLoopSequential ? lhsLoadVal.getType() : rhsLoadVal.getType();
 
     mlir::Value reducedVal;
+    bool isFP32Reduction = initReductionElementType.isF32() && storeElementType.isF32();
+    bool isI32Reduction = initReductionElementType.isInteger(32) && storeElementType.isInteger(32);
+    bool isI16toI32Reduction = initReductionElementType.isInteger(16) && storeElementType.isInteger(32);
     if (binOp.getPredicate() == v::BinaryOpPredicate::ADD &&
-        storeElementType.isInteger(32) &&
-        initReductionElementType.isInteger(16) &&
-        vectorSize == 16 &&
-        ir::util::ModuleSupportsTargetDeviceFeature(affineForOp, "avx2"))
+        ir::util::ModuleSupportsTargetDeviceFeature(affineForOp, "avx2") &&
+        ((isFP32Reduction && vectorSize == 8) ||
+        (isI32Reduction && vectorSize == 8) ||
+        (isI16toI32Reduction && vectorSize == 16)))
     {
         // Special handling for 16-element i16 sum reduction on AVX2+ machines
         // ymm2 = fill(1, i16)
@@ -2124,22 +2156,32 @@ mlir::LogicalResult vectorizeHorizontalReduction(mlir::AffineForOp affineForOp, 
         // vphaddd xmm0,xmm0,xmm0       [0+1+8+9, 2+3+10+11, 4+5+12+13, 6+7+14+15] (4xi32)  -> [0+1+8+9+2+3+10+11, 4+5+12+13+6+7+14+15, (duplicate 0...), (duplicate 1...)] (4xi32)
         // vphaddd xmm0,xmm0,xmm0       [0+1+8+9+2+3+10+11, 4+5+12+13+6+7+14+15, (duplicate 0...), (duplicate 1...)] (4xi32) -> [0+1+8+9+2+3+10+11+4+5+12+13+6+7+14+15, (duplicate 0...), (duplicate 0...), (duplicate 0...)] (4xi32)
 
-        // Create a buffer of int16 1's
-        auto one = rewriter.create<mlir::arith::ConstantIntOp>(affineForOp.getLoc(), 1, rewriter.getIntegerType(16));
-        auto inputVecType = mlir::VectorType::get({ vectorSize }, rewriter.getIntegerType(16));
-        mlir::Value vecOnes = rewriter.create<mlir::vector::BroadcastOp>(affineForOp.getLoc(), inputVecType, one);
+        mlir::VectorType reductionVecType;
+        mlir::Value reduced_8x1;
+        if (isI16toI32Reduction)
+        {
+            // Create a buffer of int16 1's
+            auto one = rewriter.create<mlir::arith::ConstantIntOp>(affineForOp.getLoc(), 1, rewriter.getIntegerType(16));
+            auto inputVecType = mlir::VectorType::get({ vectorSize }, rewriter.getIntegerType(16));
+            mlir::Value vecOnes = rewriter.create<mlir::vector::BroadcastOp>(affineForOp.getLoc(), inputVecType, one);
 
-        auto i32sPerVec = vectorSize / 2;
-        auto reductionVecType = mlir::VectorType::get({ i32sPerVec }, rewriter.getI32Type());
-        mlir::Value reduced_8xi32 = rewriter.create<v::vpmaddwd>(binOp.getLoc(), reductionVecType, loadedVectorValToReduce, vecOnes);
+            auto i32sPerVec = vectorSize / 2;
+            reductionVecType = mlir::VectorType::get({ i32sPerVec }, rewriter.getI32Type());
+            reduced_8x1 = rewriter.create<v::vpmaddwd>(binOp.getLoc(), reductionVecType, loadedVectorValToReduce, vecOnes);
+        }
+        else
+        {
+            reductionVecType = mlir::VectorType::get({ vectorSize }, storeElementType);
+            reduced_8x1 = loadedVectorValToReduce;
+        }
 
-        auto [low_reduced_4xi32, high_reduced_4xi32] = GetLowHighSeparately(rewriter, binOp.getLoc(), reduced_8xi32);
-        mlir::Value reduced_4xi32 = rewriter.create<v::BinOp>(binOp.getLoc(), v::BinaryOpPredicate::ADD, low_reduced_4xi32, high_reduced_4xi32);
+        auto [low_reduced_4x1, high_reduced_4x1] = GetLowHighSeparately(rewriter, binOp.getLoc(), reduced_8x1);
+        mlir::Value reduced_4x1 = rewriter.create<v::BinOp>(binOp.getLoc(), v::BinaryOpPredicate::ADD, low_reduced_4x1, high_reduced_4x1);
 
-        reduced_4xi32 = rewriter.create<v::vhadd>(binOp.getLoc(), reduced_4xi32, reduced_4xi32);
-        reduced_4xi32 = rewriter.create<v::vhadd>(binOp.getLoc(), reduced_4xi32, reduced_4xi32);
+        reduced_4x1 = rewriter.create<v::vhadd>(binOp.getLoc(), reduced_4x1, reduced_4x1);
+        reduced_4x1 = rewriter.create<v::vhadd>(binOp.getLoc(), reduced_4x1, reduced_4x1);
         auto zeroPos = rewriter.create<mlir::arith::ConstantIndexOp>(binOp.getLoc(), 0);
-        reducedVal = rewriter.create<mlir::vector::ExtractElementOp>(binOp.getLoc(), reduced_4xi32, zeroPos);
+        reducedVal = rewriter.create<mlir::vector::ExtractElementOp>(binOp.getLoc(), reduced_4x1, zeroPos);
     }
     else
     {

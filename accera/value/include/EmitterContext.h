@@ -871,6 +871,17 @@ namespace value
     /// <param name="toStderr"> Prints to stderr if true, otherwise prints to stdout </param>
     void Print(const std::string& message, bool toStderr = false);
 
+    /// <summary> Enter the region to start profiling </summary>
+    /// <param name="regionName"> The name given to the region </param>
+    void EnterProfileRegion(const std::string& regionName);
+
+    /// <summary> Exit the region to stop profiling </summary>
+    /// <param name="regionName"> The name given to the region </param>
+    void ExitProfileRegion(const std::string& regionName);
+
+    /// <summary> Print the profiling result </summary>
+    void PrintProfileResults();
+
     /// <summary> Print a value's memory </summary>
     void PrintRawMemory(ViewAdapter value);
 

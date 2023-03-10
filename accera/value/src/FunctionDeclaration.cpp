@@ -111,7 +111,7 @@ namespace value
         }
 
         _paramTypes.assign(paramTypes.begin(), paramTypes.end());
-        
+
         // TODO: we might want to change the symbol name to a unique name, e.g. function name
         for (unsigned idx = 0; idx < paramTypes.size(); idx++)
         {
@@ -148,6 +148,14 @@ namespace value
         CheckNonEmpty();
 
         _inlineIntoState = shouldInlineInto;
+        return *this;
+    }
+
+    FunctionDeclaration& FunctionDeclaration::SetPrecisionFp(FpPrecision precision)
+    {
+        CheckNonEmpty();
+
+        _fpPrecision = precision;
         return *this;
     }
 
@@ -297,7 +305,7 @@ namespace value
     const std::vector<std::vector<int64_t>>& FunctionDeclaration::GetParameterArgSizeReferences() const
     {
         CheckNonEmpty();
-        
+
         return _parameterSizeReferences;
     }
 
@@ -344,6 +352,12 @@ namespace value
     {
         CheckNonEmpty();
         return _inlineIntoState;
+    }
+
+    FpPrecision FunctionDeclaration::FloatingPointPrecision() const
+    {
+        CheckNonEmpty();
+        return _fpPrecision;
     }
 
     void FunctionDeclaration::CheckNonEmpty() const

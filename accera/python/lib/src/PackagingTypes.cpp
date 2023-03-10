@@ -4,6 +4,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "AcceraTypes.h"
+#include "value/include/FunctionDeclaration.h"
 
 namespace py = pybind11;
 namespace value = accera::value;
@@ -169,6 +170,14 @@ Args:
                 "inlinable_into"_a,
                 py::return_value_policy::reference_internal,
                 "Sets whether other functions are allowed to be inlined into this function.")
+            .def(
+                "high_precision_fp", [](value::FunctionDeclaration& fn, bool high_precision_fp) {
+                    (void)fn.SetPrecisionFp(high_precision_fp ? value::FpPrecision::high : value::FpPrecision::low);
+                    return fn;
+                },
+                "high_precision_fp"_a,
+                py::return_value_policy::reference_internal,
+                "Sets whether precision will be sacrificed for performance.")
             .def("addTag", &value::FunctionDeclaration::AddTag, "addTag"_a, py::return_value_policy::reference_internal, "A tag to add to a function as an attribute.")
             .def("baseName", &value::FunctionDeclaration::BaseName, "baseName"_a, py::return_value_policy::reference_internal, "Sets the base name for this function to use as an alias in the generated header file.")
             .def("outputVerifiers", &value::FunctionDeclaration::OutputVerifiers, "outputVerifiers"_a, py::return_value_policy::reference_internal, "Sets the verification functions for output checking, one per output argument.")

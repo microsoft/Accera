@@ -6413,7 +6413,6 @@ class DSLTest_12Profiling(unittest.TestCase):
                     after=correctness_check_values["post"],
                 )
 
-    @expectedFailure(FailedReason.NOT_IN_CORE, "Fail to lower to llvm")
     def test_profiling_nested_function_calls(self):
         test_name = "test_profiling_nested_function_calls"
 

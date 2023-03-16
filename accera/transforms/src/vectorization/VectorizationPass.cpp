@@ -117,6 +117,7 @@ struct VectorizeAffineForOpConversion : public OpRewritePattern<AffineForOp>
     LogicalResult matchAndRewrite(AffineForOp affineForOp, PatternRewriter& rewriter) const final;
 
     // status-reporting helper methods
+    bool shouldUnroll(mlir::Operation* sourceOp) const;
     void emitVectorizationRemark(mlir::Operation* sourceOp, const std::string& remark) const;
     void didVectorizeOp(mlir::Operation* sourceOp, VectorizedOp& vectorizedOp) const;
     void vectorizeOpsInBlock(PatternRewriter& rewriter,
@@ -145,8 +146,16 @@ struct InPlaceUnrollAffineForOpConversion : public OpRewritePattern<AffineForOp>
     bool printVectorizationDetails = false;
 };
 
+bool VectorizeAffineForOpConversion::shouldUnroll(mlir::Operation* sourceOp) const
+{
+    // do not unroll the profile ops
+    if (isa<EnterProfileRegionOp, ExitProfileRegionOp, PrintProfileResultsOp>(*sourceOp))
+    {
+        return false;
+    }
 
-
+    return true;
+}
 
 void VectorizeAffineForOpConversion::vectorizeOpsInBlock(PatternRewriter& rewriter,
                                                          mlir::Block::iterator begin,
@@ -203,6 +212,11 @@ void VectorizeAffineForOpConversion::vectorizeOpsInBlock(PatternRewriter& rewrit
                 }
 
                 [[maybe_unused]] auto mappedClonedOp = rewriter.clone(*it, operandMap);
+            }
+            
+            if (!shouldUnroll(sourceOp))
+            {
+                break;
             }
         }
     }

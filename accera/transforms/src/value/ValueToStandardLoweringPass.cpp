@@ -88,44 +88,6 @@ enum class ProfileCounterType
     startTime = 2,
 };
 
-void InitializeProfileRegions(mlir::ModuleOp module, mlir::OpBuilder& builder)
-{
-    std::unordered_set<std::string> regionNames;
-    module.walk([&](vir::EnterProfileRegionOp op) {
-        auto regionName = op.regionName().str();
-        regionNames.insert(regionName);
-    });
-
-    auto loc = module.getLoc();
-    auto body = module.getBody();
-
-    OpBuilder::InsertionGuard guard(builder);
-    builder.setInsertionPoint(body, body->begin());
-    auto int64Type = builder.getI64Type();
-    auto doubleType = builder.getF64Type();
-    auto executionCounterType = mlir::MemRefType::get({ 1 }, int64Type);
-    auto timeType = mlir::MemRefType::get({ 1 }, doubleType);
-    auto timeTensorType = mlir::RankedTensorType::get({ 1 }, doubleType);
-    // TODO: maybe make a new "profile region" type that holds a reference to the counters?
-
-    for (auto name : regionNames)
-    {
-        auto nameAttr = builder.getStringAttr(name);
-
-        auto count = builder.create<vir::GlobalOp>(loc, executionCounterType, false, llvm::formatv(kProfileRegionSymNameFormat, name, "count").str(), builder.getI64TensorAttr({ 0 }));
-        count->setAttr(kProfileRegionNameIdentifier, nameAttr);
-        count->setAttr(kProfileRegionTypeIdentifier, builder.getI32IntegerAttr(static_cast<int>(ProfileCounterType::count)));
-
-        auto time = builder.create<vir::GlobalOp>(loc, timeType, false, llvm::formatv(kProfileRegionSymNameFormat, name, "time").str(), mlir::DenseFPElementsAttr::get(timeTensorType, { 0.0 }));
-        time->setAttr(kProfileRegionNameIdentifier, nameAttr);
-        time->setAttr(kProfileRegionTypeIdentifier, builder.getI32IntegerAttr(static_cast<int>(ProfileCounterType::time)));
-
-        auto startTime = builder.create<vir::GlobalOp>(loc, timeType, false, llvm::formatv(kProfileRegionSymNameFormat, name, "start").str(), mlir::DenseFPElementsAttr::get(timeTensorType, { 0.0 }));
-        startTime->setAttr(kProfileRegionNameIdentifier, nameAttr);
-        startTime->setAttr(kProfileRegionTypeIdentifier, builder.getI32IntegerAttr(static_cast<int>(ProfileCounterType::startTime)));
-    }
-}
-
 struct ProfileCounter
 {
     vir::GlobalOp count;
@@ -135,29 +97,51 @@ struct ProfileCounter
 
 struct ProfileRegions
 {
-    ProfileRegions(mlir::Operation* op) // must be a module
+    void InitializeProfileRegions(mlir::ModuleOp module, mlir::OpBuilder& builder)
     {
-        auto module = mlir::cast<mlir::ModuleOp>(op);
-        module.walk([&](vir::GlobalOp op) {
-            if (auto regionNameAttr = op->getAttrOfType<mlir::StringAttr>(kProfileRegionNameIdentifier))
-            {
-                switch (static_cast<ProfileCounterType>(op->getAttrOfType<mlir::IntegerAttr>(kProfileRegionTypeIdentifier).getInt()))
-                {
-                case ProfileCounterType::count:
-                    counters[regionNameAttr.getValue().str()].count = op;
-                    break;
-                case ProfileCounterType::time:
-                    counters[regionNameAttr.getValue().str()].time = op;
-                    break;
-                case ProfileCounterType::startTime:
-                    counters[regionNameAttr.getValue().str()].startTime = op;
-                    break;
-                default:
-                    op.emitError("Error: bad counter type");
-                    break;
-                }
-            }
+        std::unordered_set<std::string> regionNames;
+        module.walk([&](vir::EnterProfileRegionOp op) {
+            auto regionName = op.regionName().str();
+            regionNames.insert(regionName);
         });
+
+        vir::ValueModuleOp valueModuleOp;
+        module.walk([&](vir::ValueModuleOp op) {
+            valueModuleOp = op;
+        });
+
+        auto loc = valueModuleOp.getLoc();
+        auto body = valueModuleOp.getBody();
+
+        OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPoint(body, body->begin());
+        auto int64Type = builder.getI64Type();
+        auto doubleType = builder.getF64Type();
+        auto executionCounterType = mlir::MemRefType::get({ 1 }, int64Type);
+        auto timeType = mlir::MemRefType::get({ 1 }, doubleType);
+        auto timeTensorType = mlir::RankedTensorType::get({ 1 }, doubleType);
+        // TODO: maybe make a new "profile region" type that holds a reference to the counters?
+
+        for (auto name : regionNames)
+        {
+            auto nameAttr = builder.getStringAttr(name);
+
+            auto count = builder.create<vir::GlobalOp>(loc, executionCounterType, false, llvm::formatv(kProfileRegionSymNameFormat, name, "count").str(), builder.getI64TensorAttr({ 0 }));
+            count->setAttr(kProfileRegionNameIdentifier, nameAttr);
+            count->setAttr(kProfileRegionTypeIdentifier, builder.getI32IntegerAttr(static_cast<int>(ProfileCounterType::count)));
+
+            auto time = builder.create<vir::GlobalOp>(loc, timeType, false, llvm::formatv(kProfileRegionSymNameFormat, name, "time").str(), mlir::DenseFPElementsAttr::get(timeTensorType, { 0.0 }));
+            time->setAttr(kProfileRegionNameIdentifier, nameAttr);
+            time->setAttr(kProfileRegionTypeIdentifier, builder.getI32IntegerAttr(static_cast<int>(ProfileCounterType::time)));
+
+            auto startTime = builder.create<vir::GlobalOp>(loc, timeType, false, llvm::formatv(kProfileRegionSymNameFormat, name, "start").str(), mlir::DenseFPElementsAttr::get(timeTensorType, { 0.0 }));
+            startTime->setAttr(kProfileRegionNameIdentifier, nameAttr);
+            startTime->setAttr(kProfileRegionTypeIdentifier, builder.getI32IntegerAttr(static_cast<int>(ProfileCounterType::startTime)));
+
+            counters[name].count = count;
+            counters[name].time = time;
+            counters[name].startTime = startTime;
+        }
     }
 
     std::map<std::string, ProfileCounter> counters;
@@ -184,6 +168,16 @@ struct BinOpLowering : public OpRewritePattern<ValueBinOp>
 
     LogicalResult matchAndRewrite(
         ValueBinOp op,
+        PatternRewriter& rewriter) const override;
+};
+
+using ValueCopyOp = vir::CopyOp;
+struct CopyOpLowering : public OpRewritePattern<ValueCopyOp>
+{
+    using OpRewritePattern<ValueCopyOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(
+        ValueCopyOp op,
         PatternRewriter& rewriter) const override;
 };
 
@@ -430,39 +424,46 @@ using vir::PrintProfileResultsOp;
 struct EnterProfileRegionOpLowering : public OpRewritePattern<EnterProfileRegionOp>
 {
     using OpRewritePattern::OpRewritePattern;
-    EnterProfileRegionOpLowering(MLIRContext* context, bool enableProfiling) :
+    EnterProfileRegionOpLowering(MLIRContext* context, bool enableProfiling, ProfileRegions& profileRegions) :
         OpRewritePattern(context),
-        enableProfiling(enableProfiling)
+        enableProfiling(enableProfiling),
+        profileRegions(profileRegions)
     {}
 
     LogicalResult matchAndRewrite(EnterProfileRegionOp op, PatternRewriter& rewriter) const final;
 
     bool enableProfiling = true;
+    ProfileRegions& profileRegions;
 };
 
 struct ExitProfileRegionOpLowering : public OpRewritePattern<ExitProfileRegionOp>
 {
     using OpRewritePattern::OpRewritePattern;
-    ExitProfileRegionOpLowering(MLIRContext* context, bool enableProfiling) :
+    ExitProfileRegionOpLowering(MLIRContext* context, bool enableProfiling, ProfileRegions& profileRegions) :
         OpRewritePattern(context),
-        enableProfiling(enableProfiling)
+        enableProfiling(enableProfiling),
+        profileRegions(profileRegions)
     {}
 
     LogicalResult matchAndRewrite(ExitProfileRegionOp op, PatternRewriter& rewriter) const final;
 
     bool enableProfiling = true;
+    ProfileRegions& profileRegions;
 };
 
 struct PrintProfileResultsOpLowering : public OpRewritePattern<PrintProfileResultsOp>
 {
     using OpRewritePattern::OpRewritePattern;
-    PrintProfileResultsOpLowering(MLIRContext* context, bool enableProfiling) :
+    PrintProfileResultsOpLowering(MLIRContext* context, bool enableProfiling, ProfileRegions& profileRegions) :
         OpRewritePattern(context),
-        enableProfiling(enableProfiling)
+        enableProfiling(enableProfiling),
+        profileRegions(profileRegions)
     {}
+
     LogicalResult matchAndRewrite(PrintProfileResultsOp op, PatternRewriter& rewriter) const final;
 
     bool enableProfiling = true;
+    ProfileRegions& profileRegions;
 };
 
 using ValueAllocOp = vir::AllocOp;
@@ -1160,6 +1161,58 @@ LogicalResult BinOpLowering::matchAndRewrite(
 
     rewriter.replaceOp(op.getOperation(), { result });
 
+    return success();
+}
+
+LogicalResult CopyOpLowering::matchAndRewrite(
+    ValueCopyOp op,
+    PatternRewriter& rewriter) const
+{
+    auto loc = op.getLoc();
+    auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+
+    auto input = op.input();
+    auto output = op.output();
+    auto inputType = input.getType();
+
+    auto outputMemRef = output.getType().cast<MemRefType>();
+    if (auto inputShape = inputType.dyn_cast<ShapedType>())
+    {
+        if (inputShape.hasStaticShape() && inputShape.getNumElements() == 1)
+        {
+            llvm::SmallVector<mlir::Value, 4> indices((size_t)outputMemRef.getRank(), zero);
+            auto loadedElt = rewriter.create<accera::ir::value::GetElementOp>(loc, input);
+            rewriter.create<accera::ir::value::StoreOp>(loc, loadedElt, output, indices);
+        }
+        else
+        {
+            (void)rewriter.create<memref::CopyOp>(loc, input, output);
+        }
+    }
+    else if (inputType == outputMemRef.getElementType())
+    {
+        (void)rewriter.create<memref::StoreOp>(loc, input, output, std::vector<mlir::Value>(outputMemRef.getRank(), zero));
+    }
+    else if (inputType.isIndex())
+    {
+        if (outputMemRef.getElementType().isInteger(64)) // this should really be target dependent...
+        {
+            (void)rewriter.create<memref::StoreOp>(loc,
+                                                   rewriter.create<mlir::arith::IndexCastOp>(loc, input, rewriter.getIntegerType(64)),
+                                                   output,
+                                                   std::vector<mlir::Value>(outputMemRef.getRank(), zero));
+        }
+        else
+        {
+            mlir::emitError(loc, "Index types can only be stored within MemRefs of I64");
+        }
+    }
+    else
+    {
+        mlir::emitError(loc, "Unknown input type to accv.CopyOp");
+    }
+
+    rewriter.eraseOp(op);
     return success();
 }
 
@@ -2451,22 +2504,24 @@ LogicalResult EnterProfileRegionOpLowering::matchAndRewrite(EnterProfileRegionOp
     }
 
     auto loc = op.getLoc();
-    auto module = op->getParentOfType<mlir::ModuleOp>();
 
-    ProfileRegions regions(module);
     auto regionName = op.regionName().str();
-    if (regions.counters.count(regionName) == 0)
+    if (profileRegions.counters.count(regionName) == 0)
     {
         op.emitError("No counters exist for region");
         return failure();
     }
 
-    auto startTimeGlobal = regions.counters[regionName].startTime;
+    auto startTimeGlobal = profileRegions.counters[regionName].startTime;
     mlir::Value startTimeRef = rewriter.create<vir::ReferenceGlobalOp>(loc, startTimeGlobal);
 
     // get current time and store it in the startTime entry
     mlir::Value currentTime = rewriter.create<vir::GetTimeOp>(loc);
-    rewriter.create<vir::CopyOp>(loc, currentTime, startTimeRef);
+
+    auto millisecondsInSecond = rewriter.create<arith::ConstantOp>(loc, util::GetValAttr(rewriter, currentTime.getType(), 1000));
+    mlir::Value newCurrentTime = rewriter.create<vir::BinOp>(loc, vir::BinaryOpPredicate::MUL, currentTime, millisecondsInSecond);
+    
+    rewriter.create<vir::CopyOp>(loc, newCurrentTime, startTimeRef);
     rewriter.eraseOp(op);
     return success();
 }
@@ -2481,28 +2536,29 @@ LogicalResult ExitProfileRegionOpLowering::matchAndRewrite(ExitProfileRegionOp o
     }
 
     auto loc = op.getLoc();
-    auto module = op->getParentOfType<mlir::ModuleOp>();
 
-    ProfileRegions regions(module);
     auto regionName = op.regionName().str();
-    if (regions.counters.count(regionName) == 0)
+    if (profileRegions.counters.count(regionName) == 0)
     {
         op.emitError("No counters exist for region");
         return failure();
     }
 
-    auto startTimeGlobal = regions.counters[regionName].startTime;
+    auto startTimeGlobal = profileRegions.counters[regionName].startTime;
     mlir::Value startTimeRef = rewriter.create<vir::ReferenceGlobalOp>(loc, startTimeGlobal);
 
-    auto totalTimeGlobal = regions.counters[regionName].time;
+    auto totalTimeGlobal = profileRegions.counters[regionName].time;
     mlir::Value totalTimeRef = rewriter.create<vir::ReferenceGlobalOp>(loc, totalTimeGlobal);
 
-    auto countGlobal = regions.counters[regionName].count;
+    auto countGlobal = profileRegions.counters[regionName].count;
     mlir::Value countRef = rewriter.create<vir::ReferenceGlobalOp>(loc, countGlobal);
 
     mlir::Value startTime = rewriter.create<vir::GetElementOp>(loc, startTimeRef);
     mlir::Value currentTime = rewriter.create<vir::GetTimeOp>(loc);
-    mlir::Value duration = rewriter.create<vir::BinOp>(loc, vir::BinaryOpPredicate::SUB, currentTime, startTime);
+
+    auto millisecondsInSecond = rewriter.create<arith::ConstantOp>(loc, util::GetValAttr(rewriter, currentTime.getType(), 1000));
+    mlir::Value newCurrentTime = rewriter.create<vir::BinOp>(loc, vir::BinaryOpPredicate::MUL, currentTime, millisecondsInSecond);
+    mlir::Value duration = rewriter.create<vir::BinOp>(loc, vir::BinaryOpPredicate::SUB, newCurrentTime, startTime);
     mlir::Value prevTotalTime = rewriter.create<vir::GetElementOp>(loc, totalTimeRef);
     mlir::Value totalTime = rewriter.create<vir::BinOp>(loc, vir::BinaryOpPredicate::ADD, prevTotalTime, duration);
     rewriter.create<vir::CopyOp>(loc, totalTime, totalTimeRef);
@@ -2526,12 +2582,9 @@ LogicalResult PrintProfileResultsOpLowering::matchAndRewrite(PrintProfileResults
     }
 
     auto loc = op.getLoc();
-    auto module = op->getParentOfType<mlir::ModuleOp>();
-
-    ProfileRegions regions(module);
 
     // foreach region, print count and number
-    for (auto [name, counters] : regions.counters)
+    for (auto [name, counters] : profileRegions.counters)
     {
         auto totalTimeGlobal = counters.time;
         mlir::Value totalTimeRef = rewriter.create<vir::ReferenceGlobalOp>(loc, totalTimeGlobal);
@@ -2542,7 +2595,7 @@ LogicalResult PrintProfileResultsOpLowering::matchAndRewrite(PrintProfileResults
         mlir::Value totalTime = rewriter.create<vir::GetElementOp>(loc, totalTimeRef);
         mlir::Value count = rewriter.create<vir::GetElementOp>(loc, countRef);
 
-        std::string formatStr = name + "\t%ld\t%f\n";
+        std::string formatStr = name + "\t%ld\t%f" + " ms\n";
         rewriter.create<vir::PrintFOp>(loc, formatStr, ValueRange{ count, totalTime }, /*toStderr=*/false);
     }
 
@@ -2725,9 +2778,10 @@ void ValueToStdLoweringPass::runOnModule()
 
     OpBuilder passBuilder(module);
 
+    ProfileRegions profileRegions;
     if (this->enableProfiling)
     {
-        InitializeProfileRegions(module, passBuilder);
+        profileRegions.InitializeProfileRegions(module, passBuilder);
     }
 
     for (auto vModule : make_early_inc_range(module.getOps<vir::ValueModuleOp>()))
@@ -2741,7 +2795,7 @@ void ValueToStdLoweringPass::runOnModule()
         (void)applyPatternsAndFoldGreedily(vModule, std::move(simplifyPatterns));
 
         RewritePatternSet patterns(context);
-        vtr::populateValueToStandardPatterns(this->enableProfiling, patterns);
+        vtr::populateValueToStandardPatterns(this->enableProfiling, profileRegions, patterns);
         vtr::populateValueLaunchFuncPatterns(patterns);
         utilir::FillCanonicalPatternsRecursively(vModule, patterns);
         mlir::populateExpandTanhPattern(patterns);
@@ -2822,7 +2876,7 @@ void populateVectorizeValueOpPatterns(mlir::RewritePatternSet& patterns)
         MapReduceOpVectorization>(context);
 }
 
-void populateValueToStandardPatterns(bool enableProfiling, mlir::RewritePatternSet& patterns)
+void populateValueToStandardPatterns(bool enableProfiling, ProfileRegions& profileRegions, mlir::RewritePatternSet& patterns)
 {
     mlir::MLIRContext* context = patterns.getContext();
     accera::generated::populateWithGenerated(patterns);
@@ -2849,6 +2903,7 @@ void populateValueToStandardPatterns(bool enableProfiling, mlir::RewritePatternS
         ReshapeOpLowering,
         SliceOpLowering,
         SplitDimOpLowering,
+        CopyOpLowering,
         StoreOpLowering,
         TerminatorLowering,
         UnaryOpLowering,
@@ -2856,8 +2911,8 @@ void populateValueToStandardPatterns(bool enableProfiling, mlir::RewritePatternS
         VhaddLowering>(context);
 
     patterns.insert<EnterProfileRegionOpLowering,
-                    PrintProfileResultsOpLowering,
-                    ExitProfileRegionOpLowering>(context, enableProfiling);
+                PrintProfileResultsOpLowering,
+                ExitProfileRegionOpLowering>(context, enableProfiling, profileRegions);
 }
 
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueToStdPass(bool enableProfiling)

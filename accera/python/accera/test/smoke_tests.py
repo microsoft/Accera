@@ -664,9 +664,17 @@ class SmokeTest(unittest.TestCase):
 
             v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
 
+    @expectedFailure(
+        FailedReason.INVALID, "avx2 instructions not supported on MacOS arm64", sys.platform == "darwin"
+        and platform.machine() == "arm64"
+    )
     def test_fast_exp_mlas_w_func_level_precision(self):
         self._test_fast_exp_mlas(True)
 
+    @expectedFailure(
+        FailedReason.INVALID, "avx2 instructions not supported on MacOS arm64", sys.platform == "darwin"
+        and platform.machine() == "arm64"
+    )
     def test_fast_exp_mlas_w_pkg_level_precision(self):
         self._test_fast_exp_mlas(False)
 
@@ -1807,6 +1815,93 @@ class SmokeTest(unittest.TestCase):
                                         n_tile_outer_cleanup
                                     )] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
             v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
+
+    @expectedFailure(FailedReason.BUG, "_split_dimension of a dynamically sized dimension with a dynamic size is not working")
+    def test_dynamic_split_dim_dynamic_size(self) -> None:
+        from accera import create_dimensions
+        test_name = "test_dynamic_split_dim_dynamic_size"
+
+        M, N, MN = create_dimensions()
+
+        package = Package()
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MN,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            split_input = Input._split_dimension(0, N)
+            Output[i, j] = split_input[i, j]
+
+        fn = package.add(
+            nest,
+            args=(MN, M, N, Input, Output),
+            base_name=f"{test_name}_fn"
+        )
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
+
+            # correctness check
+            test_M = 64
+            test_N = 16
+            test_MN = test_M*test_N
+            test_input = np.random.random([test_M*test_N]).astype(np.float32)
+            test_output = np.random.random([test_M, test_N]).astype(np.float32)
+            test_output_ref = test_input.copy().reshape((test_M, test_N))
+            v.check_correctness(function.name, before=(test_MN, test_M, test_N, test_input, test_output), after=(test_MN, test_M, test_N, test_input, test_output_ref))
+
+    @expectedFailure(FailedReason.BUG, "_split_dimension of a dynamically sized dimension with a static size is not working")
+    def test_dynamic_split_dim_static_size(self) -> None:
+        from accera import create_dimensions
+        test_name = "test_dynamic_split_dim_static_size"
+
+        M, MN = create_dimensions()
+        N = 16
+
+        package = Package()
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MN,))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            split_input = Input._split_dimension(0, cast(16, ScalarType.index))
+            Output[i, j] = split_input[i, j]
+
+        fn = package.add(
+            nest,
+            args=(MN, M, Input, Output),
+            base_name=f"{test_name}_fn"
+        )
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
+
+            # correctness check
+            test_M = 64
+            test_N = N
+            test_MN = test_M*test_N
+            test_input = np.random.random([test_M*test_N]).astype(np.float32)
+            test_output = np.random.random([test_M, test_N]).astype(np.float32)
+            test_output_ref = test_input.copy().reshape((test_M, test_N))
+            v.check_correctness(function.name, before=(test_MN, test_M, test_input, test_output), after=(test_MN, test_M, test_input, test_output_ref))
 
     def test_padded_nchwc_conv2d_manual_cache(self) -> None:
         input_channels = 64

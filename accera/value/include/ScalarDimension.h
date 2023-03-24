@@ -17,6 +17,7 @@ namespace value
         ScalarDimension(Role role = Role::Input);
         ScalarDimension(const std::string& name, Role role = Role::Input);
         ScalarDimension(Value value, const std::string& name = "", Role role = Role::Input);
+        ~ScalarDimension();
 
         virtual void SetValue(Value value) final;
     };

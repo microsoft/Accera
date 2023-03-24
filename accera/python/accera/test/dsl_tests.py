@@ -640,6 +640,22 @@ class DSLTest_01Arrays(unittest.TestCase):
             shape=(256, 256),
         )
 
+        def reinterpret_arr_as_int16(array: Array):
+            # Assumes array is f32
+
+            num_elements = reduce(lambda x, y: x*y, array.shape, 1)
+            arr_mb = array._get_memory_buffer()
+            self.assertEqual(arr_mb.shape, [num_elements * 4])
+            self.assertEqual(arr_mb.element_type, ScalarType.uint8)
+            print(arr_mb.layout)
+
+            arr_as_int16 = arr_mb._reinterpret_cast(ScalarType.int16)
+            self.assertEqual(arr_as_int16.shape, [num_elements * 2])
+            self.assertEqual(arr_as_int16.element_type, ScalarType.int16)
+            print(arr_as_int16.layout)
+
+            return arr_as_int16
+
         def reinterpret_arr_as_int32(array: Array):
             # Assumes array is f32
 
@@ -656,9 +672,19 @@ class DSLTest_01Arrays(unittest.TestCase):
 
             return arr_as_int32
 
+        def simple_reinterpret_arr_as_int32(array: Array):
+            # Assumes array is f32
+
+            num_elements = reduce(lambda x, y: x*y, array.shape, 1)
+            arr_as_int32 = array._reinterpret_cast(ScalarType.int32)
+            self.assertEqual(arr_as_int32.shape, array.shape)
+            self.assertEqual(arr_as_int32.element_type, ScalarType.int32)
+            print(arr_as_int32.layout)
+
+            return arr_as_int32
+
         # add a function that utilizes a subarray layout
-        def make_reinterpreted_fn(array):
-            reinterpreted = reinterpret_arr_as_int32(array)
+        def make_reinterpreted_fn(array, reinterpreted):
             nest = Nest(shape=reinterpreted.shape)
             i = nest.get_indices()
 
@@ -668,12 +694,23 @@ class DSLTest_01Arrays(unittest.TestCase):
 
             return package.add(nest, args=(reinterpreted, ))
 
-        reinterpreted_fn = make_reinterpreted_fn(arr)
+        reinterpreted_i32 = reinterpret_arr_as_int32(arr)
+        reinterpreted_i32_fn = make_reinterpreted_fn(arr, reinterpreted_i32)
+
+        reinterpreted_i16 = reinterpret_arr_as_int16(arr)
+        reinterpreted_i16_fn = make_reinterpreted_fn(arr, reinterpreted_i16)
+
+        simple_reinterpreted_i32 = simple_reinterpret_arr_as_int32(arr)
+        simple_reinterpreted_i32_fn = make_reinterpreted_fn(arr, simple_reinterpreted_i32)
 
         # add a function that instantiates a subarray of the input array and calls the function above
         def main(array):
-            reinterpreted_array = reinterpret_arr_as_int32(array)
-            reinterpreted_fn(reinterpreted_array)
+            reinterpreted_array_i32 = reinterpret_arr_as_int32(array)
+            reinterpreted_array_i16 = reinterpret_arr_as_int16(array)
+            simple_reinterpreted_array_i32 = simple_reinterpret_arr_as_int32(array)
+            reinterpreted_i32_fn(reinterpreted_array_i32)
+            reinterpreted_i16_fn(reinterpreted_array_i16)
+            simple_reinterpreted_i32_fn(simple_reinterpreted_array_i32)
 
         package.add(main, args=(arr, ))
 
@@ -1432,7 +1469,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         }
 
         # TODO: Disabling this verification for now, re-enable it when undoing this change.
-        # self._verify_helper(package, get_size_fn_name, get_size_fn.name, correctness_check_values)
+        self._verify_helper(package, get_size_fn_name, get_size_fn.name, correctness_check_values)
 
         correctness_check_values = {
             "pre": [size_test, x_ref, start_array_pre_test, delta_test],

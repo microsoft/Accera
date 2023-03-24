@@ -1014,7 +1014,7 @@ static accera::ir::value::MemoryAllocType AllocateFlagToAllocateType(accera::val
         MAP_FLAGS(Heap, Heap);
         // MAP_FLAGS(ThreadLocal, ThreadLocal); // Not implemented
     default:
-        assert(false);
+        llvm_unreachable("Unknown allocation flag");
     }
 
 #undef MAP_PREDICATE
@@ -1172,7 +1172,7 @@ EmitterContext::DefinedFunction MLIRContext::CreateFunctionImpl(FunctionDeclarat
     auto isPublic = decl.IsPublic();
     auto funcTarget = decl.Target();
     auto funcRuntime = decl.Runtime();
-    auto isGpu = std::holds_alternative<targets::GPU>(funcTarget);
+    [[maybe_unused]] auto isGpu = std::holds_alternative<targets::GPU>(funcTarget);
 
     const auto& argTypes = decl.GetParameterTypes();
     const auto& returnType = decl.GetReturnType();
@@ -1977,7 +1977,7 @@ Value MLIRContext::ViewImpl(Value sourceValue, const std::vector<Scalar>& offset
     std::vector<mlir::Value> sizes;
     std::vector<mlir::Value> strides;
     auto convertValueToMLIRIndexValue = [&](int64_t sentinelValue) {
-        return [&](Scalar scalarValue) -> mlir::Value {
+        return [&, sentinelValue](Scalar scalarValue) -> mlir::Value {
             auto mlirVal = ToMLIRValue(builder, scalarValue);
             if (auto constantIndex = mlirVal.getDefiningOp<mlir::arith::ConstantIndexOp>())
             {
@@ -2101,6 +2101,18 @@ Value MLIRContext::ReinterpretCastImpl(Value input, ValueType valueType)
         auto inputElementBytewidth = inputElementBitwidth / 8;
         auto outputElementBitwidth = outputMlirElemType.getIntOrFloatBitWidth();
         auto outputElementBytewidth = outputElementBitwidth / 8;
+
+        // Special case where the input element type and target element type have the same bitwidth
+        // Then the layout doesn't change
+        if (inputElementBytewidth == outputElementBytewidth)
+        {
+            mlir::MemRefType::Builder outputTypeBuilder(inputMemrefType);
+            outputTypeBuilder.setElementType(outputMlirElemType);
+            mlir::MemRefType outputMemRefType = outputTypeBuilder;
+            auto returnVal = builder.create<accera::ir::value::MemRefCastOp>(loc, inputMlir, outputMemRefType);
+
+            return Wrap(returnVal, input.GetLayout());
+        }
 
         auto d0 = mlir::getAffineDimExpr(0, mlirCtx);
         auto d1 = mlir::getAffineDimExpr(1, mlirCtx);

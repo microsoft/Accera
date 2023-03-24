@@ -200,7 +200,7 @@ namespace util
         if (_cst.containsId(val))
         {
             unsigned id = 0;
-            bool found = _cst.findId(val, &id);
+            [[maybe_unused]] bool found = _cst.findId(val, &id);
             assert(found);
             return IdWrapper::FromFullId(id, _cst);
         }

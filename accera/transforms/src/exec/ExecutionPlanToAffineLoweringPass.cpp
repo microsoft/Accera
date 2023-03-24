@@ -744,7 +744,7 @@ std::vector<size_t> GetMajorToMinorDimensionTraversal(const mlir::MemRefType& so
 
     llvm::SmallVector<int64_t, 4> strides;
     int64_t offset;
-    auto strideResult = mlir::getStridesAndOffset(sourceType, strides, offset);
+    [[maybe_unused]] auto strideResult = mlir::getStridesAndOffset(sourceType, strides, offset);
     assert(succeeded(strideResult));
     std::vector<std::pair<int64_t, size_t>> strideAndLogicalDims;
     size_t dim = 0;
@@ -1081,7 +1081,7 @@ struct MultiCacheInfo
 
 std::pair<mlir::Value, mlir::ValueRange> GetAccessValueAndIndices(Operation* loadOrStoreOp)
 {
-    bool isLoadOrStore = isa<memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MMAStoreSyncOp, mlir::memref::LoadOp, mlir::AffineLoadOp, v::LoadOp, v::MMALoadSyncOp>(loadOrStoreOp);
+    [[maybe_unused]] bool isLoadOrStore = isa<memref::StoreOp, mlir::AffineStoreOp, v::StoreOp, v::MMAStoreSyncOp, mlir::memref::LoadOp, mlir::AffineLoadOp, v::LoadOp, v::MMALoadSyncOp>(loadOrStoreOp);
     assert(isLoadOrStore);
     if (auto stdStoreOp = dyn_cast_or_null<memref::StoreOp>(loadOrStoreOp))
     {
@@ -1123,7 +1123,7 @@ std::pair<mlir::Value, mlir::ValueRange> GetAccessValueAndIndices(Operation* loa
         v::MMALoadSyncOp::Adaptor adaptor{ valueMMALoadSyncOp };
         return std::make_pair(adaptor.memref(), adaptor.indices());
     }
-    assert(false && "Unhandled load/store case");
+    throw LogicException(LogicExceptionErrors::notImplemented, "Unhandled load/store case");
 }
 
 bool ComputeRegionAccessedByOp(PatternRewriter& rewriter, mlir::MemRefRegion& activeBlockRegion, mlir::Operation* op, unsigned loopDepth, const std::unordered_map<Index, mlir::Value>& handlesToKeepParametric = {})
@@ -1133,7 +1133,7 @@ bool ComputeRegionAccessedByOp(PatternRewriter& rewriter, mlir::MemRefRegion& ac
 
     if (isa<mlir::AffineLoadOp, mlir::AffineStoreOp, v::MMALoadSyncOp, v::MMAStoreSyncOp>(op))
     {
-        auto result = ComputeMemrefRegion(activeBlockRegion, op, loopDepth, nullptr, false, handlesToKeepParametric);
+        [[maybe_unused]] auto result = ComputeMemrefRegion(activeBlockRegion, op, loopDepth, nullptr, false, handlesToKeepParametric);
         assert(succeeded(result));
         return true;
     }
@@ -1163,11 +1163,11 @@ bool IsCacheParametricOnGPUProc(mlir::Attribute cacheMemSpace, v::Processor gpuP
                    gpuProc == v::Processor::BlockY ||
                    gpuProc == v::Processor::BlockZ;
 
-    bool isThread = gpuProc == v::Processor::ThreadX ||
-                    gpuProc == v::Processor::ThreadY ||
-                    gpuProc == v::Processor::ThreadZ ||
-                    gpuProc == v::Processor::WarpX ||
-                    gpuProc == v::Processor::WarpY;
+    [[maybe_unused]] bool isThread = gpuProc == v::Processor::ThreadX ||
+                                     gpuProc == v::Processor::ThreadY ||
+                                     gpuProc == v::Processor::ThreadZ ||
+                                     gpuProc == v::Processor::WarpX ||
+                                     gpuProc == v::Processor::WarpY;
 
     assert((isBlock || isThread) && "Loops that are bound to GPU proc handles other than block and thread handles are not well defined");
 
@@ -1277,7 +1277,7 @@ std::optional<ArrayAccessInfo> ComputeAccessInfoForArrayAtLevel(PatternRewriter&
                 {
                     // Validate that the held loop has the same gpuProc and gpuProcMap as the current one, otherwise throw
                     auto heldForOp = mlir::getForInductionVarOwner(findIt->second);
-                    auto&& [heldGpuProc, heldGpuProcMap] = getProcAndMap(heldForOp);
+                    [[maybe_unused]] auto&& [heldGpuProc, heldGpuProcMap] = getProcAndMap(heldForOp);
                     assert((heldGpuProc == gpuProc) && (heldGpuProcMap == gpuProcMap) && "Found duplicate index amongst for ops but they had different GPU mappings");
                 }
                 else
@@ -1408,7 +1408,7 @@ std::optional<ArrayAccessInfo> ComputeAccessInfoForArrayAtLevel(PatternRewriter&
                     }
                     else
                     {
-                        auto unionResult = result.activeBlock.unionBoundingBox(activeBlockRegion);
+                        [[maybe_unused]] auto unionResult = result.activeBlock.unionBoundingBox(activeBlockRegion);
                         assert(succeeded(unionResult));
 
                         result.activeBlock.cst.removeRedundantConstraints();
@@ -1749,6 +1749,7 @@ mlir::Value GetOriginalIV(mlir::Value possiblyOffsetIV)
             assert(false && "Offset IVs must be offset with AffineApplyOps and constants");
         }
     }
+    return nullptr;
 }
 
 mlir::AffineMap ComputeLoopIVToDefinitionOrderMap(const std::vector<mlir::Value>& ivs, mlir::MLIRContext* context)
@@ -1802,7 +1803,7 @@ mlir::AffineMap ComputeLoopIVToDefinitionOrderMap(const std::vector<mlir::Value>
             otherDefiningOp = otherIVBlockArg.getOwner()->getParentOp();
         }
         bool currentIsAncestor = currentDefiningOp->isAncestor(otherDefiningOp);
-        bool otherIsAncestor = otherDefiningOp->isAncestor(currentDefiningOp);
+        [[maybe_unused]] bool otherIsAncestor = otherDefiningOp->isAncestor(currentDefiningOp);
         assert((currentIsAncestor || otherIsAncestor) && "ComputeLoopIVDefinitionOrder only works on nested AffineForOp IVs");
         return currentIsAncestor;
     });
@@ -2400,7 +2401,7 @@ LogicalResult ActiveElementCacheCopyOpRewrite::matchAndRewrite(ActiveElementCach
     assert(dst.getType().isa<MemRefType>());
     auto dstMemRefType = dst.getType().cast<MemRefType>();
     const v::MemorySpace dstMemRefSpace{ dstMemRefType.getMemorySpaceAsInt() };
-    auto baseDstElementType = GetInnerElementType(dst); // e.g. f32
+    [[maybe_unused]] auto baseDstElementType = GetInnerElementType(dst); // e.g. f32
 
     assert(baseSrcElementType == baseDstElementType && "Copy source and dest data types don't match");
 
@@ -2794,7 +2795,7 @@ LogicalResult ActiveBlockCacheCopyOpRewrite::matchAndRewrite(ActiveBlockCacheCop
 
                         llvm::SmallVector<int64_t, 4> outerArrayStrides;
                         int64_t activeBlockOffset; // TODO : do we need to leverage this in any way? we're currently just arranging the threads according to fast/slow dimensions of the logical memref
-                        auto strideResult = mlir::getStridesAndOffset(memRefType, outerArrayStrides, activeBlockOffset);
+                        [[maybe_unused]] auto strideResult = mlir::getStridesAndOffset(memRefType, outerArrayStrides, activeBlockOffset);
                         assert(succeeded(strideResult));
                         auto numOuterArrayMultiCacheDims = outerArrayStrides.size() - activeBlockRank;
                         std::vector<int64_t> outerArrayActiveBlockStrides(outerArrayStrides.begin() + numOuterArrayMultiCacheDims, outerArrayStrides.end());
@@ -3803,6 +3804,7 @@ mlir::Value FindParentAffineForOpIV(mlir::Operation* op, const Index& loopnestIn
         currentParentForOp = currentParentForOp->getParentOfType<mlir::AffineForOp>();
     }
     assert(false && "Given loopnest index does not correspond to a parent AffineForOp");
+    return nullptr;
 }
 
 std::vector<mlir::Value> ResolveParentRelevantScheduleIndices(mlir::Operation* op, const mlir::ValueRange& baseRelevantScheduleIndices)
@@ -4660,7 +4662,7 @@ LogicalResult MergeCacheRegionOpsRewrite::matchAndRewrite(BeginCreateCacheOp beg
     std::vector<mlir::Operation*> beginOpsForRemoval;
     std::vector<mlir::Operation*> endOpsForRemoval;
 
-    auto baseArray = beginCreateCacheOp.baseInput();
+    [[maybe_unused]] auto baseArray = beginCreateCacheOp.baseInput();
     // If the outermost loop in this cache region is used to index into the base array then the cache regions cannot be merged
     // as they will have different access patterns
 
@@ -5135,7 +5137,7 @@ LogicalResult BeginCreateCacheOpRewrite::matchAndRewrite(BeginCreateCacheOp begi
 
                 if (!cachesHaveSameShape)
                 {
-                    auto unionResult = matchingExistingInfoIter->arrayAccessInfo.activeBlock.unionBoundingBox(currentMultiCacheInfo.arrayAccessInfo.activeBlock);
+                    [[maybe_unused]] auto unionResult = matchingExistingInfoIter->arrayAccessInfo.activeBlock.unionBoundingBox(currentMultiCacheInfo.arrayAccessInfo.activeBlock);
                     assert(succeeded(unionResult));
                     matchingExistingInfoIter->arrayAccessInfo.activeBlock.cst.removeRedundantConstraints();
                 }
@@ -6743,12 +6745,23 @@ LogicalResult HoistScalingToCacheReduceRewrite::matchAndRewrite(mlir::AffineStor
     Operation* targetCacheReduceOpOperation = nullptr;
     for (auto& cacheReduceOp : activeBlockCacheReduceOps)
     {
-        auto cacheReduceBlock = cacheReduceOp->getBlock();
-        auto ancestorOp = cacheReduceBlock->findAncestorOpInBlock(*affineStoreOp.getOperation());
-        if (ancestorOp)
+        // If the cache reduce op is still inside of an un-expanded loopnest, then wait for that loopnest to expand before attempting to hoist scales
+        if (cacheReduceOp->getParentOfType<KernelOp>())
         {
-            assert(targetCacheReduceOpOperation == nullptr); // Only expect one cache reduce op to be a candidate
-            targetCacheReduceOpOperation = cacheReduceOp;
+            return failure();
+        }
+
+        // Cache reduce ops are inside of lambdas to control for GPU block/thread shifting of the cache
+        // So find the parent LambdaOp and check that LambdaOp's parent block
+        if (auto parentLambdaOp = cacheReduceOp->getParentOfType<ValueLambdaOp>())
+        {
+            auto parentBlock = parentLambdaOp->getBlock();
+            auto ancestorOp = parentBlock->findAncestorOpInBlock(*affineStoreOp.getOperation());
+            if (ancestorOp)
+            {
+                assert(targetCacheReduceOpOperation == nullptr); // Only expect one cache reduce op to be a candidate
+                targetCacheReduceOpOperation = cacheReduceOp;
+            }
         }
     }
     for (auto& cacheReduceOp : activeElementCacheReduceOps)

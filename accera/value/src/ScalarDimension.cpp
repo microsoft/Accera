@@ -23,5 +23,8 @@ namespace value
     {
         Scalar::SetValue(value);
     }
+
+    ScalarDimension::~ScalarDimension() = default;
+
 } // namespace value
 } // namespace accera

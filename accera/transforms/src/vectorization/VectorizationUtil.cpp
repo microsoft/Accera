@@ -2885,7 +2885,7 @@ mlir::LogicalResult vectorizeInt16MatMul(mlir::AffineForOp affineForOp,
     // 6. add C + (A * B)
     if (innerLoopBodyIter == innerLoopBodyEnd || !isa<v::BinOp>(*innerLoopBodyIter))
     {
-        return reportMatchFailure(affineForOp, "Failed to match the binary add op");
+        return reportMatchFailure(affineForOp, "Failed to match the binary op");
     }
     auto accOp = cast<v::BinOp>(*innerLoopBodyIter++);
     if (accOp.predicate() != v::BinaryOpPredicate::ADD)
@@ -3194,7 +3194,7 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
         loadVal = thenCastOp.result();
     }
 
-    // match second load op for accumulation case
+    // match second load op for binop case
 
     mlir::AffineLoadOp loadOp2;
     mlir::Value loadVal2;
@@ -3216,32 +3216,42 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
         loadVal2 = thenCastOp2.result();
     }
 
-    // binary add op for accumulation case
-    v::BinOp accOp;
+    // optional binary op
+    v::BinOp binOp;
     if (thenOpsIter != thenOpsEnd && isa<v::BinOp>(thenOpsIter))
     {
-        accOp = cast<v::BinOp>(thenOpsIter++);
+        binOp = cast<v::BinOp>(thenOpsIter++);
     }
 
-    // Check that the operands for the accumulation op are in fact the values from load ops
-    mlir::Value accVal;
-    if (accOp)
+    // Check that the operands for the bin op are in fact the values from load ops
+    mlir::Value binOpVal;
+    if (binOp)
     {
-        if (!((accOp.lhs() == loadVal && accOp.rhs() == loadVal2) || (accOp.rhs() == loadVal && accOp.lhs() == loadVal2)))
+        if (!loadVal2)
         {
-            return reportMatchFailure(accOp, "Failed to match the accumulation operands");
+            // Check if one of the operands to the bin op is a constant
+            auto otherVal = binOp.lhs() == loadVal ? binOp.rhs() : binOp.lhs();
+            if (otherVal.getDefiningOp<mlir::arith::ConstantOp>())
+            {
+                loadVal2 = otherVal;
+            }
         }
-        matchedOps.push(accOp);
-        accVal = accOp.getResult();
+
+        if (!((binOp.lhs() == loadVal && binOp.rhs() == loadVal2) || (binOp.rhs() == loadVal && binOp.lhs() == loadVal2)))
+        {
+            return reportMatchFailure(binOp, "Failed to match the binOp operands");
+        }
+        matchedOps.push(binOp);
+        binOpVal = binOp.getResult();
     }
 
-    // optionally check if there is a cast op after accumulation op
+    // optionally check if there is a cast op after bin op
     v::CastOp thenCastOp3;
     if (thenOpsIter != thenOpsEnd && isa<v::CastOp>(thenOpsIter))
     {
         thenCastOp3 = cast<v::CastOp>(thenOpsIter++);
         matchedOps.push(thenCastOp3);
-        accVal = thenCastOp3.result();
+        binOpVal = thenCastOp3.result();
     }
 
     // store op
@@ -3390,21 +3400,37 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
         std::vector<mlir::Value> indices2(adaptor2.indices().begin(), adaptor2.indices().end());
         auto [flatCastMemref2, flattenedPosition2] = FlattenAccess(rewriter, loadOp2, indices2);
 
-        mlir::Value accumulateOperand2 = rewriter.create<mlir::vector::TransferReadOp>(loadLoc2, loadVectorType2, flatCastMemref2, mlir::ValueRange{ flattenedPosition2 }, permutationMap, finalPaddingOpValue2, mask, inbounds);
+        mlir::Value binOperand2 = rewriter.create<mlir::vector::TransferReadOp>(loadLoc2, loadVectorType2, flatCastMemref2, mlir::ValueRange{ flattenedPosition2 }, permutationMap, finalPaddingOpValue2, mask, inbounds);
 
         // optional cast op after second vector transfer read op
         if (thenCastOp2) // then cast op
         {
             // Create a cast to hold vector of values
             auto castVecType2 = mlir::VectorType::get({ unrollMax }, thenCastOp2.getType());
-            accumulateOperand2 = rewriter.create<v::CastOp>(loopOp.getLoc(), accumulateOperand2, castVecType2);
+            binOperand2 = rewriter.create<v::CastOp>(loopOp.getLoc(), binOperand2, castVecType2);
         }
 
-        // if there is a second masked load, accumulation operator must follow before final store
-        // create binary add op to accumulate results from first and second masked load ops
-        valueToStore = rewriter.create<v::BinOp>(accOp.getLoc(), v::BinaryOpPredicate::ADD, valueToStore, accumulateOperand2);
+        // if there is a second masked load, bin operator must follow before final store
+        // create binary op to combine results from first and second masked load ops
+        valueToStore = rewriter.create<v::BinOp>(binOp.getLoc(), binOp.getPredicate(), valueToStore, binOperand2);
 
-        // optional cast op after accumulation op
+        // optional cast op after bin op
+        if (thenCastOp3) // then cast op
+        {
+            // Create a cast to hold vector of values
+            auto castVecType3 = mlir::VectorType::get({ unrollMax }, thenCastOp3.getType());
+            valueToStore = rewriter.create<v::CastOp>(loopOp.getLoc(), valueToStore, castVecType3);
+        }
+    }
+    else if (loadVal2 && loadVal2.getDefiningOp<mlir::arith::ConstantOp>())
+    {
+        auto constantOp = loadVal2.getDefiningOp<mlir::arith::ConstantOp>();
+        // If the second operand to the binop is a constant, broadcast to a vector and replicate the bin op
+        auto vectorType = mlir::VectorType::get({ unrollMax }, constantOp.getType());
+        auto broadcastConstantOp = rewriter.create<mlir::vector::BroadcastOp>(constantOp.getLoc(), vectorType, constantOp);
+        valueToStore = rewriter.create<v::BinOp>(binOp.getLoc(), binOp.getPredicate(), valueToStore, broadcastConstantOp);
+
+        // optional cast op after bin op
         if (thenCastOp3) // then cast op
         {
             // Create a cast to hold vector of values

@@ -390,11 +390,10 @@ RangeValue RangeValueAnalysis::resolveRangeValue(AffineApplyOp op)
                 llvmBinOp = Instruction::BinaryOps::SDiv;
                 break;
             case mlir::AffineExprKind::CeilDiv:
-                assert(false); // Unsupported currently - no matching llvm bin op
-                break;
+                // Unsupported currently - no matching llvm bin op
+                throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "CeilDiv is not implemented");
             default:
-                assert(false);
-                break;
+                throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "Unsupported binary op expression");
             }
             llvm::SmallVector<RangeValue, 2> operandRanges{ lhsRv, rhsRv };
             auto rv = resolveRangeValue(llvmBinOp, operandRanges);

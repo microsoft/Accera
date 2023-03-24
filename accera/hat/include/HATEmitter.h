@@ -294,6 +294,8 @@ public:
         return SerializeCommonParameters();
     }
 
+    virtual ~Parameter() = default;
+
 protected:
     Parameter(const LogicalParamType& logicalType, const std::string& name, const std::string& description, const UsageType usage, const std::string& declaredType, const std::string& elementType) :
         _logicalType{ logicalType },
@@ -414,6 +416,8 @@ public:
         _name{ name },
         _description{ description },
         _callingConvention{ callingConvention } {}
+
+    virtual ~Function() = default;
 
     std::string Name() const { return _name; }
 
@@ -1020,6 +1024,8 @@ public:
 
         return table;
     }
+
+    virtual ~ExternalLibraryReference() = default;
 
 private:
     std::string _name;

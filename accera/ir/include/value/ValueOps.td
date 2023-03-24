@@ -645,9 +645,13 @@ def accv_CallOp : accv_Op<"call", [CallOpInterface]> {
       $_state.addOperands(operands);
       $_state.addAttribute("callee", callee);
       $_state.addTypes(results);
-  }]>, OpBuilder<(ins "StringRef":$callee, "ArrayRef<Type>":$results, CArg<"ValueRange", "{}">:$operands), [{
-      build($_builder, $_state, StringAttr::get($_builder.getContext(), callee), results,
-            operands);
+
+  // BUGBUG: -Werror,-Winfinite-recursion, needed?
+  // }]>, OpBuilder<(ins "StringRef":$callee, "ArrayRef<Type>":$results, CArg<"ValueRange", "{}">:$operands), [{
+  //    build($_builder, $_state, StringAttr::get($_builder.getContext(), callee), results,
+  //          operands);
+  //
+
   }]>];
 
   let extraClassDeclaration = [{

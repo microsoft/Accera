@@ -11,7 +11,7 @@ from functools import partial, reduce
 from operator import mul
 from typing import *
 
-from .._lang_python import ScalarType, _MemoryLayout, AllocateFlags, Role
+from .._lang_python import ScalarType, _MemoryLayout, AllocateFlags, Role, type_size_bytes
 from .._lang_python._lang import Array as NativeArray, Dimension
 from .Layout import Layout, MemoryMapLayout
 from ..Parameter import DelayedParameter
@@ -177,12 +177,15 @@ class Array:
             return None
 
     def _reinterpret_cast_internal(self, element_type):
-        if any(map(lambda d: isinstance(d, Dimension), self.shape)):
-            expected_layout = [-1]
+        src_element_size = type_size_bytes(self.element_type)
+        dst_element_size = type_size_bytes(element_type)
+        if src_element_size == dst_element_size:
+            expected_layout = self.shape
         else:
-            src_element_size = np.dtype(SCALAR_TYPE_TO_DTYPE_STR[self.element_type]).itemsize
-            dst_element_size = np.dtype(SCALAR_TYPE_TO_DTYPE_STR[element_type]).itemsize
-            expected_layout = [int(self._num_elements * (src_element_size / dst_element_size))]
+            if any(map(lambda d: isinstance(d, Dimension), self.shape)):
+                expected_layout = [-1]
+            else:
+                expected_layout = [int(self._num_elements * (src_element_size / dst_element_size))]
         reinterpreted = Array(role=self.role, element_type=element_type, shape=expected_layout)
         return reinterpreted
 
@@ -190,9 +193,12 @@ class Array:
         return self._reinterpret_cast_internal(ScalarType.uint8)
 
     def _reinterpret_cast(self, element_type):
-        if self.element_type != ScalarType.uint8 or len(self.shape) != 1:
+        src_bytewidth = type_size_bytes(self.element_type)
+        dst_bytewidth = type_size_bytes(element_type)
+        if src_bytewidth != dst_bytewidth and \
+            (self.element_type != ScalarType.uint8 or len(self.shape) != 1):
             raise RuntimeError(
-                "Can only call reinterpret cast on flat uint8 memory buffers. Call _get_memory_buffer first?"
+                "Can only call reinterpret cast such that the bitwidth doesn't change, or on flat uint8 memory buffers. Call _get_memory_buffer first?"
             )
 
         return self._reinterpret_cast_internal(element_type)

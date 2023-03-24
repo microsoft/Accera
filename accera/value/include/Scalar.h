@@ -46,7 +46,7 @@ namespace value
         Scalar(Scalar&&) noexcept;
         Scalar& operator=(const Scalar&);
         Scalar& operator=(Scalar&&) noexcept;
-        ~Scalar();
+        virtual ~Scalar();
 
         /// <summary> Gets the underlying wrapped Value instance </summary>
         Value GetValue() const;

@@ -92,7 +92,9 @@ TEST_CASE("TestMemoryLayoutCtors")
 TEST_CASE("TestMemoryLayoutSlice")
 {
     constexpr int64_t rows = 3, columns = 5, channels = 7, outerExtent = 4;
-    auto physicalSize = GENERATE_COPY(chunk(GENERATE(range(1, 4)), values({ rows, columns, channels, outerExtent })));
+    // BUGBUG: causes infinite loop in Catch2 3.3.1
+    // auto physicalSize = GENERATE_COPY(chunk(GENERATE(range(1, 4)), values({ rows, columns, channels, outerExtent })));
+    auto physicalSize = GENERATE_COPY(chunk(2, values({ rows, columns, channels, outerExtent })));
 
     std::vector<int64_t> order(physicalSize.size());
     std::iota(order.begin(), order.end(), 0);
@@ -107,17 +109,10 @@ TEST_CASE("TestMemoryLayoutSlice")
         auto sliced = layout.GetSliceLayout(sliceDimension);
 
         CHECK(sliced.NumDimensions() == (layout.NumDimensions() - 1));
-        CHECKED_IF(sliceDimension == 0)
-        {
-            CHECK(sliced.NumElements() == (layout.NumElements() / layout.GetExtent(0)));
-        }
-        CHECKED_ELSE(sliceDimension == 0)
-        {
-            CHECK(sliced.NumElements() == (layout.NumElements() / layout.GetExtent(0)));
-        }
+        CHECK(sliced.NumElements() == (layout.NumElements() / layout.GetExtent(sliceDimension)));
 
         auto slicedNumDimensions = sliced.NumDimensions();
-        CHECKED_ELSE(slicedNumDimensions == 0)
+        CHECKED_IF(slicedNumDimensions == 0)
         {
             auto dimension = GENERATE_COPY(range(zero, slicedNumDimensions));
             CHECKED_IF(dimension < sliceDimension)

@@ -221,16 +221,16 @@ struct LoopNestToValueFuncPass : public accera::transforms::LoopNestToValueFuncB
 
             {
                 RewritePatternSet patterns(context);
-                xptr::populateExecutionPlanScaleHoistingPatterns(patterns);
+                utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
                 (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
-                snapshotter.Snapshot("ExecutionPlanScaleHoisting", vFuncOp);
+                snapshotter.Snapshot("Canonicalize", vFuncOp);
             }
 
             {
                 RewritePatternSet patterns(context);
-                utilir::FillCanonicalPatternsRecursively(vFuncOp, patterns);
+                xptr::populateExecutionPlanScaleHoistingPatterns(patterns);
                 (void)applyPatternsAndFoldGreedily(vFuncOp, std::move(patterns));
-                snapshotter.Snapshot("Canonicalize", vFuncOp);
+                snapshotter.Snapshot("ExecutionPlanScaleHoisting", vFuncOp);
             }
 
             {

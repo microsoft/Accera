@@ -93,9 +93,6 @@ void mapValueTypeAttr(OpT& op, mlir::BlockAndValueMapping& mapping)
     });
 }
 
-constexpr auto kDefaultExecutionTarget = vir::ExecutionTarget::CPU;
-constexpr size_t kLaunchConfigNumDims = 6;
-
 struct ValueFuncToTargetPass : public tr::ValueFuncToTargetBase<ValueFuncToTargetPass>
 {
     ValueFuncToTargetPass(const tr::IntraPassSnapshotOptions& options = {}) :

@@ -27,7 +27,7 @@ struct ProfileRegions;
 namespace accera::transforms::value
 {
 void populateVectorizeValueOpPatterns(mlir::RewritePatternSet& patterns);
-void populateValueToStandardPatterns(bool enableProfiling, ProfileRegions& profileRegions, mlir::RewritePatternSet& patterns);
+[[maybe_unused]] void populateValueToStandardPatterns(bool enableProfiling, ProfileRegions& profileRegions, mlir::RewritePatternSet& patterns);
 void populateValueLaunchFuncPatterns(mlir::RewritePatternSet& patterns);
 void populateValueModuleRewritePatterns(mlir::RewritePatternSet& patterns);
 

@@ -5,16 +5,17 @@
 ####################################################################################################
 
 import inspect
-from itertools import product
-import os
-import sys
-import unittest
 import logging
+import os
 import pathlib
 import platform
 import shutil
-import numpy as np
+import sys
+import unittest
+from itertools import product
 from typing import Callable, List
+
+import numpy as np
 
 try:
     import cuda
@@ -48,13 +49,21 @@ INTERNAL_FUNCTION_OPTS = {
     "public": False
 }
 
-from accera import Package, ScalarType, Nest, Array, Constants, Scalar, fuse, create_parameters, cast, Target, Role
-from accera._lang_python._lang import _MemorySpace, _MMAShape, Dimension
-from accera import min as accmin
+from accera._lang_python import _MemoryLayout
+from accera._lang_python._lang import Array as NativeArray
+from accera._lang_python._lang import Dimension, _MemorySpace, _MMAShape, _If
+from accera._lang_python._lang._gpu import Barrier
 from accera.samples import MatrixMultiplication
-from accera.test import verifiers
-from accera.test.test_utils import expectedFailure, FailedReason
 from accera.Targets import KNOWN_DEVICES
+from accera.test import verifiers
+from accera.test.test_utils import FailedReason, expectedFailure
+
+from accera import (
+    AUTO, AllocateFlags, Array, Constants, Nest, Package, Role, Scalar, ScalarType, Target, cast, create_dimensions,
+    create_parameters, fuse
+)
+from accera import min as accmin
+from accera import abs as accabs
 
 TEST_PACKAGE_DIR = "test_acccgen"
 
@@ -500,6 +509,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_mlas_matmul(self) -> None:
         from itertools import combinations_with_replacement
+
         from accera.samples.MatrixMultiplication import MLAS
 
         domains = combinations_with_replacement([1, 31, 63, 127], 3)
@@ -616,7 +626,7 @@ class SmokeTest(unittest.TestCase):
             v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
 
     def _test_fast_exp_mlas(self, func_level_precision: bool):
-        from accera import fast_exp_mlas, fast_exp
+        from accera import fast_exp, fast_exp_mlas
 
         M = 64
         N = 64
@@ -647,9 +657,9 @@ class SmokeTest(unittest.TestCase):
         pkg_opt = Package._Options.NONE if func_level_precision else Package._Options.HIGH_PRECISION_FLOATING_POINT_OPS
 
         # Create a package and add our function definition to it
-        package_name = "test_fast_exp_mlas"
+        package_name = f"test_fast_exp_mlas_{'func' if func_level_precision else 'pkg'}"
         package = Package()
-        function = package.add(plan, args=(In, Out), base_name="test_fast_exp_mlas", function_opts=func_opt)
+        function = package.add(plan, args=(In, Out), base_name=package_name, function_opts=func_opt)
 
         # Build the HAT package
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
@@ -679,7 +689,8 @@ class SmokeTest(unittest.TestCase):
         self._test_fast_exp_mlas(False)
 
     def test_emittime_cache_mlas_matmul(self) -> None:
-        from accera.samples.OfflineCacheMatrixMultiplication import EmitTimeCacheMLAS
+        from accera.samples.OfflineCacheMatrixMultiplication import \
+            EmitTimeCacheMLAS
 
         package = Package()
         M, N, K = [31, 63, 127]
@@ -705,7 +716,8 @@ class SmokeTest(unittest.TestCase):
             v.check_correctness(function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref))
 
     def test_runtime_init_cache_mlas_matmul(self) -> None:
-        from accera.samples.OfflineCacheMatrixMultiplication import RuntimeInitCacheMLAS
+        from accera.samples.OfflineCacheMatrixMultiplication import \
+            RuntimeInitCacheMLAS
 
         package = Package()
 
@@ -778,8 +790,6 @@ class SmokeTest(unittest.TestCase):
 
     def _make_vulkan_gpu_matmul_plan(self, M, N, K):
         import math
-        from accera import Target
-        from accera._lang_python._lang import _If, as_index
 
         def get_clamped_block_dimensions(M, N, base_block_dim_M=16, base_block_dim_N=16):
             return min(M, base_block_dim_M), min(N, base_block_dim_N)
@@ -883,8 +893,6 @@ class SmokeTest(unittest.TestCase):
 
     @expectedFailure(FailedReason.NOT_IN_CORE, "function that contains multiple nests")
     def test_int8_matmul(self) -> None:
-        from accera import cast
-
         # Define our matrix sizes
         M = 128
         N = 256
@@ -1588,7 +1596,6 @@ class SmokeTest(unittest.TestCase):
 
     def test_dynamic_sub_array_split_dim_subfunction(self) -> None:
         # This is a contrived way to simply copy an array, but the utilities used are for packing partial higher dimensional arrays
-        from accera import create_dimensions
         test_name = "test_dynamic_sub_array_split_dim_subfunction"
 
         N = 64
@@ -1650,10 +1657,173 @@ class SmokeTest(unittest.TestCase):
             test_output_ref = test_input.copy()
             v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
 
+    def test_dim_bool_operation(self):
+        N = create_dimensions()
+        In = Array(Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        Out = Array(Role.INPUT_OUTPUT, element_type=ScalarType.int64, shape=(1, ))
+
+        nest = Nest((1, ))
+
+        @nest.iteration_logic
+        def _():
+
+            def T():
+                Out[0] = 1
+
+            def F():
+                Out[0] = 0
+
+            _If(N > 10, T).Else(F)
+
+        name = "test_dim_bool_operation"
+        package = Package()
+        function = package.add(nest, args=(N, In, Out), base_name=name)
+
+        In_test = np.random.rand(12).astype(np.float32)
+        Out_test = np.array([-1], dtype=np.int64)
+        Out_ref = np.array([1], dtype=np.int64)
+
+        with verifiers.VerifyPackage(self, name, TEST_PACKAGE_DIR) as v:
+            package.build(
+                name,
+                format=self.PACKAGE_FORMAT,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+            )
+
+            v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
+
+    @expectedFailure(FailedReason.BUG, "unknown reason")
+    def test_dim_cast_bool_operation(self):
+        N = create_dimensions()
+        In = Array(Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        Out = Array(Role.INPUT_OUTPUT, element_type=ScalarType.int64, shape=(1, ))
+
+        nest = Nest((1, ))
+
+        @nest.iteration_logic
+        def _():
+            Out[0] = cast(N > 10, ScalarType.int64)
+
+        name = "test_dim_cast_bool_operation"
+        package = Package()
+        function = package.add(nest, args=(N, In, Out), base_name=name)
+
+        In_test = np.random.rand(12).astype(np.float32)
+        Out_test = np.array([-1], dtype=np.int64)
+        Out_ref = np.array([1], dtype=np.int64)
+
+        with verifiers.VerifyPackage(self, name, TEST_PACKAGE_DIR) as v:
+            package.build(
+                name,
+                format=self.PACKAGE_FORMAT,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+            )
+
+            v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
+
+    def test_dim_arithmetic_operation_1(self):
+        N = create_dimensions()
+        In = Array(Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        Out = Array(Role.INPUT_OUTPUT, element_type=ScalarType.int64, shape=(1, ))
+
+        nest = Nest((1, ))
+
+        @nest.iteration_logic
+        def _():
+            Out[0] = cast(N, ScalarType.int64) / 3
+
+        name = "test_dim_arithmetic_operation_1"
+        package = Package()
+        function = package.add(nest, args=(N, In, Out), base_name=name)
+
+        In_test = np.random.rand(12).astype(np.float32)
+        Out_test = np.array([-1], dtype=np.int64)
+        Out_ref = np.array([12 // 3], dtype=np.int64)
+
+        with verifiers.VerifyPackage(self, name, TEST_PACKAGE_DIR) as v:
+            package.build(
+                name,
+                format=self.PACKAGE_FORMAT,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+            )
+
+            v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
+
+    def test_dim_arithmetic_operation_2(self):
+        N1, N2 = create_dimensions()
+        In = Array(Role.INPUT, element_type=ScalarType.float32, shape=(N1, N2))
+        Out = Array(Role.INPUT_OUTPUT, element_type=ScalarType.int64, shape=(1, ))
+
+        nest = Nest((1, ))
+
+        @nest.iteration_logic
+        def _():
+            # is the difference between the dimensions odd
+            diff = cast(N1, ScalarType.int64) - cast(N2, ScalarType.int64)
+            is_odd = diff % 2
+            Out[0] = is_odd
+
+        name = "test_dim_arithmetic_operation_2"
+        package = Package()
+        function = package.add(nest, args=(N1, N2, In, Out), base_name=name)
+
+        In_test = np.random.rand(12, 8).astype(np.float32)
+        Out_test = np.array([-1], dtype=np.int64)
+        Out_ref = np.array([(12 - 8) % 2], dtype=np.int64)
+
+        with verifiers.VerifyPackage(self, name, TEST_PACKAGE_DIR) as v:
+            package.build(
+                name,
+                format=self.PACKAGE_FORMAT,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+            )
+
+            v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
+
+    def test_dim_arithmetic_operation_then_bool_op(self):
+        N = create_dimensions()
+        In = Array(Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        Out = Array(Role.INPUT_OUTPUT, element_type=ScalarType.int64, shape=(1, ))
+
+        nest = Nest((1, ))
+
+        @nest.iteration_logic
+        def _():
+            mod2 = cast(N, ScalarType.int64) % 2
+
+            def T():
+                Out[0] = 1
+
+            def F():
+                Out[0] = 0
+
+            _If(mod2 == 0, T).Else(F)
+
+        name = "test_dim_arithmetic_operation_then_bool_op"
+        package = Package()
+        function = package.add(nest, args=(N, In, Out), base_name=name)
+
+        In_test = np.random.rand(12).astype(np.float32)
+        Out_test = np.array([-1], dtype=np.int64)
+        Out_ref = np.array([int(12 % 2 == 0)], dtype=np.int64)
+
+        with verifiers.VerifyPackage(self, name, TEST_PACKAGE_DIR) as v:
+            package.build(
+                name,
+                format=self.PACKAGE_FORMAT,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+            )
+
+            v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
+
     def test_dynamic_sub_array_multi_split_dim_subfunction(self) -> None:
         # Copy and pack a buffer into 2x4 tiles
         # Split the flat buffer into a 4-D buffer, where it has a truncated shape in the outer loop's cleanup loop
-        from accera import create_dimensions
 
         test_name = "test_dynamic_sub_array_multi_split_dim_subfunction"
 
@@ -1816,16 +1986,17 @@ class SmokeTest(unittest.TestCase):
                                     )] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
             v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
 
-    @expectedFailure(FailedReason.BUG, "_split_dimension of a dynamically sized dimension with a dynamic size is not working")
+    @expectedFailure(
+        FailedReason.BUG, "_split_dimension of a dynamically sized dimension with a dynamic size is not working"
+    )
     def test_dynamic_split_dim_dynamic_size(self) -> None:
-        from accera import create_dimensions
         test_name = "test_dynamic_split_dim_dynamic_size"
 
         M, N, MN = create_dimensions()
 
         package = Package()
 
-        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MN,))
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MN, ))
         Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N))
@@ -1836,11 +2007,7 @@ class SmokeTest(unittest.TestCase):
             split_input = Input._split_dimension(0, N)
             Output[i, j] = split_input[i, j]
 
-        fn = package.add(
-            nest,
-            args=(MN, M, N, Input, Output),
-            base_name=f"{test_name}_fn"
-        )
+        fn = package.add(nest, args=(MN, M, N, Input, Output), base_name=f"{test_name}_fn")
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
@@ -1851,20 +2018,67 @@ class SmokeTest(unittest.TestCase):
             )
 
             # correctness check
-            test_M = 64
-            test_N = 16
-            test_MN = test_M*test_N
-            test_input = np.random.random([test_M*test_N]).astype(np.float32)
+            test_M = np.int64(64)
+            test_N = np.int64(16)
+            test_MN = np.int64(test_M * test_N)
+            test_input = np.random.random([test_M * test_N]).astype(np.float32)
             test_output = np.random.random([test_M, test_N]).astype(np.float32)
             test_output_ref = test_input.copy().reshape((test_M, test_N))
-            v.check_correctness(function.name, before=(test_MN, test_M, test_N, test_input, test_output), after=(test_MN, test_M, test_N, test_input, test_output_ref))
+            v.check_correctness(
+                fn.name,
+                before=(test_MN, test_M, test_N, test_input, test_output),
+                after=(test_MN, test_M, test_N, test_input, test_output_ref)
+            )
 
-    @expectedFailure(FailedReason.BUG, "_split_dimension of a dynamically sized dimension with a static size is not working")
     def test_dynamic_split_dim_static_size(self) -> None:
-        from accera import create_dimensions
         test_name = "test_dynamic_split_dim_static_size"
 
         M, MN = create_dimensions()
+        N = 16
+
+        package = Package()
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MN, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            split_input = Input._split_dimension(0, cast(16, ScalarType.index))
+            Output[i, j] = split_input[i, j]
+
+        fn = package.add(nest, args=(MN, M, Input, Output), base_name=f"{test_name}_fn")
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
+
+            # correctness check
+            test_M = np.int64(64)
+            test_N = N
+            test_MN = np.int64(test_M * test_N)
+            test_input = np.random.random([test_M * test_N]).astype(np.float32)
+            test_output = np.random.random([test_M, test_N]).astype(np.float32)
+            test_output_ref = test_input.copy().reshape((test_M, test_N))
+            v.check_correctness(
+                fn.name,
+                before=(test_MN, test_M, test_input, test_output),
+                after=(test_MN, test_M, test_input, test_output_ref)
+            )
+
+    # This test uses all static sizes to make sure the fix for dynamic size (test_dynamic_split_dim_static_size) 
+    # won't regress the static size case.
+    def test_dynamic_split_dim_all_static(self) -> None:
+        test_name = "test_dynamic_split_dim_all_static"
+
+        M = 8
+        MN = 128
         N = 16
 
         package = Package()
@@ -1882,7 +2096,7 @@ class SmokeTest(unittest.TestCase):
 
         fn = package.add(
             nest,
-            args=(MN, M, Input, Output),
+            args=(Input, Output),
             base_name=f"{test_name}_fn"
         )
 
@@ -1895,13 +2109,14 @@ class SmokeTest(unittest.TestCase):
             )
 
             # correctness check
-            test_M = 64
+            test_M = 8
             test_N = N
             test_MN = test_M*test_N
             test_input = np.random.random([test_M*test_N]).astype(np.float32)
             test_output = np.random.random([test_M, test_N]).astype(np.float32)
             test_output_ref = test_input.copy().reshape((test_M, test_N))
-            v.check_correctness(function.name, before=(test_MN, test_M, test_input, test_output), after=(test_MN, test_M, test_input, test_output_ref))
+            v.check_correctness(fn.name, before=(test_input, test_output), after=(test_input, test_output_ref))
+
 
     def test_padded_nchwc_conv2d_manual_cache(self) -> None:
         input_channels = 64
@@ -2066,7 +2281,6 @@ class SmokeTest(unittest.TestCase):
             package.build(name=package_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir)
 
     def test_cross_compile(self) -> None:
-        from accera import Target
         M = 128
         N = 256
         K = 256
@@ -2891,8 +3105,6 @@ class SmokeTest(unittest.TestCase):
         self._verify_matrix_multiplication_function(function, package, f"test_boundary_differently_shaped_budget_cache")
 
     def test_gpu_vec_add(self):
-        from accera import Array, Nest, Package, ScalarType, Target
-
         # Define our vector sizes
         N = 2**16
         block_x = 256
@@ -2941,8 +3153,6 @@ class SmokeTest(unittest.TestCase):
                 v.check_correctness(function.name, before=before, after=after)
 
     def _test_gpu_vec_add_boundary(self, N, splits, test_name):
-        from accera import Array, Nest, Package, ScalarType, Target
-
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
         C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
@@ -3003,8 +3213,6 @@ class SmokeTest(unittest.TestCase):
                 v.check_correctness(function.name, before=before, after=after)
 
     def _test_cpu_vec_add_boundary(self, N, splits, test_name):
-        from accera import Array, Nest, Package, ScalarType, Target
-
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
         C = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, ))
@@ -3063,9 +3271,6 @@ class SmokeTest(unittest.TestCase):
         self._test_cpu_vec_add_boundary(1280, [512, 64], inspect.currentframe().f_code.co_name)
 
     def _add_cuda_copy_kernel(self, package, N, block_x, block_y, target, basename="cuda_copy_kernel"):
-        from accera import Array, Nest, ScalarType
-        from accera._lang_python._lang import _MemorySpace
-
         In = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
         Out = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
 
@@ -3098,8 +3303,6 @@ class SmokeTest(unittest.TestCase):
         return function
 
     def test_cuda_module_output(self) -> None:
-        from accera import Package, Target
-
         N = 2048
         block_x = 16
         block_y = block_x
@@ -3128,8 +3331,6 @@ class SmokeTest(unittest.TestCase):
                 v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_ref, Output_ref))
 
     def test_cuda_multiple_funcs(self) -> None:
-        from accera import Package, Target
-
         Ns = [1024, 2048]
         block_x = 16
         block_y = block_x
@@ -3161,9 +3362,6 @@ class SmokeTest(unittest.TestCase):
                     v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_ref, Output_ref))
 
     def _add_rocm_copy_kernel(self, package, N, block_x, block_y, target, basename="rocm_copy_kernel"):
-        from accera import Array, Nest, ScalarType
-        from accera._lang_python._lang import _MemorySpace
-
         In = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, N))
         Out = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N, N))
 
@@ -3197,8 +3395,6 @@ class SmokeTest(unittest.TestCase):
         return function
 
     def test_rocm_module_output(self) -> None:
-        from accera import Package, Target
-
         # Define our vector sizes
         N = 32
         block_x = 16
@@ -3228,8 +3424,6 @@ class SmokeTest(unittest.TestCase):
                 v.check_correctness(function.name, before=before, after=after)
 
     def test_rocm_multiple_funcs(self) -> None:
-        from accera import Package, Target
-
         Ns = [1024, 2048]
         block_x = 16
         block_y = block_x
@@ -3272,8 +3466,6 @@ class SmokeTest(unittest.TestCase):
         double_buffer=False,
         double_buffer_location=Constants.AUTO
     ) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
         A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, K), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(K, N), layout=Array.Layout.FIRST_MAJOR)
         C = Array(
@@ -3343,9 +3535,6 @@ class SmokeTest(unittest.TestCase):
         self._gpu_cache(2560, 1536, 2048, 16, 16, 32, "test_gpu_cache_double_buffering", True)
 
     def test_gpu_cache_double_buffering_trigger_index(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera._lang_python._lang import _MemorySpace
-
         M = 2560
         N = 1536
         K = 2048
@@ -3426,8 +3615,6 @@ class SmokeTest(unittest.TestCase):
         )
 
     def test_cpu_cache_double_buffering_trigger_index(self) -> None:
-        from accera import Array, Nest, Package, ScalarType
-
         M = 1024
         N = 1024
         K = 1024
@@ -3511,7 +3698,6 @@ class SmokeTest(unittest.TestCase):
 
     # TODO : move vpmaddwd tests to a different test file
     def test_signextend_int16_matmul_vpmaddwd(self):
-        from accera import AllocateFlags, create_dimensions
         test_name = "test_signextend_int16_matmul_vpmaddwd"
 
         def inout_array(arr: Array):
@@ -4251,10 +4437,10 @@ class SmokeTest(unittest.TestCase):
         test_name = "test_f32_horizontal_vector_add_1_row"
         N = 8
 
-        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N,), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(1, ), layout=Array.Layout.FIRST_MAJOR)
 
-        nest = Nest(shape=(N,))
+        nest = Nest(shape=(N, ))
         i, = nest.get_indices()
 
         @nest.iteration_logic
@@ -4268,8 +4454,8 @@ class SmokeTest(unittest.TestCase):
         package = Package()
         function = package.add(plan, args=(A, B), base_name=test_name)
 
-        A_test = np.random.random((N,)).astype(np.float32)
-        B_test = np.random.random((1,)).astype(np.float32)
+        A_test = np.random.random((N, )).astype(np.float32)
+        B_test = np.random.random((1, )).astype(np.float32)
 
         B_ref = B_test.copy()
         for i in range(N):
@@ -4300,10 +4486,10 @@ class SmokeTest(unittest.TestCase):
         test_name = "test_i32_horizontal_vector_add_1_row"
         N = 8
 
-        A = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N,), layout=Array.Layout.FIRST_MAJOR)
+        A = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N, ), layout=Array.Layout.FIRST_MAJOR)
         B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(1, ), layout=Array.Layout.FIRST_MAJOR)
 
-        nest = Nest(shape=(N,))
+        nest = Nest(shape=(N, ))
         i, = nest.get_indices()
 
         @nest.iteration_logic
@@ -4317,8 +4503,8 @@ class SmokeTest(unittest.TestCase):
         package = Package()
         function = package.add(plan, args=(A, B), base_name=test_name)
 
-        A_test = np.random.random((N,)).astype(np.int32)
-        B_test = np.random.random((1,)).astype(np.int32)
+        A_test = np.random.random((N, )).astype(np.int32)
+        B_test = np.random.random((1, )).astype(np.int32)
 
         B_ref = B_test.copy()
         for i in range(N):
@@ -4612,11 +4798,6 @@ class SmokeTest(unittest.TestCase):
         )
 
     def test_gpu_barrier_opt(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera._lang_python._lang import Allocate, _MemorySpace, Array as NativeArray
-        from accera._lang_python._lang._gpu import Barrier
-        from accera._lang_python import _MemoryLayout
-
         N = 256
         block_x = 16
 
@@ -4682,8 +4863,6 @@ class SmokeTest(unittest.TestCase):
                 v.check_correctness(function.name, before=before, after=after)
 
     def test_rocm_gemm_tiled_output(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
         M = 16
         N = M
         K = M
@@ -5448,8 +5627,6 @@ class SmokeTest(unittest.TestCase):
     #     import accera as acc
 
     #     # TODO : update once MemorySpace is better surfaced
-    #     from accera._lang_python._lang import _MemorySpace
-
     #     package = Package()
 
     #     M = 32
@@ -5502,8 +5679,6 @@ class SmokeTest(unittest.TestCase):
     #     import accera as acc
 
     #     # TODO : update once MemorySpace is better surfaced
-    #     from accera._lang_python._lang import _MemorySpace
-
     #     package = Package()
 
     #     M = 32
@@ -5735,8 +5910,6 @@ class SmokeTest(unittest.TestCase):
     #     self._verify_matrix_multiplication_function(function, package, f"test_thrifty_caching_elide_boundary_no_elide_main")
 
     def test_gpu_cache_different_input_layouts(self):
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera._lang_python._lang import _MemorySpace
 
         M = 2560
         N = 1536
@@ -5858,9 +6031,6 @@ class SmokeTest(unittest.TestCase):
         # This test verifies that a private memory cache will compute a region specific to each thread
         # even when added at the block level of the loopnest
 
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera._lang_python._lang import _MemorySpace
-
         M = 2560
         N = 1536
         K = 2048
@@ -5942,9 +6112,6 @@ class SmokeTest(unittest.TestCase):
     def test_gpu_cache_block_level_shared_mem(self):
         # This test verifies that a shared memory cache will compute a region specific to each logical block
         # even when added outside the block level of the loopnest
-
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera._lang_python._lang import _MemorySpace
 
         M = 2560
         N = 1536
@@ -6030,9 +6197,6 @@ class SmokeTest(unittest.TestCase):
         # This test verifies that a global memory cache will compute a region specific to each logical block
         # even when added outside the block level of the loopnest
 
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera._lang_python._lang import _MemorySpace
-
         M = 2560
         N = 1536
         K = 2048
@@ -6114,7 +6278,6 @@ class SmokeTest(unittest.TestCase):
         )
 
     def test_vectorized_and_unvectorized_cpu_caches(self):
-        from accera import AUTO
         M = 512
         N = 512
         S = 512
@@ -6165,8 +6328,6 @@ class SmokeTest(unittest.TestCase):
         self._verify_matrix_multiplication_function(function, package, f"test_vectorized_and_unvectorized_cpu_caches")
 
     def test_rocm_cache_double_buffering__with_c_cache_tensorize(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
         M = 1024
         N = 1024
         K = 1024
@@ -6247,8 +6408,6 @@ class SmokeTest(unittest.TestCase):
         )
 
     def test_rocm_c_cache_private(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
         M = 1024
         N = 1024
         K = 1024
@@ -6311,9 +6470,6 @@ class SmokeTest(unittest.TestCase):
         )
 
     def test_fill_fp16(self):
-        from accera import Array, Nest, Package, ScalarType
-        from accera import cast
-
         # Define our vector sizes
         N = 2**16
 
@@ -6348,9 +6504,6 @@ class SmokeTest(unittest.TestCase):
             v.check_correctness(function.name, before=(Output_test, ), after=(Output_ref, ))
 
     def test_abs_fp16(self):
-        from accera import Array, Nest, Package, ScalarType, Target
-        from accera import abs
-
         # Define our vector sizes
         N = 16
 
@@ -6362,7 +6515,7 @@ class SmokeTest(unittest.TestCase):
 
         @nest.iteration_logic
         def _():
-            Out[i] = abs(In[i])
+            Out[i] = accabs(In[i])
 
         schedule = nest.create_schedule()
         plan = schedule.create_plan()
@@ -6386,8 +6539,6 @@ class SmokeTest(unittest.TestCase):
             v.check_correctness(function.name, before=(Input_test, Output_test), after=(Input_test, Output_ref))
 
     def test_vec_add_fp16(self):
-        from accera import Array, Nest, Package, ScalarType
-
         # Define our vector sizes
         N = 2**16
 
@@ -6430,8 +6581,6 @@ class SmokeTest(unittest.TestCase):
             )
 
     def test_rocm_tensorize_fp16(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
         M = 1024
         N = 1024
         K = 1024
@@ -6494,8 +6643,6 @@ class SmokeTest(unittest.TestCase):
         )
 
     def test_rocm_cache_double_buffering_tensorize_fp16(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
         M = 1024
         N = 1024
         K = 1024
@@ -6575,8 +6722,6 @@ class SmokeTest(unittest.TestCase):
         )
 
     def test_rocm_double_buffer_small_cache_vectorized_unvectorized_tensorized(self) -> None:
-        from accera import Array, Nest, Package, ScalarType, Target
-
         M = 512
         N = 512
         K = 512
@@ -6907,7 +7052,6 @@ class SmokeTest(unittest.TestCase):
             )
 
     def test_vectorized_masked_buffer_fill(self) -> None:
-        from accera._lang_python._lang import _If
         N_input = 5
         N_output = 8
         Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input, ))
@@ -6943,7 +7087,6 @@ class SmokeTest(unittest.TestCase):
             )
 
     def test_vectorized_masked_store(self) -> None:
-        from accera._lang_python._lang import _If
         N_input = 8
         N_output = 5
         Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input, ))
@@ -6976,7 +7119,6 @@ class SmokeTest(unittest.TestCase):
             )
 
     def test_vectorized_masked_accumulate(self) -> None:
-        from accera._lang_python._lang import _If
         N_input = 8
         N_output = 5
         Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input, ))
@@ -6998,6 +7140,40 @@ class SmokeTest(unittest.TestCase):
         plan.vectorize(i)
         fn = package.add(plan, args=(Input, Output), base_name="test_vectorized_masked_accumulate")
         package_name = "test_vectorized_masked_accumulate"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+    def test_vectorized_masked_constant_scale_store(self) -> None:
+        from accera._lang_python._lang import _If
+        package_name = "test_vectorized_masked_constant_scale_store"
+        N_input = 8
+        N_output = 5
+        scale = 0.2
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N_input, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(N_output, ))
+        package = Package()
+        nest = Nest(shape=(N_input, ))
+        i, = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+
+            def store_value():
+                Output[i] = Input[i] * scale
+
+            _If(i < N_output, store_value)
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(i)
+        fn = package.add(plan, args=(Input, Output), base_name=package_name)
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
@@ -7106,6 +7282,83 @@ class SmokeTest(unittest.TestCase):
                 mode=self.PACKAGE_MODE,
                 output_dir=output_dir
             )
+
+    def test_dynamic_temp_array(self) -> None:
+        import accera as acc
+        test_name = "test_dynamic_temp_array"
+
+        package = Package()
+
+        M, N = acc.create_dimensions()
+
+        A = acc.Array(role=acc.Role.INPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+        B = acc.Array(role=acc.Role.TEMP, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+        C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(N, M), layout=acc.Array.Layout.FIRST_MAJOR)
+
+        nest = acc.Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i, j] = A[i, j]
+            C[j, i] = B[i, j]
+
+        function = package.add(nest, args=(M, N, A, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+            checker = v.file_checker(f"*_ConvertValueToStd.mlir")
+            checker.check_not('memref.global')
+            checker.check_not('memref.get_global')
+            checker.check('memref.alloc(%arg0, %arg1)')
+            checker.check('memref.dealloc')
+            checker.run()
+
+    def test_static_temp_array(self) -> None:
+        import accera as acc
+        test_name = "test_static_temp_array"
+
+        package = Package()
+
+        M = 16
+        N = 32
+
+        A = acc.Array(role=acc.Role.INPUT, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+        B = acc.Array(role=acc.Role.TEMP, shape=(M, N), layout=acc.Array.Layout.FIRST_MAJOR)
+        C = acc.Array(role=acc.Role.INPUT_OUTPUT, shape=(N, M), layout=acc.Array.Layout.FIRST_MAJOR)
+
+        nest = acc.Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            B[i, j] = A[i, j]
+            C[j, i] = B[i, j]
+
+        function = package.add(nest, args=(A, C), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+            checker = v.file_checker(f"*_ConvertValueToStd.mlir")
+            checker.check('memref.global')
+            checker.check('memref.get_global')
+            checker.check_not('memref.alloc')
+            checker.check_not('memref.dealloc')
+            checker.run()
 
 
 if __name__ == '__main__':

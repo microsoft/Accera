@@ -511,9 +511,9 @@ MemRefType ViewOp::computeMemRefType(Value source, ValueRange sizes, ValueRange 
     auto context = source.getContext();
     auto sourceMemRefType = source.getType().cast<mlir::MemRefType>();
     int64_t sourceRank = sourceMemRefType.getRank();
-    int64_t numOffsets = static_cast<int64_t>(offsets.size());
-    int64_t numSizes = static_cast<int64_t>(sizes.size());
-    int64_t numStrides = static_cast<int64_t>(strides.size());
+    [[maybe_unused]] int64_t numOffsets = static_cast<int64_t>(offsets.size());
+    [[maybe_unused]] int64_t numSizes = static_cast<int64_t>(sizes.size());
+    [[maybe_unused]] int64_t numStrides = static_cast<int64_t>(strides.size());
     assert(sourceRank == numOffsets);
     assert(sourceRank == numSizes);
     assert(sourceRank == numStrides);

@@ -30,6 +30,7 @@
 #include <mlir/Dialect/StandardOps/Transforms/Passes.h>
 #include <mlir/Dialect/Vector/IR/VectorOps.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/Types.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
@@ -469,6 +470,46 @@ struct PrintProfileResultsOpLowering : public OpRewritePattern<PrintProfileResul
 using ValueAllocOp = vir::AllocOp;
 struct AllocOpLowering : public OpRewritePattern<ValueAllocOp>
 {
+    mlir::OpBuilder::InsertPoint GetPreferredAllocInsertionPoint(ValueAllocOp op) const
+    {
+        auto operands = op.getOperation()->getOperands();
+        // Find the operand which is dominated by all the other operands and the parentFuncOp
+        // This is therefore the last / deepest operand and the alloc should occur after it
+        auto parentFuncOp = op->getParentOfType<mlir::FuncOp>();
+        DominanceInfo domInfo(parentFuncOp);
+        mlir::Operation* currentLeastDominantOperation = parentFuncOp;
+        bool insertInsideOperandBlock = true;
+        for (auto operand : operands)
+        {
+            mlir::Operation* currentOp;
+            bool currentOpIsBlockArg = operand.isa<mlir::BlockArgument>();
+            if (currentOpIsBlockArg)
+            {
+                auto blockArg = operand.cast<mlir::BlockArgument>();
+                currentOp = blockArg.getOwner()->getParentOp();
+            }
+            else
+            {
+                currentOp = operand.getDefiningOp();
+            }
+            if (domInfo.dominates(currentLeastDominantOperation, currentOp))
+            {
+                currentLeastDominantOperation = currentOp;
+                insertInsideOperandBlock = currentOpIsBlockArg;
+            }
+        }
+        if (insertInsideOperandBlock)
+        {
+            auto& block = currentLeastDominantOperation->getRegion(0).front();
+            return mlir::OpBuilder::InsertPoint(&block, block.begin());
+        }
+        else
+        {
+            auto block = currentLeastDominantOperation->getBlock();
+            return mlir::OpBuilder::InsertPoint(block, ++mlir::Block::iterator(currentLeastDominantOperation));
+        }
+    }
+
     using OpRewritePattern::OpRewritePattern;
     LogicalResult matchAndRewrite(ValueAllocOp op,
                                   PatternRewriter& rewriter) const final
@@ -483,34 +524,31 @@ struct AllocOpLowering : public OpRewritePattern<ValueAllocOp>
 
             auto memrefType = op.getType();
             auto allocType = op.allocType().getValueOr(vir::MemoryAllocType::Global);
+            if (memrefType.getNumDynamicDims() != 0)
+            {
+                // dynamic allocations must all be heap allocations
+                allocType = vir::MemoryAllocType::Heap;
+            }
 
             OpBuilder::InsertionGuard guard(rewriter);
-            auto parentFuncOp = op->getParentOfType<mlir::FuncOp>();
+            auto insertPoint = GetPreferredAllocInsertionPoint(op);
+
             mlir::memref::AllocOp allocOp;
             mlir::Block* parentBlock;
             mlir::Value allocatedMemref;
             switch (allocType)
             {
             case vir::MemoryAllocType::Global: {
-                if (memrefType.getNumDynamicDims() == 0)
-                {
-                    auto globalOp = irutil::CreateGlobalBufferOp(rewriter, op, MemRefType::Builder{ memrefType }.setLayout({}), kGlobalOpSymNameFormat);
-                    rewriter.replaceOpWithNewOp<vir::ReferenceGlobalOp>(op, memrefType, globalOp.sym_name());
-                }
-                else
-                {
-                    rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType, op.getOperation()->getOperands(), op.alignmentAttr());
-                }
+                auto globalOp = irutil::CreateGlobalBufferOp(rewriter, op, MemRefType::Builder{ memrefType }.setLayout({}), kGlobalOpSymNameFormat);
+                rewriter.replaceOpWithNewOp<vir::ReferenceGlobalOp>(op, memrefType, globalOp.sym_name());
             }
             break;
             case vir::MemoryAllocType::Stack:
-                // Create the stack allocation at the beginning of the function
-                rewriter.setInsertionPointToStart(&parentFuncOp.front());
+                rewriter.restoreInsertionPoint(insertPoint);
                 rewriter.replaceOpWithNewOp<memref::AllocaOp>(op, MemRefType::Builder{ memrefType }.setLayout({}), mlir::ValueRange{}, op.alignmentAttr());
                 break;
             case vir::MemoryAllocType::Heap:
-                // Create the heap allocation at the beginning of the function
-                rewriter.setInsertionPointToStart(&parentFuncOp.front());
+                rewriter.restoreInsertionPoint(insertPoint);
                 allocOp = rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType, op.getOperation()->getOperands(), op.alignmentAttr());
 
                 // Create a dealloc op at the end of the block containing this alloc op
@@ -563,8 +601,8 @@ struct CastOpLowering : public OpRewritePattern<ValueCastOp>
         auto fromType = op.source().getType();
         auto toType = op.result().getType();
 
-        auto isFromTypeVector = fromType.isa<mlir::VectorType>();
-        auto isToTypeVector = toType.isa<mlir::VectorType>();
+        [[maybe_unused]] auto isFromTypeVector = fromType.isa<mlir::VectorType>();
+        [[maybe_unused]] auto isToTypeVector = toType.isa<mlir::VectorType>();
         assert(isFromTypeVector == isToTypeVector && "Can only cast vectors to vectors or scalars to scalars");
 
         auto fromElementType = util::GetElementType(fromType);
@@ -2520,7 +2558,7 @@ LogicalResult EnterProfileRegionOpLowering::matchAndRewrite(EnterProfileRegionOp
 
     auto millisecondsInSecond = rewriter.create<arith::ConstantOp>(loc, util::GetValAttr(rewriter, currentTime.getType(), 1000));
     mlir::Value newCurrentTime = rewriter.create<vir::BinOp>(loc, vir::BinaryOpPredicate::MUL, currentTime, millisecondsInSecond);
-    
+
     rewriter.create<vir::CopyOp>(loc, newCurrentTime, startTimeRef);
     rewriter.eraseOp(op);
     return success();
@@ -2728,7 +2766,7 @@ LogicalResult VhaddLowering::matchAndRewrite(ValueVHADDOp op, PatternRewriter& r
     auto rhs = op.rhs();
 
     auto vecType = lhs.getType().cast<mlir::VectorType>();
-    auto rank = vecType.getRank();
+    [[maybe_unused]] auto rank = vecType.getRank();
     assert(rank == 1 && "vhadd only supports rank-1 vectors");
     auto elementType = vecType.getElementType();
     auto elementCount = vecType.getNumElements();
@@ -2911,8 +2949,8 @@ void populateValueToStandardPatterns(bool enableProfiling, ProfileRegions& profi
         VhaddLowering>(context);
 
     patterns.insert<EnterProfileRegionOpLowering,
-                PrintProfileResultsOpLowering,
-                ExitProfileRegionOpLowering>(context, enableProfiling, profileRegions);
+                    PrintProfileResultsOpLowering,
+                    ExitProfileRegionOpLowering>(context, enableProfiling, profileRegions);
 }
 
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueToStdPass(bool enableProfiling)

@@ -56,8 +56,8 @@ static constexpr const char* kVulkanLaunch = "vulkanLaunch";
 // Custom to acc-vulkan-runtime-wrappers
 static constexpr const char* kSetRepeatedRunCharacteristics = "setRepeatedRunCharacteristics";
 static constexpr const char* kVulkanRuntimeInstanceHandle = "VulkanRuntime_Instance_Handle";
-static constexpr const char* kInitVulkanEmittedFunc = "initVulkanUtilities";
-static constexpr const char* kDestroyVulkanEmittedFunc = "destroyVulkanUtilities";
+[[maybe_unused]] static constexpr const char* kInitVulkanEmittedFunc = "initVulkanUtilities";
+[[maybe_unused]] static constexpr const char* kDestroyVulkanEmittedFunc = "destroyVulkanUtilities";
 static constexpr const char* kInitializeFuncAttrName = "rc_gpu_init";
 static constexpr const char* kDeInitializeFuncAttrName = "rc_gpu_deinit";
 static constexpr const char* kVulkanRuntimeHandleAccessor = "getVulkanRuntimeInstance";

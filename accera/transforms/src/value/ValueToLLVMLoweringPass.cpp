@@ -677,7 +677,7 @@ struct VpmaddwdOpLowering : public ValueLLVMOpConversionPattern<vpmaddwd>
         LLVMTypeConverter llvmTypeConverter(rewriter.getContext());
         auto outputVecType = op.getType().cast<mlir::VectorType>();
         auto outputVecLLVMType = llvmTypeConverter.convertType(outputVecType);
-        auto outputRank = outputVecType.getRank();
+        [[maybe_unused]] auto outputRank = outputVecType.getRank();
         assert(outputRank == 1 && "Vpmaddwd op should have a 1-D result");
         auto elementCount = outputVecType.getShape()[0];
         auto avx512Support = util::ModuleSupportsTargetDeviceFeature(op, "avx512");
@@ -1129,6 +1129,221 @@ struct RawPointerAPIUnusedUndefRemoval : public OpRewritePattern<LLVM::UndefOp>
     }
 };
 
+static OpFoldResult getExpandedDimSize(
+    OpBuilder &builder, 
+    Location loc, 
+    Type &llvmIndexType,
+    int64_t outDimIndex, ArrayRef<int64_t> outStaticShape,
+    MemRefDescriptor &inDesc,
+    ArrayRef<int64_t> inStaticShape,
+    ArrayRef<ReassociationIndices> reassocation,
+    DenseMap<int64_t, int64_t> &outDimToInDimMap) 
+{
+    int64_t outDimSize = outStaticShape[outDimIndex];
+    if (!ShapedType::isDynamic(outDimSize))
+    {
+        return builder.getIndexAttr(outDimSize);
+    }
+
+    // Calculate the multiplication of all the out dim sizes except the current dim.
+    int64_t inDimIndex = outDimToInDimMap[outDimIndex];
+    int64_t otherDimSizesMul = 1;
+
+    for (auto otherDimIndex : reassocation[inDimIndex]) 
+    {
+        if (otherDimIndex == static_cast<unsigned>(outDimIndex))
+        {
+            continue;
+        }
+        otherDimSizesMul *= outStaticShape[otherDimIndex];
+    }
+
+    // outDimSize = inDimSize / otherOutDimSizesMul
+    int64_t inDimSize = inStaticShape[inDimIndex];
+    Value inDimSizeDynamic =
+        ShapedType::isDynamic(inDimSize)
+            ? inDesc.size(builder, loc, inDimIndex)
+            : builder.create<LLVM::ConstantOp>(loc, llvmIndexType, builder.getIndexAttr(inDimSize));
+
+    Value outDimSizeDynamic = builder.create<LLVM::SDivOp>(
+        loc, 
+        inDimSizeDynamic,
+        builder.create<LLVM::ConstantOp>(loc, llvmIndexType, builder.getIndexAttr(otherDimSizesMul)));
+
+    return outDimSizeDynamic;
+}
+
+// Compute a map that for a given dimension of the expanded type gives the
+// dimension in the collapsed type it maps to. Essentially its the inverse of the `reassocation` maps.
+static DenseMap<int64_t, int64_t> getExpandedDimToOriginalDimMap(ArrayRef<ReassociationIndices> reassociation) 
+{
+    llvm::DenseMap<int64_t, int64_t> dimMap;
+    for (auto &dimArray : enumerate(reassociation)) 
+    {
+        for (auto dim : dimArray.value())
+        {
+            dimMap[dim] = dimArray.index();
+        }
+    }
+    return dimMap;
+}
+
+static SmallVector<OpFoldResult, 4> getExpandedShape(
+    OpBuilder &builder, 
+    Location loc, 
+    Type &llvmIndexType,
+    ArrayRef<ReassociationIndices> reassociation,
+    ArrayRef<int64_t> inStaticShape,
+    MemRefDescriptor &inDesc,
+    ArrayRef<int64_t> outStaticShape) 
+{
+    DenseMap<int64_t, int64_t> outDimToInDimMap = getExpandedDimToOriginalDimMap(reassociation);
+    return llvm::to_vector<4>(llvm::map_range(
+        llvm::seq<int64_t>(0, outStaticShape.size()), [&](int64_t outDimIndex) {
+            return getExpandedDimSize(
+                builder, 
+                loc, 
+                llvmIndexType, 
+                outDimIndex, 
+                outStaticShape, 
+                inDesc, 
+                inStaticShape,
+                reassociation, 
+                outDimToInDimMap);
+    }));
+}
+
+/// Helper function to convert a vector of `OpFoldResult`s into a vector of `Value`s.
+static SmallVector<Value> getResultAsValues(
+    OpBuilder &builder, 
+    Location loc,
+    Type &llvmIndexType,
+    ArrayRef<OpFoldResult> valueOrAttrVec) 
+{
+    return llvm::to_vector<4>(
+        llvm::map_range(valueOrAttrVec, [&](OpFoldResult value) -> Value {
+        if (auto attr = value.dyn_cast<Attribute>())
+        {
+            return builder.create<LLVM::ConstantOp>(loc, llvmIndexType, attr);
+        }
+        return value.get<Value>();
+    }));
+}
+
+static SmallVector<Value> getDynamicExpandedShape(
+    OpBuilder &builder, 
+    Location loc, 
+    Type &llvmIndexType,
+    ArrayRef<ReassociationIndices> reassociation,
+    ArrayRef<int64_t> inStaticShape, 
+    MemRefDescriptor &inDesc,
+    ArrayRef<int64_t> outStaticShape) 
+{
+    return getResultAsValues(
+        builder, 
+        loc, 
+        llvmIndexType,
+        getExpandedShape(
+            builder, 
+            loc, 
+            llvmIndexType,
+            reassociation, 
+            inStaticShape,
+            inDesc, 
+            outStaticShape));
+}
+
+bool isStrideOrOffsetStatic(int64_t strideOrOffset) 
+{
+    return !ShapedType::isDynamicStrideOrOffset(strideOrOffset);
+}
+
+struct ExpandShapeOpLowering : public ConvertOpToLLVMPattern<memref::ExpandShapeOp> 
+{
+public:
+    using ConvertOpToLLVMPattern<memref::ExpandShapeOp>::ConvertOpToLLVMPattern;
+    using ReshapeOpAdaptor = typename memref::ExpandShapeOp::Adaptor;
+
+    LogicalResult matchAndRewrite(
+        memref::ExpandShapeOp reshapeOp, 
+        ReshapeOpAdaptor adaptor,
+        ConversionPatternRewriter &rewriter) const override 
+    {
+        MemRefType dstType = reshapeOp.getResultType();
+        MemRefType srcType = reshapeOp.getSrcType();
+
+        int64_t offset;
+        SmallVector<int64_t, 4> strides;
+        if (failed(getStridesAndOffset(dstType, strides, offset))) 
+        {
+            return rewriter.notifyMatchFailure(reshapeOp, "failed to get stride and offset exprs");
+        }
+        
+        MemRefDescriptor srcDesc(adaptor.src());
+        Location loc = reshapeOp->getLoc();
+        auto dstDesc = MemRefDescriptor::undef(rewriter, loc, this->typeConverter->convertType(dstType));
+
+        dstDesc.setAllocatedPtr(rewriter, loc, srcDesc.allocatedPtr(rewriter, loc));
+        dstDesc.setAlignedPtr(rewriter, loc, srcDesc.alignedPtr(rewriter, loc));
+        dstDesc.setOffset(rewriter, loc, srcDesc.offset(rewriter, loc));
+
+        ArrayRef<int64_t> srcStaticShape = srcType.getShape();
+        ArrayRef<int64_t> dstStaticShape = dstType.getShape();
+        Type llvmIndexType = this->typeConverter->convertType(rewriter.getIndexType());
+
+        SmallVector<Value> dstShape = getDynamicExpandedShape(
+            rewriter, 
+            loc, 
+            llvmIndexType, 
+            reshapeOp.getReassociationIndices(),
+            srcStaticShape, 
+            srcDesc, 
+            dstStaticShape);
+
+        for (auto &shape : llvm::enumerate(dstShape))
+        {
+            dstDesc.setSize(rewriter, loc, shape.index(), shape.value());
+        }
+
+        if (llvm::all_of(strides, isStrideOrOffsetStatic)) 
+        {
+            for (auto &stride : llvm::enumerate(strides))
+            {
+                dstDesc.setConstantStride(rewriter, loc, stride.index(), stride.value());
+            }
+        }
+        else if (srcType.getLayout().isIdentity() && dstType.getLayout().isIdentity()) 
+        {
+            Value stride = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIndexAttr(1));
+            for (auto dimIndex : llvm::reverse(llvm::seq<int64_t>(0, dstShape.size()))) 
+            {
+                dstDesc.setStride(rewriter, loc, dimIndex, stride);
+                stride = rewriter.create<LLVM::MulOp>(loc, dstShape[dimIndex], stride);
+            }
+        } 
+        else 
+        {
+            // There could be mixed static/dynamic strides. For simplicity, we
+            // recompute all strides if there is at least one dynamic stride.
+            // See comments for computeExpandedLayoutMap in llvm source code 
+            // for details on how the strides are calculated.
+            for (auto &dimArray : llvm::enumerate(reshapeOp.getReassociationIndices())) 
+            {
+                auto currentStrideToExpand = srcDesc.stride(rewriter, loc, dimArray.index());
+                for (auto dstIndex : llvm::reverse(dimArray.value())) 
+                {
+                    dstDesc.setStride(rewriter, loc, dstIndex, currentStrideToExpand);
+                    Value size = dstDesc.size(rewriter, loc, dstIndex);
+                    currentStrideToExpand = rewriter.create<LLVM::MulOp>(loc, size, currentStrideToExpand);
+                }
+            }
+
+        }
+        rewriter.replaceOp(reshapeOp, {dstDesc});
+        return success();
+    }
+};
+
 } // namespace
 
 using namespace accera::transforms::value;
@@ -1569,6 +1784,7 @@ void ValueToLLVMLoweringPass::runOnModule()
         RewritePatternSet patterns(&getContext());
 
         populateValueToLLVMMemPatterns(llvmTypeConverter, patterns);
+        populateReshapeOpToLLVMMemPatterns(llvmTypeConverter, patterns);
         populateMathToLLVMConversionPatterns(llvmTypeConverter, patterns);
         populateMemRefToLLVMConversionPatterns(llvmTypeConverter, patterns);
         populateStdToLLVMConversionPatterns(llvmTypeConverter, patterns);
@@ -1660,6 +1876,11 @@ void populateValueToLLVMMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir
     mlir::MLIRContext* context = patterns.getContext();
 
     patterns.insert<ValueMemRefCastOpLowering>(typeConverter, context);
+}
+
+void populateReshapeOpToLLVMMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
+{
+    patterns.insert<ExpandShapeOpLowering>(typeConverter);
 }
 
 const mlir::LowerToLLVMOptions& GetDefaultAcceraLLVMOptions(mlir::MLIRContext* context)

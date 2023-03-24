@@ -750,14 +750,6 @@ namespace ir
                     }
                     std::vector<size_t> shapeVec;
                     std::transform(shape.begin(), shape.end(), std::back_inserter(shapeVec), [](int64_t val) { return static_cast<size_t>(val); });
-                    if (usage != hat::UsageType::Input && shapeVec.size() == 1 && shapeVec[0] == 1)
-                    {
-                        // TODO: This is currently a hack since output Dimension does not work. So in the DSL we use Array
-                        // instead and here we emulate an ElementParameter instead. Remove this when output Dimension are working.
-                        assert(declaredType.back() == '*');
-                        return std::make_unique<hat::ElementParameter>(name, description, usage, declaredType.substr(0, declaredType.length() - 1), elementType);
-                    }
-
                     return std::make_unique<hat::AffineArrayParameter>(name, description, usage, declaredType, elementType, shapeVec, affineMap, affineOffset);
                 }
 

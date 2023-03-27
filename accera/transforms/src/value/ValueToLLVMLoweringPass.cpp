@@ -647,7 +647,10 @@ struct ValueMemRefCastOpLowering : public ValueLLVMOpConversionPattern<MemRefCas
                 }
                 else
                 {
-                    size = rewriter.create<LLVM::MulOp>(loc, size, rewriter.create<memref::DimOp>(loc, op.getViewSource(), s.index()));
+                    mlir::Value dimSize = rewriter.create<memref::DimOp>(loc, op.getViewSource(), s.index());
+                    auto castOp = rewriter.create<mlir::UnrealizedConversionCastOp>(loc, llvmIndexType, dimSize);
+                    mlir::Value intDimSize = castOp.getResult(0);
+                    size = rewriter.create<LLVM::MulOp>(loc, size, intDimSize);
                 }
             }
             targetMemrefDesc.setSize(rewriter, loc, 0, size);

@@ -51,7 +51,7 @@ INTERNAL_FUNCTION_OPTS = {
 
 from accera._lang_python import _MemoryLayout
 from accera._lang_python._lang import Array as NativeArray
-from accera._lang_python._lang import Dimension, _MemorySpace, _MMAShape, _If
+from accera._lang_python._lang import Dimension, _MemorySpace, _MMAShape, _If, as_index
 from accera._lang_python._lang._gpu import Barrier
 from accera.samples import MatrixMultiplication
 from accera.Targets import KNOWN_DEVICES

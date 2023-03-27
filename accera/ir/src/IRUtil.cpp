@@ -1304,6 +1304,13 @@ namespace util
             return shape;
         }
 
+        // TODO : more generalized dynamic shape detection
+        // If the memref is a memref_cast, then check the memref_cast source operand for a shape because the memref_cast does not change the shape
+        if (auto memrefCastOp = memref.getDefiningOp<ir::value::MemRefCastOp>())
+        {
+            memref = memrefCastOp.source();
+        }
+
         // Currently this utility only supports dynamic memrefs that are alloc ops with shape args or
         // function arguments with dimension size handles which are also function arguments
         if (auto allocOp = memref.getDefiningOp<ir::value::AllocOp>())

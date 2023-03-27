@@ -753,6 +753,35 @@ class DSLTest_01Arrays(unittest.TestCase):
                 _quiet=False
             )
 
+    def test_reinterpret_cast_partially_dynamic_shape(self) -> None:
+        from accera import create_dimensions
+        test_name = "test_reinterpret_cast_partially_dynamic_shape"
+        package = Package()
+
+        M, N = create_dimensions()
+        A = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(5, M, N))
+        B = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(5, M, N))
+
+        nest = Nest((5, M, N))
+        indices = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            float_A = A._reinterpret_cast(ScalarType.float32)
+            B[indices] = float_A[indices]
+        
+        package.add(nest, args=(M, N, A, B), base_name=test_name)
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        with verifiers.VerifyPackage(self, test_name, output_dir):
+            package.build(
+                test_name,
+                format=TEST_FORMAT,
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir,
+                _quiet=False
+            )
+
     def test_subarray(self) -> None:
         package = Package()
 

@@ -110,18 +110,6 @@ private:
     mlir::MLIRContext* _context;
 };
 
-MemoryLayout GetSliceLayout(const MemoryLayout& originalLayout, std::vector<int64_t> slicedDimensions)
-{
-    std::sort(slicedDimensions.begin(), slicedDimensions.end(), std::greater<int64_t>());
-
-    MemoryLayout result = originalLayout;
-    for (auto dim : slicedDimensions)
-    {
-        result = result.GetSliceLayout(dim);
-    }
-    return result;
-}
-
 MemoryLayout GetMergeDimLayout(const MemoryLayout& originalLayout, int64_t dim1, int64_t dim2)
 {
     return originalLayout.GetMergedDimensionsLayout(dim1, dim2);
@@ -2012,7 +2000,7 @@ Value MLIRContext::SliceImpl(Value sourceValue, std::vector<int64_t> slicedDimen
     auto& builder = _impl->builder;
     auto loc = builder.getUnknownLoc();
     const MemoryLayout& currentLayout = sourceValue.GetLayout();
-    auto destLayout = GetSliceLayout(currentLayout, slicedDimensions);
+    auto destLayout = currentLayout.GetSliceLayout(slicedDimensions);
 
     llvm::SmallVector<mlir::Value, 4> offsets;
     std::transform(
@@ -2447,7 +2435,7 @@ Value MLIRContext::MMALoadSyncImpl(const Matrix& source, const int64_t rowOffset
     auto loc = builder.getUnknownLoc();
 
     auto matValue = ToMLIRValue(builder, source);
-    const auto mmaShape = static_cast<ir::value::MMAShape>(target.GetFragmentShape());
+    const auto mmaShape = static_cast<ir::value::MMAShapeType>(target.GetFragmentShape());
     const ir::value::MMAOp mmaType(mmaShape);
 
     auto rowOff = builder.create<mlir::arith::ConstantIndexOp>(loc, rowOffset);
@@ -2461,7 +2449,7 @@ Value MLIRContext::MMALoadSyncImpl(const Matrix& source, const int64_t rowOffset
     mlir::Value result = builder.create<ir::value::MMAAllocSyncOp>(loc, vecTy, static_cast<uint32_t>(mmaShape), /*blocks*/ 1, static_cast<uint8_t>(operandType), /*TODO*/ true);
     auto blockTid = ToMLIRValue(builder, GPU::ThreadId().X().GetValue());
     auto prologueArgVal = builder.create<mlir::arith::ConstantOp>(loc, builder.getZeroAttr(elementType));
-    builder.create<ir::value::MMALoadSyncOp>(loc, blockTid, matValue, result, operandType, /*TODO*/ true, mlir::ValueRange{ rowOff, colOff }, /*staticOffsets*/ false, /*TODO: plumb*/ ir::value::MMAFragmentOp::None, /*TODO: plumb*/ prologueArgVal);
+    builder.create<ir::value::MMALoadSyncOp>(loc, blockTid, matValue, result, operandType, /*TODO*/ true, mlir::ValueRange{ rowOff, colOff }, /*staticOffsets*/ false, /*TODO: plumb*/ ir::value::MMAFragmentOpType::None, /*TODO: plumb*/ prologueArgVal);
     EmittableInfo& emittableInfo = StoreLocalEmittable({ result.getAsOpaquePointer(), { source.GetValue().GetBaseType(), 1 } });
     Emittable emittable{ &emittableInfo };
 
@@ -2482,7 +2470,7 @@ void MLIRContext::MMAStoreSyncImpl(const MatrixFragment& source, Matrix& target,
     auto blockTid = ToMLIRValue(builder, GPU::ThreadId().X().GetValue());
     auto elementType = sourceValue.getType().cast<mlir::MemRefType>().getElementType();
     auto epilogueArgVal = builder.create<mlir::arith::ConstantOp>(loc, builder.getZeroAttr(elementType));
-    builder.create<ir::value::MMAStoreSyncOp>(loc, blockTid, sourceValue, targetValue, mlir::ValueRange{ rowOff, colOff }, /*staticOffsets*/ false, /*TODO: plumb*/ ir::value::MMAFragmentOp::None, /*TODO: plumb*/ epilogueArgVal);
+    builder.create<ir::value::MMAStoreSyncOp>(loc, blockTid, sourceValue, targetValue, mlir::ValueRange{ rowOff, colOff }, /*staticOffsets*/ false, /*TODO: plumb*/ ir::value::MMAFragmentOpType::None, /*TODO: plumb*/ epilogueArgVal);
 }
 
 Value MLIRContext::MMAComputeSyncImpl(const MatrixFragment& A, const MatrixFragment& B, const MatrixFragment& C, const uint32_t cbsz, const uint32_t abid, const uint32_t blgp)

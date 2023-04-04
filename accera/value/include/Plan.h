@@ -35,7 +35,7 @@ namespace value
 
     using accera::ir::executionPlan::CacheAllocation;
     using accera::ir::executionPlan::CacheIndexing;
-    using accera::ir::value::CacheStrategy;
+    using accera::ir::value::CacheStrategyType;
 
     using loopnests::Index;
     using loopnests::IterationDomain;
@@ -211,14 +211,14 @@ namespace value
         /// <param name="memorySpace"> The memory space</param>
         /// <param name="doubleBufferMemorySpace"> The memory space to put the double buffer temporary buffer in </param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, CacheStrategy strategy, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace, const std::optional<uint64_t>& sharedMemOffset);
+        Cache AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, CacheStrategyType strategy, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace, const std::optional<uint64_t>& sharedMemOffset);
 
         /// <summary> Adds a cache for a view target </summary>
         /// <param name="target"> The target being cached (e.g Array, Matrix, etc) </param>
         /// <param name="maxElements"> A cutoff budget that can be used to infer the outermost index to include the cache </param>
         /// <param name="memorySpace"> The memory space</param>
         /// <returns> An instance of Cache </returns>
-        Cache AddCache(ViewAdapter target, int64_t maxElements, CacheStrategy strategy, MemorySpace memorySpace, const std::optional<uint64_t>& sharedMemOffset);
+        Cache AddCache(ViewAdapter target, int64_t maxElements, CacheStrategyType strategy, MemorySpace memorySpace, const std::optional<uint64_t>& sharedMemOffset);
 
         /// <summary> Assigns an ordered sequence of loop indices to a GPU processor </summary>
         /// <param name="indices"> The loop indices </param>
@@ -237,7 +237,7 @@ namespace value
         /// <param name="useStaticOffsets"> Use precomputed index offsets for address calculation (potential optimization). </param>
         /// <param name="numFusedPasses"> Number of passes of the tensor operation for which to allocate register, higher value indicates higher register allocation. </param>
         /// <param name="schedulingPolicy"> Determines whether we iterate over blocks or passes. </param>
-        void Tensorize(std::vector<ScalarIndex> indices, ir::value::MMAShape dims, int numTotalPasses = 1, bool useStaticOffsets = false, int numFusedPasses = -1, ir::value::MMASchedulingPolicy schedulingPolicy = ir::value::MMASchedulingPolicy::PassOrder, ir::value::MMAFragmentOp prologueOp = ir::value::MMAFragmentOp::None, double prologueArg = {}, ir::value::MMAFragmentOp epilogueOp = ir::value::MMAFragmentOp::None, double epilogueArg = {}, bool _useRocWMMA=false);
+        void Tensorize(std::vector<ScalarIndex> indices, ir::value::MMAShapeType dims, int numTotalPasses = 1, bool useStaticOffsets = false, int numFusedPasses = -1, ir::value::MMASchedulingPolicyType schedulingPolicy = ir::value::MMASchedulingPolicyType::PassOrder, ir::value::MMAFragmentOpType prologueOp = ir::value::MMAFragmentOpType::None, double prologueArg = {}, ir::value::MMAFragmentOpType epilogueOp = ir::value::MMAFragmentOpType::None, double epilogueArg = {}, bool _useRocWMMA=false);
 
     private:
         friend class Schedule;

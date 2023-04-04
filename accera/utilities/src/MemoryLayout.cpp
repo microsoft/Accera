@@ -503,6 +503,18 @@ namespace utilities
         return result;
     }
 
+    MemoryLayout MemoryLayout::GetSliceLayout(std::vector<int64_t> slicedDimensions) const
+    {
+        std::sort(slicedDimensions.begin(), slicedDimensions.end(), std::greater<int64_t>());
+
+        MemoryLayout result = *this;
+        for (auto dim : slicedDimensions)
+        {
+            result = result.GetSliceLayout(dim);
+        }
+        return result;
+    }
+
     MemoryLayout MemoryLayout::GetMergedDimensionsLayout(int dimension1, int dimension2) const
     {
         // Get the in-memory ordering of the dimensions, and sort them with the outer dimension first

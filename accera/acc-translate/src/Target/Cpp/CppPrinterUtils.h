@@ -24,9 +24,9 @@ namespace cpp_printer
 
     LogicalResult printMMAMatrixOp(PrinterState& state, CppPrinter* printer, Type elementType, const std::tuple<int, int, int>& matrixShape, Value dest, vir::MMAOperandType operandType, int totalBlocks, int blocks, bool rowMajor);
     LogicalResult printConstantMatrixOp(PrinterState& state, CppPrinter* printer, Value dest, Value value);
-    LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, vir::MMAOperandType operandType, mlir::Operation::operand_range indices, bool rowMajor, Value blockTid = {}, bool useStaticOffsets = {}, vir::MMAFragmentOp mmaPrologueOp = vir::MMAFragmentOp::None, Value mmaPrologueArg = {});
+    LogicalResult printLoadMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, vir::MMAOperandType operandType, mlir::Operation::operand_range indices, bool rowMajor, Value blockTid = {}, bool useStaticOffsets = {}, vir::MMAFragmentOpType mmaPrologueOp = vir::MMAFragmentOpType::None, Value mmaPrologueArg = {});
     LogicalResult printComputeMatrixOp(PrinterState& state, CppPrinter* printer, Value A, Value B, Value C, Value D, int cbsz = 0, int abid = 0, int blgp = 0);
-    LogicalResult printStoreMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, mlir::Operation::operand_range indices, Value blockTid = {}, bool useStaticOffsets = {}, vir::MMAFragmentOp mmaEpilogueOp = vir::MMAFragmentOp::None, Value mmaEpilogueArg = {});
+    LogicalResult printStoreMatrixOp(PrinterState& state, CppPrinter* printer, Value src, Value dest, mlir::Operation::operand_range indices, Value blockTid = {}, bool useStaticOffsets = {}, vir::MMAFragmentOpType mmaEpilogueOp = vir::MMAFragmentOpType::None, Value mmaEpilogueArg = {});
 
     constexpr auto HipIncludesAndTypes = R"ROCM(
 #if defined(__HIP_PLATFORM_HCC__)

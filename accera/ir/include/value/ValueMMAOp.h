@@ -23,7 +23,7 @@ using mlir::Type;
 
 constexpr auto MFMAThreadBufferMapName = "threadOffsetsMFMA";
 
-enum class MMAShape
+enum class MMAShapeType
 {
     // The shapes below refer to the dimensions of the matmul operation
     // they perform. The B{N} refers to the number of blocks the operation
@@ -55,13 +55,13 @@ enum class MMAOperandType
     Acc
 };
 
-enum class MMASchedulingPolicy
+enum class MMASchedulingPolicyType
 {
     BlockOrder,
     PassOrder
 };
 
-enum class MMAFragmentOp
+enum class MMAFragmentOpType
 {
     None,
     ReLU,
@@ -73,9 +73,9 @@ enum class MMAFragmentOp
 class MMAOp
 {
 public:
-    MMAOp(MMAShape shape);
+    MMAOp(MMAShapeType shape);
 
-    MMAShape getShapeType() const;
+    MMAShapeType getShapeType() const;
     int getM() const { return m; }
     int getN() const { return n; }
     int getK() const { return k; }
@@ -87,7 +87,7 @@ public:
     std::vector<int64_t> getOperandShape(MMAOperandType operandType) const;
 
 private:
-    MMAShape shape;
+    MMAShapeType shape;
     int m{};
     int n{};
     int k{};

@@ -9,7 +9,7 @@ from typing import Any, Tuple, Union
 from .Array import Array
 from .LoopIndex import LoopIndex
 from .._lang_python._lang import (
-    CacheIndexing, _CacheAllocation, _CacheStrategy, _MemorySpace, _MemoryAffineCoefficients, _DimensionOrder
+    CacheIndexing, _CacheAllocation, CacheStrategy, _MemorySpace, _MemoryAffineCoefficients, _DimensionOrder
 )
 
 
@@ -31,7 +31,7 @@ class Cache:
     native_cache: Any = None
     vectorize: bool = False
     location: _MemorySpace = _MemorySpace.NONE
-    strategy: _CacheStrategy = _CacheStrategy.STRIPED
+    strategy: CacheStrategy = CacheStrategy.STRIPED
     indexing: CacheIndexing = CacheIndexing.GLOBAL_TO_PHYSICAL
     allocation: _CacheAllocation = _CacheAllocation.AUTO
     shared_memory_offset: int = 0

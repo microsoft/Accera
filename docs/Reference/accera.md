@@ -13,6 +13,7 @@
 # Top level enumerations
 * [`accera.CacheStrategy`](<enumerations/CacheStrategy.md>)
 * [`accera.ScalarType`](<enumerations/ScalarType.md>)
+* [`accera.MMAFragmentOp`](<enumerations/MMAFragmentOp.md>)
 * [`accera.MMASchedulingPolicy`](<enumerations/MMASchedulingPolicy.md>)
 * [`accera.MMAShape`](<enumerations/MMAShape.md>)
 * [`accera.Role`](<enumerations/Role.md>)
@@ -31,6 +32,7 @@ A multidimensional array of scalar elements.
 ### Methods
 * [`deferred_layout`](<classes/Array/deferred_layout.md>) `(layout)`
 * [`sub_array`](<classes/Array/sub_array.md>) `(offsets, shape[, strides])`
+* [`slice`](<classes/Array/slice.md>) `(sliced_dims, sliced_offsets)`
 
 ---
 

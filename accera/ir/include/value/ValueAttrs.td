@@ -85,8 +85,8 @@ def MemorySpaceAttr : I64EnumAttr<
 def CACHE_STRATEGY_BLOCKED : I32EnumAttrCase<"Blocked", 0>;
 def CACHE_STRATEGY_STRIPED : I32EnumAttrCase<"Striped", 1>;
 
-def CacheStrategyAttr : I32EnumAttr<
-  "CacheStrategy", "An attribute containing a cache strategy type enum",
+def CacheStrategyTypeAttr : I32EnumAttr<
+  "CacheStrategyType", "An attribute containing a cache strategy type enum",
   [CACHE_STRATEGY_BLOCKED, CACHE_STRATEGY_STRIPED]> {
   let cppNamespace = "::accera::ir::value";
 }

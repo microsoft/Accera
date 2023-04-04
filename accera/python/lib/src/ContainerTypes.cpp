@@ -277,7 +277,7 @@ Args:
                 "offsets"_a,
                 "shape"_a,
                 "strides"_a = std::nullopt)
-            .def("_slice", &value::Array::Slice)
+            .def("slice", &value::Array::Slice)
             .def("_split_dimension", &value::Array::SplitDimension, "dim"_a, "size"_a)
 // TODO: Enable when functionality is needed and semantics are fully cleared
 #if 0

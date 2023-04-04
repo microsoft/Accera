@@ -150,11 +150,11 @@ for i in range(0, M, m_tile):
 
 
 ## Caching strategy
-In GPUs, the mapping between threads and data can be controlled by specifying the `strategy` option. Currently, we support the `BLOCKED` and the `STRIPED` access patterns and they are explained in detail at [`accera.CacheStrategy`](<../Reference/enumerations/CacheStrategy.md>).
+In GPUs, the mapping between threads and data can be controlled by specifying the `strategy` option. Currently, Accera supports `BLOCKED` and `STRIPED` access patterns and they are explained in detail at [`accera.CacheStrategy`](<../Reference/enumerations/CacheStrategy.md>).
 The choice of which pattern to use will depend on the hardware architecture and the intended algorithm the cache will be used for, since different access patterns incur different performance overhead.
 
 ```python
-AA = plan.cache(A, level=3, double_buffer=True, strategy=_CacheStrategy.BLOCKED)
+AA = plan.cache(A, level=3, double_buffer=True, strategy=CacheStrategy.BLOCKED)
 ```
 
 The above example will create a cache where each thread copies a contiguous chunk (block) of elements based on their thread index.

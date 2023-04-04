@@ -24,6 +24,22 @@ namespace
 struct ProfileRegions;
 }
 
+const char kTimerRegionTypeIdentifier[] = "timer_region_type";
+
+enum class TimerRegionType
+{
+    enterRegion = 0,
+    exitRegion = 1,
+};
+
+namespace accera::transforms::value
+{
+inline std::string GetSplitSizeAttrName()
+{
+    return "split_size";
+}
+} // namespace accera::transforms::value
+
 namespace accera::transforms::value
 {
 void populateVectorizeValueOpPatterns(mlir::RewritePatternSet& patterns);

@@ -349,7 +349,7 @@ struct GetTimeOpLowering : public ValueLLVMOpConversionPattern<GetTimeOp>
         OpAdaptor adaptor,
         ConversionPatternRewriter& rewriter) const override;
 
-    mlir::Value GetTime(ConversionPatternRewriter& rewriter, mlir::Location loc, ModuleOp& parentModule) const;
+    mlir::Value GetTime(ConversionPatternRewriter& rewriter, GetTimeOp& op, ModuleOp& parentModule) const;
 
     static FlatSymbolRefAttr getOrInsertQueryPerfFrequency(PatternRewriter& rewriter,
                                                            ModuleOp module,
@@ -1139,7 +1139,7 @@ static OpFoldResult getExpandedDimSize(
     int64_t outDimIndex, ArrayRef<int64_t> outStaticShape,
     MemRefDescriptor &inDesc,
     ArrayRef<int64_t> inStaticShape,
-    ArrayRef<ReassociationIndices> reassocation,
+    memref::ExpandShapeOp& reshapeOp,
     DenseMap<int64_t, int64_t> &outDimToInDimMap) 
 {
     int64_t outDimSize = outStaticShape[outDimIndex];
@@ -1152,6 +1152,26 @@ static OpFoldResult getExpandedDimSize(
     int64_t inDimIndex = outDimToInDimMap[outDimIndex];
     int64_t otherDimSizesMul = 1;
 
+    auto reassocation = reshapeOp.getReassociationIndices();
+    auto blockArgs = builder.getBlock()->getArguments();
+    auto splitSizeAttr = reshapeOp->getAttr(GetSplitSizeAttrName()).cast<mlir::IntegerAttr>().getInt();
+    mlir::Value splitSize = blockArgs[splitSizeAttr];      
+
+    bool isSplitDim = false;
+    // inDimIndex is the dimension to be split
+    if (reassocation[inDimIndex].size() > 1) 
+    {
+        if (outDimIndex == reassocation[inDimIndex][1])
+        {
+            return splitSize;
+        }
+
+        if (outDimIndex == reassocation[inDimIndex][0])
+        {
+            isSplitDim = true;
+        }
+    }
+   
     for (auto otherDimIndex : reassocation[inDimIndex]) 
     {
         if (otherDimIndex == static_cast<unsigned>(outDimIndex))
@@ -1168,10 +1188,12 @@ static OpFoldResult getExpandedDimSize(
             ? inDesc.size(builder, loc, inDimIndex)
             : builder.create<LLVM::ConstantOp>(loc, llvmIndexType, builder.getIndexAttr(inDimSize));
 
-    Value outDimSizeDynamic = builder.create<LLVM::SDivOp>(
-        loc, 
-        inDimSizeDynamic,
-        builder.create<LLVM::ConstantOp>(loc, llvmIndexType, builder.getIndexAttr(otherDimSizesMul)));
+  Value outDimSizeDynamic = builder.create<LLVM::SDivOp>(
+      loc, 
+      inDimSizeDynamic,
+      ShapedType::isDynamic(otherDimSizesMul) && isSplitDim
+        ? splitSize
+        : builder.create<LLVM::ConstantOp>(loc, llvmIndexType, builder.getIndexAttr(otherDimSizesMul)));
 
     return outDimSizeDynamic;
 }
@@ -1195,12 +1217,12 @@ static SmallVector<OpFoldResult, 4> getExpandedShape(
     OpBuilder &builder, 
     Location loc, 
     Type &llvmIndexType,
-    ArrayRef<ReassociationIndices> reassociation,
+    memref::ExpandShapeOp& reshapeOp,
     ArrayRef<int64_t> inStaticShape,
     MemRefDescriptor &inDesc,
     ArrayRef<int64_t> outStaticShape) 
 {
-    DenseMap<int64_t, int64_t> outDimToInDimMap = getExpandedDimToOriginalDimMap(reassociation);
+    DenseMap<int64_t, int64_t> outDimToInDimMap = getExpandedDimToOriginalDimMap(reshapeOp.getReassociationIndices());
     return llvm::to_vector<4>(llvm::map_range(
         llvm::seq<int64_t>(0, outStaticShape.size()), [&](int64_t outDimIndex) {
             return getExpandedDimSize(
@@ -1209,9 +1231,9 @@ static SmallVector<OpFoldResult, 4> getExpandedShape(
                 llvmIndexType, 
                 outDimIndex, 
                 outStaticShape, 
-                inDesc, 
+                inDesc,
                 inStaticShape,
-                reassociation, 
+                reshapeOp, 
                 outDimToInDimMap);
     }));
 }
@@ -1237,7 +1259,7 @@ static SmallVector<Value> getDynamicExpandedShape(
     OpBuilder &builder, 
     Location loc, 
     Type &llvmIndexType,
-    ArrayRef<ReassociationIndices> reassociation,
+    memref::ExpandShapeOp& reshapeOp,
     ArrayRef<int64_t> inStaticShape, 
     MemRefDescriptor &inDesc,
     ArrayRef<int64_t> outStaticShape) 
@@ -1250,9 +1272,9 @@ static SmallVector<Value> getDynamicExpandedShape(
             builder, 
             loc, 
             llvmIndexType,
-            reassociation, 
+            reshapeOp, 
             inStaticShape,
-            inDesc, 
+            inDesc,
             outStaticShape));
 }
 
@@ -1298,7 +1320,7 @@ public:
             rewriter, 
             loc, 
             llvmIndexType, 
-            reshapeOp.getReassociationIndices(),
+            reshapeOp,
             srcStaticShape, 
             srcDesc, 
             dstStaticShape);
@@ -1578,7 +1600,8 @@ LogicalResult BitcastOpLowering::matchAndRewrite(
     return success();
 }
 
-mlir::Value GetTimeOpLowering::GetTime(ConversionPatternRewriter& rewriter, mlir::Location loc, ModuleOp& parentModule) const
+// In order to make the timings as accurate as possible, we need to make sure the operations are ordered appropriately
+mlir::Value GetTimeOpLowering::GetTime(ConversionPatternRewriter& rewriter, GetTimeOp& op, ModuleOp& parentModule) const
 {
     auto* llvmDialect = rewriter.getContext()->getOrLoadDialect<LLVM::LLVMDialect>();
     assert(llvmDialect && "expected llvm dialect to be registered");
@@ -1588,62 +1611,137 @@ mlir::Value GetTimeOpLowering::GetTime(ConversionPatternRewriter& rewriter, mlir
     // of having the runtime environment being based on the compile-time environment
     auto* context = rewriter.getContext();
     auto doubleTy = Float64Type::get(context);
+    mlir::Location loc = op.getLoc();
+
+    bool isEnterRegionTimer = false;
+    if (auto timerRegionTypeAttr = op->getAttrOfType<mlir::IntegerAttr>(kTimerRegionTypeIdentifier))
+    {
+        isEnterRegionTimer = static_cast<TimerRegionType>(timerRegionTypeAttr.getInt()) == TimerRegionType::enterRegion;
+    }
 
     // TODO: get check `TargetDeviceInfo` for the OS instead
 #ifdef WIN32
-    auto queryPerfCounterFn = getOrInsertQueryPerfCounter(rewriter, parentModule, llvmDialect);
-    auto queryPerfFrequencyFn = getOrInsertQueryPerfFrequency(rewriter, parentModule, llvmDialect);
+    if (isEnterRegionTimer) {
+        auto boolTy = IntegerType::get(context, 8);
+        auto argTy = getPerformanceCounterType(context);
+        LLVMTypeConverter llvmTypeConverter(context);
+        Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
+        
+        auto queryPerfFrequencyFn = getOrInsertQueryPerfFrequency(rewriter, parentModule, llvmDialect);
+        Value perfFreqPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
+        auto getFreqCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfFrequencyFn, ValueRange{ perfFreqPtr });
 
-    auto boolTy = IntegerType::get(context, 8);
-    auto argTy = getPerformanceCounterType(context);
-    LLVMTypeConverter llvmTypeConverter(context);
-    Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
-    Value perfCountPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
-    Value perfFreqPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
+        Value perfFreq = rewriter.create<LLVM::LoadOp>(loc, perfFreqPtr);
+        Value freqDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfFreq);
 
-    auto getCounterCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfCounterFn, ValueRange{ perfCountPtr });
-    auto getFreqCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfFrequencyFn, ValueRange{ perfFreqPtr });
-    [[maybe_unused]] auto getCountResult = getCounterCall.getResult(0);
-    [[maybe_unused]] auto getFreqResult = getFreqCall.getResult(0);
+        auto queryPerfCounterFn = getOrInsertQueryPerfCounter(rewriter, parentModule, llvmDialect);
+        Value perfCountPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
+        auto getCounterCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfCounterFn, ValueRange{ perfCountPtr });
 
-    Value perfCount = rewriter.create<LLVM::LoadOp>(loc, perfCountPtr);
-    Value perfFreq = rewriter.create<LLVM::LoadOp>(loc, perfFreqPtr);
+        [[maybe_unused]] auto getCountResult = getCounterCall.getResult(0);
+        [[maybe_unused]] auto getFreqResult = getFreqCall.getResult(0);
 
-    Value ticksDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfCount);
-    Value freqDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfFreq);
-    Value result = rewriter.create<LLVM::FDivOp>(loc, doubleTy, ticksDoubleVal, freqDoubleVal);
-    return result;
+        Value perfCount = rewriter.create<LLVM::LoadOp>(loc, perfCountPtr);
+        Value ticksDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfCount);
+
+        Value result = rewriter.create<LLVM::FDivOp>(loc, doubleTy, ticksDoubleVal, freqDoubleVal);
+        return result;
+    }
+    else
+    {
+        auto queryPerfCounterFn = getOrInsertQueryPerfCounter(rewriter, parentModule, llvmDialect);
+        auto queryPerfFrequencyFn = getOrInsertQueryPerfFrequency(rewriter, parentModule, llvmDialect);
+
+        auto boolTy = IntegerType::get(context, 8);
+        auto argTy = getPerformanceCounterType(context);
+        LLVMTypeConverter llvmTypeConverter(context);
+        Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
+        
+        Value perfCountPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
+        auto getCounterCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfCounterFn, ValueRange{ perfCountPtr });
+
+        Value perfFreqPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
+        auto getFreqCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfFrequencyFn, ValueRange{ perfFreqPtr });
+
+        [[maybe_unused]] auto getCountResult = getCounterCall.getResult(0);
+        [[maybe_unused]] auto getFreqResult = getFreqCall.getResult(0);
+
+        Value perfCount = rewriter.create<LLVM::LoadOp>(loc, perfCountPtr);
+        Value perfFreq = rewriter.create<LLVM::LoadOp>(loc, perfFreqPtr);
+
+        Value ticksDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfCount);
+        Value freqDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfFreq);
+        Value result = rewriter.create<LLVM::FDivOp>(loc, doubleTy, ticksDoubleVal, freqDoubleVal);
+        return result;        
+    }
 #else
-    auto clockGetTimeFn = getOrInsertClockGetTime(rewriter, parentModule, llvmDialect);
+    if (isEnterRegionTimer) 
+    {
+        auto clockGetTimeFn = getOrInsertClockGetTime(rewriter, parentModule, llvmDialect);
 
-    auto llvmTimespecTy = getTimeSpecType(context);
-    auto clockIdTy = getClockIdType(context);
-    auto intTy = getIntType(context);
+        auto llvmTimespecTy = getTimeSpecType(context);
+        auto clockIdTy = getClockIdType(context);
+        auto intTy = getIntType(context);
 
-    // Get a symbol reference to the gettime function, inserting it if necessary.
-    LLVMTypeConverter llvmTypeConverter(context);
-    Value zero = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
-    Value zero32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 0));
-    Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
-    Value one32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 1));
-    Value clockId = rewriter.create<LLVM::ConstantOp>(loc, clockIdTy, rewriter.getI64IntegerAttr(CLOCK_REALTIME));
+        // Get a symbol reference to the gettime function, inserting it if necessary.
+        LLVMTypeConverter llvmTypeConverter(context);
+        Value zero = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+        Value zero32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 0));
+        Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
+        Value one32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 1));
+        Value clockId = rewriter.create<LLVM::ConstantOp>(loc, clockIdTy, rewriter.getI64IntegerAttr(CLOCK_REALTIME));
 
-    Value timespecPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(llvmTimespecTy), one);
-    Value secondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, zero32 });
-    Value nanosecondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, one32 });
+        Value timespecPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(llvmTimespecTy), one);
+        Value secondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, zero32 });
+        Value nanosecondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, one32 });
 
-    std::vector<Value> args{ clockId, timespecPtr };
-    auto getTimeCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ getIntType(context) }, clockGetTimeFn, args);
-    [[maybe_unused]] auto getTimeResult = getTimeCall.getResult(0);
+        std::vector<Value> args{ clockId, timespecPtr };
+        auto getTimeCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ getIntType(context) }, clockGetTimeFn, args);
+        [[maybe_unused]] auto getTimeResult = getTimeCall.getResult(0);
 
-    Value secondsIntVal = rewriter.create<LLVM::LoadOp>(loc, secondsPtr);
-    Value nanosecondsIntVal = rewriter.create<LLVM::LoadOp>(loc, nanosecondsPtr);
-    Value secondsDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, secondsIntVal);
-    Value nanosecondsDoubleVal = rewriter.create<LLVM::UIToFPOp>(loc, doubleTy, nanosecondsIntVal);
-    Value divisor = rewriter.create<LLVM::ConstantOp>(loc, doubleTy, rewriter.getF64FloatAttr(1.0e9));
-    Value nanoseconds = rewriter.create<LLVM::FDivOp>(loc, doubleTy, nanosecondsDoubleVal, divisor);
-    Value totalSecondsDoubleVal = rewriter.create<LLVM::FAddOp>(loc, doubleTy, secondsDoubleVal, nanoseconds);
-    return totalSecondsDoubleVal;
+        Value secondsIntVal = rewriter.create<LLVM::LoadOp>(loc, secondsPtr);
+        Value nanosecondsIntVal = rewriter.create<LLVM::LoadOp>(loc, nanosecondsPtr);
+        Value secondsDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, secondsIntVal);
+        Value nanosecondsDoubleVal = rewriter.create<LLVM::UIToFPOp>(loc, doubleTy, nanosecondsIntVal);
+        Value divisor = rewriter.create<LLVM::ConstantOp>(loc, doubleTy, rewriter.getF64FloatAttr(1.0e9));
+        Value nanoseconds = rewriter.create<LLVM::FDivOp>(loc, doubleTy, nanosecondsDoubleVal, divisor);
+        Value totalSecondsDoubleVal = rewriter.create<LLVM::FAddOp>(loc, doubleTy, secondsDoubleVal, nanoseconds);
+        return totalSecondsDoubleVal;
+    }
+    else
+    {
+        auto clockGetTimeFn = getOrInsertClockGetTime(rewriter, parentModule, llvmDialect);
+
+        auto llvmTimespecTy = getTimeSpecType(context);
+        auto clockIdTy = getClockIdType(context);
+        auto intTy = getIntType(context);
+
+        // Get a symbol reference to the gettime function, inserting it if necessary.
+        LLVMTypeConverter llvmTypeConverter(context);
+        Value zero = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+        Value zero32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 0));
+        Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
+        Value one32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 1));
+        Value clockId = rewriter.create<LLVM::ConstantOp>(loc, clockIdTy, rewriter.getI64IntegerAttr(CLOCK_REALTIME));
+
+        Value timespecPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(llvmTimespecTy), one);
+
+        std::vector<Value> args{ clockId, timespecPtr };
+        auto getTimeCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ getIntType(context) }, clockGetTimeFn, args);
+        [[maybe_unused]] auto getTimeResult = getTimeCall.getResult(0);
+        
+        Value secondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, zero32 });
+        Value nanosecondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, one32 });
+
+        Value secondsIntVal = rewriter.create<LLVM::LoadOp>(loc, secondsPtr);
+        Value nanosecondsIntVal = rewriter.create<LLVM::LoadOp>(loc, nanosecondsPtr);
+        Value secondsDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, secondsIntVal);
+        Value nanosecondsDoubleVal = rewriter.create<LLVM::UIToFPOp>(loc, doubleTy, nanosecondsIntVal);
+        Value divisor = rewriter.create<LLVM::ConstantOp>(loc, doubleTy, rewriter.getF64FloatAttr(1.0e9));
+        Value nanoseconds = rewriter.create<LLVM::FDivOp>(loc, doubleTy, nanosecondsDoubleVal, divisor);
+        Value totalSecondsDoubleVal = rewriter.create<LLVM::FAddOp>(loc, doubleTy, secondsDoubleVal, nanoseconds);
+        return totalSecondsDoubleVal;
+    }
 #endif
 }
 
@@ -1653,7 +1751,7 @@ LogicalResult GetTimeOpLowering::matchAndRewrite(
     ConversionPatternRewriter& rewriter) const
 {
     ModuleOp parentModule = op->getParentOfType<ModuleOp>();
-    auto currentTime = GetTime(rewriter, op.getLoc(), parentModule);
+    auto currentTime = GetTime(rewriter, op, parentModule);
     rewriter.replaceOp(op, { currentTime });
     return success();
 }

@@ -20,6 +20,7 @@ from ._lang_python import (
     abs, max, min, ceil, floor, sqrt, exp, fast_exp, fast_exp_mlas, log, log10, log2, sin, cos, tan, sinh, cosh, tanh, logical_and, logical_or,
     logical_not, cast, round, remainderf, type_size_bytes
 )
+from ._lang_python._lang import MMAShape, MMASchedulingPolicy, MMAFragmentOp, CacheStrategy
 
 # Global initialization
 Package._init_default_module()

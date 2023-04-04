@@ -35,9 +35,9 @@ namespace
             .value("AUTO", value::CacheAllocation::Automatic)
             .value("NONE", value::CacheAllocation::None);
 
-        py::enum_<value::CacheStrategy>(module, "_CacheStrategy", "An enumeration of cache strategy types")
-            .value("BLOCKED", value::CacheStrategy::Blocked)
-            .value("STRIPED", value::CacheStrategy::Striped);
+        py::enum_<value::CacheStrategyType>(module, "CacheStrategy", "An enumeration of cache strategy types")
+            .value("BLOCKED", value::CacheStrategyType::Blocked)
+            .value("STRIPED", value::CacheStrategyType::Striped);
 
         py::enum_<value::MemorySpace>(module, "_MemorySpace", "An enumeration of memory space types")
             .value("NONE", value::MemorySpace::None)
@@ -75,32 +75,32 @@ namespace
             .value("WARP", value::GPU::BarrierScope::Warp)
             .value("THREADFENCE", value::GPU::BarrierScope::Threadfence);
 
-        py::enum_<ir::value::MMAShape>(module, "_MMAShape", "Determines the underlying MMA op that will be used")
-            .value("M64xN64xK1_B4", ir::value::MMAShape::M64xN64xK1_B4)
-            .value("M64xN64xK1_B2", ir::value::MMAShape::M64xN64xK1_B2)
-            .value("M32xN32xK2_B1", ir::value::MMAShape::M32xN32xK2_B1)
-            .value("M16xN16xK4_B1", ir::value::MMAShape::M16xN16xK4_B1)
-            .value("M64xN64xK2_B4", ir::value::MMAShape::M64xN64xK2_B4)
-            .value("M64xN64xK2_B2", ir::value::MMAShape::M64xN64xK2_B2)
-            .value("M32xN32xK4_B1", ir::value::MMAShape::M32xN32xK4_B1)
-            .value("M16xN16xK8_B1", ir::value::MMAShape::M16xN16xK8_B1)
-            .value("M64xN64xK4_B4", ir::value::MMAShape::M64xN64xK4_B4)
-            .value("M64xN64xK4_B2", ir::value::MMAShape::M64xN64xK4_B2)
-            .value("M32xN32xK8_B1", ir::value::MMAShape::M32xN32xK8_B1)
-            .value("M16xN16xK16_B1", ir::value::MMAShape::M16xN16xK16_B1)
-            .value("M32xN8xK16_B1", ir::value::MMAShape::M32xN8xK16_B1)
-            .value("M8xN32xK16_B1", ir::value::MMAShape::M8xN32xK16_B1);
+        py::enum_<ir::value::MMAShapeType>(module, "MMAShape", "Determines the underlying MMA op that will be used")
+            .value("M64xN64xK1_B4", ir::value::MMAShapeType::M64xN64xK1_B4)
+            .value("M64xN64xK1_B2", ir::value::MMAShapeType::M64xN64xK1_B2)
+            .value("M32xN32xK2_B1", ir::value::MMAShapeType::M32xN32xK2_B1)
+            .value("M16xN16xK4_B1", ir::value::MMAShapeType::M16xN16xK4_B1)
+            .value("M64xN64xK2_B4", ir::value::MMAShapeType::M64xN64xK2_B4)
+            .value("M64xN64xK2_B2", ir::value::MMAShapeType::M64xN64xK2_B2)
+            .value("M32xN32xK4_B1", ir::value::MMAShapeType::M32xN32xK4_B1)
+            .value("M16xN16xK8_B1", ir::value::MMAShapeType::M16xN16xK8_B1)
+            .value("M64xN64xK4_B4", ir::value::MMAShapeType::M64xN64xK4_B4)
+            .value("M64xN64xK4_B2", ir::value::MMAShapeType::M64xN64xK4_B2)
+            .value("M32xN32xK8_B1", ir::value::MMAShapeType::M32xN32xK8_B1)
+            .value("M16xN16xK16_B1", ir::value::MMAShapeType::M16xN16xK16_B1)
+            .value("M32xN8xK16_B1", ir::value::MMAShapeType::M32xN8xK16_B1)
+            .value("M8xN32xK16_B1", ir::value::MMAShapeType::M8xN32xK16_B1);
 
-        py::enum_<ir::value::MMASchedulingPolicy>(module, "_MMASchedulingPolicy", "Used for configuring scheduling policy of MMA ops")
-            .value("PASS_ORDER", ir::value::MMASchedulingPolicy::PassOrder)
-            .value("BLOCK_ORDER", ir::value::MMASchedulingPolicy::BlockOrder);
+        py::enum_<ir::value::MMASchedulingPolicyType>(module, "MMASchedulingPolicy", "Used for configuring scheduling policy of MMA ops")
+            .value("PASS_ORDER", ir::value::MMASchedulingPolicyType::PassOrder)
+            .value("BLOCK_ORDER", ir::value::MMASchedulingPolicyType::BlockOrder);
 
-        py::enum_<ir::value::MMAFragmentOp>(module, "_MMAFragmentOp", "This op is performed after the MMA op")
-            .value("NONE", ir::value::MMAFragmentOp::None)
-            .value("ReLU", ir::value::MMAFragmentOp::ReLU)
-            .value("ReLU_NoConditional", ir::value::MMAFragmentOp::ReLU_NoConditional)
-            .value("SET", ir::value::MMAFragmentOp::Set)
-            .value("SCALE", ir::value::MMAFragmentOp::Scale);
+        py::enum_<ir::value::MMAFragmentOpType>(module, "MMAFragmentOp", "This op is performed after the MMA op")
+            .value("NONE", ir::value::MMAFragmentOpType::None)
+            .value("ReLU", ir::value::MMAFragmentOpType::ReLU)
+            .value("ReLU_NoConditional", ir::value::MMAFragmentOpType::ReLU_NoConditional)
+            .value("SET", ir::value::MMAFragmentOpType::Set)
+            .value("SCALE", ir::value::MMAFragmentOpType::Scale);
     }
 
     void DefineExecutionPlanStructs(py::module& module)
@@ -158,7 +158,7 @@ namespace
                    const std::optional<uint64_t>& sharedMemOffset,
                    const std::optional<value::VectorizationInformation>& vectorizationInfo,
                    const std::optional<value::ValueType>& elementType,
-                   value::CacheStrategy /*not hooked up*/) {
+                   value::CacheStrategyType /*not hooked up*/) {
                     if (outermostIncludedSplitIndex.has_value())
                     {
                         value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
@@ -236,7 +236,7 @@ namespace
                    const std::optional<uint64_t>& sharedMemOffset,
                    const std::optional<value::VectorizationInformation>& vectorizationInfo,
                    const std::optional<value::ValueType>& elementType,
-                   value::CacheStrategy strategy) {
+                   value::CacheStrategyType strategy) {
                     value::ScalarIndex resolvedTriggerIndex = triggerIndex.has_value() ? *triggerIndex : *outermostIncludedSplitIndex;
                     if (outermostIncludedSplitIndex.has_value())
                     {

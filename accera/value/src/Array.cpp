@@ -22,22 +22,6 @@ using namespace utilities;
 
 namespace value
 {
-    namespace
-    {
-        MemoryLayout GetSliceLayout(const MemoryLayout& originalLayout, std::vector<int64_t> slicedDimensions)
-        {
-            std::sort(slicedDimensions.begin(), slicedDimensions.end(), std::greater<int64_t>());
-
-            MemoryLayout result = originalLayout;
-            for (auto dim : slicedDimensions)
-            {
-                result = result.GetSliceLayout(dim);
-            }
-            return result;
-        }
-
-    } // namespace
-
     Array::Array() = default;
 
     Array::Array(Value value, const std::string& name) :
@@ -120,7 +104,6 @@ namespace value
 
     Array Array::Slice(std::vector<int64_t> slicedDimensions, std::vector<Scalar> sliceOffsets) const
     {
-        auto newLayout = GetSliceLayout(_value.GetLayout(), slicedDimensions);
         return GetContext().Slice(_value, slicedDimensions, sliceOffsets);
     }
 

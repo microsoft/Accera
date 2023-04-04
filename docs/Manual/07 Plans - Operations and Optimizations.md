@@ -111,10 +111,10 @@ To vectorize dimension `i`, the number of active elements that corresponds to di
 
 Some hardware also have specialized instructions for performing matrix multiplications. These instructions operate on certain matrix dimensions with specific data types. The tensorization instructions take tiles of the `A`, `B`, and `C` matrices and compute the `C = A * B + C` operation.
 
-The `tensorize` operation takes 3 indices:
+The `tensorize` operation takes 3 indices and a tensorization shape (MMA shape) along with some tuning parameters:
 
 ```python
-plan.tensorize(indices=(i,j,k))
+plan.tensorize(indices=(i,j,k), mma_shape=MMAShape.M16xN16xK4_B1)
 ```
 
 Tensorization is limited and is only valid on loop structures of the form
@@ -126,7 +126,7 @@ for i in range(M):
             C[i, j] += A[i, k] * B[k, j]
 ```
 
-Where there is `MxNxK` tensorization hardware support using the `A`, `B`, and `C` element data types.
+Where there is `MxNxK` tensorization hardware support using the `A`, `B`, and `C` element data types. Tensorization support for GPUs in Accera is explained in more detail [here](11%20Plans%20-%20GPU%20Tensorization.md).
 
 ## Convenience syntax: `kernelize`
 The `kernelize` instruction is a convenience syntax that does not provide any unique functionality. Specifically, `kernelize` is equivalent to a sequence of `unroll` instructions, followed by an optional `vectorize` instruction.

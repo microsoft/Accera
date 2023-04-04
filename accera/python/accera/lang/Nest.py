@@ -59,12 +59,11 @@ class Nest:
         """
         return [idx for idx, _ in self._shape]
 
-    def get_indices(self) -> Union[List[LoopIndex], LoopIndex]:
+    def get_indices(self) -> List[LoopIndex]:
         """Gets the iteration space indices
 
         Returns:
-            A list of indices (multi-dimensional iteration space)
-            or a single index (1-dimensional iteration space)
+            A list of indices
         """
         try:
             names = varname(multi_vars=True)

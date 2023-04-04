@@ -13,7 +13,6 @@ from .NativeLoopNestContext import NativeLoopNestContext
 from .Nest import Nest, LoopIndex
 from ..Targets import Target
 from ..Parameter import DelayedParameter
-from .._lang_python._lang import _MMAShape
 
 
 @dataclass

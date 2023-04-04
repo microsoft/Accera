@@ -40,7 +40,7 @@ module @test_accera_vectorization attributes {accv.target_device_features = "-av
 
 
         // CHECK-LABEL builtin.func nested @test_view_split_dim_interleaved_pack
-        builtin.func nested @test_view_split_dim_interleaved_pack(%arg0: memref<1885x256xui8> loc(unknown), %arg1: memref<483840xui8> loc(unknown)) attributes {accv.dyn_arg_size_refs = [[-1, -1], [-1]], accv.usages = [1 : i8, 0 : i8], args_name = ["", ""], args_size = ["1885*256", "483840"], args_symbol = ["args_symbol_name_0", "args_symbol_name_1"], exec_target = 0 : i64} {
+        builtin.func nested @test_view_split_dim_interleaved_pack(%arg0: memref<1885x256xui8>, %arg1: memref<483840xui8>) attributes {accv.dyn_arg_size_refs = [[-1, -1], [-1]], accv.usages = [1 : i8, 0 : i8], args_name = ["", ""], args_size = ["1885*256", "483840"], args_symbol = ["args_symbol_name_0", "args_symbol_name_1"], exec_target = 0 : i64} {
             %c1024 = arith.constant 1024 : index
             %c1 = arith.constant 1 : index
             %c482816 = arith.constant 482816 : index
@@ -82,19 +82,19 @@ module @test_accera_vectorization attributes {accv.target_device_features = "-av
         }
 
         // CHECK-LABEL builtin.func nested @test_view_split_dim_interleaved_pack
-        builtin.func nested @test_int16_to_int32_horizontal_vector_add(%arg0: memref<256x16xi16> loc(unknown), %arg1: memref<256xi32> loc(unknown)) attributes {accv.dyn_arg_size_refs = [[-1, -1], [-1]], accv.usages = [1 : i8, 1 : i8], args_name = ["", ""], args_size = ["256*16", "256"], args_symbol = ["args_symbol_name_0", "args_symbol_name_1"], exec_target = 0 : i64} {
+        builtin.func nested @test_int16_to_int32_horizontal_vector_add(%arg0: memref<256x16xi16>, %arg1: memref<256xi32>) attributes {accv.dyn_arg_size_refs = [[-1, -1], [-1]], accv.usages = [1 : i8, 1 : i8], args_name = ["", ""], args_size = ["256*16", "256"], args_symbol = ["args_symbol_name_0", "args_symbol_name_1"], exec_target = 0 : i64} {
             // CHECK: affine.for %arg2 = 0 to 256 step 4 {
             affine.for %arg2 = 0 to 256 step 4 {
-                // %0 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [4096], strides: [1] : memref<256x16xi16> to memref<4096xi16> loc(unknown)
+                // %0 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [4096], strides: [1] : memref<256x16xi16> to memref<4096xi16>
                 // %1 = affine.apply affine_map<(d0, d1, d2) -> ((d1 + d2) * 16 + d0)>(%c0, %arg2, %c0)
                 // %2 = vector.load %0[%1] : memref<4096xi16>, vector<16xi16>
-                // %3 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [4096], strides: [1] : memref<256x16xi16> to memref<4096xi16> loc(unknown)
+                // %3 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [4096], strides: [1] : memref<256x16xi16> to memref<4096xi16>
                 // %4 = affine.apply affine_map<(d0, d1, d2) -> ((d1 + d2) * 16 + d0)>(%c0, %arg2, %c1)
                 // %5 = vector.load %3[%4] : memref<4096xi16>, vector<16xi16>
-                // %6 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [4096], strides: [1] : memref<256x16xi16> to memref<4096xi16> loc(unknown)
+                // %6 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [4096], strides: [1] : memref<256x16xi16> to memref<4096xi16>
                 // %7 = affine.apply affine_map<(d0, d1, d2) -> ((d1 + d2) * 16 + d0)>(%c0, %arg2, %c2)
                 // %8 = vector.load %6[%7] : memref<4096xi16>, vector<16xi16>
-                // %9 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [4096], strides: [1] : memref<256x16xi16> to memref<4096xi16> loc(unknown)
+                // %9 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [4096], strides: [1] : memref<256x16xi16> to memref<4096xi16>
                 // %10 = affine.apply affine_map<(d0, d1, d2) -> ((d1 + d2) * 16 + d0)>(%c0, %arg2, %c3)
                 // %11 = vector.load %9[%10] : memref<4096xi16>, vector<16xi16>
                 // %12 = "accv.vpmaddwd"(%2, %cst) : (vector<16xi16>, vector<16xi16>) -> vector<8xi32>
@@ -107,11 +107,11 @@ module @test_accera_vectorization attributes {accv.target_device_features = "-av
                 // %19 = vector.shuffle %18, %18 [0, 1, 2, 3] : vector<8xi32>, vector<8xi32>
                 // %20 = vector.shuffle %18, %18 [4, 5, 6, 7] : vector<8xi32>, vector<8xi32>
                 // %21 = "accv.bin_op"(%19, %20) {predicate = 0 : i64} : (vector<4xi32>, vector<4xi32>) -> vector<4xi32>
-                // %22 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [256], strides: [1] : memref<256xi32> to memref<256xi32> loc(unknown)
+                // %22 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [256], strides: [1] : memref<256xi32> to memref<256xi32>
                 // %23 = affine.apply affine_map<(d0, d1) -> (d0 + d1)>(%arg2, %c0)
                 // %24 = vector.load %22[%23] : memref<256xi32>, vector<4xi32>
                 // %25 = "accv.bin_op"(%24, %21) {predicate = 0 : i64} : (vector<4xi32>, vector<4xi32>) -> vector<4xi32>
-                // %26 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [256], strides: [1] : memref<256xi32> to memref<256xi32> loc(unknown)
+                // %26 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [256], strides: [1] : memref<256xi32> to memref<256xi32>
                 // %27 = affine.apply affine_map<(d0, d1) -> (d0 + d1)>(%arg2, %c0)
                 // vector.store %25, %26[%27] : memref<256xi32>, vector<4xi32>
                 affine.for %arg3 = 0 to 4 {
@@ -128,19 +128,19 @@ module @test_accera_vectorization attributes {accv.target_device_features = "-av
         }
 
         // CHECK-LABEL builtin.func nested @test_int32_horizontal_vector_add_simple
-        builtin.func nested @test_int32_horizontal_vector_add_simple(%arg0: memref<256x8xi32> loc(unknown), %arg1: memref<256xi32> loc(unknown)) attributes {accv.dyn_arg_size_refs = [[-1, -1], [-1]], accv.usages = [1 : i8, 1 : i8], args_name = ["", ""], args_size = ["256*8", "256"], args_symbol = ["args_symbol_name_0", "args_symbol_name_1"], exec_target = 0 : i64} {
+        builtin.func nested @test_int32_horizontal_vector_add_simple(%arg0: memref<256x8xi32>, %arg1: memref<256xi32>) attributes {accv.dyn_arg_size_refs = [[-1, -1], [-1]], accv.usages = [1 : i8, 1 : i8], args_name = ["", ""], args_size = ["256*8", "256"], args_symbol = ["args_symbol_name_0", "args_symbol_name_1"], exec_target = 0 : i64} {
             // CHECK: affine.for %arg2 = 0 to 256 step 4 {
             affine.for %arg2 = 0 to 256 step 4 {
-                // %0 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [2048], strides: [1] : memref<256x8xi32> to memref<2048xi32> loc(unknown)
+                // %0 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [2048], strides: [1] : memref<256x8xi32> to memref<2048xi32>
                 // %1 = affine.apply affine_map<(d0, d1, d2) -> ((d1 + d2) * 8 + d0)>(%c0, %arg2, %c0)
                 // %2 = vector.load %0[%1] : memref<2048xi32>, vector<8xi32>
-                // %3 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [2048], strides: [1] : memref<256x8xi32> to memref<2048xi32> loc(unknown)
+                // %3 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [2048], strides: [1] : memref<256x8xi32> to memref<2048xi32>
                 // %4 = affine.apply affine_map<(d0, d1, d2) -> ((d1 + d2) * 8 + d0)>(%c0, %arg2, %c1)
                 // %5 = vector.load %3[%4] : memref<2048xi32>, vector<8xi32>
-                // %6 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [2048], strides: [1] : memref<256x8xi32> to memref<2048xi32> loc(unknown)
+                // %6 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [2048], strides: [1] : memref<256x8xi32> to memref<2048xi32>
                 // %7 = affine.apply affine_map<(d0, d1, d2) -> ((d1 + d2) * 8 + d0)>(%c0, %arg2, %c2)
                 // %8 = vector.load %6[%7] : memref<2048xi32>, vector<8xi32>
-                // %9 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [2048], strides: [1] : memref<256x8xi32> to memref<2048xi32> loc(unknown)
+                // %9 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [2048], strides: [1] : memref<256x8xi32> to memref<2048xi32>
                 // %10 = affine.apply affine_map<(d0, d1, d2) -> ((d1 + d2) * 8 + d0)>(%c0, %arg2, %c3)
                 // %11 = vector.load %9[%10] : memref<2048xi32>, vector<8xi32>
                 // %12 = "accv.vhadd"(%2, %5) : (vector<8xi32>, vector<8xi32>) -> vector<8xi32>
@@ -149,11 +149,11 @@ module @test_accera_vectorization attributes {accv.target_device_features = "-av
                 // %15 = vector.shuffle %14, %14 [0, 1, 2, 3] : vector<8xi32>, vector<8xi32>
                 // %16 = vector.shuffle %14, %14 [4, 5, 6, 7] : vector<8xi32>, vector<8xi32>
                 // %17 = "accv.bin_op"(%15, %16) {predicate = 0 : i64} : (vector<4xi32>, vector<4xi32>) -> vector<4xi32>
-                // %18 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [256], strides: [1] : memref<256xi32> to memref<256xi32> loc(unknown)
+                // %18 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [256], strides: [1] : memref<256xi32> to memref<256xi32>
                 // %19 = affine.apply affine_map<(d0, d1) -> (d0 + d1)>(%arg2, %c0)
                 // %20 = vector.load %18[%19] : memref<256xi32>, vector<4xi32>
                 // %21 = "accv.bin_op"(%20, %17) {predicate = 0 : i64} : (vector<4xi32>, vector<4xi32>) -> vector<4xi32>
-                // %22 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [256], strides: [1] : memref<256xi32> to memref<256xi32> loc(unknown)
+                // %22 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [256], strides: [1] : memref<256xi32> to memref<256xi32>
                 // %23 = affine.apply affine_map<(d0, d1) -> (d0 + d1)>(%arg2, %c0)
                 // vector.store %21, %22[%23] : memref<256xi32>, vector<4xi32>
                 affine.for %arg3 = 0 to 4 {
@@ -309,6 +309,416 @@ module @test_transpose_16x4 attributes {accv.target_device_features = "+avx2", l
           } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
         } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
       }
+      return
+    }
+  }
+}
+
+// -----
+
+module @test_vectorized_masked_buffer_fill attributes {accv.target_device_features = "+avx2", llvm.data_layout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"} {
+  accv.module "test_vectorized_masked_buffer_fill" {
+
+// CHECK-LABEL    builtin.func nested @test_vectorized_masked_buffer_fill_11c7743a08b6567e_impl_8352600288936674199(%arg0: memref<5xi32>, %arg1: memref<8xi32>) {
+// CHECK-NEXT      %cst = arith.constant dense<false> : vector<8xi1>
+// CHECK-NEXT      %c0 = arith.constant 0 : index
+// CHECK-NEXT      %c1 = arith.constant 1 : index
+// CHECK-NEXT      %c2 = arith.constant 2 : index
+// CHECK-NEXT      %c3 = arith.constant 3 : index
+// CHECK-NEXT      %c4 = arith.constant 4 : index
+// CHECK-NEXT      %c6 = arith.constant 6 : index
+// CHECK-NEXT      %c7 = arith.constant 7 : index
+// CHECK-NEXT      %c5 = arith.constant 5 : index
+// CHECK-NEXT      %c0_i32 = arith.constant 0 : i32
+// CHECK-NEXT      %0 = "accv.cmp"(%c0, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %1 = vector.insertelement %0, %cst[%c0 : index] : vector<8xi1>
+// CHECK-NEXT      %2 = "accv.cmp"(%c1, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %3 = vector.insertelement %2, %1[%c1 : index] : vector<8xi1>
+// CHECK-NEXT      %4 = "accv.cmp"(%c2, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %5 = vector.insertelement %4, %3[%c2 : index] : vector<8xi1>
+// CHECK-NEXT      %6 = "accv.cmp"(%c3, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %7 = vector.insertelement %6, %5[%c3 : index] : vector<8xi1>
+// CHECK-NEXT      %8 = "accv.cmp"(%c4, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %9 = vector.insertelement %8, %7[%c4 : index] : vector<8xi1>
+// CHECK-NEXT      %10 = "accv.cmp"(%c5, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %11 = vector.insertelement %10, %9[%c5 : index] : vector<8xi1>
+// CHECK-NEXT      %12 = "accv.cmp"(%c6, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %13 = vector.insertelement %12, %11[%c6 : index] : vector<8xi1>
+// CHECK-NEXT      %14 = "accv.cmp"(%c7, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %15 = vector.insertelement %14, %13[%c7 : index] : vector<8xi1>
+// CHECK-NEXT      %16 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [5], strides: [1] : memref<5xi32> to memref<5xi32>
+// CHECK-NEXT      %17 = vector.transfer_read %16[%c0], %c0_i32, %15 {in_bounds = [true]} : memref<5xi32>, vector<8xi32>
+// CHECK-NEXT      %18 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [8], strides: [1] : memref<8xi32> to memref<8xi32>
+// CHECK-NEXT      vector.store %17, %18[%c0] : memref<8xi32>, vector<8xi32>
+// CHECK-NEXT      return
+// CHECK-NEXT    }
+
+    builtin.func nested @test_vectorized_masked_buffer_fill_11c7743a08b6567e_impl_8352600288936674199(%arg0: memref<5xi32>, %arg1: memref<8xi32>) {
+      %c0_i32 = arith.constant 0 : i32
+      %c5 = arith.constant 5 : index
+      affine.for %arg2 = 0 to 8 {
+        %0 = "accv.cmp"(%arg2, %c5) {predicate = 2 : i64} : (index, index) -> i1
+        scf.if %0 {
+          %1 = affine.load %arg0[%arg2] : memref<5xi32>
+          affine.store %1, %arg1[%arg2] : memref<8xi32>
+        } else {
+          affine.store %c0_i32, %arg1[%arg2] : memref<8xi32>
+        }
+      } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
+      return
+    }
+  }
+}
+
+
+// -----
+
+module @test_vectorized_masked_store attributes {accv.target_device_features = "+avx2", llvm.data_layout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"} {
+  accv.module "test_vectorized_masked_store" {
+
+// CHECK-LABEL    builtin.func nested @test_vectorized_masked_store_b5f3e7123c911744_impl_8352646542180030969(%arg0: memref<8xi32>, %arg1: memref<5xi32>) {
+// CHECK-NEXT      %cst = arith.constant dense<false> : vector<8xi1>
+// CHECK-NEXT      %c0 = arith.constant 0 : index
+// CHECK-NEXT      %c1 = arith.constant 1 : index
+// CHECK-NEXT      %c2 = arith.constant 2 : index
+// CHECK-NEXT      %c3 = arith.constant 3 : index
+// CHECK-NEXT      %c4 = arith.constant 4 : index
+// CHECK-NEXT      %c6 = arith.constant 6 : index
+// CHECK-NEXT      %c7 = arith.constant 7 : index
+// CHECK-NEXT      %c0_i32 = arith.constant 0 : i32
+// CHECK-NEXT      %c5 = arith.constant 5 : index
+// CHECK-NEXT      %0 = "accv.cmp"(%c0, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %1 = vector.insertelement %0, %cst[%c0 : index] : vector<8xi1>
+// CHECK-NEXT      %2 = "accv.cmp"(%c1, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %3 = vector.insertelement %2, %1[%c1 : index] : vector<8xi1>
+// CHECK-NEXT      %4 = "accv.cmp"(%c2, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %5 = vector.insertelement %4, %3[%c2 : index] : vector<8xi1>
+// CHECK-NEXT      %6 = "accv.cmp"(%c3, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %7 = vector.insertelement %6, %5[%c3 : index] : vector<8xi1>
+// CHECK-NEXT      %8 = "accv.cmp"(%c4, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %9 = vector.insertelement %8, %7[%c4 : index] : vector<8xi1>
+// CHECK-NEXT      %10 = "accv.cmp"(%c5, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %11 = vector.insertelement %10, %9[%c5 : index] : vector<8xi1>
+// CHECK-NEXT      %12 = "accv.cmp"(%c6, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %13 = vector.insertelement %12, %11[%c6 : index] : vector<8xi1>
+// CHECK-NEXT      %14 = "accv.cmp"(%c7, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %15 = vector.insertelement %14, %13[%c7 : index] : vector<8xi1>
+// CHECK-NEXT      %16 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [8], strides: [1] : memref<8xi32> to memref<8xi32>
+// CHECK-NEXT      %17 = vector.transfer_read %16[%c0], %c0_i32, %15 {in_bounds = [true]} : memref<8xi32>, vector<8xi32>
+// CHECK-NEXT      %18 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [5], strides: [1] : memref<5xi32> to memref<5xi32>
+// CHECK-NEXT      vector.transfer_write %17, %18[%c0], %15 {in_bounds = [true]} : vector<8xi32>, memref<5xi32>
+// CHECK-NEXT      return
+// CHECK-NEXT    }
+
+    builtin.func nested @test_vectorized_masked_store_b5f3e7123c911744_impl_8352646542180030969(%arg0: memref<8xi32>, %arg1: memref<5xi32>){
+      %c5 = arith.constant 5 : index
+      affine.for %arg2 = 0 to 8 {
+        %0 = "accv.cmp"(%arg2, %c5) {predicate = 2 : i64} : (index, index) -> i1
+        scf.if %0 {
+          %1 = affine.load %arg0[%arg2] : memref<8xi32>
+          affine.store %1, %arg1[%arg2] : memref<5xi32>
+        }
+      } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
+      return
+    }
+  }
+}
+
+// -----
+
+module @test_vectorized_masked_accumulate attributes {accv.target_device_features = "+avx2", llvm.data_layout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"} {
+  accv.module "test_vectorized_masked_accumulate" {
+
+// CHECK-LABEL    builtin.func nested @test_vectorized_masked_accumulate_9145c49af2395c43_impl_8352646542180030969(%arg0: memref<8xi32>, %arg1: memref<5xi32>) {
+// CHECK-NEXT      %cst = arith.constant dense<false> : vector<8xi1>
+// CHECK-NEXT      %c0 = arith.constant 0 : index
+// CHECK-NEXT      %c1 = arith.constant 1 : index
+// CHECK-NEXT      %c2 = arith.constant 2 : index
+// CHECK-NEXT      %c3 = arith.constant 3 : index
+// CHECK-NEXT      %c4 = arith.constant 4 : index
+// CHECK-NEXT      %c6 = arith.constant 6 : index
+// CHECK-NEXT      %c7 = arith.constant 7 : index
+// CHECK-NEXT      %c0_i32 = arith.constant 0 : i32
+// CHECK-NEXT      %c5 = arith.constant 5 : index
+// CHECK-NEXT      %0 = "accv.cmp"(%c0, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %1 = vector.insertelement %0, %cst[%c0 : index] : vector<8xi1>
+// CHECK-NEXT      %2 = "accv.cmp"(%c1, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %3 = vector.insertelement %2, %1[%c1 : index] : vector<8xi1>
+// CHECK-NEXT      %4 = "accv.cmp"(%c2, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %5 = vector.insertelement %4, %3[%c2 : index] : vector<8xi1>
+// CHECK-NEXT      %6 = "accv.cmp"(%c3, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %7 = vector.insertelement %6, %5[%c3 : index] : vector<8xi1>
+// CHECK-NEXT      %8 = "accv.cmp"(%c4, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %9 = vector.insertelement %8, %7[%c4 : index] : vector<8xi1>
+// CHECK-NEXT      %10 = "accv.cmp"(%c5, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %11 = vector.insertelement %10, %9[%c5 : index] : vector<8xi1>
+// CHECK-NEXT      %12 = "accv.cmp"(%c6, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %13 = vector.insertelement %12, %11[%c6 : index] : vector<8xi1>
+// CHECK-NEXT      %14 = "accv.cmp"(%c7, %c5) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %15 = vector.insertelement %14, %13[%c7 : index] : vector<8xi1>
+// CHECK-NEXT      %16 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [5], strides: [1] : memref<5xi32> to memref<5xi32>
+// CHECK-NEXT      %17 = vector.transfer_read %16[%c0], %c0_i32, %15 {in_bounds = [true]} : memref<5xi32>, vector<8xi32>
+// CHECK-NEXT      %18 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [8], strides: [1] : memref<8xi32> to memref<8xi32>
+// CHECK-NEXT      %19 = vector.transfer_read %18[%c0], %c0_i32, %15 {in_bounds = [true]} : memref<8xi32>, vector<8xi32>
+// CHECK-NEXT      %20 = "accv.bin_op"(%17, %19) {predicate = 0 : i64} : (vector<8xi32>, vector<8xi32>) -> vector<8xi32>
+// CHECK-NEXT      %21 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [5], strides: [1] : memref<5xi32> to memref<5xi32>
+// CHECK-NEXT      vector.transfer_write %20, %21[%c0], %15 {in_bounds = [true]} : vector<8xi32>, memref<5xi32>
+// CHECK-NEXT      return
+// CHECK-NEXT    }    
+    builtin.func nested @test_vectorized_masked_accumulate_9145c49af2395c43_impl_8352646542180030969(%arg0: memref<8xi32>, %arg1: memref<5xi32>){
+      %c5 = arith.constant 5 : index
+      affine.for %arg2 = 0 to 8 {
+        %0 = "accv.cmp"(%arg2, %c5) {predicate = 2 : i64} : (index, index) -> i1
+        scf.if %0 {
+          %1 = affine.load %arg1[%arg2] : memref<5xi32>
+          %2 = affine.load %arg0[%arg2] : memref<8xi32>
+          %3 = "accv.bin_op"(%1, %2) {predicate = 0 : i64} : (i32, i32) -> i32
+          affine.store %3, %arg1[%arg2] : memref<5xi32>
+        }
+      } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
+      return
+    }
+  }
+}
+
+
+// -----
+
+module @test_dynamic_vectorized_masked_buffer_fill attributes {accv.target_device_features = "+avx2", llvm.data_layout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"} {
+  accv.module "test_dynamic_vectorized_masked_buffer_fill" {
+// CHECK-LABEL    builtin.func nested @test_dynamic_vectorized_masked_buffer_fill_a2082ab34abc4983_impl_7667734917396200012(%arg0: memref<?xi32>, %arg1: index, %arg2: memref<8xi32>) attributes {accv.dyn_arg_size_refs = [[1], [-1], [-1]]} {
+// CHECK-NEXT      %cst = arith.constant dense<false> : vector<8xi1>
+// CHECK-NEXT      %c2 = arith.constant 2 : index
+// CHECK-NEXT      %c3 = arith.constant 3 : index
+// CHECK-NEXT      %c4 = arith.constant 4 : index
+// CHECK-NEXT      %c5 = arith.constant 5 : index
+// CHECK-NEXT      %c6 = arith.constant 6 : index
+// CHECK-NEXT      %c7 = arith.constant 7 : index
+// CHECK-NEXT      %c1 = arith.constant 1 : index
+// CHECK-NEXT      %c0 = arith.constant 0 : index
+// CHECK-NEXT      %c0_i32 = arith.constant 0 : i32
+// CHECK-NEXT      %0 = "accv.cmp"(%c0, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %1 = vector.insertelement %0, %cst[%c0 : index] : vector<8xi1>
+// CHECK-NEXT      %2 = "accv.cmp"(%c1, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %3 = vector.insertelement %2, %1[%c1 : index] : vector<8xi1>
+// CHECK-NEXT      %4 = "accv.cmp"(%c2, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %5 = vector.insertelement %4, %3[%c2 : index] : vector<8xi1>
+// CHECK-NEXT      %6 = "accv.cmp"(%c3, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %7 = vector.insertelement %6, %5[%c3 : index] : vector<8xi1>
+// CHECK-NEXT      %8 = "accv.cmp"(%c4, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %9 = vector.insertelement %8, %7[%c4 : index] : vector<8xi1>
+// CHECK-NEXT      %10 = "accv.cmp"(%c5, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %11 = vector.insertelement %10, %9[%c5 : index] : vector<8xi1>
+// CHECK-NEXT      %12 = "accv.cmp"(%c6, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %13 = vector.insertelement %12, %11[%c6 : index] : vector<8xi1>
+// CHECK-NEXT      %14 = "accv.cmp"(%c7, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %15 = vector.insertelement %14, %13[%c7 : index] : vector<8xi1>
+// CHECK-NEXT      %16 = memref.reinterpret_cast %arg0 to offset: [%c0], sizes: [%arg1], strides: [%c1] : memref<?xi32> to memref<?xi32>
+// CHECK-NEXT      %17 = vector.transfer_read %16[%c0], %c0_i32, %15 {in_bounds = [true]} : memref<?xi32>, vector<8xi32>
+// CHECK-NEXT      %18 = memref.reinterpret_cast %arg2 to offset: [0], sizes: [8], strides: [1] : memref<8xi32> to memref<8xi32>
+// CHECK-NEXT      vector.store %17, %18[%c0] : memref<8xi32>, vector<8xi32>
+// CHECK-NEXT      return
+// CHECK-NEXT    }
+    builtin.func nested @test_dynamic_vectorized_masked_buffer_fill_a2082ab34abc4983_impl_7667734917396200012(%arg0: memref<?xi32>, %arg1: index, %arg2: memref<8xi32>) attributes {accv.dyn_arg_size_refs = [[1], [-1], [-1]]} {
+      %c0_i32 = arith.constant 0 : i32
+      affine.for %arg3 = 0 to 8 {
+        %0 = "accv.cmp"(%arg3, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+        scf.if %0 {
+          %1 = affine.load %arg0[%arg3] : memref<?xi32>
+          affine.store %1, %arg2[%arg3] : memref<8xi32>
+        } else {
+          affine.store %c0_i32, %arg2[%arg3] : memref<8xi32>
+        }
+      } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
+      return
+    }
+  }
+}
+
+// -----
+
+module @test_dynamic_vectorized_masked_store attributes {accv.target_device_features = "+avx2", llvm.data_layout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"} {
+  accv.module "test_dynamic_vectorized_masked_store" {
+// CHECK-LABEL   builtin.func nested @test_dynamic_vectorized_masked_store_56cdc5710413acf9_impl_17986325373560006911(%arg0: memref<8xi32>, %arg1: memref<?xi32>, %arg2: index) attributes {accv.dyn_arg_size_refs = [[-1], [2], [-1]]} {
+// CHECK-NEXT      %cst = arith.constant dense<false> : vector<8xi1>
+// CHECK-NEXT      %c2 = arith.constant 2 : index
+// CHECK-NEXT      %c3 = arith.constant 3 : index
+// CHECK-NEXT      %c4 = arith.constant 4 : index
+// CHECK-NEXT      %c5 = arith.constant 5 : index
+// CHECK-NEXT      %c6 = arith.constant 6 : index
+// CHECK-NEXT      %c7 = arith.constant 7 : index
+// CHECK-NEXT      %c0_i32 = arith.constant 0 : i32
+// CHECK-NEXT      %c1 = arith.constant 1 : index
+// CHECK-NEXT      %c0 = arith.constant 0 : index
+// CHECK-NEXT      %0 = "accv.cmp"(%c0, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %1 = vector.insertelement %0, %cst[%c0 : index] : vector<8xi1>
+// CHECK-NEXT      %2 = "accv.cmp"(%c1, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %3 = vector.insertelement %2, %1[%c1 : index] : vector<8xi1>
+// CHECK-NEXT      %4 = "accv.cmp"(%c2, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %5 = vector.insertelement %4, %3[%c2 : index] : vector<8xi1>
+// CHECK-NEXT      %6 = "accv.cmp"(%c3, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %7 = vector.insertelement %6, %5[%c3 : index] : vector<8xi1>
+// CHECK-NEXT      %8 = "accv.cmp"(%c4, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %9 = vector.insertelement %8, %7[%c4 : index] : vector<8xi1>
+// CHECK-NEXT      %10 = "accv.cmp"(%c5, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %11 = vector.insertelement %10, %9[%c5 : index] : vector<8xi1>
+// CHECK-NEXT      %12 = "accv.cmp"(%c6, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %13 = vector.insertelement %12, %11[%c6 : index] : vector<8xi1>
+// CHECK-NEXT      %14 = "accv.cmp"(%c7, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %15 = vector.insertelement %14, %13[%c7 : index] : vector<8xi1>
+// CHECK-NEXT      %16 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [8], strides: [1] : memref<8xi32> to memref<8xi32>
+// CHECK-NEXT      %17 = vector.transfer_read %16[%c0], %c0_i32, %15 {in_bounds = [true]} : memref<8xi32>, vector<8xi32>
+// CHECK-NEXT      %18 = memref.reinterpret_cast %arg1 to offset: [%c0], sizes: [%arg2], strides: [%c1] : memref<?xi32> to memref<?xi32>
+// CHECK-NEXT      vector.transfer_write %17, %18[%c0], %15 {in_bounds = [true]} : vector<8xi32>, memref<?xi32>
+// CHECK-NEXT      return
+// CHECK-NEXT    }
+    builtin.func nested @test_dynamic_vectorized_masked_store_56cdc5710413acf9_impl_17986325373560006911(%arg0: memref<8xi32>, %arg1: memref<?xi32>, %arg2: index) attributes {accv.dyn_arg_size_refs = [[-1], [2], [-1]]} {
+      affine.for %arg3 = 0 to 8 {
+        %0 = "accv.cmp"(%arg3, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+        scf.if %0 {
+          %1 = affine.load %arg0[%arg3] : memref<8xi32>
+          affine.store %1, %arg1[%arg3] : memref<?xi32>
+        }
+      } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
+      return
+    }
+  }
+}
+
+// -----
+
+module @test_dynamic_vectorized_masked_accumulate attributes {accv.target_device_features = "+avx2", llvm.data_layout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"} {
+  accv.module "test_dynamic_vectorized_masked_accumulate" {
+// CHECK-LABEL    builtin.func nested @test_dynamic_vectorized_masked_accumulate_54da4d9483f52971_impl_18007838800914849862(%arg0: memref<8xi32>, %arg1: memref<8xi32>, %arg2: index) attributes {accv.dyn_arg_size_refs = [[-1], [-1], [-1]]} {
+// CHECK-NEXT      %cst = arith.constant dense<false> : vector<8xi1>
+// CHECK-NEXT      %c0 = arith.constant 0 : index
+// CHECK-NEXT      %c1 = arith.constant 1 : index
+// CHECK-NEXT      %c2 = arith.constant 2 : index
+// CHECK-NEXT      %c3 = arith.constant 3 : index
+// CHECK-NEXT      %c4 = arith.constant 4 : index
+// CHECK-NEXT      %c5 = arith.constant 5 : index
+// CHECK-NEXT      %c6 = arith.constant 6 : index
+// CHECK-NEXT      %c7 = arith.constant 7 : index
+// CHECK-NEXT      %c0_i32 = arith.constant 0 : i32
+// CHECK-NEXT      %0 = "accv.cmp"(%c0, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %1 = vector.insertelement %0, %cst[%c0 : index] : vector<8xi1>
+// CHECK-NEXT      %2 = "accv.cmp"(%c1, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %3 = vector.insertelement %2, %1[%c1 : index] : vector<8xi1>
+// CHECK-NEXT      %4 = "accv.cmp"(%c2, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %5 = vector.insertelement %4, %3[%c2 : index] : vector<8xi1>
+// CHECK-NEXT      %6 = "accv.cmp"(%c3, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %7 = vector.insertelement %6, %5[%c3 : index] : vector<8xi1>
+// CHECK-NEXT      %8 = "accv.cmp"(%c4, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %9 = vector.insertelement %8, %7[%c4 : index] : vector<8xi1>
+// CHECK-NEXT      %10 = "accv.cmp"(%c5, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %11 = vector.insertelement %10, %9[%c5 : index] : vector<8xi1>
+// CHECK-NEXT      %12 = "accv.cmp"(%c6, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %13 = vector.insertelement %12, %11[%c6 : index] : vector<8xi1>
+// CHECK-NEXT      %14 = "accv.cmp"(%c7, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %15 = vector.insertelement %14, %13[%c7 : index] : vector<8xi1>
+// CHECK-NEXT      %16 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [8], strides: [1] : memref<8xi32> to memref<8xi32>
+// CHECK-NEXT      %17 = vector.transfer_read %16[%c0], %c0_i32, %15 {in_bounds = [true]} : memref<8xi32>, vector<8xi32>
+// CHECK-NEXT      %18 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [8], strides: [1] : memref<8xi32> to memref<8xi32>
+// CHECK-NEXT      %19 = vector.transfer_read %18[%c0], %c0_i32, %15 {in_bounds = [true]} : memref<8xi32>, vector<8xi32>
+// CHECK-NEXT      %20 = "accv.bin_op"(%17, %19) {predicate = 0 : i64} : (vector<8xi32>, vector<8xi32>) -> vector<8xi32>
+// CHECK-NEXT      %21 = memref.reinterpret_cast %arg1 to offset: [0], sizes: [8], strides: [1] : memref<8xi32> to memref<8xi32>
+// CHECK-NEXT      vector.transfer_write %20, %21[%c0], %15 {in_bounds = [true]} : vector<8xi32>, memref<8xi32>
+// CHECK-NEXT      return
+// CHECK-NEXT    }    
+    builtin.func nested @test_dynamic_vectorized_masked_accumulate_54da4d9483f52971_impl_18007838800914849862(%arg0: memref<8xi32>, %arg1: memref<8xi32>, %arg2: index) attributes {accv.dyn_arg_size_refs = [[-1], [-1], [-1]]} {
+      affine.for %arg3 = 0 to 8 {
+        %0 = "accv.cmp"(%arg3, %arg2) {predicate = 2 : i64} : (index, index) -> i1
+        scf.if %0 {
+          %1 = affine.load %arg1[%arg3] : memref<8xi32>
+          %2 = affine.load %arg0[%arg3] : memref<8xi32>
+          %3 = "accv.bin_op"(%1, %2) {predicate = 0 : i64} : (i32, i32) -> i32
+          affine.store %3, %arg1[%arg3] : memref<8xi32>
+        }
+      } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
+      return
+    }
+  }
+}
+
+
+// -----
+
+module @test_dynamic_vectorized_mask_lower_zero_with_fusion attributes {accv.target_device_features = "+avx2", llvm.data_layout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"} {
+  accv.module "test_dynamic_vectorized_mask_lower_zero_with_fusion" {
+// CHECK-LABEL    builtin.func nested @test_dynamic_vectorized_mask_lower_zero_with_fusion_bd008a592f2068ba_impl_10116581887106739959(%arg0: memref<8xi32>, %arg1: index) attributes {accv.dyn_arg_size_refs = [[-1], [-1]]} {
+// CHECK-NEXT      %cst = arith.constant dense<false> : vector<8xi1>
+// CHECK-NEXT      %c0 = arith.constant 0 : index
+// CHECK-NEXT      %c1 = arith.constant 1 : index
+// CHECK-NEXT      %c2 = arith.constant 2 : index
+// CHECK-NEXT      %c3 = arith.constant 3 : index
+// CHECK-NEXT      %c4 = arith.constant 4 : index
+// CHECK-NEXT      %c5 = arith.constant 5 : index
+// CHECK-NEXT      %c6 = arith.constant 6 : index
+// CHECK-NEXT      %c7 = arith.constant 7 : index
+// CHECK-NEXT      %c0_i32 = arith.constant 0 : i32
+// CHECK-NEXT      %0 = "accv.alloc"() {allocType = 0 : i64} : () -> memref<8xi32, 3>
+// CHECK-NEXT      affine.store %c0_i32, %0[0] : memref<8xi32, 3>
+// CHECK-NEXT      affine.store %c0_i32, %0[1] : memref<8xi32, 3>
+// CHECK-NEXT      affine.store %c0_i32, %0[2] : memref<8xi32, 3>
+// CHECK-NEXT      affine.store %c0_i32, %0[3] : memref<8xi32, 3>
+// CHECK-NEXT      affine.store %c0_i32, %0[4] : memref<8xi32, 3>
+// CHECK-NEXT      affine.store %c0_i32, %0[5] : memref<8xi32, 3>
+// CHECK-NEXT      affine.store %c0_i32, %0[6] : memref<8xi32, 3>
+// CHECK-NEXT      affine.store %c0_i32, %0[7] : memref<8xi32, 3>
+// CHECK-NEXT      %1 = "accv.cmp"(%c0, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %2 = vector.insertelement %1, %cst[%c0 : index] : vector<8xi1>
+// CHECK-NEXT      %3 = "accv.cmp"(%c1, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %4 = vector.insertelement %3, %2[%c1 : index] : vector<8xi1>
+// CHECK-NEXT      %5 = "accv.cmp"(%c2, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %6 = vector.insertelement %5, %4[%c2 : index] : vector<8xi1>
+// CHECK-NEXT      %7 = "accv.cmp"(%c3, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %8 = vector.insertelement %7, %6[%c3 : index] : vector<8xi1>
+// CHECK-NEXT      %9 = "accv.cmp"(%c4, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %10 = vector.insertelement %9, %8[%c4 : index] : vector<8xi1>
+// CHECK-NEXT      %11 = "accv.cmp"(%c5, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %12 = vector.insertelement %11, %10[%c5 : index] : vector<8xi1>
+// CHECK-NEXT      %13 = "accv.cmp"(%c6, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %14 = vector.insertelement %13, %12[%c6 : index] : vector<8xi1>
+// CHECK-NEXT      %15 = "accv.cmp"(%c7, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+// CHECK-NEXT      %16 = vector.insertelement %15, %14[%c7 : index] : vector<8xi1>
+// CHECK-NEXT      %17 = memref.reinterpret_cast %0 to offset: [0], sizes: [8], strides: [1] : memref<8xi32, 3> to memref<8xi32, 3>
+// CHECK-NEXT      %18 = vector.transfer_read %17[%c0], %c0_i32, %16 {in_bounds = [true]} : memref<8xi32, 3>, vector<8xi32>
+// CHECK-NEXT      %19 = memref.reinterpret_cast %arg0 to offset: [0], sizes: [8], strides: [1] : memref<8xi32> to memref<8xi32>
+// CHECK-NEXT      vector.transfer_write %18, %19[%c0], %16 {in_bounds = [true]} : vector<8xi32>, memref<8xi32>
+// CHECK-NEXT      return
+// CHECK-NEXT    }    
+    builtin.func nested @test_dynamic_vectorized_mask_lower_zero_with_fusion_bd008a592f2068ba_impl_10116581887106739959(%arg0: memref<8xi32>, %arg1: index) attributes {accv.dyn_arg_size_refs = [[-1], [-1]]} {
+      %c0_i32 = arith.constant 0 : i32
+      %0 = "accv.alloc"() {allocType = 0 : i64} : () -> memref<8xi32, 3>
+      affine.for %arg2 = 0 to 8 {
+        affine.store %c0_i32, %0[%arg2] : memref<8xi32, 3>
+      } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
+      affine.for %arg2 = 0 to 8 {
+        %1 = "accv.cmp"(%arg2, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+        scf.if %1 {
+          %2 = affine.load %0[%arg2] : memref<8xi32, 3>
+          affine.store %2, %arg0[%arg2] : memref<8xi32>
+        }
+      } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
+      return
+    }
+  }
+}
+
+
+// -----
+
+module @test_dynamic_vectorized_mask_lower_zero attributes {accv.target_device_features = "+avx2", llvm.data_layout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"} {
+  accv.module "test_dynamic_vectorized_mask_lower_zero" {
+// CHECK-LABEL TODO
+    builtin.func nested @test_dynamic_vectorized_mask_lower_zero_3d7d26dd8c9c1178_impl_10116581887106739959(%arg0: memref<8xi32>, %arg1: index) {
+      %c0_i32 = arith.constant 0 : i32
+      affine.for %arg2 = 0 to 8 {
+        %0 = "accv.cmp"(%arg2, %arg1) {predicate = 2 : i64} : (index, index) -> i1
+        scf.if %0 {
+          affine.store %c0_i32, %arg0[%arg2] : memref<8xi32>
+        }
+      } {accxp_vectorizationInfo = #accxp<"vectorizationinfo{32,16,0}">}
       return
     }
   }

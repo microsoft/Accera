@@ -1331,7 +1331,7 @@ namespace executionPlan
                                    bool activeBlockCache,
                                    bool dimReorderCache,
                                    bool thrifty,
-                                   value::CacheStrategy strategy,
+                                   value::CacheStrategyType strategy,
                                    bool doubleBufferCache,
                                    accera::ir::value::MemorySpace doubleBufferMemorySpace,
                                    const VectorizationInfo& vecInfo)
@@ -1380,7 +1380,7 @@ namespace executionPlan
             result.addAttribute("doubleBufferCache", builder.getUnitAttr());
             result.addAttribute("doubleBufferMemorySpace", value::MemorySpaceAttr::get(builder.getContext(), doubleBufferMemorySpace));
         }
-        result.addAttribute("strategy", value::CacheStrategyAttr::get(builder.getContext(), strategy));
+        result.addAttribute("strategy", value::CacheStrategyTypeAttr::get(builder.getContext(), strategy));
         result.addAttribute("vectorizationInfo", VectorizationInfoAttr::get(vecInfo, builder.getContext()));
         result.addAttribute("operand_segment_sizes", builder.getI32VectorAttr({ 1 /* fromValue */, 1 /* toValue */, 1 /* baseInput */, static_cast<int32_t>(cacheAccessContext.fullRelevantScheduleIndices.size()), static_cast<int32_t>(cacheAccessContext.externalRelevantScheduleIndices.size()) }));
     }
@@ -1453,7 +1453,7 @@ namespace executionPlan
                                              int64_t cacheHierarchyLevel,
                                              bool dimReorderCache,
                                              bool thrifty,
-                                             value::CacheStrategy strategy,
+                                             value::CacheStrategyType strategy,
                                              bool doubleBufferCache,
                                              accera::ir::value::MemorySpace doubleBufferMemorySpace,
                                              const VectorizationInfo& vecInfo)
@@ -1480,7 +1480,7 @@ namespace executionPlan
             result.addAttribute("doubleBufferCache", builder.getUnitAttr());
             result.addAttribute("doubleBufferMemorySpace", value::MemorySpaceAttr::get(builder.getContext(), doubleBufferMemorySpace));
         }
-        result.addAttribute("strategy", value::CacheStrategyAttr::get(builder.getContext(), strategy));
+        result.addAttribute("strategy", value::CacheStrategyTypeAttr::get(builder.getContext(), strategy));
         result.addAttribute("vectorizationInfo", VectorizationInfoAttr::get(vecInfo, builder.getContext()));
     }
 

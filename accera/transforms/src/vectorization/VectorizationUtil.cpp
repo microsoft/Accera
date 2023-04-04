@@ -3298,7 +3298,7 @@ mlir::LogicalResult vectorizeMaskedLoadStore(mlir::AffineForOp loopOp,
         if (!paddingSource.getDefiningOp<mlir::arith::ConstantOp>() &&
             !paddingSource.getDefiningOp<v::CastOp>())
         {
-            return reportMatchFailure(paddingOp, "Failed: source of affine.store op is neither a cosntant op nor a cast op");
+            return reportMatchFailure(paddingOp, "Failed: source of affine.store op is neither a constant op nor a cast op");
         }
 
         matchedOps.push(paddingOp);

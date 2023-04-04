@@ -109,7 +109,7 @@ namespace cpp_printer
         }
 
         auto memRefType = allocMatrixOp.result().getType().cast<MemRefType>();
-        const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShape>(allocMatrixOp.mmaShapeType()) };
+        const vir::MMAOp mfmaOpType{ static_cast<vir::MMAShapeType>(allocMatrixOp.mmaShapeType()) };
         const auto shape = std::make_tuple(mfmaOpType.getM(), mfmaOpType.getN(), mfmaOpType.getK());
         const vir::MMAOperandType opType{ allocMatrixOp.operandType() };
         const auto rowMajor = allocMatrixOp.rowMajor();
@@ -135,7 +135,7 @@ namespace cpp_printer
 
         const auto operandType = static_cast<vir::MMAOperandType>(loadMatrixOp.operandType());
 
-        return printLoadMatrixOp(state, printer, loadMatrixOp.memref(), loadMatrixOp.dest(), operandType, loadMatrixOp.indices(), loadMatrixOp.rowMajor(), loadMatrixOp.blockThreadId(), loadMatrixOp.staticOffsets(), static_cast<vir::MMAFragmentOp>(loadMatrixOp.mmaPrologueOp()), loadMatrixOp.mmaPrologueArg());
+        return printLoadMatrixOp(state, printer, loadMatrixOp.memref(), loadMatrixOp.dest(), operandType, loadMatrixOp.indices(), loadMatrixOp.rowMajor(), loadMatrixOp.blockThreadId(), loadMatrixOp.staticOffsets(), static_cast<vir::MMAFragmentOpType>(loadMatrixOp.mmaPrologueOp()), loadMatrixOp.mmaPrologueArg());
     }
 
     LogicalResult AcceraDialectCppPrinter::printOp(vir::MMAComputeSyncOp computeMatrixOp)
@@ -155,7 +155,7 @@ namespace cpp_printer
             return storeMatrixOp.emitError("non-cuda version is not supported.");
         }
 
-        return printStoreMatrixOp(state, printer, storeMatrixOp.src(), storeMatrixOp.memref(), storeMatrixOp.indices(), storeMatrixOp.blockThreadId(), storeMatrixOp.staticOffsets(), static_cast<vir::MMAFragmentOp>(storeMatrixOp.mmaEpilogueOp()), storeMatrixOp.mmaEpilogueArg());
+        return printStoreMatrixOp(state, printer, storeMatrixOp.src(), storeMatrixOp.memref(), storeMatrixOp.indices(), storeMatrixOp.blockThreadId(), storeMatrixOp.staticOffsets(), static_cast<vir::MMAFragmentOpType>(storeMatrixOp.mmaEpilogueOp()), storeMatrixOp.mmaEpilogueArg());
     }
 
     LogicalResult AcceraDialectCppPrinter::printVectorType(mlir::Type elementType, const uint32_t stride) const
@@ -214,7 +214,7 @@ namespace cpp_printer
         const auto wpt = blockLoadOp.workPerThread();
         const auto vecWidth = blockLoadOp.vecWidth();
         const auto stride = std::min(wpt, vecWidth);
-        const auto strategy = stringifyCacheStrategy(blockLoadOp.strategy());
+        const auto strategy = stringifyCacheStrategyType(blockLoadOp.strategy());
 
         if (!blockLoadOp.srcToDst())
         {

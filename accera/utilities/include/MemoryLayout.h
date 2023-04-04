@@ -553,6 +553,7 @@ namespace utilities
         /// MemoryLayout that represents that matrix can be expressed by doing `layout.GetSliceLayout(1)`, where
         /// `layout` is the MemoryLayout that describes the original tensor.</remarks>
         MemoryLayout GetSliceLayout(int dimension) const;
+        MemoryLayout GetSliceLayout(std::vector<int64_t> slicedDimensions) const;
 
         /// <summary> Creates a new MemoryLayout by adding empty dimensions. </summary>
         ///

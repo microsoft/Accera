@@ -1281,7 +1281,7 @@ def accv_GPUBlockCacheOp : accv_Op<"gpu_block_cache",
     BoolAttr:$srcToDst,
     BoolAttr:$dstRowMajor,
     ArrayAttr:$tileShape,
-    CacheStrategyAttr:$strategy,
+    CacheStrategyTypeAttr:$strategy,
     I32Attr:$vecWidth,
     I32Attr:$blockDimX,
     I32Attr:$blockDimY,
@@ -1293,7 +1293,7 @@ def accv_GPUBlockCacheOp : accv_Op<"gpu_block_cache",
   let results = (outs MemRefOf<[UI8, I8, I32, F16, BF16, F32]>:$result);
 
   let builders = [
-    OpBuilder<(ins "Type":$resultType, "Value":$blockThreadId, "CacheStrategy":$strategy, "Value":$memref, "Value":$srcOffsetRows, "Value":$srcOffsetCols, "Value":$dest, "bool":$srcToDst, "bool":$dstRowMajor, "ArrayAttr":$tileShape, "int32_t":$vecWidth, "const std::array<int64_t, 3>&":$blockDim, "int32_t":$workPerThread), [{
+    OpBuilder<(ins "Type":$resultType, "Value":$blockThreadId, "CacheStrategyType":$strategy, "Value":$memref, "Value":$srcOffsetRows, "Value":$srcOffsetCols, "Value":$dest, "bool":$srcToDst, "bool":$dstRowMajor, "ArrayAttr":$tileShape, "int32_t":$vecWidth, "const std::array<int64_t, 3>&":$blockDim, "int32_t":$workPerThread), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> () for zero-dimensional memrefs.
@@ -1303,7 +1303,7 @@ def accv_GPUBlockCacheOp : accv_Op<"gpu_block_cache",
         $_state.addOperands(srcOffsetRows);
         $_state.addOperands(srcOffsetCols);
         $_state.addOperands(dest);
-        $_state.addAttribute("strategy", CacheStrategyAttr::get($_builder.getContext(), strategy));
+        $_state.addAttribute("strategy", CacheStrategyTypeAttr::get($_builder.getContext(), strategy));
         $_state.addAttribute("tileShape", tileShape);
         $_state.addAttribute("srcToDst", $_builder.getBoolAttr(srcToDst));
         $_state.addAttribute("dstRowMajor", $_builder.getBoolAttr(dstRowMajor));
@@ -1442,7 +1442,7 @@ def accv_MMALoadSyncOp : accv_Op<"wmma_load_sync",
   );
 
   let builders = [
-    OpBuilder<(ins "Value":$blockThreadId, "Value":$memref, "Value":$dest, "MMAOperandType":$operandType, "bool":$rowMajor, "ValueRange":$indices, "bool":$staticOffsets, "MMAFragmentOp":$mmaPrologueOp, "Value":$mmaPrologueArg), [{
+    OpBuilder<(ins "Value":$blockThreadId, "Value":$memref, "Value":$dest, "MMAOperandType":$operandType, "bool":$rowMajor, "ValueRange":$indices, "bool":$staticOffsets, "MMAFragmentOpType":$mmaPrologueOp, "Value":$mmaPrologueArg), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> () for zero-dimensional memrefs.
@@ -1507,7 +1507,7 @@ def accv_MMAStoreSyncOp : accv_Op<"wmma_store_sync", [
     AnyTypeOf<[I8, I16, I32, F16, BF16, F32]>:$mmaEpilogueArg);
 
   let builders = [
-    OpBuilder<(ins "Value":$blockThreadId, "Value":$src, "Value":$memref, "ValueRange":$indices, "bool":$staticOffsets, "MMAFragmentOp":$mmaEpilogueOp, "Value":$mmaEpilogueArg), [{
+    OpBuilder<(ins "Value":$blockThreadId, "Value":$src, "Value":$memref, "ValueRange":$indices, "bool":$staticOffsets, "MMAFragmentOpType":$mmaEpilogueOp, "Value":$mmaEpilogueArg), [{
         auto memrefType = memref.getType().cast<MemRefType>();
         int64_t rank = memrefType.getRank();
         // Create identity map for memrefs with at least one dimension or () -> ()

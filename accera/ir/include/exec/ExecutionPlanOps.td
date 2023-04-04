@@ -189,7 +189,7 @@ def accxp_ActiveBlockCacheCopyOp : accxp_Op<"active_block_cache_copy", [AttrSize
                         UnitAttr:$toCache,
                         UnitAttr:$thrifty,
                         UnitAttr:$readOnlyCache,
-                        CacheStrategyAttr:$strategy,
+                        CacheStrategyTypeAttr:$strategy,
                         UnitAttr:$skipBarriers, // TODO : remove this once barrier analysis hoists barriers out of loops 
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo,
                         OptionalAttr<accxp_TensorizationInfoAttr>:$tensorizationInfo);
@@ -218,7 +218,7 @@ def accxp_MultiCacheCopyOp : accxp_Op<"multi_cache_copy"> {
                         AffineMapAttr:$activeBlockToCacheMap,
                         UnitAttr:$thrifty,
                         UnitAttr:$readOnlyCache,
-                        CacheStrategyAttr:$strategy,
+                        CacheStrategyTypeAttr:$strategy,
                         UnitAttr:$toCache,
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo,
                         OptionalAttr<accxp_TensorizationInfoAttr>:$tensorizationInfo);
@@ -389,7 +389,7 @@ def accxp_BeginCreateCacheOp : accxp_Op<"begin_create_cache",
                         UnitAttr:$activeBlockCache,
                         UnitAttr:$dimReorderCache,
                         UnitAttr:$thrifty,
-                        CacheStrategyAttr:$strategy,
+                        CacheStrategyTypeAttr:$strategy,
                         UnitAttr:$doubleBufferCache,
                         OptionalAttr<MemorySpaceAttr>:$doubleBufferMemorySpace,
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
@@ -409,7 +409,7 @@ def accxp_BeginCreateCacheOp : accxp_Op<"begin_create_cache",
       "bool":$activeBlockCache,
       "bool":$dimReorderCache,
       "bool":$thrifty,
-      "value::CacheStrategy":$strategy,
+      "value::CacheStrategyType":$strategy,
       "bool":$doubleBufferCache,
       "MemorySpace":$doubleBufferMemorySpace,
       "const VectorizationInfo&":$vectorizationInfo)>
@@ -484,7 +484,7 @@ def accxp_BeginCreateMaxElementCacheOp : accxp_Op<"begin_create_max_element_cach
                         I64Attr:$maxElements,
                         UnitAttr:$dimReorderCache,
                         UnitAttr:$thrifty,
-                        CacheStrategyAttr:$strategy,
+                        CacheStrategyTypeAttr:$strategy,
                         UnitAttr:$doubleBufferCache,
                         OptionalAttr<MemorySpaceAttr>:$doubleBufferMemorySpace,
                         OptionalAttr<accxp_VectorizationInfoAttr>:$vectorizationInfo);
@@ -504,7 +504,7 @@ def accxp_BeginCreateMaxElementCacheOp : accxp_Op<"begin_create_max_element_cach
       "int64_t":$cacheHierarchyLevel,
       "bool":$dimReorderCache,
       "bool":$thrifty,
-      "value::CacheStrategy":$strategy,
+      "value::CacheStrategyType":$strategy,
       "bool":$doubleBufferCache,
       "MemorySpace":$doubleBufferMemorySpace,
       "const VectorizationInfo&":$vectorizationInfo)>

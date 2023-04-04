@@ -14,14 +14,14 @@ namespace executionPlan
 {
     struct TensorizationInfo
     {
-        accera::ir::value::MMAShape dim;
+        accera::ir::value::MMAShapeType dim;
         int numTotalPasses{ 1 };
         bool useStaticOffsets{};
         int numFusedPasses{ -1 };
-        accera::ir::value::MMASchedulingPolicy schedulingPolicy{};
-        accera::ir::value::MMAFragmentOp prologueOp{};
+        accera::ir::value::MMASchedulingPolicyType schedulingPolicy{};
+        accera::ir::value::MMAFragmentOpType prologueOp{};
         double prologueArg{};
-        accera::ir::value::MMAFragmentOp epilogueOp{};
+        accera::ir::value::MMAFragmentOpType epilogueOp{};
         double epilogueArg{};
         bool _useRocWMMA{};
 

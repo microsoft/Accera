@@ -219,7 +219,7 @@ namespace executionPlan
             return {};
         if (useStaticOffsets != 0 && useStaticOffsets != 1)
             return {};
-        return TensorizationInfoAttr::get(TensorizationInfo{ accera::ir::value::MMAShape{ dim }, numTotalPasses, useStaticOffsets, numFusedPasses, accera::ir::value::MMASchedulingPolicy{ schedulingPolicy }, accera::ir::value::MMAFragmentOp{ prologueOp }, prologueArg, accera::ir::value::MMAFragmentOp{ epilogueOp }, epilogueArg, _useRocWMMA }, parser.getBuilder().getContext());
+        return TensorizationInfoAttr::get(TensorizationInfo{ accera::ir::value::MMAShapeType{ dim }, numTotalPasses, useStaticOffsets, numFusedPasses, accera::ir::value::MMASchedulingPolicyType{ schedulingPolicy }, accera::ir::value::MMAFragmentOpType{ prologueOp }, prologueArg, accera::ir::value::MMAFragmentOpType{ epilogueOp }, epilogueArg, _useRocWMMA }, parser.getBuilder().getContext());
     }
 
     void print(TensorizationInfoAttr attr, mlir::DialectAsmPrinter& printer)

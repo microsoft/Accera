@@ -300,6 +300,8 @@ struct SplitDimOpLowering : public OpRewritePattern<ValueSplitDimOp>
     LogicalResult matchAndRewrite(
         ValueSplitDimOp op,
         PatternRewriter& rewriter) const override;
+
+    void setExpandShapeOpAttr(PatternRewriter& rewriter, ValueSplitDimOp& splitDimOp, mlir::Operation* op) const;
 };
 
 using ValueReorderOp = vir::ReorderOp;
@@ -1664,6 +1666,28 @@ LogicalResult MergeDimOpLowering::matchAndRewrite(
     return success();
 }
 
+void SplitDimOpLowering::setExpandShapeOpAttr(
+    PatternRewriter& rewriter,
+    ValueSplitDimOp& splitDimOp,
+    mlir::Operation* op) const
+{
+    auto blockArgs = rewriter.getBlock()->getArguments();
+    NamedAttrList attrDic = op->getAttrDictionary();
+
+    uint16_t split_size_idx = 0;
+    for (uint16_t idx = 0; idx < blockArgs.size(); idx++)
+    {
+        if (splitDimOp.size() == blockArgs[idx])
+        {
+            split_size_idx = idx;
+            break;
+        }
+    }
+
+    attrDic.set(rewriter.getStringAttr(GetSplitSizeAttrName()), rewriter.getI64IntegerAttr(split_size_idx));
+    op->setAttrs(attrDic);
+}
+
 LogicalResult SplitDimOpLowering::matchAndRewrite(
     ValueSplitDimOp op,
     PatternRewriter& rewriter) const
@@ -1698,6 +1722,7 @@ LogicalResult SplitDimOpLowering::matchAndRewrite(
     auto resultMemRefType = ValueSplitDimOp::computeMemRefType(op.source(), dim, op.size());
 
     auto result = rewriter.create<memref::ExpandShapeOp>(loc, resultMemRefType, source, reassociationIndices);
+    setExpandShapeOpAttr(rewriter, op, result);
 
     rewriter.replaceOp(op, { result });
 
@@ -2555,6 +2580,9 @@ LogicalResult EnterProfileRegionOpLowering::matchAndRewrite(EnterProfileRegionOp
 
     // get current time and store it in the startTime entry
     mlir::Value currentTime = rewriter.create<vir::GetTimeOp>(loc);
+    currentTime.getDefiningOp()->setAttr(
+        kTimerRegionTypeIdentifier, 
+        rewriter.getI32IntegerAttr(static_cast<int>(TimerRegionType::enterRegion)));
 
     auto millisecondsInSecond = rewriter.create<arith::ConstantOp>(loc, util::GetValAttr(rewriter, currentTime.getType(), 1000));
     mlir::Value newCurrentTime = rewriter.create<vir::BinOp>(loc, vir::BinaryOpPredicate::MUL, currentTime, millisecondsInSecond);
@@ -2593,6 +2621,9 @@ LogicalResult ExitProfileRegionOpLowering::matchAndRewrite(ExitProfileRegionOp o
 
     mlir::Value startTime = rewriter.create<vir::GetElementOp>(loc, startTimeRef);
     mlir::Value currentTime = rewriter.create<vir::GetTimeOp>(loc);
+    currentTime.getDefiningOp()->setAttr(
+        kTimerRegionTypeIdentifier, 
+        rewriter.getI32IntegerAttr(static_cast<int>(TimerRegionType::exitRegion)));
 
     auto millisecondsInSecond = rewriter.create<arith::ConstantOp>(loc, util::GetValAttr(rewriter, currentTime.getType(), 1000));
     mlir::Value newCurrentTime = rewriter.create<vir::BinOp>(loc, vir::BinaryOpPredicate::MUL, currentTime, millisecondsInSecond);

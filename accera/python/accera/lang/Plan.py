@@ -24,10 +24,10 @@ from accera._lang_python._lang import Dimension
 from .._lang_python._lang import (
     CacheIndexing,
     _MemorySpace,
-    _MMASchedulingPolicy,
-    _MMAShape,
-    _CacheStrategy,
-    _MMAFragmentOp
+    MMASchedulingPolicy,
+    MMAShape,
+    CacheStrategy,
+    MMAFragmentOp
 )
 from ..algorithms import *
 
@@ -208,14 +208,14 @@ class Plan:
     def tensorize(
         self,
         indices: Union[LoopIndex, Tuple[LoopIndex]],
-        mma_shape: _MMAShape,
+        mma_shape: MMAShape,
         num_total_passes: int = 1,
         use_static_offsets: bool = False,
         num_fused_passes: int = None,
-        scheduling_policy: _MMASchedulingPolicy = _MMASchedulingPolicy.PASS_ORDER,
-        prologue_op: _MMAFragmentOp = _MMAFragmentOp.NONE,
+        scheduling_policy: MMASchedulingPolicy = MMASchedulingPolicy.PASS_ORDER,
+        prologue_op: MMAFragmentOp = MMAFragmentOp.NONE,
         prologue_arg: float = 0.0,
-        epilogue_op: _MMAFragmentOp = _MMAFragmentOp.NONE,
+        epilogue_op: MMAFragmentOp = MMAFragmentOp.NONE,
         epilogue_arg: float = 0.0,
         _use_rocWMMA: bool = False,
     ):
@@ -394,7 +394,7 @@ class Plan:
         double_buffer_location: Union[object, _MemorySpace, DelayedParameter] = AUTO,
         _shared_memory_offset: Union[int, DelayedParameter] = None,
         vectorize: Union[bool, DelayedParameter, object] = AUTO,
-        strategy: _CacheStrategy = AUTO,
+        strategy: CacheStrategy = AUTO,
         _delayed_cache: DelayedCache = None,
         _temp_array_multicaches: bool = False # experimental: allow multi-caching of TEMP arrays
     ):
@@ -503,7 +503,7 @@ class Plan:
             raise ValueError("Only AUTO strategy is supported on the CPU")
 
         if strategy == AUTO:
-            strategy = _CacheStrategy.STRIPED
+            strategy = CacheStrategy.STRIPED
 
         if double_buffer and location == _MemorySpace.MMA_FRAGMENT:
             raise ValueError("Double buffering is not supported with Tensor caching")

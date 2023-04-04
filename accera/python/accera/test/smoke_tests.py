@@ -51,7 +51,7 @@ INTERNAL_FUNCTION_OPTS = {
 
 from accera._lang_python import _MemoryLayout
 from accera._lang_python._lang import Array as NativeArray
-from accera._lang_python._lang import Dimension, _MemorySpace, _MMAShape, _If, as_index
+from accera._lang_python._lang import Dimension, _MemorySpace, _If, as_index
 from accera._lang_python._lang._gpu import Barrier
 from accera.samples import MatrixMultiplication
 from accera.Targets import KNOWN_DEVICES
@@ -59,7 +59,7 @@ from accera.test import verifiers
 from accera.test.test_utils import FailedReason, expectedFailure
 
 from accera import (
-    AUTO, AllocateFlags, Array, Constants, Nest, Package, Role, Scalar, ScalarType, Target, cast, create_dimensions,
+    AUTO, AllocateFlags, Array, Constants, Nest, Package, Role, Scalar, ScalarType, Target, cast, MMAShape, create_dimensions,
     create_parameters, fuse
 )
 from accera import min as accmin
@@ -687,6 +687,378 @@ class SmokeTest(unittest.TestCase):
     )
     def test_fast_exp_mlas_w_pkg_level_precision(self):
         self._test_fast_exp_mlas(False)
+
+    @expectedFailure(
+        FailedReason.INVALID, "avx2 instructions not supported on MacOS arm64", sys.platform == "darwin"
+        and platform.machine() == "arm64"
+    )
+    def test_fast_exp_mlas_with_3_vectors(self):
+        from accera import fast_exp_mlas
+
+        M = 1000
+        N = 24 * 3
+
+        In = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, N))
+        Max = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(M, ))
+        Out = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest((M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            Out[i, j] = fast_exp_mlas(In[i, j] - Max[i])
+
+        sched = nest.create_schedule()
+        jj = sched.split(j, 24)
+        jjj = sched.split(jj, 8)
+
+        plan = sched.create_plan(Target("Intel 6700"))    # avx2
+        plan.vectorize(jj)
+        plan.vectorize(jjj)
+
+        In_test = np.random.rand(M, N).astype(np.float32)
+        Max_test = np.array([np.max(In_test[m, :]) for m in range(M)], dtype=np.float32)
+        Out_test = np.random.rand(M, N).astype(np.float32)
+        Out_ref = np.array([np.exp(In_test[m, :] - Max_test[m]) for m in range(M)], dtype=np.float32)
+
+        # Create a package and add our function definition to it
+        package_name = "test_fast_exp_mlas_with_3_vectors"
+        package = Package()
+        function = package.add(plan, args=(In, Max, Out), base_name=package_name)
+
+        # Build the HAT package
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
+            package.build(
+                package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+                _opts=Package._Options.HIGH_PRECISION_FLOATING_POINT_OPS,
+                _quiet=False
+            )
+
+            v.check_correctness(function.name, before=(In_test, Max_test, Out_test), after=(In_test, Max_test, Out_ref))
+
+
+    @expectedFailure(
+        FailedReason.INVALID, "avx2 instructions not supported on MacOS arm64", sys.platform == "darwin"
+        and platform.machine() == "arm64"
+    )
+    def test_fast_exp_sum(self):
+
+        from accera import fast_exp_mlas
+
+        # algorithm
+        # input: array[N]
+        # accum_vec = array[8]
+        # temp_vecs = [array[8], array[8]]
+        # vecs = [accum_vec] + temp_vecs
+        # for i in range(0, N, 24):
+        #     for j in range(3):
+        #         vecs[j] += fast_exp(input[i + 8 * j : i + 8 * (j + 1)])
+        # for j in range(2):
+        #     vecs[0] += vecs[j]
+        # for i in range(i, N, 8):
+        #     accum_vec += fast_exp(input[i + 8 * i : i + 8 * (i + 1)])
+        # accum_vec += fast_exp(masked_load(input[i :], val=0))
+        # final_val = 0
+        # for i in range(8):
+        #     final_val += accum_vec[i]
+        # return final_val
+
+        def make_zero_accum(pkg, target):
+            accum = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(8, ))
+
+            nest = Nest((8, ))
+            i, = nest.get_indices()
+
+            @nest.iteration_logic
+            def _():
+                accum[i] = 0
+
+            plan = nest.create_plan(target)
+            plan.vectorize(i)
+
+            return pkg.add(
+                plan, args=(accum, ), base_name="_zero_accum", function_opts={"public": False}
+            )
+
+        def make_3x8_fast_exp_sum(pkg, target):
+            N, M = create_dimensions()
+            Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+            Max = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(1, ))
+            accum = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(8, ))
+            vecs_inout = Array(
+                role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(
+                    2,
+                    8,
+                )
+            )
+
+            nest_zero = Nest((2, 8))
+            i, j = nest_zero.get_indices()
+
+            @nest_zero.iteration_logic
+            def _():
+                vecs_inout[i, j] = 0
+
+            plan_zero = nest_zero.create_plan(target)
+
+            f_zero = pkg.add(
+                plan_zero, args=(vecs_inout, ), base_name="_3x8_fast_exp_sum_zero", function_opts={"public": False}
+            )
+
+            nest_exp = Nest((M, 3, 8))
+            m, i, j = nest_exp.get_indices()
+
+            @nest_exp.iteration_logic
+            def _():
+
+                def store_in_accum():
+                    accum[j] += fast_exp_mlas(Input[m * 24 + (i * 8) + j] - Max[0])
+
+                def store_in_vecs():
+                    vecs_inout[i - 1, j] += fast_exp_mlas(Input[m * 24 + (i * 8) + j] - Max[0])
+
+                _If(i == 0, store_in_accum).Else(store_in_vecs)
+
+            plan_exp = nest_exp.create_plan(target)
+            plan_exp.vectorize(i)
+            plan_exp.vectorize(j)
+
+            f_exp = pkg.add(
+                plan_exp,
+                args=((Input, N, Max, accum, M, vecs_inout)),
+                base_name="_3x8_fast_exp_sum_exp",
+                function_opts={"public": False}
+            )
+
+            nest_accumulate = Nest((2, 8))
+            i, j = nest_accumulate.get_indices()
+
+            @nest_accumulate.iteration_logic
+            def _():
+                accum[j] += vecs_inout[i, j]
+
+            plan_accumulate = nest_accumulate.create_plan(target)
+            plan_accumulate.vectorize(j)
+
+            f_accumulate = pkg.add(
+                plan_accumulate,
+                args=(accum, vecs_inout),
+                base_name="_3x8_fast_exp_sum_accumulate",
+                function_opts={"public": False}
+            )
+
+            vecs_temp = Array(
+                role=Role.TEMP, element_type=ScalarType.float32, shape=(
+                    2,
+                    8,
+                ), flags=AllocateFlags.STACK
+            )
+
+            nest = Nest((1, ))
+
+            @nest.iteration_logic
+            def _():
+                f_zero(vecs_temp)
+                f_exp(Input, N, Max, accum, M, vecs_temp)
+                f_accumulate(accum, vecs_temp)
+
+            plan = nest.create_plan(target)
+
+            return pkg.add(
+                plan, args=(Input, N, Max, accum, M), base_name="_3x8_fast_exp_sum", function_opts={"public": False}
+            )
+
+        def make_vec_fast_exp_sum(pkg, target):
+            N, M, start_idx = create_dimensions()
+            Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+            Max = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(1, ))
+            accum = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(8, ))
+
+            nest = Nest((M, 8))
+            m, i = nest.get_indices()
+
+            @nest.iteration_logic
+            def _():
+                accum[i] += fast_exp_mlas(Input[start_idx + (m * 8) + i] - Max[0])
+
+            plan = nest.create_plan(target)
+            plan.vectorize(m)
+            plan.vectorize(i)
+
+            return pkg.add(
+                plan,
+                args=(Input, N, Max, accum, M, start_idx),
+                base_name="_vec_fast_exp_sum",
+                function_opts={"public": False}
+            )
+
+        def make_masked_vec_fast_exp_sum(pkg, target):
+            N, start_idx, num_elements = create_dimensions()
+            Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+            Max = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(1, ))
+            accum = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(8, ))
+            vec0 = Array(role=Role.TEMP, element_type=ScalarType.float32, shape=(8, ), flags=AllocateFlags.STACK)
+            vec1 = Array(role=Role.TEMP, element_type=ScalarType.float32, shape=(8, ), flags=AllocateFlags.STACK)
+
+            nest0 = Nest((8, ))
+            i, = nest0.get_indices()
+
+            @nest0.iteration_logic
+            def _():
+
+                def load_input():
+                    vec0[i] = Input[start_idx + i]
+
+                def load_zero():
+                    vec0[i] = 0
+
+                _If(i < num_elements, load_input).Else(load_zero)
+
+            nest1 = Nest((8, ))
+            i, = nest1.get_indices()
+
+            @nest1.iteration_logic
+            def _():
+                vec1[i] = fast_exp_mlas(vec0[i] - Max[0])
+
+            zero_vec = Array(role=Role.TEMP, element_type=ScalarType.float32, shape=(8, ), flags=AllocateFlags.STACK)
+
+            nest2_0 = Nest((8, ))
+            i, = nest2_0.get_indices()
+
+            @nest2_0.iteration_logic
+            def _():
+                zero_vec[i] = 0
+
+            nest2_1 = Nest((8, ))
+            i, = nest2_1.get_indices()
+
+            @nest2_1.iteration_logic
+            def _():
+
+                def zero():
+                    vec1[i] = zero_vec[i]
+
+                _If(i >= num_elements, zero)
+
+            nest3 = Nest((8, ))
+            i, = nest3.get_indices()
+
+            @nest3.iteration_logic
+            def _():
+                accum[i] += vec1[i]
+
+            schedule0 = nest0.create_schedule()
+            schedule1 = nest1.create_schedule()
+            schedule2 = fuse((nest2_0.create_schedule(), nest2_1.create_schedule()), partial=0)
+            schedule3 = nest3.create_schedule()
+            schedule = fuse((schedule0, schedule1, schedule2, schedule3), partial=0)
+            i0, i1, i2f, i2_0, i2_1, i3 = schedule.get_unfused_indices()
+
+            plan = schedule.create_plan(target)
+            plan.vectorize(i0)
+            plan.vectorize(i1)
+            plan.vectorize(i2_0)
+            plan.vectorize(i2_1)
+            plan.vectorize(i3)
+
+            return pkg.add(
+                plan,
+                args=(Input, N, Max, accum, start_idx, num_elements),
+                base_name="_masked_vec_fast_exp_sum",
+                function_opts={"public": False}
+            )
+
+        def make_horiz_vec_accum(pkg, target):
+            accum = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(8, ))
+            sum = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(1, ))
+
+            nest = Nest((8, ))
+            i, = nest.get_indices()
+
+            @nest.iteration_logic
+            def _():
+                sum[0] += accum[i]
+
+            plan = nest.create_plan(target)
+            plan.vectorize(i)
+
+            return pkg.add(
+                plan, args=(accum, sum), base_name="_horiz_vec_accum", function_opts={"public": False}
+            )
+
+        N = create_dimensions()
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(N, ))
+        Max = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(1, ))
+        accum_vec = Array(role=Role.TEMP, element_type=ScalarType.float32, shape=(8, ), flags=AllocateFlags.STACK)
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(1, ))
+
+        package = Package()
+        target = Target("Intel 6700")    # avx2
+        fn_zero_accum = make_zero_accum(package, target)
+        fn_3x8_fast_exp_sum = make_3x8_fast_exp_sum(package, target)
+        fn_vec_fast_exp_sum = make_vec_fast_exp_sum(package, target)
+        fn_masked_vec_fast_exp_sum = make_masked_vec_fast_exp_sum(package, target)
+        fn_horiz_vec_accum = make_horiz_vec_accum(package, target)
+
+        nest = Nest((1, ))
+
+        @nest.iteration_logic
+        def _():
+            Output[0] = 0
+            fn_zero_accum(accum_vec)
+
+            M0 = N // 24
+
+            def call_fn_3x8_fast_exp_sum():
+                fn_3x8_fast_exp_sum(Input, N, Max, accum_vec, M0)
+
+            _If(Scalar(M0 > 0), call_fn_3x8_fast_exp_sum)
+
+            M0 *= 24
+            M1 = (N - M0) // 8
+
+            def call_fn_vec_fast_exp_sum():
+                fn_vec_fast_exp_sum(Input, N, Max, accum_vec, M1, M0)
+
+            _If(Scalar(M1 > 0), call_fn_vec_fast_exp_sum)
+
+            M1 = M0 + M1 * 8
+            M2 = N - M1
+
+            def call_fn_masked_vec_fast_exp_sum():
+                fn_masked_vec_fast_exp_sum(Input, N, Max, accum_vec, M1, M2)
+
+            _If(M2 > 0, call_fn_masked_vec_fast_exp_sum)
+
+            fn_horiz_vec_accum(accum_vec, Output)
+
+        package_name = "test_fast_exp_sum"
+        plan = nest.create_plan(target)
+        function = package.add(plan, args=(Input, N, Max, Output), base_name=package_name)
+
+        In_test = np.random.rand(1003).astype(np.float32)
+        Max_test = np.array([np.max(In_test)], dtype=np.float32)
+        Out_test = np.random.rand(1).astype(np.float32)
+        Out_ref = Out_test.copy()
+        Out_ref[0] = np.sum(np.exp(In_test - Max_test))
+
+        # Build the HAT package
+        with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
+            package.build(
+                package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=TEST_PACKAGE_DIR,
+                _opts=Package._Options.HIGH_PRECISION_FLOATING_POINT_OPS,
+                _quiet=False
+            )
+
+            v.check_correctness(function.name, before=(In_test, Max_test, Out_test), after=(In_test, Max_test, Out_ref))
 
     def test_emittime_cache_mlas_matmul(self) -> None:
         from accera.samples.OfflineCacheMatrixMultiplication import \
@@ -1986,9 +2358,6 @@ class SmokeTest(unittest.TestCase):
                                     )] = test_input[i_outer + i_middle + i_inner, j_outer + j_middle + j_inner]
             v.check_correctness(function.name, before=(test_input, test_output), after=(test_input, test_output_ref))
 
-    @expectedFailure(
-        FailedReason.BUG, "_split_dimension of a dynamically sized dimension with a dynamic size is not working"
-    )
     def test_dynamic_split_dim_dynamic_size(self) -> None:
         test_name = "test_dynamic_split_dim_dynamic_size"
 
@@ -2072,6 +2441,156 @@ class SmokeTest(unittest.TestCase):
                 after=(test_MN, test_M, test_input, test_output_ref)
             )
 
+    # TODO : Bug - this could occur during buffer packing at an app initialization-time and/or runtime,
+    #              but the underlying issue is probably related to the next bug with static split sizes
+    @expectedFailure(FailedReason.BUG, "Multiple _split_dimension's of a dynamically sized dimension with a dynamic size is not working.")
+    def test_multiple_dynamic_split_dim_dynamic_size(self) -> None:
+        test_name = "test_multiple_dynamic_split_dim_dynamic_size"
+
+        M, N, K, L, MNKL = create_dimensions()
+
+        package = Package()
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MNKL, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N, K, L))
+
+        nest = Nest(shape=(M, N, K, L))
+        indices = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            split_input_MNK_L = Input._split_dimension(0, L)
+            split_input_MN_K_L = split_input_MNK_L._split_dimension(0, K)
+            split_input_M_N_K_L = split_input_MN_K_L._split_dimension(0, N)
+            Output[indices] = split_input_M_N_K_L[indices]
+
+        fn = package.add(nest, args=(MNKL, M, N, K, L, Input, Output), base_name=f"{test_name}_fn")
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
+
+            # correctness check
+            test_M = np.int64(16)
+            test_N = np.int64(8)
+            test_K = np.int64(12)
+            test_L = np.int64(4)
+            test_MNKL = np.int64(test_M * test_N * test_K * test_L)
+            test_input = np.random.random([test_MNKL]).astype(np.float32)
+            test_output = np.random.random([test_M, test_N, test_K, test_L]).astype(np.float32)
+            test_output_ref = test_input.copy().reshape((test_M, test_N, test_K, test_L))
+            v.check_correctness(
+                fn.name,
+                before=(test_MNKL, test_M, test_N, test_input, test_output),
+                after=(test_MNKL, test_M, test_N, test_input, test_output_ref)
+            )
+
+    # TODO : Bug - this could occur during buffer packing in an app compile-time, initialization-time or runtime
+    @expectedFailure(FailedReason.BUG, "Multiple _split_dimension's of a dynamically sized buffer into statically sized dimensions is not working.")
+    def test_multiple_dynamic_split_dim_static_size(self) -> None:
+        test_name = "test_multiple_dynamic_split_dim_static_size"
+
+        M, MN = create_dimensions()
+        N = 120
+
+        N_0 = 4
+        N_1 = 5
+        N_2 = 6
+
+        # Use _split_dimension to fold the shape from (M*N) to (M, N_0, N_1, N_2)
+
+        package = Package()
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MN, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N_0, N_1, N_2)) # (M, 4, 5, 6)
+        i, j_0, j_1, j_2 = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            split_input_M01_2 = Input._split_dimension(0, cast(N_2, ScalarType.index))
+            split_input_M0_1_2 = split_input_M01_2._split_dimension(0, cast(N_1, ScalarType.index))
+            split_input_M_0_1_2 = split_input_M0_1_2._split_dimension(0, cast(N_0, ScalarType.index))
+            Output[i, (j_0 * (N_1 * N_2)) + (j_1 * N_2) + j_2] = split_input_M_0_1_2[i, j_0, j_1, j_2]
+
+        fn = package.add(nest, args=(MN, M, Input, Output), base_name=f"{test_name}_fn")
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
+
+            # correctness check
+            test_M = np.int64(64)
+            test_N = N
+            test_MN = np.int64(test_M * test_N)
+            test_input = np.random.random([test_M * test_N]).astype(np.float32)
+            test_output = np.random.random([test_M, test_N]).astype(np.float32)
+            test_output_ref = test_input.copy().reshape((test_M, test_N))
+            v.check_correctness(
+                fn.name,
+                before=(test_MN, test_M, test_input, test_output),
+                after=(test_MN, test_M, test_input, test_output_ref)
+            )
+
+    # TODO : Bug - for _split_dimension this is a more generic scenario of a dynamic value than a function argument
+    @expectedFailure(FailedReason.BUG, "_split_dimension of a generic dynamic value is not working")
+    def test_dynamic_split_dim_bin_op_dynamic_size(self) -> None:
+        test_name = "test_dynamic_split_dim_bin_op_dynamic_size"
+
+        M, N, MN = create_dimensions()
+
+        N_fold_factor = 16
+
+        # Use _split_dimension to fold the shape from (M*N) to (M, 16, (N / 16))
+
+        package = Package()
+
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MN, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
+
+        nest = Nest(shape=(M, N))
+        i, j = nest.get_indices()
+
+        @nest.iteration_logic
+        def _():
+            split_size = N / N_fold_factor
+            # Bug: dynamic split_size here is a function of the dynamic dimension arg N
+            split_input_MN_n = Input._split_dimension(0, cast(split_size, ScalarType.index))
+            split_input_M_N_n = split_input_MN_n._split_dimension(0, cast(N_fold_factor, ScalarType.index))
+            Output[i, j] = split_input_M_N_n[i, j / split_size, j % split_size]
+
+        fn = package.add(nest, args=(MN, M, N, Input, Output), base_name=f"{test_name}_fn")
+
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        with verifiers.VerifyPackage(self, test_name, output_dir) as v:
+            package.build(
+                name=test_name, format=self.PACKAGE_FORMAT, mode=self.PACKAGE_MODE, output_dir=output_dir, _quiet=False
+            )
+
+            # correctness check
+            test_M = np.int64(64)
+            test_N = np.int64(128)
+            test_MN = np.int64(test_M * test_N)
+            test_input = np.random.random([test_M * test_N]).astype(np.float32)
+            test_output = np.random.random([test_M, test_N]).astype(np.float32)
+            test_output_ref = test_input.copy().reshape((test_M, test_N))
+            v.check_correctness(
+                fn.name,
+                before=(test_MN, test_M, test_N, test_input, test_output),
+                after=(test_MN, test_M, test_N, test_input, test_output_ref)
+            )
+
     # This test uses all static sizes to make sure the fix for dynamic size (test_dynamic_split_dim_static_size) 
     # won't regress the static size case.
     def test_dynamic_split_dim_all_static(self) -> None:
@@ -2083,7 +2602,7 @@ class SmokeTest(unittest.TestCase):
 
         package = Package()
 
-        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MN,))
+        Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MN, ))
         Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
         nest = Nest(shape=(M, N))
@@ -2094,11 +2613,7 @@ class SmokeTest(unittest.TestCase):
             split_input = Input._split_dimension(0, cast(16, ScalarType.index))
             Output[i, j] = split_input[i, j]
 
-        fn = package.add(
-            nest,
-            args=(Input, Output),
-            base_name=f"{test_name}_fn"
-        )
+        fn = package.add(nest, args=(Input, Output), base_name=f"{test_name}_fn")
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         shutil.rmtree(output_dir, ignore_errors=True)
@@ -2111,12 +2626,11 @@ class SmokeTest(unittest.TestCase):
             # correctness check
             test_M = 8
             test_N = N
-            test_MN = test_M*test_N
-            test_input = np.random.random([test_M*test_N]).astype(np.float32)
+            test_MN = test_M * test_N
+            test_input = np.random.random([test_M * test_N]).astype(np.float32)
             test_output = np.random.random([test_M, test_N]).astype(np.float32)
             test_output_ref = test_input.copy().reshape((test_M, test_N))
             v.check_correctness(fn.name, before=(test_input, test_output), after=(test_input, test_output_ref))
-
 
     def test_padded_nchwc_conv2d_manual_cache(self) -> None:
         input_channels = 64
@@ -6356,7 +6870,7 @@ class SmokeTest(unittest.TestCase):
             k: outer_tile_k
         })
 
-        mma_shape = _MMAShape.M16xN16xK4_B1
+        mma_shape = MMAShape.M16xN16xK4_B1
         num_total_passes = 4
         target = Target(Target.Model.AMD_MI100)
         tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=num_total_passes)
@@ -6609,7 +7123,7 @@ class SmokeTest(unittest.TestCase):
             k: outer_tile_k
         })
 
-        mma_shape = _MMAShape.M16xN16xK16_B1
+        mma_shape = MMAShape.M16xN16xK16_B1
         target = Target(Target.Model.AMD_MI100)
         tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=1)
 
@@ -6671,7 +7185,7 @@ class SmokeTest(unittest.TestCase):
             k: outer_tile_k
         })
 
-        mma_shape = _MMAShape.M16xN16xK16_B1
+        mma_shape = MMAShape.M16xN16xK16_B1
         target = Target(Target.Model.AMD_MI100)
         tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=1)
 
@@ -6753,7 +7267,7 @@ class SmokeTest(unittest.TestCase):
             k: outer_tile_k
         })
 
-        mma_shape = _MMAShape.M16xN16xK4_B1
+        mma_shape = MMAShape.M16xN16xK4_B1
         num_total_passes = 4
         target = Target(Target.Model.AMD_MI100)
         tensor_splits = target.tensor_core_info.compute_tensor_splits(mma_shape, num_total_passes=num_total_passes)
@@ -7074,8 +7588,8 @@ class SmokeTest(unittest.TestCase):
         sched = nest.create_schedule()
         plan = sched.create_plan()
         plan.vectorize(i)
-        fn = package.add(plan, args=(Input, Output), base_name="test_vectorized_masked_buffer_fill")
         package_name = "test_vectorized_masked_buffer_fill"
+        fn = package.add(plan, args=(Input, Output), base_name=package_name)
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
@@ -7106,8 +7620,8 @@ class SmokeTest(unittest.TestCase):
         sched = nest.create_schedule()
         plan = sched.create_plan()
         plan.vectorize(i)
-        fn = package.add(plan, args=(Input, Output), base_name="test_vectorized_masked_store")
         package_name = "test_vectorized_masked_store"
+        fn = package.add(plan, args=(Input, Output), base_name=package_name)
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
@@ -7140,6 +7654,211 @@ class SmokeTest(unittest.TestCase):
         plan.vectorize(i)
         fn = package.add(plan, args=(Input, Output), base_name="test_vectorized_masked_accumulate")
         package_name = "test_vectorized_masked_accumulate"
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+    def test_dynamic_vectorized_masked_buffer_fill(self) -> None:
+        N_input = create_dimensions()
+        N_output = 8
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output, ))
+        package = Package()
+        nest = Nest(shape=(N_output, ))
+        i, = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+
+            def store_value():
+                Output[i] = Input[i]
+
+            def store_zero():
+                Output[i] = 0
+
+            _If(i < N_input, store_value).Else(store_zero)
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(i)
+        package_name = "test_dynamic_vectorized_masked_buffer_fill"
+        fn = package.add(plan, args=(Input, N_input, Output), base_name=package_name)
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+    def test_dynamic_vectorized_masked_store(self) -> None:
+        N_input = 8
+        N_output = create_dimensions()
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_output, ))
+        package = Package()
+        nest = Nest(shape=(N_input, ))
+        i, = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+
+            def store_value():
+                Output[i] = Input[i]
+
+            _If(i < N_output, store_value)
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(i)
+        package_name = "test_dynamic_vectorized_masked_store"
+        fn = package.add(plan, args=(Input, Output, N_output), base_name=package_name)
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+    def test_dynamic_vectorized_masked_accumulate(self) -> None:
+        N_input = 8
+        N_output = create_dimensions()
+        Input = Array(role=Role.INPUT, element_type=ScalarType.int32, shape=(N_input, ))
+        Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_input, ))
+        package = Package()
+        nest = Nest(shape=(N_input, ))
+        i, = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+
+            def store_value():
+                Output[i] += Input[i]
+
+            _If(i < N_output, store_value)
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(i)
+        package_name = "test_dynamic_vectorized_masked_accumulate"
+        fn = package.add(plan, args=(Input, Output, N_output), base_name=package_name)
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+    def test_dynamic_vectorized_mask_lower_zero_with_fusion(self) -> None:
+        N_input = 8
+        N_output = create_dimensions()
+        Input = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_input, ))
+        temp = Array(role=Role.TEMP, element_type=ScalarType.int32, shape=(N_input, ))
+        package = Package()
+
+        z_nest = Nest((N_input, ))
+        i, = z_nest.get_indices()
+
+        @z_nest.iteration_logic
+        def _():
+            temp[i] = 0
+
+        nest = Nest(shape=(N_input, ))
+        i, = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+
+            def store_zero():
+                Input[i] = temp[i]
+
+            _If(i < N_output, store_zero)
+
+        z_sched = z_nest.create_schedule()
+        sched = nest.create_schedule()
+        sched = fuse((z_sched, sched), partial=0)
+        z_i, i = sched.get_unfused_indices()
+        plan = sched.create_plan()
+        plan.vectorize(z_i)
+        plan.vectorize(i)
+        package_name = "test_dynamic_vectorized_mask_lower_zero_with_fusion"
+        fn = package.add(plan, args=(Input, N_output), base_name=package_name)
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+    def test_dynamic_vectorized_mask_lower_zero(self) -> None:
+        N_input = 8
+        N_output = create_dimensions()
+        Input = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_input, ))
+        package = Package()
+        nest = Nest(shape=(N_input, ))
+        i, = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+
+            def store_zero():
+                Input[i] = 0
+
+            _If(i < N_output, store_zero)
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(i)
+        package_name = "test_dynamic_vectorized_mask_lower_zero"
+        fn = package.add(plan, args=(Input, N_output), base_name=package_name)
+        output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
+        shutil.rmtree(output_dir, ignore_errors=True)
+        with verifiers.VerifyPackage(self, package_name, output_dir) as v:
+            package.build(
+                name=package_name,
+                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                mode=self.PACKAGE_MODE,
+                output_dir=output_dir
+            )
+
+    def test_dynamic_vectorized_mask_upper_zero(self) -> None:
+        N_input = 8
+        N_output = create_dimensions()
+        Input = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.int32, shape=(N_input, ))
+        package = Package()
+        nest = Nest(shape=(N_input, ))
+        i, = nest.get_indices()
+
+        @nest.iteration_logic
+        def _nest():
+
+            def store_zero():
+                Input[i] = 0
+
+            _If(i >= N_output, store_zero)
+
+        sched = nest.create_schedule()
+        plan = sched.create_plan()
+        plan.vectorize(i)
+        package_name = "test_dynamic_vectorized_mask_upper_zero"
+        fn = package.add(plan, args=(Input, N_output), base_name=package_name)
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         shutil.rmtree(output_dir, ignore_errors=True)
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:

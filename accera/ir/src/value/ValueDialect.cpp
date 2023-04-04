@@ -653,90 +653,90 @@ MemRefType SplitDimOp::computeMemRefType(Value source, int64_t dim, Value size)
     return resultMemRefType;
 }
 
-MMAOp::MMAOp(MMAShape shape_) :
+MMAOp::MMAOp(MMAShapeType shape_) :
     shape{ shape_ }
 {
     switch (shape)
     {
-    case MMAShape::M64xN64xK1_B4:
+    case MMAShapeType::M64xN64xK1_B4:
         m = 64;
         n = 64;
         k = 1;
         blocks = 4;
         break;
-    case MMAShape::M64xN64xK1_B2:
+    case MMAShapeType::M64xN64xK1_B2:
         m = 64;
         n = 64;
         k = 1;
         blocks = 2;
         break;
-    case MMAShape::M64xN64xK2_B4:
+    case MMAShapeType::M64xN64xK2_B4:
         m = 64;
         n = 64;
         k = 2;
         blocks = 4;
         break;
-    case MMAShape::M64xN64xK2_B2:
+    case MMAShapeType::M64xN64xK2_B2:
         m = 64;
         n = 64;
         k = 2;
         blocks = 2;
         break;
-    case MMAShape::M64xN64xK4_B4:
+    case MMAShapeType::M64xN64xK4_B4:
         m = 64;
         n = 64;
         k = 4;
         blocks = 4;
         break;
-    case MMAShape::M64xN64xK4_B2:
+    case MMAShapeType::M64xN64xK4_B2:
         m = 64;
         n = 64;
         k = 4;
         blocks = 2;
         break;
-    case MMAShape::M32xN32xK2_B1:
+    case MMAShapeType::M32xN32xK2_B1:
         m = 32;
         n = 32;
         k = 2;
         blocks = 1;
         break;
-    case MMAShape::M32xN32xK4_B1:
+    case MMAShapeType::M32xN32xK4_B1:
         m = 32;
         n = 32;
         k = 4;
         blocks = 1;
         break;
-    case MMAShape::M32xN32xK8_B1:
+    case MMAShapeType::M32xN32xK8_B1:
         m = 32;
         n = 32;
         k = 8;
         blocks = 1;
         break;
-    case MMAShape::M16xN16xK4_B1:
+    case MMAShapeType::M16xN16xK4_B1:
         m = 16;
         n = 16;
         k = 4;
         blocks = 1;
         break;
-    case MMAShape::M16xN16xK8_B1:
+    case MMAShapeType::M16xN16xK8_B1:
         m = 16;
         n = 16;
         k = 8;
         blocks = 1;
         break;
-    case MMAShape::M16xN16xK16_B1:
+    case MMAShapeType::M16xN16xK16_B1:
         m = 16;
         n = 16;
         k = 16;
         blocks = 1;
         break;
-    case MMAShape::M32xN8xK16_B1:
+    case MMAShapeType::M32xN8xK16_B1:
         m = 32;
         n = 8;
         k = 16;
         blocks = 1;
         break;
-    case MMAShape::M8xN32xK16_B1:
+    case MMAShapeType::M8xN32xK16_B1:
         m = 8;
         n = 32;
         k = 16;
@@ -748,7 +748,7 @@ MMAOp::MMAOp(MMAShape shape_) :
     }
 }
 
-MMAShape MMAOp::getShapeType() const
+MMAShapeType MMAOp::getShapeType() const
 {
     return shape;
 }
@@ -823,7 +823,7 @@ static LogicalResult verify(MMALoadSyncOp op)
         operand != MMAOperandType::Acc)
         return op.emitError("only AOp, BOp and COp can be loaded");
 
-    if (operand != MMAOperandType::Acc && op.mmaPrologueOp() != static_cast<uint32_t>(MMAFragmentOp::None))
+    if (operand != MMAOperandType::Acc && op.mmaPrologueOp() != static_cast<uint32_t>(MMAFragmentOpType::None))
         return op.emitError("only COp can have a prologueOp");
 
     return success();

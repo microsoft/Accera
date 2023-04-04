@@ -1908,7 +1908,7 @@ v::MMALoadSyncOp CreateMMALoad(PatternRewriter& builder,
                                bool rowMajor,
                                const std::vector<mlir::Value>& baseArrayPosition,
                                const bool staticOffsets,
-                               MMAFragmentOp prologueOp,
+                               MMAFragmentOpType prologueOp,
                                mlir::Value prologueArg)
 {
     if (auto srcCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(src.getDefiningOp()))
@@ -1950,7 +1950,7 @@ v::MMAStoreSyncOp CreateMMAStore(mlir::OpBuilder& builder,
                                  mlir::Value dst,
                                  const std::vector<mlir::Value>& baseArrayPosition,
                                  const bool staticOffsets,
-                                 MMAFragmentOp epilogueOp,
+                                 MMAFragmentOpType epilogueOp,
                                  mlir::Value epilogueArg)
 {
     if (auto dstCacheOp = mlir::dyn_cast_or_null<MakeCacheOp>(dst.getDefiningOp()))
@@ -4258,7 +4258,7 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
             })
             .Case([&](v::MMALoadSyncOp loadOp) {
                 rewriter.setInsertionPoint(loadOp);
-                const v::MMAFragmentOp mmaPrologueOp{ static_cast<v::MMAFragmentOp>(loadOp.mmaPrologueOp()) };
+                const v::MMAFragmentOpType mmaPrologueOp{ static_cast<v::MMAFragmentOpType>(loadOp.mmaPrologueOp()) };
                 const v::MMAOperandType operandType{ loadOp.operandType() };
                 if (isActiveBlockCache)
                 {
@@ -4298,7 +4298,7 @@ LogicalResult BeginCacheMappingOpRewrite::matchAndRewrite(BeginCacheMappingOp be
             })
             .Case([&](v::MMAStoreSyncOp storeOp) {
                 rewriter.setInsertionPoint(storeOp);
-                const v::MMAFragmentOp mmaEpilogueOp{ static_cast<v::MMAFragmentOp>(storeOp.mmaEpilogueOp()) };
+                const v::MMAFragmentOpType mmaEpilogueOp{ static_cast<v::MMAFragmentOpType>(storeOp.mmaEpilogueOp()) };
                 if (isActiveBlockCache)
                 {
                     auto cacheSrcMemrefType = cacheSrc.getType().cast<MemRefType>();
@@ -5877,7 +5877,7 @@ struct MatrixOp
         return ops;
     }
 
-    auto LoadMatrix(const MatrixProperty& matrixProp, const int64_t passGroupOffset, const int iBlock, std::vector<MMAAllocSyncOp>& matrices, const bool staticOffsets = false, const MMAFragmentOp prologueOp = MMAFragmentOp::None, const double prologueArg = {})
+    auto LoadMatrix(const MatrixProperty& matrixProp, const int64_t passGroupOffset, const int iBlock, std::vector<MMAAllocSyncOp>& matrices, const bool staticOffsets = false, const MMAFragmentOpType prologueOp = MMAFragmentOpType::None, const double prologueArg = {})
     {
         assert(matrices.size() == static_cast<size_t>(matrixProp.numPassesInGroup));
 
@@ -5944,7 +5944,7 @@ struct MatrixOp
         return ops;
     }
 
-    void StoreMatrix(AffineStoreOp& storeOp, Value cMatrix, Type elementType, const int iBlock, const bool staticOffsets, const MMAFragmentOp epilogueOp, const double epilogueArg)
+    void StoreMatrix(AffineStoreOp& storeOp, Value cMatrix, Type elementType, const int iBlock, const bool staticOffsets, const MMAFragmentOpType epilogueOp, const double epilogueArg)
     {
         auto ctx = rewriter.getContext();
         auto d0 = rewriter.getAffineDimExpr(0);
@@ -6440,7 +6440,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     auto aFrags = opHelper.AllocMatrix(aProp);
     auto bFrags = opHelper.AllocMatrix(bProp);
 
-    if (schedulingPriority == MMASchedulingPolicy::BlockOrder)
+    if (schedulingPriority == MMASchedulingPolicyType::BlockOrder)
     {
         auto cFrag = opHelper.AllocMatrix(cProp);
 
@@ -6479,7 +6479,7 @@ LogicalResult TensorizeAffineForOpConversion::matchAndRewrite(AffineForOp affine
     }
     else
     {
-        assert(schedulingPriority == MMASchedulingPolicy::PassOrder);
+        assert(schedulingPriority == MMASchedulingPolicyType::PassOrder);
 
         // First load all the data for C for all the blocks
         std::vector<mlir::Value> cMmaMatrix;

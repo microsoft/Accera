@@ -1,9 +1,6 @@
 #include <stdio.h>
 #include <algorithm>
 
-// Include the HAT file that declares GPU initialization/uninitialization functions
-#include "AcceraGPUUtilities.hat"
-
 // Include the HAT file that declares our MatMul function
 #include "hello_matmul_gpu.hat"
 
@@ -23,11 +20,21 @@ int main(int argc, const char** argv)
     std::fill_n(B, K*N, 3.0f);
     std::fill_n(C, M*N, 0.42f);
 
-    // Initialize the GPU
-    AcceraGPUInitialize();
+    float* dev_A;
+    float* dev_B;
+    float* dev_C;
+    hipMalloc(&dev_A, M * K * sizeof(float));
+    hipMalloc(&dev_B, K * N * sizeof(float));
+    hipMalloc(&dev_C, M * N * sizeof(float));
+    hipMemcpy(dev_A, A, M * K * sizeof(float), hipMemcpyHostToDevice);
+    hipMemcpy(dev_B, B, K * N * sizeof(float), hipMemcpyHostToDevice);
+    hipMemcpy(dev_C, C, M * N * sizeof(float), hipMemcpyHostToDevice);
 
     printf("Calling MatMul M=%d, K=%d, N=%d\n", M, K, N);
-    hello_matmul_gpu(A, B, C);
+    hello_matmul_gpu(dev_A, dev_B, dev_C);
+
+    hipDeviceSynchronize();
+    hipMemcpy(C, dev_C, M * N * sizeof(float), hipMemcpyDeviceToHost);
 
     printf("Result (first 10 elements): ");
     for (int i = 0; i < 10; ++i)
@@ -36,11 +43,11 @@ int main(int argc, const char** argv)
     }
     printf("\n");
 
-    // Uninitialize the GPU
-    AcceraGPUDeInitialize();
-
     delete[] A;
     delete[] B;
     delete[] C;
+    hipFree(dev_A);
+    hipFree(dev_B);
+    hipFree(dev_C);
     return 0;
 }

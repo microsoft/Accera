@@ -94,7 +94,7 @@ namespace value
                 execTarget);
         }
 
-        Cache AddAutomaticCache(ViewAdapter target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, const std::optional<uint64_t>& sharedMemOffset, CacheStrategy strategy)
+        Cache AddAutomaticCache(ViewAdapter target, const std::optional<ScalarIndex>& keySliceIndex, const std::optional<int64_t>& maxElements, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, const std::optional<uint64_t>& sharedMemOffset, CacheStrategyType strategy)
         {
             return { _scheduleOp, target, keySliceIndex, maxElements, sharedMemOffset, strategy, mapping, allocation, memorySpace, _execTarget };
         }
@@ -112,7 +112,7 @@ namespace value
                              MemorySpace memorySpace,
                              MemorySpace doubleBufferMemorySpace,
                              const MemoryAffineCoefficients& memoryMap,
-                             CacheStrategy strategy = CacheStrategy::Striped)
+                             CacheStrategyType strategy = CacheStrategyType::Striped)
         {
             return { _scheduleOp,
                      target,
@@ -146,7 +146,7 @@ namespace value
                              MemorySpace doubleBufferMemorySpace,
                              const DimensionOrder& dimOrder,
                              const std::optional<uint64_t>& sharedMemOffset = {},
-                             CacheStrategy strategy = CacheStrategy::Striped)
+                             CacheStrategyType strategy = CacheStrategyType::Striped)
         {
             return { _scheduleOp,
                      target,
@@ -211,11 +211,11 @@ namespace value
             }
         }
 
-        void Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy, MMAFragmentOp prologueOp, double prologueArg, MMAFragmentOp epilogueOp, double epilogueArg, bool _useRocWMMA)
+        void Tensorize(std::vector<ScalarIndex> indices, MMAShapeType dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicyType schedulingPolicy, MMAFragmentOpType prologueOp, double prologueArg, MMAFragmentOpType epilogueOp, double epilogueArg, bool _useRocWMMA)
         {
             auto& builder = GetBuilder();
 
-            TensorizationInfo tensorizationInfo{ static_cast<accera::ir::value::MMAShape>(dims), numTotalPasses, useStaticOffsets, numFusedPasses, static_cast<accera::ir::value::MMASchedulingPolicy>(schedulingPolicy), static_cast<accera::ir::value::MMAFragmentOp>(prologueOp), prologueArg, static_cast<accera::ir::value::MMAFragmentOp>(epilogueOp), epilogueArg, _useRocWMMA };
+            TensorizationInfo tensorizationInfo{ static_cast<accera::ir::value::MMAShapeType>(dims), numTotalPasses, useStaticOffsets, numFusedPasses, static_cast<accera::ir::value::MMASchedulingPolicyType>(schedulingPolicy), static_cast<accera::ir::value::MMAFragmentOpType>(prologueOp), prologueArg, static_cast<accera::ir::value::MMAFragmentOpType>(epilogueOp), epilogueArg, _useRocWMMA };
             auto tensorizationInfoIdentifier = builder.getStringAttr(TensorizationInfoAttr::getKeyName());
             auto tensorizationInfoAttr = TensorizationInfoAttr::get(tensorizationInfo, builder.getContext());
 
@@ -445,17 +445,17 @@ namespace value
     {
     }
 
-    Cache GPUPlan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, CacheStrategy strategy, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace, const std::optional<uint64_t>& sharedMemOffset)
+    Cache GPUPlan::AddCache(std::variant<ViewAdapter, Cache*> target, const ScalarIndex& outermostIncludedSplitIndex, const value::ScalarIndex& triggerIndex, const DimensionOrder& dimOrder, const std::optional<value::ValueType>& elementType, bool thrifty, bool doubleBuffer, CacheStrategyType strategy, const std::optional<VectorizationInformation>& vectorizationInfo, CacheIndexing mapping, CacheAllocation allocation, MemorySpace memorySpace, MemorySpace doubleBufferMemorySpace, const std::optional<uint64_t>& sharedMemOffset)
     {
         return _impl->AddManualCache(target, outermostIncludedSplitIndex, triggerIndex, std::nullopt, elementType, thrifty, doubleBuffer, vectorizationInfo, mapping, allocation, memorySpace, doubleBufferMemorySpace, dimOrder, sharedMemOffset, strategy);
     }
 
-    Cache GPUPlan::AddCache(ViewAdapter target, int64_t maxElements, CacheStrategy strategy, MemorySpace memorySpace, const std::optional<uint64_t>& sharedMemOffset)
+    Cache GPUPlan::AddCache(ViewAdapter target, int64_t maxElements, CacheStrategyType strategy, MemorySpace memorySpace, const std::optional<uint64_t>& sharedMemOffset)
     {
         return _impl->AddAutomaticCache(target, std::nullopt, maxElements, CacheIndexing::GlobalToPhysical, CacheAllocation::Automatic, memorySpace, sharedMemOffset, strategy);
     }
 
-    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, MMAShape dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicy schedulingPolicy, MMAFragmentOp prologueOp, double prologueArg, MMAFragmentOp epilogueOp, double epilogueArg, bool _useRocWMMA)
+    void GPUPlan::Tensorize(std::vector<ScalarIndex> indices, MMAShapeType dims, int numTotalPasses, bool useStaticOffsets, int numFusedPasses, MMASchedulingPolicyType schedulingPolicy, MMAFragmentOpType prologueOp, double prologueArg, MMAFragmentOpType epilogueOp, double epilogueArg, bool _useRocWMMA)
     {
         _impl->Tensorize(indices, dims, numTotalPasses, useStaticOffsets, numFusedPasses, schedulingPolicy, prologueOp, prologueArg, epilogueOp, epilogueArg, _useRocWMMA);
     }

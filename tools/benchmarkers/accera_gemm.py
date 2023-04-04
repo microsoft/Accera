@@ -17,9 +17,7 @@ from itertools import combinations_with_replacement, product
 from typing import Any, Dict, List, Tuple
 import numpy as np
 import hatlib
-from accera import Array, Nest, Constants, ScalarType, Target, Package
-from accera._lang_python import Role
-from accera._lang_python._lang import _MMASchedulingPolicy, _MMAShape, _MMAFragmentOp, _CacheStrategy
+from accera import Array, Nest, Constants, ScalarType, Target, Package, Role, MMAShape, MMASchedulingPolicy, MMAFragmentOp, CacheStrategy
 import cosmosdb
 from gemm_opts import GemmOpts
 import math
@@ -139,15 +137,15 @@ def print_log(verbose: bool, msg: str, color: str = None):
         else:
             print(colored(msg, color))
 
-def get_k(target: Target, mma_shape: _MMAShape):
+def get_k(target: Target, mma_shape: MMAShape):
     mma_shape = target.tensor_core_info.mma_shape_to_tuple(mma_shape)
     return mma_shape[2]
 
-def get_m(target: Target, mma_shape: _MMAShape):
+def get_m(target: Target, mma_shape: MMAShape):
     mma_shape = target.tensor_core_info.mma_shape_to_tuple(mma_shape)
     return mma_shape[0]
 
-def get_n(target: Target, mma_shape: _MMAShape):
+def get_n(target: Target, mma_shape: MMAShape):
     mma_shape = target.tensor_core_info.mma_shape_to_tuple(mma_shape)
     return mma_shape[1]
 
@@ -157,8 +155,8 @@ def get_layout(transpose: bool):
 def get_type(typeStr: str):
     return ScalarType.float32 if typeStr == 's' else ScalarType.float16
 
-def single_block_mma(mma_shape: _MMAShape):
-    return mma_shape != _MMAShape.M64xN64xK1_B4 and mma_shape != _MMAShape.M64xN64xK1_B2 and mma_shape != _MMAShape.M64xN64xK4_B4 and mma_shape != _MMAShape.M64xN64xK4_B2
+def single_block_mma(mma_shape: MMAShape):
+    return mma_shape != MMAShape.M64xN64xK1_B4 and mma_shape != MMAShape.M64xN64xK1_B2 and mma_shape != MMAShape.M64xN64xK4_B4 and mma_shape != MMAShape.M64xN64xK4_B2
 
 def create_gemm_nest_args(M: int, N: int, K: int, transA: bool, transB: bool, dtype):
     datatype = get_type(dtype)
@@ -188,7 +186,7 @@ def create_gemm_nest_args(M: int, N: int, K: int, transA: bool, transB: bool, dt
 
 def benchmark_kernel(
     target: Target, M: int, N: int, K: int, transA: bool, transB: bool, dtype, outer_tile_m: int, outer_tile_n: int,
-    outer_tile_k: int, cacheA_layout, cacheB_layout, cache_C: bool, cacheA_strategy: _CacheStrategy, cacheB_strategy: _CacheStrategy,
+    outer_tile_k: int, cacheA_layout, cacheB_layout, cache_C: bool, cacheA_strategy: CacheStrategy, cacheB_strategy: CacheStrategy,
     mma_shape, use_static_offsets, double_buffering, vectorize, num_total_passes, num_fused_passes, scheduling_policy, thread_coarsening_factor, relu):
     nest, (A, B, C) = create_gemm_nest_args(M, N, K, transA, transB, dtype)
     schedule = nest.create_schedule()
@@ -222,7 +220,7 @@ def benchmark_kernel(
     shared_mem_usage_bytes = elem_bytes * (outer_tile_m + outer_tile_n) * outer_tile_k
     use_dynamic_shared_mem = shared_mem_usage_bytes > target.max_static_shared_memory_per_block
     dynamic_shared_mem_usage_bytes = shared_mem_usage_bytes if use_dynamic_shared_mem else 0
-    epilogue_op = _MMAFragmentOp.ReLU if relu else _MMAFragmentOp.NONE
+    epilogue_op = MMAFragmentOp.ReLU if relu else MMAFragmentOp.NONE
 
     plan, tensorization_indices = schedule._create_tensorizable_plan(target, block_indices=block_indices, warp_indices=warp_indices, tensor_indices=tensor_indices, outer_nest_order=outer_nest_order, dynamic_shared_memory_size=dynamic_shared_mem_usage_bytes)
     plan.tensorize(indices=tensorization_indices, mma_shape=mma_shape, num_total_passes=num_total_passes, use_static_offsets=use_static_offsets, num_fused_passes=num_fused_passes, scheduling_policy=scheduling_policy, epilogue_op=epilogue_op)
@@ -275,10 +273,10 @@ def get_variants(opts: GemmOpts, dtype, target):
     outer_tiles = [16, 32, 64, 128, 256]
 
     if target.runtime == Target.Runtime.ROCM:
-        mfma_tiles = [_MMAShape.M64xN64xK1_B4, _MMAShape.M64xN64xK1_B2, _MMAShape.M32xN32xK2_B1, _MMAShape.M16xN16xK4_B1,
-                      _MMAShape.M64xN64xK4_B4, _MMAShape.M64xN64xK4_B2, _MMAShape.M32xN32xK8_B1, _MMAShape.M16xN16xK16_B1]
+        mfma_tiles = [MMAShape.M64xN64xK1_B4, MMAShape.M64xN64xK1_B2, MMAShape.M32xN32xK2_B1, MMAShape.M16xN16xK4_B1,
+                      MMAShape.M64xN64xK4_B4, MMAShape.M64xN64xK4_B2, MMAShape.M32xN32xK8_B1, MMAShape.M16xN16xK16_B1]
     elif target.runtime == Target.Runtime.CUDA:
-        mfma_tiles = [_MMAShape.M16xN16xK16_B1, _MMAShape.M32xN8xK16_B1, _MMAShape.M8xN32xK16_B1, _MMAShape.M16xN16xK8_B1]
+        mfma_tiles = [MMAShape.M16xN16xK16_B1, MMAShape.M32xN8xK16_B1, MMAShape.M8xN32xK16_B1, MMAShape.M16xN16xK8_B1]
 
     k_split = [256, 128, 64, 32, 16, 8, 4, 2, 1]
     k_split_reduced = []
@@ -303,7 +301,7 @@ def get_variants(opts: GemmOpts, dtype, target):
                     break
     num_total_passes_reduced.append(1)
     fuse_factor = [1]#, 2, 4, 8]
-    scheduling_policy = [_MMASchedulingPolicy.PASS_ORDER, _MMASchedulingPolicy.BLOCK_ORDER]
+    scheduling_policy = [MMASchedulingPolicy.PASS_ORDER, MMASchedulingPolicy.BLOCK_ORDER]
     thread_coarsening_factor_r = [1, 2, 4]
     thread_coarsening_factor_c = [1, 2, 4]
     use_static_offsets = [False]
@@ -311,13 +309,13 @@ def get_variants(opts: GemmOpts, dtype, target):
     double_buffering = [True]
     cacheA_layout = [Array.Layout.LAST_MAJOR]
     cacheB_layout = [Array.Layout.FIRST_MAJOR]
-    cacheA_strategy = [_CacheStrategy.BLOCKED, _CacheStrategy.STRIPED]
-    cacheB_strategy = [_CacheStrategy.BLOCKED, _CacheStrategy.STRIPED]
+    cacheA_strategy = [CacheStrategy.BLOCKED, CacheStrategy.STRIPED]
+    cacheB_strategy = [CacheStrategy.BLOCKED, CacheStrategy.STRIPED]
 
     def valid_variant(outer_t, outer_k, mma_type, total_passes, fuse_factor, scheduling_policy, thread_coarsening_factor_r, thread_coarsening_factor_c):
         # For single block MMA shapes, we don't need to test both scheduling policies and they will
         # both effectively result in the same schedule. Just ignore BLOCK_ORDER in that case.
-        if single_block_mma(mma_type) and scheduling_policy == _MMASchedulingPolicy.BLOCK_ORDER:
+        if single_block_mma(mma_type) and scheduling_policy == MMASchedulingPolicy.BLOCK_ORDER:
             return False
 
         thread_coarsening_factor = thread_coarsening_factor_r * thread_coarsening_factor_c
@@ -530,11 +528,11 @@ def run_variant(variant, gpu_id, device_q, opts, dtype, target, output_prefix, c
         result.vectorize = vectorize
         result.cache_layout_A = "F" if cacheA_layout == Array.Layout.FIRST_MAJOR else "L"
         result.cache_layout_B = "F" if cacheB_layout == Array.Layout.FIRST_MAJOR else "L"
-        result.cache_strategy_A = "B" if cacheA_strategy == _CacheStrategy.BLOCKED else "S"
-        result.cache_strategy_B = "B" if cacheB_strategy == _CacheStrategy.BLOCKED else "S"
+        result.cache_strategy_A = "B" if cacheA_strategy == CacheStrategy.BLOCKED else "S"
+        result.cache_strategy_B = "B" if cacheB_strategy == CacheStrategy.BLOCKED else "S"
         result.num_total_passes = num_total_passes
         result.num_fused_passes = num_fused_passes = num_total_passes // fuse_factor
-        result.scheduling_policy = 0 if scheduling_policy == _MMASchedulingPolicy.PASS_ORDER else 1
+        result.scheduling_policy = 0 if scheduling_policy == MMASchedulingPolicy.PASS_ORDER else 1
         result.block_tile = (outer_tile_m, outer_tile_n)
         result.thread_coarsening_factor = (thread_coarsening_factor_r, thread_coarsening_factor_c)
         result.k_split = k_split
@@ -613,7 +611,7 @@ def gemm_runner(gpu_id: int, batch_size: int, output_prefix, device_q, result_ro
 
                     hat_package, func_map = hatlib.load(hat_path)
                     C_copy = deepcopy(C_test)
-                    func_map[fn_name](A_test, B_test, C_copy, gpu_id=gpu_id)
+                    func_map[fn_name](A_test, B_test, C_copy, device_id=gpu_id)
                     np.testing.assert_allclose(C_ref, C_copy, rtol=1e-2)
 
                     print_log(verbose_logs, f'Passed correctness for package: {package_name} on gpu {gpu_id}', 'green')
@@ -624,7 +622,7 @@ def gemm_runner(gpu_id: int, batch_size: int, output_prefix, device_q, result_ro
                     hat_path,
                     batch_size=batch_size,
                     min_time_in_sec=1,
-                    gpu_id=gpu_id
+                    device_id=gpu_id
                 )
             except Exception as e:
                 if result.target_rt == 'ROCM':

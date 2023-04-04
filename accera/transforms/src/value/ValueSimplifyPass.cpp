@@ -91,6 +91,9 @@ struct ValueSliceSimplifyPattern : public OpRewritePattern<ValueSliceOp>
         auto source = op.source();
 
         auto sourceType = source.getType().cast<mlir::MemRefType>();
+        auto destType = op.result().getType().cast<mlir::MemRefType>();
+        assert(sourceType.getRank() > destType.getRank());
+
         auto shape = sourceType.getShape();
         auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
         auto one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
@@ -131,7 +134,7 @@ struct ValueSliceSimplifyPattern : public OpRewritePattern<ValueSliceOp>
                 }
             }
         }
-        rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, mlir::MemRefType{}, source, resolvedOffsets, sizes, strides);
+        rewriter.replaceOpWithNewOp<memref::SubViewOp>(op, destType, source, resolvedOffsets, sizes, strides);
 
         return success();
     }

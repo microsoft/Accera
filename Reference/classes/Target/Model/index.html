@@ -1,0 +1,4723 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Open source compiler for generating fast, compute-intensive loops used in AI algorithms, from Microsoft Research.">
+      
+      
+        <meta name="author" content="Microsoft">
+      
+      
+      
+        <link rel="prev" href="../Category/">
+      
+      
+        <link rel="next" href="../Runtime/">
+      
+      <link rel="icon" href="../../../../assets/logos/favicon.png">
+      <meta name="generator" content="mkdocs-1.4.2, mkdocs-material-9.1.6">
+    
+    
+      
+        <title>Model - Accera</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../assets/stylesheets/main.ded33207.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../../assets/stylesheets/palette.a0c5b2b5.min.css">
+      
+      
+
+    
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300i,400,400i,700,700i%7CSource+Code+Pro:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Open Sans";--md-code-font:"Source Code Pro"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="">
+  
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&"object"==typeof palette.color)for(var key of Object.keys(palette.color))document.body.setAttribute("data-md-color-"+key,palette.color[key])</script>
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#accera-v12-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../../.." title="Accera" class="md-header__button md-logo" aria-label="Accera" data-md-component="logo">
+      
+  <img src="../../../../assets/logos/A_lighttext.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Accera
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Model
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      <form class="md-header__option" data-md-component="palette">
+        
+          
+          <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent=""  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+          
+            <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 6H7c-3.31 0-6 2.69-6 6s2.69 6 6 6h10c3.31 0 6-2.69 6-6s-2.69-6-6-6zm0 10H7c-2.21 0-4-1.79-4-4s1.79-4 4-4h10c2.21 0 4 1.79 4 4s-1.79 4-4 4zM7 9c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+            </label>
+          
+        
+          
+          <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="light-blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_2">
+          
+            <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 7H7a5 5 0 0 0-5 5 5 5 0 0 0 5 5h10a5 5 0 0 0 5-5 5 5 0 0 0-5-5m0 8a3 3 0 0 1-3-3 3 3 0 0 1 3-3 3 3 0 0 1 3 3 3 3 0 0 1-3 3Z"/></svg>
+            </label>
+          
+        
+      </form>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7 0-.24-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91 1.61 0 2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08Z"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/microsoft/Accera/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.4.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    microsoft/Accera
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+
+
+  <li class="md-tabs__item">
+    <a href="../../../.." class="md-tabs__link">
+      Home
+    </a>
+  </li>
+
+      
+        
+  
+  
+
+
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../Case%20Studies/" class="md-tabs__link">
+        Case Studies
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+
+
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../Install/" class="md-tabs__link">
+        Install
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+
+
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../Manual/" class="md-tabs__link">
+        Manual
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+    
+  
+
+
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../accera/" class="md-tabs__link md-tabs__link--active">
+        Reference
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+
+
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../Tutorials/" class="md-tabs__link">
+        Tutorials
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../../.." title="Accera" class="md-nav__button md-logo" aria-label="Accera" data-md-component="logo">
+      
+  <img src="../../../../assets/logos/A_lighttext.png" alt="logo">
+
+    </a>
+    Accera
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/microsoft/Accera/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.4.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    microsoft/Accera
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../.." class="md-nav__link">
+        Home
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+          Case Studies
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_2">
+          <span class="md-nav__icon md-icon"></span>
+          Case Studies
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Case%20Studies/" class="md-nav__link">
+        Index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Case%20Studies/CONTRIBUTING/" class="md-nav__link">
+        CONTRIBUTING
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          Install
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_3">
+          <span class="md-nav__icon md-icon"></span>
+          Install
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Install/" class="md-nav__link">
+        Index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Install/Building_on_MacOS/" class="md-nav__link">
+        Building on MacOS
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Install/Building_on_Ubuntu/" class="md-nav__link">
+        Building on Ubuntu
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Install/Building_on_Windows/" class="md-nav__link">
+        Building on Windows
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Install/Installing_Accera_on_MacOS/" class="md-nav__link">
+        Installing Accera on MacOS
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Install/Installing_Accera_on_Ubuntu/" class="md-nav__link">
+        Installing Accera on Ubuntu
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Install/Installing_Accera_on_Windows/" class="md-nav__link">
+        Installing Accera on Windows
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          Manual
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_4">
+          <span class="md-nav__icon md-icon"></span>
+          Manual
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/" class="md-nav__link">
+        Index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/00%20Introduction/" class="md-nav__link">
+        00 Introduction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/01%20Arrays%20and%20Scalars/" class="md-nav__link">
+        01 Arrays and Scalars
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/02%20Simple%20Affine%20Loop%20Nests/" class="md-nav__link">
+        02 Simple Affine Loop Nests
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/03%20Schedules/" class="md-nav__link">
+        03 Schedules
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/04%20Fusing/" class="md-nav__link">
+        04 Fusing
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/05%20Targets/" class="md-nav__link">
+        05 Targets
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/06%20Plans%20-%20Caching/" class="md-nav__link">
+        06 Plans   Caching
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/07%20Plans%20-%20Operations%20and%20Optimizations/" class="md-nav__link">
+        07 Plans   Operations and Optimizations
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/08%20Deferred%20Layout%20of%20Constant%20Arrays/" class="md-nav__link">
+        08 Deferred Layout of Constant Arrays
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/09%20Parameters/" class="md-nav__link">
+        09 Parameters
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/10%20Packages/" class="md-nav__link">
+        10 Packages
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Manual/11%20Plans%20-%20GPU%20Tensorization/" class="md-nav__link">
+        11 Plans   GPU Tensorization
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+    
+  
+  
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+          Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+        <label class="md-nav__title" for="__nav_5">
+          <span class="md-nav__icon md-icon"></span>
+          Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../accera/" class="md-nav__link">
+        Accera
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../safety_analysis/" class="md-nav__link">
+        Safety analysis
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+    
+  
+  
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" checked>
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+          Classes
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="true">
+        <label class="md-nav__title" for="__nav_5_3">
+          <span class="md-nav__icon md-icon"></span>
+          Classes
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_1" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_1" id="__nav_5_3_1_label" tabindex="0">
+          Array
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_1_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_1">
+          <span class="md-nav__icon md-icon"></span>
+          Array
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Array/Array/" class="md-nav__link">
+        Array
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Array/Layout/" class="md-nav__link">
+        Layout
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Array/deferred_layout/" class="md-nav__link">
+        Deferred layout
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Array/slice/" class="md-nav__link">
+        Slice
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Array/sub_array/" class="md-nav__link">
+        Sub array
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_2" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_2" id="__nav_5_3_2_label" tabindex="0">
+          Dimension
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_2_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_2">
+          <span class="md-nav__icon md-icon"></span>
+          Dimension
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Dimension/Dimension/" class="md-nav__link">
+        Dimension
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_3" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_3" id="__nav_5_3_3_label" tabindex="0">
+          FusedSchedule
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_3_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_3">
+          <span class="md-nav__icon md-icon"></span>
+          FusedSchedule
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../FusedSchedule/get_fused_indices/" class="md-nav__link">
+        Get fused indices
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../FusedSchedule/get_fusing_index/" class="md-nav__link">
+        Get fusing index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../FusedSchedule/get_unfused_indices/" class="md-nav__link">
+        Get unfused indices
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_4" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_4" id="__nav_5_3_4_label" tabindex="0">
+          Nest
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_4_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_4">
+          <span class="md-nav__icon md-icon"></span>
+          Nest
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Nest/Nest/" class="md-nav__link">
+        Nest
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Nest/create_plan/" class="md-nav__link">
+        Create plan
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Nest/create_schedule/" class="md-nav__link">
+        Create schedule
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Nest/get_indices/" class="md-nav__link">
+        Get indices
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Nest/iteration_logic/" class="md-nav__link">
+        Iteration logic
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_5" id="__nav_5_3_5_label" tabindex="0">
+          Package
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_5_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_5">
+          <span class="md-nav__icon md-icon"></span>
+          Package
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Package/Format/" class="md-nav__link">
+        Format
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Package/Mode/" class="md-nav__link">
+        Mode
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Package/Package/" class="md-nav__link">
+        Package
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Package/Platform/" class="md-nav__link">
+        Platform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Package/add/" class="md-nav__link">
+        Add
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Package/add_description/" class="md-nav__link">
+        Add description
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Package/build/" class="md-nav__link">
+        Build
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_6" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_6" id="__nav_5_3_6_label" tabindex="0">
+          Plan
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_6_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_6">
+          <span class="md-nav__icon md-icon"></span>
+          Plan
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Plan/bind/" class="md-nav__link">
+        Bind
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Plan/cache/" class="md-nav__link">
+        Cache
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Plan/kernelize/" class="md-nav__link">
+        Kernelize
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Plan/parallelize/" class="md-nav__link">
+        Parallelize
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Plan/tensorize/" class="md-nav__link">
+        Tensorize
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Plan/unroll/" class="md-nav__link">
+        Unroll
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Plan/vectorize/" class="md-nav__link">
+        Vectorize
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_7" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_7" id="__nav_5_3_7_label" tabindex="0">
+          Scalar
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_7_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_7">
+          <span class="md-nav__icon md-icon"></span>
+          Scalar
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Scalar/Scalar/" class="md-nav__link">
+        Scalar
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_8" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_8" id="__nav_5_3_8_label" tabindex="0">
+          Schedule
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_8_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_8">
+          <span class="md-nav__icon md-icon"></span>
+          Schedule
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Schedule/create_plan/" class="md-nav__link">
+        Create plan
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Schedule/get_indices/" class="md-nav__link">
+        Get indices
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Schedule/is_valid_loop_order/" class="md-nav__link">
+        Is valid loop order
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Schedule/pad/" class="md-nav__link">
+        Pad
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Schedule/reorder/" class="md-nav__link">
+        Reorder
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Schedule/skew/" class="md-nav__link">
+        Skew
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Schedule/split/" class="md-nav__link">
+        Split
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Schedule/tile/" class="md-nav__link">
+        Tile
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+    
+  
+  
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_9" checked>
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_9" id="__nav_5_3_9_label" tabindex="0">
+          Target
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_9_label" aria-expanded="true">
+        <label class="md-nav__title" for="__nav_5_3_9">
+          <span class="md-nav__icon md-icon"></span>
+          Target
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Architecture/" class="md-nav__link">
+        Architecture
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Category/" class="md-nav__link">
+        Category
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          Model
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        Model
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#acceratargetmodel" class="md-nav__link">
+    accera.Target.Model
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Runtime/" class="md-nav__link">
+        Runtime
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Target/" class="md-nav__link">
+        Target
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_4" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_4" id="__nav_5_4_label" tabindex="0">
+          Enumerations
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_4_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_4">
+          <span class="md-nav__icon md-icon"></span>
+          Enumerations
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../enumerations/CacheStrategy/" class="md-nav__link">
+        CacheStrategy
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../enumerations/MMAFragmentOp/" class="md-nav__link">
+        MMAFragmentOp
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../enumerations/MMASchedulingPolicy/" class="md-nav__link">
+        MMASchedulingPolicy
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../enumerations/MMAShape/" class="md-nav__link">
+        MMAShape
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../enumerations/Role/" class="md-nav__link">
+        Role
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../enumerations/ScalarType/" class="md-nav__link">
+        ScalarType
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_5" id="__nav_5_5_label" tabindex="0">
+          Functions
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_5_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_5">
+          <span class="md-nav__icon md-icon"></span>
+          Functions
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../functions/cast/" class="md-nav__link">
+        Cast
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../functions/create_dimensions/" class="md-nav__link">
+        Create dimensions
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../functions/create_parameter_grid/" class="md-nav__link">
+        Create parameter grid
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../functions/create_parameters/" class="md-nav__link">
+        Create parameters
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../functions/fuse/" class="md-nav__link">
+        Fuse
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          Tutorials
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_6">
+          <span class="md-nav__icon md-icon"></span>
+          Tutorials
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Tutorials/" class="md-nav__link">
+        Index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Tutorials/Hello_MatMul/" class="md-nav__link">
+        Hello MatMul
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Tutorials/Optimized_MatMul/" class="md-nav__link">
+        Optimized MatMul
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Tutorials/Pi3_Cross_Compilation/" class="md-nav__link">
+        Pi3 Cross Compilation
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_5" id="__nav_6_5_label" tabindex="0">
+          GPU
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_5_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_6_5">
+          <span class="md-nav__icon md-icon"></span>
+          GPU
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Tutorials/GPU/Hello_MatMul_GPU/" class="md-nav__link">
+        Hello MatMul GPU
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Tutorials/GPU/Tensor_MatMul_Caching_GPU/" class="md-nav__link">
+        Tensor MatMul Caching GPU
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Tutorials/GPU/Tensor_MatMul_ElementWiseOps_GPU/" class="md-nav__link">
+        Tensor MatMul ElementWiseOps GPU
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Tutorials/GPU/Tensor_MatMul_GPU/" class="md-nav__link">
+        Tensor MatMul GPU
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Tutorials/GPU/Tensor_MatMul_MultiPass/" class="md-nav__link">
+        Tensor MatMul MultiPass
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../Tutorials/GPU/Tensor_MatMul_SchedulingPolicy_GPU/" class="md-nav__link">
+        Tensor MatMul SchedulingPolicy GPU
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="accera-v12-reference">Accera v1.2 Reference</h1>
+<h2 id="acceratargetmodel"><code>accera.Target.Model</code></h2>
+<p>Defines constants for some well-known CPU models.</p>
+<!--
+NOTE: This table should be in sync with accera/python/accera/Targets.py.
+To generate the table entries:
+1. Re-build Accera
+2. cd build/lib.xxx
+3. Run this code snippet and replace the entries in the tables:
+
+from accera.Targets import KNOWN_DEVICES, _MODEL_TRANSLATION_DICT, Target
+
+devices = KNOWN_DEVICES[Target.Category.CPU]
+for d in sorted(devices): 
+    print(f"`accera.Target.Model.{d.upper().translate(_MODEL_TRANSLATION_DICT)}` | {d}")
+
+print("\n\n")
+devices = KNOWN_DEVICES[Target.Category.GPU]
+for d in sorted(devices): 
+    print(f"`accera.Target.Model.{d.upper().translate(_MODEL_TRANSLATION_DICT)}` | {d}")
+-->
+
+<table>
+<thead>
+<tr>
+<th>type</th>
+<th>description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>accera.Target.Model.AMD_1200</code></td>
+<td>AMD 1200</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1300X</code></td>
+<td>AMD 1300X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1400</code></td>
+<td>AMD 1400</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1500X</code></td>
+<td>AMD 1500X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1600</code></td>
+<td>AMD 1600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1600X</code></td>
+<td>AMD 1600X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1700</code></td>
+<td>AMD 1700</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1700X</code></td>
+<td>AMD 1700X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1800X</code></td>
+<td>AMD 1800X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1900X</code></td>
+<td>AMD 1900X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1920X</code></td>
+<td>AMD 1920X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_1950X</code></td>
+<td>AMD 1950X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_200GE</code></td>
+<td>AMD 200GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2200G</code></td>
+<td>AMD 2200G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2200GE</code></td>
+<td>AMD 2200GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2200U</code></td>
+<td>AMD 2200U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_220GE</code></td>
+<td>AMD 220GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2300U</code></td>
+<td>AMD 2300U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2300X</code></td>
+<td>AMD 2300X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2400G</code></td>
+<td>AMD 2400G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2400GE</code></td>
+<td>AMD 2400GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_240GE</code></td>
+<td>AMD 240GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2500U</code></td>
+<td>AMD 2500U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2500X</code></td>
+<td>AMD 2500X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2600</code></td>
+<td>AMD 2600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2600E</code></td>
+<td>AMD 2600E</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2600H</code></td>
+<td>AMD 2600H</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2600X</code></td>
+<td>AMD 2600X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2700</code></td>
+<td>AMD 2700</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2700E</code></td>
+<td>AMD 2700E</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2700U</code></td>
+<td>AMD 2700U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2700X</code></td>
+<td>AMD 2700X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2700X_GOLD_EDITION</code></td>
+<td>AMD 2700X Gold Edition</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2800H</code></td>
+<td>AMD 2800H</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2920X</code></td>
+<td>AMD 2920X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2950X</code></td>
+<td>AMD 2950X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2970WX</code></td>
+<td>AMD 2970WX</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_2990WX</code></td>
+<td>AMD 2990WX</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3000G</code></td>
+<td>AMD 3000G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_300U</code></td>
+<td>AMD 300U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3050U</code></td>
+<td>AMD 3050U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3101</code></td>
+<td>AMD 3101</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3150U</code></td>
+<td>AMD 3150U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3151</code></td>
+<td>AMD 3151</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3200G</code></td>
+<td>AMD 3200G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3200U</code></td>
+<td>AMD 3200U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3201</code></td>
+<td>AMD 3201</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3250U</code></td>
+<td>AMD 3250U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3251</code></td>
+<td>AMD 3251</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3255</code></td>
+<td>AMD 3255</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3300U</code></td>
+<td>AMD 3300U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3301</code></td>
+<td>AMD 3301</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3351</code></td>
+<td>AMD 3351</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3400G</code></td>
+<td>AMD 3400G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3401</code></td>
+<td>AMD 3401</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3451</code></td>
+<td>AMD 3451</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3500</code></td>
+<td>AMD 3500</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3500U</code></td>
+<td>AMD 3500U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3500X</code></td>
+<td>AMD 3500X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3550H</code></td>
+<td>AMD 3550H</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3580U</code></td>
+<td>AMD 3580U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3600</code></td>
+<td>AMD 3600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3600X</code></td>
+<td>AMD 3600X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3600XT</code></td>
+<td>AMD 3600XT</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3700U</code></td>
+<td>AMD 3700U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3700X</code></td>
+<td>AMD 3700X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3750H</code></td>
+<td>AMD 3750H</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3780U</code></td>
+<td>AMD 3780U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3800X</code></td>
+<td>AMD 3800X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3800XT</code></td>
+<td>AMD 3800XT</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3900</code></td>
+<td>AMD 3900</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3900X</code></td>
+<td>AMD 3900X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3900XT</code></td>
+<td>AMD 3900XT</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3950X</code></td>
+<td>AMD 3950X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3960X</code></td>
+<td>AMD 3960X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3970X</code></td>
+<td>AMD 3970X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3980X</code></td>
+<td>AMD 3980X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_3990X</code></td>
+<td>AMD 3990X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4300G</code></td>
+<td>AMD 4300G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4300GE</code></td>
+<td>AMD 4300GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4300U</code></td>
+<td>AMD 4300U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4500U</code></td>
+<td>AMD 4500U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4600G</code></td>
+<td>AMD 4600G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4600GE</code></td>
+<td>AMD 4600GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4600H</code></td>
+<td>AMD 4600H</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4600HS</code></td>
+<td>AMD 4600HS</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4600U</code></td>
+<td>AMD 4600U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4680U</code></td>
+<td>AMD 4680U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4700G</code></td>
+<td>AMD 4700G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4700GE</code></td>
+<td>AMD 4700GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4700U</code></td>
+<td>AMD 4700U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4800H</code></td>
+<td>AMD 4800H</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4800HS</code></td>
+<td>AMD 4800HS</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4800U</code></td>
+<td>AMD 4800U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4900H</code></td>
+<td>AMD 4900H</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4900HS</code></td>
+<td>AMD 4900HS</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_4980U</code></td>
+<td>AMD 4980U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5300G</code></td>
+<td>AMD 5300G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5300GE</code></td>
+<td>AMD 5300GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5300U</code></td>
+<td>AMD 5300U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5400U</code></td>
+<td>AMD 5400U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5500U</code></td>
+<td>AMD 5500U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5600G</code></td>
+<td>AMD 5600G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5600GE</code></td>
+<td>AMD 5600GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5600H</code></td>
+<td>AMD 5600H</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5600HS</code></td>
+<td>AMD 5600HS</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5600U</code></td>
+<td>AMD 5600U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5600X</code></td>
+<td>AMD 5600X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5700G</code></td>
+<td>AMD 5700G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5700GE</code></td>
+<td>AMD 5700GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5700U</code></td>
+<td>AMD 5700U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5800</code></td>
+<td>AMD 5800</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5800H</code></td>
+<td>AMD 5800H</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5800HS</code></td>
+<td>AMD 5800HS</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5800U</code></td>
+<td>AMD 5800U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5800X</code></td>
+<td>AMD 5800X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5900</code></td>
+<td>AMD 5900</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5900HS</code></td>
+<td>AMD 5900HS</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5900HX</code></td>
+<td>AMD 5900HX</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5900X</code></td>
+<td>AMD 5900X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5950X</code></td>
+<td>AMD 5950X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5980HS</code></td>
+<td>AMD 5980HS</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_5980HX</code></td>
+<td>AMD 5980HX</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7232P</code></td>
+<td>AMD 7232P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7251</code></td>
+<td>AMD 7251</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7252</code></td>
+<td>AMD 7252</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7261</code></td>
+<td>AMD 7261</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7262</code></td>
+<td>AMD 7262</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7272</code></td>
+<td>AMD 7272</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7281</code></td>
+<td>AMD 7281</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7282</code></td>
+<td>AMD 7282</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_72F3</code></td>
+<td>AMD 72F3</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7301</code></td>
+<td>AMD 7301</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7302</code></td>
+<td>AMD 7302</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7302P</code></td>
+<td>AMD 7302P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7313</code></td>
+<td>AMD 7313</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7313P</code></td>
+<td>AMD 7313P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7343</code></td>
+<td>AMD 7343</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7351</code></td>
+<td>AMD 7351</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7351P</code></td>
+<td>AMD 7351P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7352</code></td>
+<td>AMD 7352</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7371</code></td>
+<td>AMD 7371</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_73F3</code></td>
+<td>AMD 73F3</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7401</code></td>
+<td>AMD 7401</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7401P</code></td>
+<td>AMD 7401P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7402</code></td>
+<td>AMD 7402</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7402P</code></td>
+<td>AMD 7402P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7413</code></td>
+<td>AMD 7413</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7443</code></td>
+<td>AMD 7443</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7443P</code></td>
+<td>AMD 7443P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7451</code></td>
+<td>AMD 7451</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7452</code></td>
+<td>AMD 7452</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7453</code></td>
+<td>AMD 7453</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_74F3</code></td>
+<td>AMD 74F3</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7501</code></td>
+<td>AMD 7501</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7502</code></td>
+<td>AMD 7502</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7502P</code></td>
+<td>AMD 7502P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7513</code></td>
+<td>AMD 7513</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7532</code></td>
+<td>AMD 7532</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7542</code></td>
+<td>AMD 7542</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7543</code></td>
+<td>AMD 7543</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7543P</code></td>
+<td>AMD 7543P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7551</code></td>
+<td>AMD 7551</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7551P</code></td>
+<td>AMD 7551P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7552</code></td>
+<td>AMD 7552</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_75F3</code></td>
+<td>AMD 75F3</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7601</code></td>
+<td>AMD 7601</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7642</code></td>
+<td>AMD 7642</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7643</code></td>
+<td>AMD 7643</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7662</code></td>
+<td>AMD 7662</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7663</code></td>
+<td>AMD 7663</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7702</code></td>
+<td>AMD 7702</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7702P</code></td>
+<td>AMD 7702P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7713</code></td>
+<td>AMD 7713</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7713P</code></td>
+<td>AMD 7713P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7742</code></td>
+<td>AMD 7742</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7763</code></td>
+<td>AMD 7763</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7F32</code></td>
+<td>AMD 7F32</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7F52</code></td>
+<td>AMD 7F52</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7F72</code></td>
+<td>AMD 7F72</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7H12</code></td>
+<td>AMD 7H12</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_7V12</code></td>
+<td>AMD 7V12</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_FIREFLIGHT</code></td>
+<td>AMD FireFlight</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_1200</code></td>
+<td>AMD PRO 1200</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_1300</code></td>
+<td>AMD PRO 1300</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_1500</code></td>
+<td>AMD PRO 1500</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_1600</code></td>
+<td>AMD PRO 1600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_1700</code></td>
+<td>AMD PRO 1700</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_1700X</code></td>
+<td>AMD PRO 1700X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_200GE</code></td>
+<td>AMD PRO 200GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_2200G</code></td>
+<td>AMD PRO 2200G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_2200GE</code></td>
+<td>AMD PRO 2200GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_2300U</code></td>
+<td>AMD PRO 2300U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_2400G</code></td>
+<td>AMD PRO 2400G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_2400GE</code></td>
+<td>AMD PRO 2400GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_2500U</code></td>
+<td>AMD PRO 2500U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_2600</code></td>
+<td>AMD PRO 2600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_2700</code></td>
+<td>AMD PRO 2700</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_2700U</code></td>
+<td>AMD PRO 2700U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_2700X</code></td>
+<td>AMD PRO 2700X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_300GE</code></td>
+<td>AMD PRO 300GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_300U</code></td>
+<td>AMD PRO 300U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_3200G</code></td>
+<td>AMD PRO 3200G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_3200GE</code></td>
+<td>AMD PRO 3200GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_3300U</code></td>
+<td>AMD PRO 3300U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_3400G</code></td>
+<td>AMD PRO 3400G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_3400GE</code></td>
+<td>AMD PRO 3400GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_3500U</code></td>
+<td>AMD PRO 3500U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_3600</code></td>
+<td>AMD PRO 3600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_3700</code></td>
+<td>AMD PRO 3700</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_3700U</code></td>
+<td>AMD PRO 3700U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_3900</code></td>
+<td>AMD PRO 3900</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_4350G</code></td>
+<td>AMD PRO 4350G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_4350GE</code></td>
+<td>AMD PRO 4350GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_4450U</code></td>
+<td>AMD PRO 4450U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_4650G</code></td>
+<td>AMD PRO 4650G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_4650GE</code></td>
+<td>AMD PRO 4650GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_4650U</code></td>
+<td>AMD PRO 4650U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_4750G</code></td>
+<td>AMD PRO 4750G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_4750GE</code></td>
+<td>AMD PRO 4750GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_4750U</code></td>
+<td>AMD PRO 4750U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_5350G</code></td>
+<td>AMD PRO 5350G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_5350GE</code></td>
+<td>AMD PRO 5350GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_5450U</code></td>
+<td>AMD PRO 5450U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_5650G</code></td>
+<td>AMD PRO 5650G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_5650GE</code></td>
+<td>AMD PRO 5650GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_5650U</code></td>
+<td>AMD PRO 5650U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_5750G</code></td>
+<td>AMD PRO 5750G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_5750GE</code></td>
+<td>AMD PRO 5750GE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_PRO_5850U</code></td>
+<td>AMD PRO 5850U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_R1102G</code></td>
+<td>AMD R1102G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_R1305G</code></td>
+<td>AMD R1305G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_R1505G</code></td>
+<td>AMD R1505G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_R1606G</code></td>
+<td>AMD R1606G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V1202B</code></td>
+<td>AMD V1202B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V1404I</code></td>
+<td>AMD V1404I</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V1500B</code></td>
+<td>AMD V1500B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V1605B</code></td>
+<td>AMD V1605B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V1756B</code></td>
+<td>AMD V1756B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V1780B</code></td>
+<td>AMD V1780B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V1807B</code></td>
+<td>AMD V1807B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V2516</code></td>
+<td>AMD V2516</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V2546</code></td>
+<td>AMD V2546</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V2718</code></td>
+<td>AMD V2718</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_V2748</code></td>
+<td>AMD V2748</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.ARM_CORTEX_M4</code></td>
+<td>ARM Cortex-M4</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.ARM_CORTEX_M4F</code></td>
+<td>ARM Cortex-M4F</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.APPLE_M1_MAX</code></td>
+<td>Apple M1 Max</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1000G1</code></td>
+<td>Intel 1000G1</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1000G4</code></td>
+<td>Intel 1000G4</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1005G1</code></td>
+<td>Intel 1005G1</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10100</code></td>
+<td>Intel 10100</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10100F</code></td>
+<td>Intel 10100F</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10100T</code></td>
+<td>Intel 10100T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10300</code></td>
+<td>Intel 10300</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10300T</code></td>
+<td>Intel 10300T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1030G4</code></td>
+<td>Intel 1030G4</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1030G7</code></td>
+<td>Intel 1030G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10320</code></td>
+<td>Intel 10320</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1035G1</code></td>
+<td>Intel 1035G1</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1035G4</code></td>
+<td>Intel 1035G4</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1035G7</code></td>
+<td>Intel 1035G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10400</code></td>
+<td>Intel 10400</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10400F</code></td>
+<td>Intel 10400F</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10400T</code></td>
+<td>Intel 10400T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10500</code></td>
+<td>Intel 10500</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10500T</code></td>
+<td>Intel 10500T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10600</code></td>
+<td>Intel 10600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10600K</code></td>
+<td>Intel 10600K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10600KF</code></td>
+<td>Intel 10600KF</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10600T</code></td>
+<td>Intel 10600T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1060G7</code></td>
+<td>Intel 1060G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1065G7</code></td>
+<td>Intel 1065G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1068G7</code></td>
+<td>Intel 1068G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10700</code></td>
+<td>Intel 10700</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10700F</code></td>
+<td>Intel 10700F</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10700K</code></td>
+<td>Intel 10700K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10700KF</code></td>
+<td>Intel 10700KF</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10700T</code></td>
+<td>Intel 10700T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10850K</code></td>
+<td>Intel 10850K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10900</code></td>
+<td>Intel 10900</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10900F</code></td>
+<td>Intel 10900F</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10900K</code></td>
+<td>Intel 10900K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10900KF</code></td>
+<td>Intel 10900KF</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10900T</code></td>
+<td>Intel 10900T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_10910</code></td>
+<td>Intel 10910</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11100B</code></td>
+<td>Intel 11100B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1115G7</code></td>
+<td>Intel 1115G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1125G7</code></td>
+<td>Intel 1125G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1135G7</code></td>
+<td>Intel 1135G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11400</code></td>
+<td>Intel 11400</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11400F</code></td>
+<td>Intel 11400F</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11400T</code></td>
+<td>Intel 11400T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1145G7</code></td>
+<td>Intel 1145G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11500</code></td>
+<td>Intel 11500</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11500B</code></td>
+<td>Intel 11500B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11500T</code></td>
+<td>Intel 11500T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1155G7</code></td>
+<td>Intel 1155G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11600</code></td>
+<td>Intel 11600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11600K</code></td>
+<td>Intel 11600K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11600KF</code></td>
+<td>Intel 11600KF</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11600T</code></td>
+<td>Intel 11600T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1165G7</code></td>
+<td>Intel 1165G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11700</code></td>
+<td>Intel 11700</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11700B</code></td>
+<td>Intel 11700B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11700F</code></td>
+<td>Intel 11700F</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11700K</code></td>
+<td>Intel 11700K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11700KF</code></td>
+<td>Intel 11700KF</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11700T</code></td>
+<td>Intel 11700T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11850H</code></td>
+<td>Intel 11850H</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1185G7</code></td>
+<td>Intel 1185G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11900</code></td>
+<td>Intel 11900</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11900F</code></td>
+<td>Intel 11900F</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11900K</code></td>
+<td>Intel 11900K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11900KB</code></td>
+<td>Intel 11900KB</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11900KF</code></td>
+<td>Intel 11900KF</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_11900T</code></td>
+<td>Intel 11900T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_1195G7</code></td>
+<td>Intel 1195G7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2104G</code></td>
+<td>Intel 2104G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2124</code></td>
+<td>Intel 2124</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2124G</code></td>
+<td>Intel 2124G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2126G</code></td>
+<td>Intel 2126G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2134</code></td>
+<td>Intel 2134</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2136</code></td>
+<td>Intel 2136</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2144G</code></td>
+<td>Intel 2144G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2146G</code></td>
+<td>Intel 2146G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2174G</code></td>
+<td>Intel 2174G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2176G</code></td>
+<td>Intel 2176G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2186G</code></td>
+<td>Intel 2186G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2314</code></td>
+<td>Intel 2314</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2324G</code></td>
+<td>Intel 2324G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2334</code></td>
+<td>Intel 2334</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2336</code></td>
+<td>Intel 2336</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2356G</code></td>
+<td>Intel 2356G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2374G</code></td>
+<td>Intel 2374G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2378</code></td>
+<td>Intel 2378</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2378G</code></td>
+<td>Intel 2378G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2386G</code></td>
+<td>Intel 2386G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_2388G</code></td>
+<td>Intel 2388G</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_3204</code></td>
+<td>Intel 3204</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4108</code></td>
+<td>Intel 4108</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4109T</code></td>
+<td>Intel 4109T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4110</code></td>
+<td>Intel 4110</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4112</code></td>
+<td>Intel 4112</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4114</code></td>
+<td>Intel 4114</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4208</code></td>
+<td>Intel 4208</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4209T</code></td>
+<td>Intel 4209T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4210</code></td>
+<td>Intel 4210</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4210R</code></td>
+<td>Intel 4210R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4214</code></td>
+<td>Intel 4214</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4214R</code></td>
+<td>Intel 4214R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4214Y</code></td>
+<td>Intel 4214Y</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4215</code></td>
+<td>Intel 4215</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4215R</code></td>
+<td>Intel 4215R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_4216</code></td>
+<td>Intel 4216</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5215</code></td>
+<td>Intel 5215</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5215L</code></td>
+<td>Intel 5215L</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5215M</code></td>
+<td>Intel 5215M</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5217</code></td>
+<td>Intel 5217</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5218</code></td>
+<td>Intel 5218</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5218B</code></td>
+<td>Intel 5218B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5218N</code></td>
+<td>Intel 5218N</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5218R</code></td>
+<td>Intel 5218R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5218T</code></td>
+<td>Intel 5218T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5220</code></td>
+<td>Intel 5220</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5220R</code></td>
+<td>Intel 5220R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5220S</code></td>
+<td>Intel 5220S</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5220T</code></td>
+<td>Intel 5220T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_5222</code></td>
+<td>Intel 5222</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6035</code></td>
+<td>Intel 6035</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6098P</code></td>
+<td>Intel 6098P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6100</code></td>
+<td>Intel 6100</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6100T</code></td>
+<td>Intel 6100T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6209U</code></td>
+<td>Intel 6209U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6210U</code></td>
+<td>Intel 6210U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6212U</code></td>
+<td>Intel 6212U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6222V</code></td>
+<td>Intel 6222V</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6226</code></td>
+<td>Intel 6226</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6226R</code></td>
+<td>Intel 6226R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6230</code></td>
+<td>Intel 6230</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6230N</code></td>
+<td>Intel 6230N</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6230R</code></td>
+<td>Intel 6230R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6230T</code></td>
+<td>Intel 6230T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6234</code></td>
+<td>Intel 6234</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6238</code></td>
+<td>Intel 6238</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6238L</code></td>
+<td>Intel 6238L</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6238M</code></td>
+<td>Intel 6238M</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6238R</code></td>
+<td>Intel 6238R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6238T</code></td>
+<td>Intel 6238T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6240</code></td>
+<td>Intel 6240</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6240L</code></td>
+<td>Intel 6240L</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6240M</code></td>
+<td>Intel 6240M</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6240R</code></td>
+<td>Intel 6240R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6240Y</code></td>
+<td>Intel 6240Y</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6242</code></td>
+<td>Intel 6242</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6242R</code></td>
+<td>Intel 6242R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6244</code></td>
+<td>Intel 6244</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6246</code></td>
+<td>Intel 6246</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6246R</code></td>
+<td>Intel 6246R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6248</code></td>
+<td>Intel 6248</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6248R</code></td>
+<td>Intel 6248R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6252</code></td>
+<td>Intel 6252</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6252N</code></td>
+<td>Intel 6252N</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6254</code></td>
+<td>Intel 6254</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6258R</code></td>
+<td>Intel 6258R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6262V</code></td>
+<td>Intel 6262V</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6300</code></td>
+<td>Intel 6300</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6300T</code></td>
+<td>Intel 6300T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6320</code></td>
+<td>Intel 6320</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6400</code></td>
+<td>Intel 6400</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6400T</code></td>
+<td>Intel 6400T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6402P</code></td>
+<td>Intel 6402P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6500</code></td>
+<td>Intel 6500</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6500T</code></td>
+<td>Intel 6500T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6585R</code></td>
+<td>Intel 6585R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6600</code></td>
+<td>Intel 6600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6600K</code></td>
+<td>Intel 6600K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6600T</code></td>
+<td>Intel 6600T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6685R</code></td>
+<td>Intel 6685R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6700</code></td>
+<td>Intel 6700</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6700K</code></td>
+<td>Intel 6700K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6700T</code></td>
+<td>Intel 6700T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6785R</code></td>
+<td>Intel 6785R</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_6820HQ</code></td>
+<td>Intel 6820HQ</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7100</code></td>
+<td>Intel 7100</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7100T</code></td>
+<td>Intel 7100T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7101E</code></td>
+<td>Intel 7101E</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7101TE</code></td>
+<td>Intel 7101TE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7300</code></td>
+<td>Intel 7300</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7300T</code></td>
+<td>Intel 7300T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7320</code></td>
+<td>Intel 7320</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7350K</code></td>
+<td>Intel 7350K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7400</code></td>
+<td>Intel 7400</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7400T</code></td>
+<td>Intel 7400T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7500</code></td>
+<td>Intel 7500</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7500T</code></td>
+<td>Intel 7500T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7505</code></td>
+<td>Intel 7505</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7600</code></td>
+<td>Intel 7600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7600K</code></td>
+<td>Intel 7600K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7600T</code></td>
+<td>Intel 7600T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7640X</code></td>
+<td>Intel 7640X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7700</code></td>
+<td>Intel 7700</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7700K</code></td>
+<td>Intel 7700K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7700T</code></td>
+<td>Intel 7700T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7740X</code></td>
+<td>Intel 7740X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7800X</code></td>
+<td>Intel 7800X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7820X</code></td>
+<td>Intel 7820X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7900X</code></td>
+<td>Intel 7900X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7920X</code></td>
+<td>Intel 7920X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7940X</code></td>
+<td>Intel 7940X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7960X</code></td>
+<td>Intel 7960X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_7980XE</code></td>
+<td>Intel 7980XE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8086K</code></td>
+<td>Intel 8086K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8100</code></td>
+<td>Intel 8100</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8100F</code></td>
+<td>Intel 8100F</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8100T</code></td>
+<td>Intel 8100T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8253</code></td>
+<td>Intel 8253</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8256</code></td>
+<td>Intel 8256</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8260</code></td>
+<td>Intel 8260</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8260L</code></td>
+<td>Intel 8260L</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8260M</code></td>
+<td>Intel 8260M</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8260Y</code></td>
+<td>Intel 8260Y</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8268</code></td>
+<td>Intel 8268</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8270</code></td>
+<td>Intel 8270</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8272CL</code></td>
+<td>Intel 8272CL</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8273CL</code></td>
+<td>Intel 8273CL</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8276</code></td>
+<td>Intel 8276</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8276L</code></td>
+<td>Intel 8276L</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8276M</code></td>
+<td>Intel 8276M</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8280</code></td>
+<td>Intel 8280</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8280L</code></td>
+<td>Intel 8280L</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8280M</code></td>
+<td>Intel 8280M</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8284</code></td>
+<td>Intel 8284</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8300</code></td>
+<td>Intel 8300</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8300T</code></td>
+<td>Intel 8300T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8350K</code></td>
+<td>Intel 8350K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8351N</code></td>
+<td>Intel 8351N</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8352S</code></td>
+<td>Intel 8352S</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8352V</code></td>
+<td>Intel 8352V</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8352Y</code></td>
+<td>Intel 8352Y</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8358</code></td>
+<td>Intel 8358</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8358P</code></td>
+<td>Intel 8358P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8360Y</code></td>
+<td>Intel 8360Y</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8362</code></td>
+<td>Intel 8362</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8368</code></td>
+<td>Intel 8368</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8368Q</code></td>
+<td>Intel 8368Q</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8380</code></td>
+<td>Intel 8380</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8400</code></td>
+<td>Intel 8400</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8400T</code></td>
+<td>Intel 8400T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8500</code></td>
+<td>Intel 8500</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8500T</code></td>
+<td>Intel 8500T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8550U</code></td>
+<td>Intel 8550U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8600</code></td>
+<td>Intel 8600</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8600K</code></td>
+<td>Intel 8600K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8600T</code></td>
+<td>Intel 8600T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8650U</code></td>
+<td>Intel 8650U</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8700</code></td>
+<td>Intel 8700</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8700K</code></td>
+<td>Intel 8700K</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_8700T</code></td>
+<td>Intel 8700T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9221</code></td>
+<td>Intel 9221</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9222</code></td>
+<td>Intel 9222</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9242</code></td>
+<td>Intel 9242</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9282</code></td>
+<td>Intel 9282</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9800X</code></td>
+<td>Intel 9800X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9820X</code></td>
+<td>Intel 9820X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9900X</code></td>
+<td>Intel 9900X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9920X</code></td>
+<td>Intel 9920X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9940X</code></td>
+<td>Intel 9940X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9960X</code></td>
+<td>Intel 9960X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9980XE</code></td>
+<td>Intel 9980XE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_9990XE</code></td>
+<td>Intel 9990XE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E3_1220_V6</code></td>
+<td>Intel E3-1220 v6</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E3_1225_V6</code></td>
+<td>Intel E3-1225 v6</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E3_1230_V6</code></td>
+<td>Intel E3-1230 v6</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E3_1240_V6</code></td>
+<td>Intel E3-1240 v6</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E3_1245_V6</code></td>
+<td>Intel E3-1245 v6</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E3_1270_V6</code></td>
+<td>Intel E3-1270 v6</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E3_1275_V6</code></td>
+<td>Intel E3-1275 v6</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E3_1280_V6</code></td>
+<td>Intel E3-1280 v6</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E3_1285_V6</code></td>
+<td>Intel E3-1285 v6</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E5_1607_V2</code></td>
+<td>Intel E5-1607 v2</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E5_1620_V2</code></td>
+<td>Intel E5-1620 v2</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E5_1650_V2</code></td>
+<td>Intel E5-1650 v2</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E5_1650_V3</code></td>
+<td>Intel E5-1650 v3</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E5_1660_V2</code></td>
+<td>Intel E5-1660 v2</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E5_1660_V3</code></td>
+<td>Intel E5-1660 v3</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E5_1680_V2</code></td>
+<td>Intel E5-1680 v2</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E5_1680_V3</code></td>
+<td>Intel E5-1680 v3</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E5_2620_V3</code></td>
+<td>Intel E5-2620 v3</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_E5_2673_V4</code></td>
+<td>Intel E5-2673 v4</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_G3900</code></td>
+<td>Intel G3900</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_G3900T</code></td>
+<td>Intel G3900T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_G3900TE</code></td>
+<td>Intel G3900TE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_G3920</code></td>
+<td>Intel G3920</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_G4400</code></td>
+<td>Intel G4400</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_G4400T</code></td>
+<td>Intel G4400T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_G4400TE</code></td>
+<td>Intel G4400TE</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_G4500</code></td>
+<td>Intel G4500</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_G4500T</code></td>
+<td>Intel G4500T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_G4520</code></td>
+<td>Intel G4520</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1250</code></td>
+<td>Intel W-1250</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1250P</code></td>
+<td>Intel W-1250P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1270</code></td>
+<td>Intel W-1270</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1270P</code></td>
+<td>Intel W-1270P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1290</code></td>
+<td>Intel W-1290</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1290P</code></td>
+<td>Intel W-1290P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1290T</code></td>
+<td>Intel W-1290T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1350</code></td>
+<td>Intel W-1350</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1350P</code></td>
+<td>Intel W-1350P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1370</code></td>
+<td>Intel W-1370</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1370P</code></td>
+<td>Intel W-1370P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1390</code></td>
+<td>Intel W-1390</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1390P</code></td>
+<td>Intel W-1390P</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_1390T</code></td>
+<td>Intel W-1390T</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_2102</code></td>
+<td>Intel W-2102</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_2104</code></td>
+<td>Intel W-2104</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_2123</code></td>
+<td>Intel W-2123</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_2125</code></td>
+<td>Intel W-2125</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_2133</code></td>
+<td>Intel W-2133</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_2135</code></td>
+<td>Intel W-2135</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_2140B</code></td>
+<td>Intel W-2140B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_2150B</code></td>
+<td>Intel W-2150B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_3175X</code></td>
+<td>Intel W-3175X</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_3223</code></td>
+<td>Intel W-3223</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_3225</code></td>
+<td>Intel W-3225</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_3235</code></td>
+<td>Intel W-3235</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_3245</code></td>
+<td>Intel W-3245</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_3245M</code></td>
+<td>Intel W-3245M</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_3265</code></td>
+<td>Intel W-3265</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_3265M</code></td>
+<td>Intel W-3265M</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_3275</code></td>
+<td>Intel W-3275</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.INTEL_W_3275M</code></td>
+<td>Intel W-3275M</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.RASPBERRY_PI_3B</code></td>
+<td>Raspberry Pi 3B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.RASPBERRY_PI_4B</code></td>
+<td>Raspberry Pi 4B</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.RASPBERRY_PI_ZERO</code></td>
+<td>Raspberry Pi Zero</td>
+</tr>
+</tbody>
+</table>
+<p>The enum also defines constants for some well-known GPU models.</p>
+<table>
+<thead>
+<tr>
+<th>type</th>
+<th>description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>accera.Target.Model.AMD_MI100</code></td>
+<td>AMD MI100</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_MI200</code></td>
+<td>AMD MI200</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_MI50</code></td>
+<td>AMD MI50</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.AMD_RADEON7</code></td>
+<td>AMD Radeon7</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.NVIDIA_A100</code></td>
+<td>NVidia A100</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.NVIDIA_P100</code></td>
+<td>NVidia P100</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.NVIDIA_RTX_A6000</code></td>
+<td>NVidia RTX A6000</td>
+</tr>
+<tr>
+<td><code>accera.Target.Model.NVIDIA_V100</code></td>
+<td>NVidia V100</td>
+</tr>
+</tbody>
+</table>
+<div style="page-break-after: always;"></div>
+
+  <hr>
+<div class="md-source-file">
+  <small>
+    
+      Last update:
+      2023-04-17
+    
+  </small>
+</div>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z"/></svg>
+            Back to top
+          </button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2022+ Microsoft Research [MIT License]
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/microsoft/Accera" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.4.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    <script id="__config" type="application/json">{"base": "../../../..", "features": ["navigation.sections", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "search.highlight", "search.share", "search.suggest", "toc.integrate"], "search": "../../../../assets/javascripts/workers/search.208ed371.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../../../assets/javascripts/bundle.51198bba.min.js"></script>
+      
+    
+  </body>
+</html>

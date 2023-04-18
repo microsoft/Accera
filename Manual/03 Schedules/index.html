@@ -1,0 +1,2724 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Open source compiler for generating fast, compute-intensive loops used in AI algorithms, from Microsoft Research.">
+      
+      
+        <meta name="author" content="Microsoft">
+      
+      
+      
+        <link rel="prev" href="../02%20Simple%20Affine%20Loop%20Nests/">
+      
+      
+        <link rel="next" href="../04%20Fusing/">
+      
+      <link rel="icon" href="../../assets/logos/favicon.png">
+      <meta name="generator" content="mkdocs-1.4.2, mkdocs-material-9.1.6">
+    
+    
+      
+        <title>03 Schedules - Accera</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ded33207.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.a0c5b2b5.min.css">
+      
+      
+
+    
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300i,400,400i,700,700i%7CSource+Code+Pro:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Open Sans";--md-code-font:"Source Code Pro"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="">
+  
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&"object"==typeof palette.color)for(var key of Object.keys(palette.color))document.body.setAttribute("data-md-color-"+key,palette.color[key])</script>
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#section-3-schedules" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Accera" class="md-header__button md-logo" aria-label="Accera" data-md-component="logo">
+      
+  <img src="../../assets/logos/A_lighttext.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Accera
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              03 Schedules
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      <form class="md-header__option" data-md-component="palette">
+        
+          
+          <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent=""  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+          
+            <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 6H7c-3.31 0-6 2.69-6 6s2.69 6 6 6h10c3.31 0 6-2.69 6-6s-2.69-6-6-6zm0 10H7c-2.21 0-4-1.79-4-4s1.79-4 4-4h10c2.21 0 4 1.79 4 4s-1.79 4-4 4zM7 9c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+            </label>
+          
+        
+          
+          <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="light-blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_2">
+          
+            <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 7H7a5 5 0 0 0-5 5 5 5 0 0 0 5 5h10a5 5 0 0 0 5-5 5 5 0 0 0-5-5m0 8a3 3 0 0 1-3-3 3 3 0 0 1 3-3 3 3 0 0 1 3 3 3 3 0 0 1-3 3Z"/></svg>
+            </label>
+          
+        
+      </form>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7 0-.24-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91 1.61 0 2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08Z"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/microsoft/Accera/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.4.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    microsoft/Accera
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+
+
+  <li class="md-tabs__item">
+    <a href="../.." class="md-tabs__link">
+      Home
+    </a>
+  </li>
+
+      
+        
+  
+  
+
+
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../Case%20Studies/" class="md-tabs__link">
+        Case Studies
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+
+
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../Install/" class="md-tabs__link">
+        Install
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+    
+  
+
+
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../" class="md-tabs__link md-tabs__link--active">
+        Manual
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+
+
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../Reference/accera/" class="md-tabs__link">
+        Reference
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+
+
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../Tutorials/" class="md-tabs__link">
+        Tutorials
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Accera" class="md-nav__button md-logo" aria-label="Accera" data-md-component="logo">
+      
+  <img src="../../assets/logos/A_lighttext.png" alt="logo">
+
+    </a>
+    Accera
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/microsoft/Accera/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.4.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    microsoft/Accera
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        Home
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+          Case Studies
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_2">
+          <span class="md-nav__icon md-icon"></span>
+          Case Studies
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Case%20Studies/" class="md-nav__link">
+        Index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Case%20Studies/CONTRIBUTING/" class="md-nav__link">
+        CONTRIBUTING
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          Install
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_3">
+          <span class="md-nav__icon md-icon"></span>
+          Install
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Install/" class="md-nav__link">
+        Index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Install/Building_on_MacOS/" class="md-nav__link">
+        Building on MacOS
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Install/Building_on_Ubuntu/" class="md-nav__link">
+        Building on Ubuntu
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Install/Building_on_Windows/" class="md-nav__link">
+        Building on Windows
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Install/Installing_Accera_on_MacOS/" class="md-nav__link">
+        Installing Accera on MacOS
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Install/Installing_Accera_on_Ubuntu/" class="md-nav__link">
+        Installing Accera on Ubuntu
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Install/Installing_Accera_on_Windows/" class="md-nav__link">
+        Installing Accera on Windows
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+    
+  
+  
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+      
+      
+      
+        <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          Manual
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <label class="md-nav__title" for="__nav_4">
+          <span class="md-nav__icon md-icon"></span>
+          Manual
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        Index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../00%20Introduction/" class="md-nav__link">
+        00 Introduction
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../01%20Arrays%20and%20Scalars/" class="md-nav__link">
+        01 Arrays and Scalars
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02%20Simple%20Affine%20Loop%20Nests/" class="md-nav__link">
+        02 Simple Affine Loop Nests
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          03 Schedules
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        03 Schedules
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#iteration-spaces-a-geometric-representation-of-schedules" class="md-nav__link">
+    Iteration spaces: a geometric representation of schedules
+  </a>
+  
+    <nav class="md-nav" aria-label="Iteration spaces: a geometric representation of schedules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-does-an-iteration-space-imply-an-order-over-the-iterations" class="md-nav__link">
+    How does an iteration space imply an order over the iterations?
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#iteration-space-slices" class="md-nav__link">
+    Iteration space slices
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loops-indices-and-dimensions" class="md-nav__link">
+    Loops, indices, and dimensions
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schedule-transformations" class="md-nav__link">
+    Schedule transformations
+  </a>
+  
+    <nav class="md-nav" aria-label="Schedule transformations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reorder" class="md-nav__link">
+    reorder
+  </a>
+  
+    <nav class="md-nav" aria-label="reorder">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#invalid-orders" class="md-nav__link">
+    Invalid orders
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#split" class="md-nav__link">
+    split
+  </a>
+  
+    <nav class="md-nav" aria-label="split">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#meaningless-splits" class="md-nav__link">
+    Meaningless splits
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#convenience-syntax-tile" class="md-nav__link">
+    Convenience syntax: tile
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skew" class="md-nav__link">
+    skew
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pad" class="md-nav__link">
+    pad
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#order-invariant-schedules-and-safety" class="md-nav__link">
+    Order-invariant schedules and safety
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../04%20Fusing/" class="md-nav__link">
+        04 Fusing
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../05%20Targets/" class="md-nav__link">
+        05 Targets
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06%20Plans%20-%20Caching/" class="md-nav__link">
+        06 Plans   Caching
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07%20Plans%20-%20Operations%20and%20Optimizations/" class="md-nav__link">
+        07 Plans   Operations and Optimizations
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../08%20Deferred%20Layout%20of%20Constant%20Arrays/" class="md-nav__link">
+        08 Deferred Layout of Constant Arrays
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09%20Parameters/" class="md-nav__link">
+        09 Parameters
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../10%20Packages/" class="md-nav__link">
+        10 Packages
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../11%20Plans%20-%20GPU%20Tensorization/" class="md-nav__link">
+        11 Plans   GPU Tensorization
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+          Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5">
+          <span class="md-nav__icon md-icon"></span>
+          Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/accera/" class="md-nav__link">
+        Accera
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/safety_analysis/" class="md-nav__link">
+        Safety analysis
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+          Classes
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3">
+          <span class="md-nav__icon md-icon"></span>
+          Classes
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_1" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_1" id="__nav_5_3_1_label" tabindex="0">
+          Array
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_1_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_1">
+          <span class="md-nav__icon md-icon"></span>
+          Array
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Array/Array/" class="md-nav__link">
+        Array
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Array/Layout/" class="md-nav__link">
+        Layout
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Array/deferred_layout/" class="md-nav__link">
+        Deferred layout
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Array/slice/" class="md-nav__link">
+        Slice
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Array/sub_array/" class="md-nav__link">
+        Sub array
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_2" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_2" id="__nav_5_3_2_label" tabindex="0">
+          Dimension
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_2_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_2">
+          <span class="md-nav__icon md-icon"></span>
+          Dimension
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Dimension/Dimension/" class="md-nav__link">
+        Dimension
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_3" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_3" id="__nav_5_3_3_label" tabindex="0">
+          FusedSchedule
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_3_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_3">
+          <span class="md-nav__icon md-icon"></span>
+          FusedSchedule
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/FusedSchedule/get_fused_indices/" class="md-nav__link">
+        Get fused indices
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/FusedSchedule/get_fusing_index/" class="md-nav__link">
+        Get fusing index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/FusedSchedule/get_unfused_indices/" class="md-nav__link">
+        Get unfused indices
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_4" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_4" id="__nav_5_3_4_label" tabindex="0">
+          Nest
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_4_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_4">
+          <span class="md-nav__icon md-icon"></span>
+          Nest
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Nest/Nest/" class="md-nav__link">
+        Nest
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Nest/create_plan/" class="md-nav__link">
+        Create plan
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Nest/create_schedule/" class="md-nav__link">
+        Create schedule
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Nest/get_indices/" class="md-nav__link">
+        Get indices
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Nest/iteration_logic/" class="md-nav__link">
+        Iteration logic
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_5" id="__nav_5_3_5_label" tabindex="0">
+          Package
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_5_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_5">
+          <span class="md-nav__icon md-icon"></span>
+          Package
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Package/Format/" class="md-nav__link">
+        Format
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Package/Mode/" class="md-nav__link">
+        Mode
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Package/Package/" class="md-nav__link">
+        Package
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Package/Platform/" class="md-nav__link">
+        Platform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Package/add/" class="md-nav__link">
+        Add
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Package/add_description/" class="md-nav__link">
+        Add description
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Package/build/" class="md-nav__link">
+        Build
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_6" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_6" id="__nav_5_3_6_label" tabindex="0">
+          Plan
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_6_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_6">
+          <span class="md-nav__icon md-icon"></span>
+          Plan
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Plan/bind/" class="md-nav__link">
+        Bind
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Plan/cache/" class="md-nav__link">
+        Cache
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Plan/kernelize/" class="md-nav__link">
+        Kernelize
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Plan/parallelize/" class="md-nav__link">
+        Parallelize
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Plan/tensorize/" class="md-nav__link">
+        Tensorize
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Plan/unroll/" class="md-nav__link">
+        Unroll
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Plan/vectorize/" class="md-nav__link">
+        Vectorize
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_7" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_7" id="__nav_5_3_7_label" tabindex="0">
+          Scalar
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_7_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_7">
+          <span class="md-nav__icon md-icon"></span>
+          Scalar
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Scalar/Scalar/" class="md-nav__link">
+        Scalar
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_8" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_8" id="__nav_5_3_8_label" tabindex="0">
+          Schedule
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_8_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_8">
+          <span class="md-nav__icon md-icon"></span>
+          Schedule
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Schedule/create_plan/" class="md-nav__link">
+        Create plan
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Schedule/get_indices/" class="md-nav__link">
+        Get indices
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Schedule/is_valid_loop_order/" class="md-nav__link">
+        Is valid loop order
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Schedule/pad/" class="md-nav__link">
+        Pad
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Schedule/reorder/" class="md-nav__link">
+        Reorder
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Schedule/skew/" class="md-nav__link">
+        Skew
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Schedule/split/" class="md-nav__link">
+        Split
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Schedule/tile/" class="md-nav__link">
+        Tile
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3_9" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_3_9" id="__nav_5_3_9_label" tabindex="0">
+          Target
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_3_9_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_3_9">
+          <span class="md-nav__icon md-icon"></span>
+          Target
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Target/Architecture/" class="md-nav__link">
+        Architecture
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Target/Category/" class="md-nav__link">
+        Category
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Target/Model/" class="md-nav__link">
+        Model
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Target/Runtime/" class="md-nav__link">
+        Runtime
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/classes/Target/Target/" class="md-nav__link">
+        Target
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_4" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_4" id="__nav_5_4_label" tabindex="0">
+          Enumerations
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_4_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_4">
+          <span class="md-nav__icon md-icon"></span>
+          Enumerations
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/enumerations/CacheStrategy/" class="md-nav__link">
+        CacheStrategy
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/enumerations/MMAFragmentOp/" class="md-nav__link">
+        MMAFragmentOp
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/enumerations/MMASchedulingPolicy/" class="md-nav__link">
+        MMASchedulingPolicy
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/enumerations/MMAShape/" class="md-nav__link">
+        MMAShape
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/enumerations/Role/" class="md-nav__link">
+        Role
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/enumerations/ScalarType/" class="md-nav__link">
+        ScalarType
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_5_5" id="__nav_5_5_label" tabindex="0">
+          Functions
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_5_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_5_5">
+          <span class="md-nav__icon md-icon"></span>
+          Functions
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/functions/cast/" class="md-nav__link">
+        Cast
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/functions/create_dimensions/" class="md-nav__link">
+        Create dimensions
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/functions/create_parameter_grid/" class="md-nav__link">
+        Create parameter grid
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/functions/create_parameters/" class="md-nav__link">
+        Create parameters
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Reference/functions/fuse/" class="md-nav__link">
+        Fuse
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          Tutorials
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_6">
+          <span class="md-nav__icon md-icon"></span>
+          Tutorials
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tutorials/" class="md-nav__link">
+        Index
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tutorials/Hello_MatMul/" class="md-nav__link">
+        Hello MatMul
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tutorials/Optimized_MatMul/" class="md-nav__link">
+        Optimized MatMul
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tutorials/Pi3_Cross_Compilation/" class="md-nav__link">
+        Pi3 Cross Compilation
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+      
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+      
+      
+      
+      <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_5" >
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6_5" id="__nav_6_5_label" tabindex="0">
+          GPU
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_5_label" aria-expanded="false">
+        <label class="md-nav__title" for="__nav_6_5">
+          <span class="md-nav__icon md-icon"></span>
+          GPU
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tutorials/GPU/Hello_MatMul_GPU/" class="md-nav__link">
+        Hello MatMul GPU
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tutorials/GPU/Tensor_MatMul_Caching_GPU/" class="md-nav__link">
+        Tensor MatMul Caching GPU
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tutorials/GPU/Tensor_MatMul_ElementWiseOps_GPU/" class="md-nav__link">
+        Tensor MatMul ElementWiseOps GPU
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tutorials/GPU/Tensor_MatMul_GPU/" class="md-nav__link">
+        Tensor MatMul GPU
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tutorials/GPU/Tensor_MatMul_MultiPass/" class="md-nav__link">
+        Tensor MatMul MultiPass
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tutorials/GPU/Tensor_MatMul_SchedulingPolicy_GPU/" class="md-nav__link">
+        Tensor MatMul SchedulingPolicy GPU
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="section-3-schedules">Section 3: Schedules</h1>
+<p>We begin with <code>nest</code> from <a href="../02%20Simple%20Affine%20Loop%20Nests/">Section 2</a> which captures the logic of matrix-matrix multiplication. We use <code>nest</code> to create a <code>Schedule</code> that controls the execution order of the nest's iterations. Schedules are target-independent in the sense that the same schedule can be used to emit code for multiple target platforms.</p>
+<p>We create a default schedule as follows:
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span> <span class="o">=</span> <span class="n">nest</span><span class="o">.</span><span class="n">create_schedule</span><span class="p">()</span>
+</code></pre></div></p>
+<p>The default schedule is equivalent to the following straightforward for-loop version of the loop nest:
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">12</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">15</span><span class="p">):</span>
+            <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+</code></pre></div>
+In other words, each of the logical pseudo-code loops in <code>nest</code> becomes an actual for-loop in the default schedule. The for-loop sizes can be known at compile-time or at runtime.</p>
+<p>We can now transform this schedule in various ways. However, these transformations do not change the underlying logic defined in <code>nest</code> and merely change the order of the loop iterations. We can even generate as many independent schedules as we want by calling <code>nest.create_schedule()</code>.</p>
+<h2 id="iteration-spaces-a-geometric-representation-of-schedules">Iteration spaces: a geometric representation of schedules</h2>
+<p>In the Accera programming model, a schedule is geometrically interpreted as a multi-dimensional discrete hypercube called the <em>iteration space</em> of the nest. The elements of the iteration space represent the individual iterations of the loop nest. Initially, the dimensions of the iteration space correspond to the logical loops defined in <code>nest</code>. </p>
+<p>For example, the default iteration space for the matrix-matrix multiplication nest forms a three-dimensional discrete hypercube, whose shape is (3, 12, 15):</p>
+<p><img alt="(3, 12, 15) iteration space" src="../../assets/viz/space_3_12_15.png" /></p>
+<p><em>The (3, 12, 15) iteration space. The arrows labelled 1, 2, and 3 indicate the dimension order and direction.</em></p>
+<h3 id="how-does-an-iteration-space-imply-an-order-over-the-iterations">How does an iteration space imply an order over the iterations?</h3>
+<p>The dimensions of the iteration space are ordered, and this order corresponds to the original order of the logical loops in <code>nest</code> by default. In fact, the order over the dimensions induces a lexicographic sequence over the individual elements of the iteration space.</p>
+<p><a href="https://www.youtube.com/watch?v=MYiwLVS4mLM" title="Iteration sequence"><img alt="(3, 12, 15) iteration sequence" src="https://img.youtube.com/vi/MYiwLVS4mLM/0.jpg" /></a></p>
+<p><em>Video showing sequence of iterations for the (3, 12, 15) iteration space.</em></p>
+<p>This geometric interpretation of schedules helps us visualize how different transformations modify them. While some transformations merely rearrange the elements of the iteration space, others increase its dimensions, and some even pad the space with empty (no-op) elements. The transformed iteration space defines a new lexicographic order over the individual iterations.</p>
+<p>Comment: It is important not to confuse arrays, like <code>A</code>, <code>B</code>, <code>C</code>, with iteration spaces, like <code>schedule</code>. A possible source of confusion could be that both arrays and iteration spaces have a multidimensional rectilinear structure (i.e., they both look like hypercubes). However, arrays and iteration spaces are fundamentally different. Arrays are data structures whose elements are scalars. Iteration spaces are abstract geometric representations of schedules and their elements represent individual iterations of a loop nest. Transformations apply to iteration spaces, not to arrays.</p>
+<p>Comment: Accera's geometric interpretation of schedules resembles the <em>iteration domain polyhedron</em>, which is the cornerstone of the <a href="https://en.wikipedia.org/wiki/Polytope_model">polyhedral model</a> of compiler optimization. However, unlike polyhedrons, Accera iteration spaces are not embedded in a continuous space and cannot be manipulated by algebraic transformations. Accera iteration spaces always remain rectilinear and are inherently discrete objects.</p>
+<h3 id="iteration-space-slices">Iteration space slices</h3>
+<p><em>Iteration space slices</em> is an abstract concept that affects different aspects of the Accera programming model. Since the iteration space dimensions are ordered, each element of the iteration space can be identified by a vector of coordinates.  For example, the vector (1, 6, 7) identifies the iteration at position 1 along the first dimension, position 6 along the second dimension, and position 7 along the third dimension. If one or more coordinates are replaced with the <em>wildcard</em> symbol <code>*</code>, we get an <em>iteration space slice</em>, which is a set of iterations obtained by replacing the wildcard with all possible values. For example, (*, *, 2) represents a slice containing all the elements with 2 as their last coordinate. The <em>dimension of a slice</em> equals the number of wildcards in its definition.</p>
+<p><img alt="(*, *, 2) slice" src="../../assets/viz/space_3_12_15_slice.png" /></p>
+<p><em>The (3, 12, 15) iteration space. Highlighted elements belong to the (*, *, 2) slice.</em></p>
+<p>Iteration space slices in four dimensions, denoted by indices (<code>i</code>, <code>j</code>, <code>jj</code>, <code>k</code>):</p>
+<table>
+<thead>
+<tr>
+<th align="center"><img alt="(1, *, *, *)" src="../../assets/viz/space_3_4_3_15_slice1.png" /></th>
+<th align="center"><img alt="(*, *, *, 3)" src="../../assets/viz/space_3_4_3_15_slice2.png" /></th>
+<th align="center"><img alt="(2, *, 0, *)" src="../../assets/viz/space_3_4_3_15_slice3.png" /></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="center"><em>(1, *, *, *)</em></td>
+<td align="center"><em>(*, *, *, 3)</em></td>
+<td align="center"><em>(2, *, 0, *)</em></td>
+</tr>
+</tbody>
+</table>
+<h3 id="loops-indices-and-dimensions">Loops, indices, and dimensions</h3>
+<p>When we defined <code>nest</code>, we used variables such as <code>i</code>, <code>j</code>, and <code>k</code> to name the loops in the loop-nest. When we described the default schedule using equivalent for-loops, <code>i</code>, <code>j</code>, and <code>k</code> became the index variables of those loops. Now, when we represent a schedule as an iteration space, these variables are used as the names of the corresponding iteration space dimensions. From here on, we move seamlessly between these different representations and use the terms <em>loop</em>, <em>index</em>, and <em>dimension</em> interchangeably.</p>
+<h2 id="schedule-transformations">Schedule transformations</h2>
+<p>Iteration space transformations change the shape of the iteration space, possibly by adding dimensions or padding the space with empty elements.</p>
+<p>The iterations space always retains its rectilinear (hypercube) shape. In some cases, Accera transformations must pad the iteration space with empty elements to avoid reaching a jagged iteration space structure.</p>
+<h3 id="reorder"><code>reorder</code></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Reorder the indices.</span>
+<span class="n">schedule</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
+</code></pre></div>
+<p>The <code>reorder</code> transformation sets the order of indices in the schedule. From the iteration space point-of-view, <code>reorder</code> performs a pivot rotation of the iteration space, which orients its dimensions in a specified order. Since the iteration space elements are executed in lexicographic order, pivoting the iteration space is equivalent to reordering the loops.</p>
+<p>For example, we can write:
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+</code></pre></div>
+After this transformation, <code>schedule</code> becomes equivalent to:
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">12</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">15</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+            <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+</code></pre></div></p>
+<table>
+<thead>
+<tr>
+<th align="center"><img alt="(3, 12, 15) iteration space" src="../../assets/viz/space_3_12_15_presplit.png" /></th>
+<th align="center"><img alt="(12, 15, 3) iteration space" src="../../assets/viz/space_12_15_3.png" /></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="center"><em>Default schedule, order is (i, j, k)</em></td>
+<td align="center"><em>After <code>reorder(j, k, i)</code>, order is (j, k, i)</em></td>
+</tr>
+</tbody>
+</table>
+<h4 id="invalid-orders">Invalid orders</h4>
+<p>Some orders are not allowed. Describing these restrictions in full will require concepts that are yet to be introduced. Therefore, we are stating these restrictions here and will discuss them later in the upcoming sections. The restrictions are:
+1. The <em>inner dimension</em> created by a <code>split</code> transformation (see below) must be ordered later than its corresponding <em>outer dimension</em>.
+2. The <em>fusing dimension</em> created by a <code>fuse</code> operation (see <a href="../04%20Fusing/">Section 4</a>) must always precede any <em>unfused dimensions</em>.</p>
+<p>Also note that <code>reorder</code> can also have the following overloaded form:
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span><span class="o">.</span><span class="n">reorder</span><span class="p">(</span><span class="n">order</span><span class="o">=</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span>
+</code></pre></div>
+This form is better suited for use with parameters (see <a href="../09%20Parameters/">Section 9</a>).</p>
+<h3 id="split"><code>split</code></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Splits dimension i into equally-sized parts, orients those parts along a new dimension ii, and stacks those parts along dimension i</span>
+<span class="n">ii</span> <span class="o">=</span> <span class="n">schedule</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">size</span><span class="p">)</span>
+</code></pre></div>
+<p>From the iteration space point-of-view, the <code>split</code> transformation takes a dimension <code>i</code> and a <code>size</code>, modifies <code>i</code>, and creates a new dimension <code>ii</code>. Assume that the original size of dimension <code>i</code> was <em>n</em>: The <code>split</code> transformation splits the dimension <code>i</code> into <em>ceil(n/size)</em> parts of size <code>size</code>, orients each of these parts along dimension <code>ii</code>, and stacks the <em>ceil(n/size)</em> parts along the dimension <code>i</code>. If the split size does not divide the dimension size, empty elements are added such that the split size does divide the dimension size. As a result of the split, the size of <code>i</code> becomes <em>ceil(n/size)</em>, the size of the new dimension <code>ii</code> equals <code>size</code>, and the iteration space remains rectilinear.</p>
+<p>In loop terms, <code>ii = split(i, size)</code> splits loop <code>i</code> into two loops: an inner loop <code>ii</code> and an outer loop, which inherits the original name <code>i</code>. Note that the outer loop always precedes the corresponding inner loop in the loop ordering.</p>
+<p>For example, starting from <code>nest</code> defined in <a href="../02%20Simple%20Affine%20Loop%20Nests/">Section 2</a>, we could write:
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span> <span class="o">=</span> <span class="n">nest</span><span class="o">.</span><span class="n">create_schedule</span><span class="p">()</span>
+<span class="n">jj</span> <span class="o">=</span> <span class="n">schedule</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+</code></pre></div>
+The resulting iteration space has a shape of (3, 4, 3, 15) and corresponds to the following python code:
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span> <span class="c1"># length 4, stride 3</span>
+        <span class="k">for</span> <span class="n">jj</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">15</span><span class="p">):</span>
+                <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="o">+</span><span class="n">jj</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="o">+</span><span class="n">jj</span><span class="p">]</span>
+</code></pre></div>
+Note that loop <code>j</code> is no longer normalized (it has a stride of 3 rather than 1), which means that the nest is no longer a simple nest. As mentioned in the previous section, <code>Nest</code> objects always represent simple nests, but <code>Schedule</code> objects can represent more complex affine loop nests.</p>
+<table>
+<thead>
+<tr>
+<th align="center"><img alt="(3, 12, 15) iteration space" src="../../assets/viz/space_3_12_15_presplit.png" /></th>
+<th align="center"><img alt="(3, 4, 3, 15) iteration space" src="../../assets/viz/space_3_12_15_postsplit.png" /></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="center"><em>Default schedule</em></td>
+<td align="center"><em>After <code>split(j, 3)</code></em></td>
+</tr>
+</tbody>
+</table>
+<p>After performing a split, both the outer index and the inner index can be split again. For example,
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span> <span class="o">=</span> <span class="n">nest</span><span class="o">.</span><span class="n">create_schedule</span><span class="p">()</span>
+<span class="n">jj</span> <span class="o">=</span> <span class="n">schedule</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="n">jjj</span> <span class="o">=</span> <span class="n">schedule</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="c1"># split the outer index j again</span>
+</code></pre></div>
+After the first split, the iteration space has the shape (3, 4, 3, 15). After the second split, the shape becomes (3, 2, 2, 3, 15). The transformed schedule corresponds to the following Python code:
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">):</span> <span class="c1"># length 2, stride 6</span>
+        <span class="k">for</span> <span class="n">jjj</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span> <span class="c1"># length 2, stride 3</span>
+            <span class="k">for</span> <span class="n">jj</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">15</span><span class="p">):</span>
+                    <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="o">+</span><span class="n">jj</span><span class="o">+</span><span class="n">jjj</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="o">+</span><span class="n">jj</span><span class="o">+</span><span class="n">jjj</span><span class="p">]</span>
+</code></pre></div></p>
+<p>The split does not necessarily need to divide the dimension size. For example, consider the following code:
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span> <span class="o">=</span> <span class="n">nest</span><span class="o">.</span><span class="n">create_schedule</span><span class="p">()</span>
+<span class="n">jj</span> <span class="o">=</span> <span class="n">schedule</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>  <span class="c1"># original size of dimension j was 12</span>
+</code></pre></div>
+From the iteration space point-of-view, this code splits dimension <code>j</code> into three parts of size 5, where the last part is padded with empty (no-op) elements. Before the transformation, the iteration space shape is (3, 12, 15), and after the transformation, the shape is (3, 3, 5, 15) (so, 135 empty elements were added).</p>
+<table>
+<thead>
+<tr>
+<th align="center"><img alt="(3, 15, 15) iteration space" src="../../assets/viz/space_3_15_15_presplit.png" /></th>
+<th align="center"><img alt="(3, 3, 5, 15) iteration space" src="../../assets/viz/space_3_15_15_postsplit.png" /></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="center"><em>Default schedule (no-op elements in blue)</em></td>
+<td align="center"><em>After <code>split(j, 5)</code></em></td>
+</tr>
+</tbody>
+</table>
+<p>In loop form, the transformed iteration space corresponds to the following Python code:
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">5</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">jj</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">15</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">j</span><span class="o">+</span><span class="n">jj</span> <span class="o">&lt;</span> <span class="mi">12</span>
+                <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="o">+</span><span class="n">jj</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="o">+</span><span class="n">jj</span><span class="p">]</span>
+</code></pre></div>
+Note that Accera optimizes away costly <code>if</code> statements by <em>unswitching</em> the loops, which results in code that looks more like this:
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">jj</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">15</span><span class="p">):</span>
+                <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="o">+</span><span class="n">jj</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="o">+</span><span class="n">jj</span><span class="p">]</span>
+        <span class="c1"># loop unswitching: handle the last iteration of the j loop separately</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">12</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">15</span><span class="p">):</span>
+                <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+</code></pre></div></p>
+<h4 id="meaningless-splits">Meaningless splits</h4>
+<p>Next, we will describe Accera’s behavior in a few degenerate cases. If the split size equals the dimension size, the transformation simply renames the split dimension. For example,
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span> <span class="o">=</span> <span class="n">nest</span><span class="o">.</span><span class="n">create_schedule</span><span class="p">()</span>
+<span class="n">jj</span> <span class="o">=</span> <span class="n">schedule</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="mi">12</span><span class="p">)</span> <span class="c1"># original size of dimension j was 12</span>
+</code></pre></div>
+After the split, the size of <code>j</code> becomes 1 and the size of <code>jj</code> is <code>12</code>. The new shape of the iteration space is (3, 1, 12, 15). The dimension <code>j</code> becomes meaningless and therefore the schedule is basically unchanged.</p>
+<p>If the split size exceeds the dimension size, Accera will treat it as if the split size doesn't divide the dimension size. This special case is handled by adding empty elements. For example,
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span> <span class="o">=</span> <span class="n">nest</span><span class="o">.</span><span class="n">create_schedule</span><span class="p">()</span>
+<span class="n">jj</span> <span class="o">=</span> <span class="n">schedule</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="mi">13</span><span class="p">)</span>  <span class="c1"># original size of dimension j was 12</span>
+</code></pre></div>
+After the split, the size of <code>j</code> becomes 1 and the size of <code>jj</code>, 13. The new shape of the iteration space is (3, 1, 13, 15), which means that 45 empty elements were added. These empty elements are removed during code generation, which means that the schedule is basically unchanged.</p>
+<p>Finally, note that <code>jj = schedule.split(j, 1)</code> simply adds a meaningless new dimension <code>jj</code> of size 1, and again, the schedule is unchanged.</p>
+<h3 id="convenience-syntax-tile">Convenience syntax: <code>tile</code></h3>
+<p>The <code>tile</code> transformation is a convenience syntax and does not provide any unique functionality. Consider the following code
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span> <span class="o">=</span> <span class="n">nest</span><span class="o">.</span><span class="n">create_schedule</span><span class="p">()</span>
+<span class="n">jj</span><span class="p">,</span> <span class="n">kk</span> <span class="o">=</span> <span class="n">schedule</span><span class="o">.</span><span class="n">tile</span><span class="p">({</span>
+    <span class="n">j</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+    <span class="n">k</span><span class="p">:</span> <span class="mi">3</span>
+<span class="p">})</span>
+</code></pre></div>
+The <code>tile</code> transformation above is shorthand for the following sequence of transformations:
+<div class="highlight"><pre><span></span><code><span class="n">jj</span> <span class="o">=</span> <span class="n">schedule</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="n">kk</span> <span class="o">=</span> <span class="n">schedule</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+</code></pre></div></p>
+<p>It will result in a sequence of indices that are ordered as:
+<div class="highlight"><pre><span></span><code>(i, j, jj, k, kk)
+</code></pre></div>
+In other words, the <code>tile</code> transformation takes a tuple of indices and a tuple of sizes, splitting each index by the corresponding size. The indices involved in the split are then ordered such that each of the outer indices (parent index) precedes its inner indices (child index). On the other hand, indices that did not participate in the transformation retain their relative positions.</p>
+<h3 id="skew"><code>skew</code></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Skew dimension i with respect to dimension j.</span>
+<span class="n">schedule</span><span class="o">.</span><span class="n">skew</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
+</code></pre></div>
+<p>The <code>skew</code> transformation is the easiest to explain for a two-dimensional iteration space of shape <em>(N, M)</em>. Skewing dimension <code>i</code> (the row dimension) with respect to <code>j</code> (the column dimension) modifies the iteration space column-by-column: column <code>j</code> gets <em>j</em> empty elements added to its start and <em>M-j-1</em> empty elements to its end. As a result, each column grows from size <em>N</em> to size <em>N+M-1</em>. Geometrically, the original iteration space elements take the form of a 45-degree parallelogram, embedded within a bounding rectangle of shape <em>(N+M-1, M)</em>. The element that used to be at coordinate <em>(i, j)</em> moves to coordinate <em>(i+j, j)</em>.</p>
+<p>Similarly, skewing <code>j</code> with respect to <code>i</code> adds empty elements at the beginning and end of each row, resulting in an iteration space of shape <em>(N, N+M-1)</em>. In higher dimensions, we simply apply the two-dimensional skew transformation independently to each two-dimensional slice along the two specified dimensions.</p>
+<p>To demonstrate the importance of this transformation, consider convolving a 10-element vector with a 3-element filter. The loop logic for this operation is defined as follows:
+<div class="highlight"><pre><span></span><code><span class="kn">import</span> <span class="nn">accera</span> <span class="k">as</span> <span class="nn">acc</span>
+
+<span class="n">N</span> <span class="o">=</span> <span class="mi">10</span>  <span class="c1"># input size</span>
+<span class="n">K</span> <span class="o">=</span> <span class="mi">3</span>  <span class="c1"># filter size</span>
+<span class="n">M</span> <span class="o">=</span> <span class="n">N</span> <span class="o">-</span> <span class="n">K</span> <span class="o">+</span> <span class="mi">1</span>  <span class="c1"># output size = 8</span>
+
+<span class="n">A</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">Array</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="n">acc</span><span class="o">.</span><span class="n">Role</span><span class="o">.</span><span class="n">INPUT</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">N</span><span class="p">,))</span>
+<span class="n">B</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">Array</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="n">acc</span><span class="o">.</span><span class="n">Role</span><span class="o">.</span><span class="n">INPUT</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">K</span><span class="p">,))</span>
+<span class="n">C</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">Array</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="n">acc</span><span class="o">.</span><span class="n">Role</span><span class="o">.</span><span class="n">INPUT_OUTPUT</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">M</span><span class="p">,))</span>
+
+<span class="n">nest</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">Nest</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">K</span><span class="p">))</span>
+<span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">=</span> <span class="n">nest</span><span class="o">.</span><span class="n">get_indices</span><span class="p">()</span>
+
+<span class="nd">@nest</span><span class="o">.</span><span class="n">iteration_logic</span>
+<span class="k">def</span> <span class="nf">_</span><span class="p">():</span>
+    <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="n">j</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+
+<span class="n">schedule</span> <span class="o">=</span> <span class="n">nest</span><span class="o">.</span><span class="n">create_schedule</span><span class="p">()</span>
+</code></pre></div>
+<code>schedule</code> corresponds to an iteration space of shape (8,3), where the first dimension corresponds to the 8 elements of the output vector. This schedule calculates the outputs one by one: first <code>C[0]</code>, then <code>C[1]</code>, etc.</p>
+<p>Here is the equivalent Python code:
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+        <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="n">j</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+</code></pre></div></p>
+<p>Now, say that we apply the <code>skew</code> transformation as follows:
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span><span class="o">.</span><span class="n">skew</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span>
+</code></pre></div>
+This transformation results in an iteration space of shape (10, 3), where the first dimension corresponds to the 10 elements of the input. This transformed schedule processes the input elements one-by-one: it extracts all the information from <code>A[0]</code> (<code>A[0]</code> is only used in the calculation of <code>C[0]</code>), then moves on to <code>A[1]</code> (which contributes to both <code>C[0]</code> and <code>C[1]</code>), and so on.</p>
+<p>In this example, the default schedule achieves memory locality with respect to array <code>C</code>, whereas the skewed schedule achieves memory locality with respect to array <code>A</code>.</p>
+<p>In loop form, the transformed iteration space corresponds to the following Python code:</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">i</span><span class="o">-</span><span class="n">j</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="p">(</span><span class="n">i</span><span class="o">-</span><span class="n">j</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">8</span><span class="p">:</span>
+            <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+</code></pre></div>
+<p>Behind the scenes, <em>unswitching</em> the loops results in code that looks more like this:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># triangle of height 2, width 3</span>
+<span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">):</span>
+    <span class="n">C</span><span class="p">[</span><span class="mi">0</span><span class="o">-</span><span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+    <span class="n">C</span><span class="p">[</span><span class="mi">1</span><span class="o">-</span><span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+
+<span class="c1"># rectangle of shape (6, 3)</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+        <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+
+<span class="c1"># upside-down triangle of height 2, width 3</span>
+<span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+    <span class="n">C</span><span class="p">[</span><span class="mi">6</span><span class="o">+</span><span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="mi">8</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="mi">2</span><span class="o">-</span><span class="n">j</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">):</span>
+    <span class="n">C</span><span class="p">[</span><span class="mi">7</span><span class="o">+</span><span class="n">j</span><span class="p">]</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="mi">9</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="p">[</span><span class="mi">2</span><span class="o">-</span><span class="n">j</span><span class="p">]</span>
+</code></pre></div>
+<p>Finally, note that some loops have small sizes that can be replaced by unrolls. To enable the unrolling of these small loops, we can use this optional parameter:</p>
+<div class="highlight"><pre><span></span><code><span class="n">schedule</span><span class="o">.</span><span class="n">skew</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">unroll_loops_smaller_than</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+</code></pre></div>
+<p>This will unroll all loops that are smaller than 3, which include the <code>range(2)</code> and <code>range(1)</code> loops in the example above.</p>
+<h3 id="pad"><code>pad</code></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Adds empty elements to the beginning of dimension i.</span>
+<span class="n">schedule</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">size</span><span class="p">)</span>
+</code></pre></div>
+<p>The <code>pad</code> transformation pads the beginning of dimension <code>i</code> with empty elements. This operation is meaningless by itself, but can be useful when used with splitting or fusing.</p>
+<h2 id="order-invariant-schedules-and-safety">Order-invariant schedules and safety</h2>
+<p>A schedule is <em>order-invariant</em> if its underlying logic doesn't depend on the execution order of its iterations. For example, schedules created from a single <code>Nest</code> (via <code>create_schedule()</code>) are order-invariant. All of the schedules discussed so far have been order-invariant.</p>
+<p>A schedule is <em>safe</em> if its underlying logic is guaranteed to remain intact regardless of the applied transformations. Not all schedules are safe, but order-invariant schedules are. This is because the transformations introduced in this section only change the execution order of iterations without adding or removing any work.</p>
+<p>In <a href="../04%20Fusing/">Section 4</a>, we introduce fused schedules, which are not order-invariant, but may still be safe.</p>
+<div style="page-break-after: always;"></div>
+
+  <hr>
+<div class="md-source-file">
+  <small>
+    
+      Last update:
+      2023-04-17
+    
+  </small>
+</div>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z"/></svg>
+            Back to top
+          </button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2022+ Microsoft Research [MIT License]
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/microsoft/Accera" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.4.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.sections", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "search.highlight", "search.share", "search.suggest", "toc.integrate"], "search": "../../assets/javascripts/workers/search.208ed371.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.51198bba.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -133,6 +133,20 @@ void simplifyAndLowerAffine(PassManagerAdaptor& pmAdaptor)
     pmAdaptor.addPass(createLowerAffinePass());
 }
 
+bool addGPUPasses(PassManagerAdaptor& pmAdaptor, const accera::value::ExecutionRuntime execRuntime, const AcceraPassPipelineOptions& options)
+{
+    auto gpuPass = createAcceraToGPUPass(execRuntime);
+    if (gpuPass)
+    {
+        pmAdaptor.addPass(createGPUSimplificationPass());
+        pmAdaptor.addPass(value::createBarrierOptPass(options.writeBarrierGraph.getValue(), options.barrierGraphFilename.getValue()));
+        pmAdaptor.addPass(std::move(gpuPass));
+        return true;
+    }
+
+    return false;
+}
+
 void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOptions& options)
 {
     ir::InitializeAccera();
@@ -173,7 +187,6 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     funcOpPM.addPass(createLoopInvariantCodeMotionPass());
     funcOpPM.addPass(createCSEPass());
 
-    pmAdaptor.addPass(createConvertSCFToOpenMPPass());
     pmAdaptor.addPass(value::createValueToStdPass(options.enableProfile));
     pmAdaptor.addPass(value::createRangeValueOptimizePass());
     pmAdaptor.addPass(createCanonicalizerPass());
@@ -183,24 +196,28 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
     {
         // The spirv lowering doesn't generate affine dialect ops, and the SPIRV dialect doesn't play nicely with them, so lower the affine ops before running the GPU lowering
         simplifyAndLowerAffine(pmAdaptor);
+        pmAdaptor.addPass(createGpuKernelOutliningPass());
+        addGPUPasses(pmAdaptor, execRuntime, options);
     }
-
-    pmAdaptor.addPass(createGpuKernelOutliningPass());
-    auto gpuPass = createAcceraToGPUPass(execRuntime);
-    if (gpuPass)
+    else
     {
-        pmAdaptor.addPass(createGPUSimplificationPass());
-        pmAdaptor.addPass(value::createBarrierOptPass(options.writeBarrierGraph.getValue(), options.barrierGraphFilename.getValue()));
-        pmAdaptor.addPass(std::move(gpuPass));
-    }
+        pmAdaptor.addPass(createGpuKernelOutliningPass());
+        const auto isGPU = addGPUPasses(pmAdaptor, execRuntime, options);
 
-    if (execRuntime != accera::value::ExecutionRuntime::VULKAN)
-    {
         // lowering to runtimes other than SPIRV generates affine dialect ops so optimize and lower those now
         simplifyAndLowerAffine(pmAdaptor);
-        if (execRuntime == accera::value::ExecutionRuntime::ROCM)
+
+        if (isGPU)
         {
-            pmAdaptor.addPass(createGPUToROCDLPass());
+            if (execRuntime == accera::value::ExecutionRuntime::ROCM)
+            {
+                pmAdaptor.addPass(createGPUToROCDLPass());
+            }
+        }
+        else
+        {
+            // Convert to OMP when in non-GPU scenarios
+            pmAdaptor.addPass(createConvertSCFToOpenMPPass());
         }
     }
 
@@ -233,7 +250,7 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
 
     funcOpPM.addPass(createConvertVectorToSCFPass(
         VectorTransferToSCFOptions{} /*.setLowerPermutationMaps(true) .setLowerTensors(true).setUnroll(true) */));
-    pmAdaptor.addPass(createLowerToCFGPass());
+    pmAdaptor.addPass(createConvertSCFToCFPass());
 
     if (execRuntime != accera::value::ExecutionRuntime::VULKAN)
     {
@@ -255,6 +272,7 @@ void addAcceraToLLVMPassPipeline(OpPassManager& pm, const AcceraPassPipelineOpti
         /* indexBitwidth = */ kDeriveIndexBitwidthFromDataLayout,
         /* useAlignedAlloc = */ true,
         /* dataLayout = */ llvm::DataLayout(accera::value::GetTargetDevice(options.target).dataLayout),
+        /* deviceInfo = */ accera::value::GetTargetDevice(options.target),
         { options.dumpIntraPassIR.getValue(), options.basename + "ValueToLLVM_Subpasses" }));
     pmAdaptor.addPass(createCanonicalizerPass());
     pmAdaptor.addPass(LLVM::createLegalizeForExportPass());

@@ -1,7 +1,7 @@
-From 6172c5a07d0e4ca745aeff45298d2995aa685c42 Mon Sep 17 00:00:00 2001
+From b2cecf54139212bbea1f29337c51e47fca81be5c Mon Sep 17 00:00:00 2001
 From: Lisa Ong <onglisa@microsoft.com>
 Date: Mon, 14 Feb 2022 16:18:47 +0800
-Subject: [PATCH] From 97c4232342b7e8b802c4557368bc016264679930 Mon Sep 17
+Subject: [PATCH 2/6] From 97c4232342b7e8b802c4557368bc016264679930 Mon Sep 17
  00:00:00 2001 From: Chuck Jacobs <cjacobs@microsoft.com> Date: Wed, 6 Oct
  2021 16:40:38 +0000 Subject: Merged PR 2237: Improved codegen of vpmaddwd
  instruction
@@ -12,7 +12,7 @@ This PR adds another codegen path that lowers certain "multiply-like" operations
  1 file changed, 574 insertions(+)
 
 diff --git a/llvm/lib/Target/X86/X86ISelLowering.cpp b/llvm/lib/Target/X86/X86ISelLowering.cpp
-index 6f1fe8195595..f7bff9795548 100644
+index 4c622568f8d0..7ee8b9be2154 100644
 --- a/llvm/lib/Target/X86/X86ISelLowering.cpp
 +++ b/llvm/lib/Target/X86/X86ISelLowering.cpp
 @@ -39,6 +39,7 @@
@@ -23,7 +23,7 @@ index 6f1fe8195595..f7bff9795548 100644
  #include "llvm/CodeGen/TargetLowering.h"
  #include "llvm/CodeGen/WinEHFuncInfo.h"
  #include "llvm/IR/CallingConv.h"
-@@ -49340,6 +49341,350 @@ static SDValue combinePMULH(SDValue Src, EVT VT, const SDLoc &DL,
+@@ -49524,6 +49525,350 @@ static SDValue combinePMULH(SDValue Src, EVT VT, const SDLoc &DL,
    return DAG.getNode(Opc, DL, VT, LHS, RHS);
  }
  
@@ -374,7 +374,7 @@ index 6f1fe8195595..f7bff9795548 100644
  // Attempt to match PMADDUBSW, which multiplies corresponding unsigned bytes
  // from one vector with signed bytes from another vector, adds together
  // adjacent pairs of 16-bit products, and saturates the result before
-@@ -52432,6 +52777,233 @@ static SDValue matchPMADDWD_2(SelectionDAG &DAG, SDValue N0, SDValue N1,
+@@ -52546,6 +52891,233 @@ static SDValue matchPMADDWD_2(SelectionDAG &DAG, SDValue N0, SDValue N1,
                            PMADDBuilder);
  }
  
@@ -608,7 +608,7 @@ index 6f1fe8195595..f7bff9795548 100644
  // ADD(VPMADDWD(X,Y),VPMADDWD(Z,W)) -> VPMADDWD(SHUFFLE(X,Z), SHUFFLE(Y,W))
  // If upper element in each pair of both VPMADDWD are zero then we can merge
  // the operand elements and use the implicit add of VPMADDWD.
-@@ -52554,6 +53126,8 @@ static SDValue combineAdd(SDNode *N, SelectionDAG &DAG,
+@@ -52668,6 +53240,8 @@ static SDValue combineAdd(SDNode *N, SelectionDAG &DAG,
      return MAdd;
    if (SDValue MAdd = matchPMADDWD_2(DAG, Op0, Op1, DL, VT, Subtarget))
      return MAdd;
@@ -618,5 +618,5 @@ index 6f1fe8195595..f7bff9795548 100644
      return MAdd;
  
 -- 
-2.30.0.windows.1
+2.37.1 (Apple Git-137.1)
 

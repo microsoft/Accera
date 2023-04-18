@@ -1,14 +1,16 @@
-From 39f0a4c97f5c89d7fa815118a3230091172bc795 Mon Sep 17 00:00:00 2001
-From: Charles Jacobs <cjacobs@microsoft.com>
-Date: Mon, 15 Aug 2022 16:00:43 -0700
-Subject: [PATCH] Fix issue where passed-in op-printing flags were ignored
+From bb702476975ebfc65d445f8da7d6064a81c09666 Mon Sep 17 00:00:00 2001
+From: Chuck Jacobs <cjacobs@microsoft.com>
+Date: Wed, 24 Aug 2022 04:13:49 +0000
+Subject: [PATCH 5/6] Merged PR 2823: Fix op-printing bug in
+ LocationSnapshotPass
 
+This PR fixes an issue where the printing flags passed in to the LocationSnapshotPass were being ignored.
 ---
  mlir/lib/Transforms/LocationSnapshot.cpp | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/mlir/lib/Transforms/LocationSnapshot.cpp b/mlir/lib/Transforms/LocationSnapshot.cpp
-index f23a3eee1511..c3c323284b18 100644
+index a042d07335bb..808f2ad2a67c 100644
 --- a/mlir/lib/Transforms/LocationSnapshot.cpp
 +++ b/mlir/lib/Transforms/LocationSnapshot.cpp
 @@ -133,7 +133,7 @@ struct LocationSnapshotPass
@@ -21,5 +23,5 @@ index f23a3eee1511..c3c323284b18 100644
    }
  
 -- 
-2.32.1 (Apple Git-133)
+2.37.1 (Apple Git-137.1)
 

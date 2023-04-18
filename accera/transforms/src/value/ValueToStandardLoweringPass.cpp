@@ -580,7 +580,7 @@ struct CastOpLowering : public OpRewritePattern<ValueCastOp>
 #define CAST_FROM_TO_WITH_OP_IF(testFromType, testToType, castOp, conditional)                                       \
     if (fromType && toType && fromElementType.isa<testFromType>() && toElementType.isa<testToType>() && conditional) \
     {                                                                                                                \
-        mlir::Value castValue = rewriter.create<castOp>(op.getLoc(), signlessFromValue, signlessToType);             \
+        mlir::Value castValue = rewriter.create<castOp>(op.getLoc(), signlessToType, signlessFromValue);             \
         if (toType.isIntOrIndex())                                                                                   \
         {                                                                                                            \
             rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(op, toType, castValue);                    \
@@ -652,14 +652,14 @@ struct CastOpLowering : public OpRewritePattern<ValueCastOp>
         auto i64IntermediateType = accera::ir::util::CloneTypeWithNewElementType(op.source().getType(), rewriter.getI64Type());
         if (fromElementType.isa<mlir::IndexType>() && toElementType.isa<mlir::FloatType>())
         {
-            auto int64Value = rewriter.create<mlir::arith::IndexCastOp>(loc, op.source(), i64IntermediateType); // index->int64
-            rewriter.replaceOpWithNewOp<mlir::arith::SIToFPOp>(op, int64Value, toElementType); // int64->fp
+            auto int64Value = rewriter.create<mlir::arith::IndexCastOp>(loc, i64IntermediateType, op.source()); // index->int64
+            rewriter.replaceOpWithNewOp<mlir::arith::SIToFPOp>(op, toElementType, int64Value); // int64->fp
             return success();
         }
         if (fromElementType.isa<mlir::FloatType>() && toElementType.isa<mlir::IndexType>())
         {
-            auto int64Value = rewriter.create<mlir::arith::FPToSIOp>(loc, op.source(), i64IntermediateType); // fp->int64
-            rewriter.replaceOpWithNewOp<mlir::arith::IndexCastOp>(op, int64Value, toElementType); // int64->index
+            auto int64Value = rewriter.create<mlir::arith::FPToSIOp>(loc, i64IntermediateType, op.source()); // fp->int64
+            rewriter.replaceOpWithNewOp<mlir::arith::IndexCastOp>(op, toElementType, int64Value); // int64->index
             return success();
         }
 
@@ -1238,7 +1238,7 @@ LogicalResult CopyOpLowering::matchAndRewrite(
         if (outputMemRef.getElementType().isInteger(64)) // this should really be target dependent...
         {
             (void)rewriter.create<memref::StoreOp>(loc,
-                                                   rewriter.create<mlir::arith::IndexCastOp>(loc, input, rewriter.getIntegerType(64)),
+                                                   rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.getIntegerType(64), input),
                                                    output,
                                                    std::vector<mlir::Value>(outputMemRef.getRank(), zero));
         }
@@ -1358,7 +1358,7 @@ LogicalResult LoadOpLowering::matchAndRewrite(
         else
         {
             resolvedIndices.push_back(
-                rewriter.create<arith::IndexCastOp>(loc, rewriter.create<vir::GetElementOp>(loc, index), indexType));
+                rewriter.create<arith::IndexCastOp>(loc, indexType, rewriter.create<vir::GetElementOp>(loc, index)));
         }
     }
 
@@ -1388,8 +1388,8 @@ LogicalResult StoreOpLowering::matchAndRewrite(
         {
             resolvedIndices.push_back(
                 rewriter.create<arith::IndexCastOp>(loc,
-                                                    rewriter.create<vir::GetElementOp>(loc, index),
-                                                    indexType));
+                                                    indexType,
+                                                    rewriter.create<vir::GetElementOp>(loc, index)));
         }
     }
 
@@ -1524,8 +1524,8 @@ LogicalResult OffsetOpLowering::matchAndRewrite(
             {
                 resolvedOffsets.push_back(
                     rewriter.create<arith::IndexCastOp>(loc,
-                                                        rewriter.create<vir::GetElementOp>(loc, index),
-                                                        indexType));
+                                                        indexType,
+                                                        rewriter.create<vir::GetElementOp>(loc, index)));
             }
             else
             {
@@ -1611,7 +1611,7 @@ LogicalResult SliceOpLowering::matchAndRewrite(
             auto indexShape = index.getType().cast<mlir::ShapedType>().getShape();
             if (indexShape.size() == 0 || indexShape.size() == 1)
             {
-                index = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.create<vir::GetElementOp>(loc, index), indexType);
+                index = rewriter.create<mlir::arith::IndexCastOp>(loc, indexType, rewriter.create<vir::GetElementOp>(loc, index));
             }
             else
             {
@@ -1743,8 +1743,8 @@ LogicalResult ReorderOpLowering::matchAndRewrite(
     auto resultType = op.getType();
 
     // cast to a value with type `memref<total_size x elem_type>` (via `memref<* x elem_type>`)
-    mlir::Value ptr = rewriter.create<memref::CastOp>(loc, source, mlir::UnrankedMemRefType::get(elemTy, sourceType.getMemorySpace()));
-    auto result = rewriter.create<memref::CastOp>(loc, ptr, resultType);
+    mlir::Value ptr = rewriter.create<memref::CastOp>(loc, mlir::UnrankedMemRefType::get(elemTy, sourceType.getMemorySpace()), source);
+    auto result = rewriter.create<memref::CastOp>(loc, resultType, ptr);
     rewriter.replaceOp(op, { result });
 
     return success();
@@ -1762,8 +1762,8 @@ LogicalResult ReshapeOpLowering::matchAndRewrite(
     auto resultType = op.getType();
 
     // cast to a value with type `memref<total_size x elem_type>` (via `memref<* x elem_type>`)
-    mlir::Value ptr = rewriter.create<memref::CastOp>(loc, source, mlir::UnrankedMemRefType::get(elemTy, sourceType.getMemorySpace()));
-    auto result = rewriter.create<memref::CastOp>(loc, ptr, resultType);
+    mlir::Value ptr = rewriter.create<memref::CastOp>(loc, mlir::UnrankedMemRefType::get(elemTy, sourceType.getMemorySpace()), source);
+    auto result = rewriter.create<memref::CastOp>(loc, resultType, ptr);
     rewriter.replaceOp(op, { result });
 
     return success();
@@ -1932,11 +1932,11 @@ LogicalResult ReduceOpLowering::matchAndRewrite(
         vectorSize = vectorType.getShape()[0];
     }
     auto stepValue = isParallelReduction ? vectorSize : 1;
-
     auto oldInputValue = op.getInputValueVar();
     auto oldInductionValue = op.getInductionValue();
     auto oldTerminator = op.getBody()->getTerminator();
     auto oldYieldValue = oldTerminator->getOperand(0); // TODO: add "get result value" helper to ReduceOp
+    bool isFloatType = initialValueType.isa<mlir::FloatType>();
 
     // Check for trivial reductions of the form bin_op(arg1, arg2)
     if (isHorizontalReduction)
@@ -1959,40 +1959,36 @@ LogicalResult ReduceOpLowering::matchAndRewrite(
                 {
                     using accera::ir::value::BinaryOpPredicate;
                     auto pred = binOp.predicate();
-                    std::string opName = "";
+                    mlir::vector::CombiningKind kind;
                     switch (pred)
                     {
                     case BinaryOpPredicate::ADD:
-                        opName = "add";
+                        kind = mlir::vector::CombiningKind::ADD;
                         break;
                     case BinaryOpPredicate::MUL:
-                        opName = "mul";
+                        kind = mlir::vector::CombiningKind::MUL;
                         break;
                     case BinaryOpPredicate::SUB:
-                        opName = "sub";
-                        break;
+                        [[fallthrough]];
                     default:
-                        break;
+                        llvm_unreachable("Unsupported binary op predicate for vector reduction");
                     }
 
-                    if (!opName.empty())
+                    // We can use the init value for floating-point add and mul
+                    if (isFloatType && (pred == BinaryOpPredicate::ADD || pred == BinaryOpPredicate::MUL))
                     {
-                        // We can use the init value for floating-point add and mul
-                        if (initialValueType.isa<mlir::FloatType>() && (pred == BinaryOpPredicate::ADD || pred == BinaryOpPredicate::MUL))
-                        {
-                            auto result = rewriter.create<mlir::vector::ReductionOp>(loc, op.result().getType(), rewriter.getStringAttr(opName), op.input(), op.initArg());
-                            rewriter.replaceOp(op, { result });
-                        }
-                        else
-                        {
-                            auto result = rewriter.create<mlir::vector::ReductionOp>(loc, op.result().getType(), rewriter.getStringAttr(opName), op.input(), llvm::None);
-                            rewriter.replaceOp(op, { result });
-                        }
-                        return success();
+                        auto result = rewriter.create<mlir::vector::ReductionOp>(loc, kind, op.input(), op.initArg());
+                        rewriter.replaceOp(op, { result });
                     }
+                    else
+                    {
+                        auto result = rewriter.create<mlir::vector::ReductionOp>(loc, kind, op.input());
+                        rewriter.replaceOp(op, { result });
+                    }
+                    return success();
                 }
             }
-            else if (auto selectOp = dyn_cast<mlir::SelectOp>(yieldValueOp))
+            else if (auto selectOp = dyn_cast<mlir::arith::SelectOp>(yieldValueOp))
             {
                 // Look for sequences like:
                 //
@@ -2022,13 +2018,13 @@ LogicalResult ReduceOpLowering::matchAndRewrite(
                             [[fallthrough]];
                         case ValueCmpOpPredicate::LE:
                             // min
-                            result = rewriter.create<mlir::vector::ReductionOp>(loc, op.result().getType(), rewriter.getStringAttr("min"), op.input(), llvm::None);
+                            result = rewriter.create<mlir::vector::ReductionOp>(loc, isFloatType ? mlir::vector::CombiningKind::MINF : mlir::vector::CombiningKind::MINSI, op.input());
                             break;
                         case ValueCmpOpPredicate::GT:
                             [[fallthrough]];
                         case ValueCmpOpPredicate::GE:
                             // max
-                            result = rewriter.create<mlir::vector::ReductionOp>(loc, op.result().getType(), rewriter.getStringAttr("max"), op.input(), llvm::None);
+                            result = rewriter.create<mlir::vector::ReductionOp>(loc, isFloatType ? mlir::vector::CombiningKind::MAXF : mlir::vector::CombiningKind::MAXSI, op.input());
                             break;
                         }
 
@@ -2149,8 +2145,8 @@ LogicalResult ReferenceGlobalOpLowering::matchAndRewrite(
 
     rewriter.replaceOpWithNewOp<memref::CastOp>(
         op,
-        getGlobalOpValue,
-        op.getType());
+        op.getType(),
+        getGlobalOpValue);
 
     return success();
 }
@@ -2538,11 +2534,11 @@ LogicalResult ReduceMaxOpLowering::matchAndRewrite(
         return op.emitError("Can only reduce a rank-1 memref");
     }
 
+    auto elementType = memRefType.getElementType();
     mlir::Value memrefToCast = input;
     mlir::Value loadedVector = nullptr;
     if (!memRefType.getLayout().isIdentity())
     {
-        auto elementType = memRefType.getElementType();
         auto vectorType = mlir::VectorType::get(memRefType.getShape(), elementType);
         auto zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
         loadedVector = rewriter.create<mlir::vector::TransferReadOp>(loc, vectorType, memrefToCast, mlir::ValueRange{ zero });
@@ -2552,7 +2548,8 @@ LogicalResult ReduceMaxOpLowering::matchAndRewrite(
         auto castMemRefVector = rewriter.create<mlir::vector::TypeCastOp>(loc, memrefToCast);
         loadedVector = rewriter.create<memref::LoadOp>(loc, castMemRefVector, llvm::None);
     }
-    auto result = rewriter.create<mlir::vector::ReductionOp>(loc, op.result().getType(), rewriter.getStringAttr("max"), loadedVector, llvm::None);
+    auto kind = elementType.isa<mlir::FloatType>() ? mlir::vector::CombiningKind::MAXF : mlir::vector::CombiningKind::MAXSI;
+    auto result = rewriter.create<mlir::vector::ReductionOp>(loc, kind, loadedVector);
     rewriter.replaceOp(op, { result });
     return success();
 }
@@ -2633,7 +2630,7 @@ LogicalResult ExitProfileRegionOpLowering::matchAndRewrite(ExitProfileRegionOp o
     rewriter.create<vir::CopyOp>(loc, totalTime, totalTimeRef);
 
     mlir::Value prevCount = rewriter.create<vir::GetElementOp>(loc, countRef);
-    auto one = rewriter.create<ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
+    auto one = rewriter.create<arith::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
     mlir::Value newCount = rewriter.create<vir::BinOp>(loc, vir::BinaryOpPredicate::ADD, prevCount, one);
     rewriter.create<vir::CopyOp>(loc, newCount, countRef);
 
@@ -2701,7 +2698,7 @@ LogicalResult ReduceSumOpLowering::matchAndRewrite(
         auto castMemRefVector = rewriter.create<mlir::vector::TypeCastOp>(loc, memrefToCast);
         loadedVector = rewriter.create<memref::LoadOp>(loc, castMemRefVector, llvm::None);
     }
-    auto result = rewriter.create<mlir::vector::ReductionOp>(loc, op.result().getType(), rewriter.getStringAttr("add"), loadedVector, llvm::None);
+    auto result = rewriter.create<mlir::vector::ReductionOp>(loc, mlir::vector::CombiningKind::ADD, loadedVector);
     rewriter.replaceOp(op, { result });
     return success();
 }
@@ -2724,7 +2721,7 @@ LogicalResult PrintOpLowering::matchAndRewrite(
     auto printElement = [&](mlir::Value el) {
         if (elementType.isF32())
         {
-            el = rewriter.create<mlir::arith::ExtFOp>(loc, el, rewriter.getF64Type());
+            el = rewriter.create<mlir::arith::ExtFOp>(loc, rewriter.getF64Type(), el);
         }
         rewriter.create<ValuePrintFOp>(loc, formatStr, ValueRange{ el }, toStderr);
     };

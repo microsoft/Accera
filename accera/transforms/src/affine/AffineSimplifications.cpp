@@ -16,6 +16,7 @@
 #include <mlir/Conversion/AffineToStandard/AffineToStandard.h>
 #include <mlir/Dialect/Affine/Analysis/LoopAnalysis.h>
 #include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Affine/Utils.h>
 #include <mlir/Dialect/GPU/GPUDialect.h>
 #include <mlir/Dialect/LLVMIR/ROCDLDialect.h>
 #include <mlir/IR/Operation.h>

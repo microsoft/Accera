@@ -92,6 +92,12 @@ namespace value
                  targetDevice.triple = c_windowsTriple;
                  targetDevice.dataLayout = c_windowsDataLayout;
              } },
+             { "avx2", [](TargetDevice& targetDevice) {
+                 targetDevice.architecture = "x86_64";
+                 targetDevice.cpu = "skylake";
+                 targetDevice.numBits = 64;
+                 targetDevice.features = "+avx2";
+             } },
             { "avx512", [](TargetDevice& targetDevice) {
                  targetDevice.architecture = "x86_64";
                  targetDevice.cpu = "skylake-avx512";

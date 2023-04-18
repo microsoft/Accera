@@ -11,7 +11,6 @@
 
 #include <mlir/Conversion/AffineToStandard/AffineToStandard.h>
 #include <mlir/Conversion/LinalgToLLVM/LinalgToLLVM.h>
-#include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
 
@@ -125,7 +124,7 @@ struct ValueSliceSimplifyPattern : public OpRewritePattern<ValueSliceOp>
                 auto indexShape = index.getType().cast<mlir::ShapedType>().getShape();
                 if (indexShape.size() == 0 || indexShape.size() == 1)
                 {
-                    resolvedOffsets[dim] = rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.create<GetElementOp>(loc, index), indexType);
+                    resolvedOffsets[dim] = rewriter.create<mlir::arith::IndexCastOp>(loc, indexType, rewriter.create<GetElementOp>(loc, index));
                 }
                 else
                 {
@@ -344,7 +343,7 @@ LogicalResult CopyOpLowering::matchAndRewrite(
         if (outputMemRef.getElementType().isInteger(64)) // this should really be target dependent...
         {
             (void)rewriter.create<memref::StoreOp>(loc,
-                                                   rewriter.create<mlir::arith::IndexCastOp>(loc, input, rewriter.getIntegerType(64)),
+                                                   rewriter.create<mlir::arith::IndexCastOp>(loc, rewriter.getIntegerType(64), input),
                                                    output,
                                                    std::vector<mlir::Value>(outputMemRef.getRank(), zero));
         }

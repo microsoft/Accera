@@ -246,6 +246,9 @@ def OpaqueOp : ArgoStructuredBase_Op<"opaque",
 
   let regions = (region AnyRegion:$region);
 
+  // Indicate that the operation has a custom parser and printer method.
+  let hasCustomAssemblyFormat = 1;
+
   let builders = [
     OpBuilder<
       (ins "ValueRange":$args, "int64_t":$argsIn, "int64_t":$argsOut,

@@ -8,11 +8,9 @@ import inspect
 import logging
 import os
 import pathlib
-import platform
 import shutil
 import sys
 import unittest
-from itertools import product
 from typing import Callable, List
 
 import numpy as np
@@ -54,13 +52,13 @@ from accera._lang_python._lang import Array as NativeArray
 from accera._lang_python._lang import Dimension, _MemorySpace, _If, as_index
 from accera._lang_python._lang._gpu import Barrier
 from accera.samples import MatrixMultiplication
-from accera.Targets import KNOWN_DEVICES
+from accera.test.test_utils import expectedFailure, FailedReason
 from accera.test import verifiers
-from accera.test.test_utils import FailedReason, expectedFailure
+from accera.test.test_utils import FailedReason, expectedFailure, avx2_cpu, avx512_cpu, get_avx_platform
 
 from accera import (
-    AUTO, AllocateFlags, Array, Constants, Nest, Package, Role, Scalar, ScalarType, Target, cast, MMAShape, create_dimensions,
-    create_parameters, fuse
+    AUTO, AllocateFlags, Array, Constants, Nest, Package, Role, Scalar, ScalarType, Target, cast, MMAShape,
+    create_dimensions, create_parameters, fuse
 )
 from accera import min as accmin
 from accera import abs as accabs
@@ -73,9 +71,83 @@ logger.setLevel(logging.DEBUG)
 # TODO: Remove all @expectedFailure decorators as implementation converges with spec
 
 
+def make_asm_sequence_filechecker(v: verifiers.VerifyPackage, file_name: str, interleave_loc_tags: bool = True):
+
+    class FileCheckerWrapper:
+
+        def __init__(self, file_checker):
+            self.file_checker = file_checker
+
+        # Forward all other calls to the file_checker
+        def __getattr__(self, item):
+            return getattr(self.file_checker, item)
+
+        def scan_to_next_loc(self):
+            self.file_checker.check(".loc")
+
+        def check_label(self, check_str: str, check_loc: bool = interleave_loc_tags):
+            self.file_checker.check_label(check_str)
+            if check_loc:
+                self.file_checker.check_next(".loc")
+
+        def check_next(self, check_str: str, check_loc: bool = interleave_loc_tags):
+            self.file_checker.check_next(check_str)
+            if check_loc:
+                self.file_checker.check_next(".loc")
+
+        def check(self, check_str: str, check_loc: bool = interleave_loc_tags):
+            self.file_checker.check(check_str)
+            if check_loc:
+                self.file_checker.check_next(".loc")
+
+        def get_simple_register_regex(self):
+            # Matches %rbp, %rsi, %r8, %r14, etc.
+            # Doesn't match xmm, ymm, zmm registers
+            return r"%([a-z]{3}|r[0-9]+)"
+
+        def get_vector_register_regex(self, required_prefix: str = None):
+            # Matches xmm, ymm, zmm registers
+            suffix = r"mm[0-9]+"
+            if required_prefix is not None:
+                return r"%" + required_prefix + suffix
+            return r"%(x|y|z)" + suffix
+
+        def get_register_regex(self):
+            # Matches any register name prefixed with %
+            simple_register_regex = self.get_simple_register_regex()
+            vector_register_regex = self.get_vector_register_regex()
+            return r"(%s|%s)" % (simple_register_regex, vector_register_regex)
+
+        def get_memory_position_regex(self):
+            optional_offset = r"(-?[0-9]+)?"
+            # Examples:
+            # - any register name in isolation: %rbp
+            register_regex = self.get_register_regex()
+
+            # - any register name in parentheses without an offset: (%rbp)
+            # - any register offset by a constant: -64(%rbp), 32(%rsi)
+            no_offset_register_regex = r"\(%s\)" % register_regex
+            possibly_offset_register = optional_offset + no_offset_register_regex
+
+            # - or offset by a scaled value in another register: (%rbp,%rsi,8)
+            # - or offset by a constant and offset by a scaled value in another register: -1028(%rbp,%rsi,8)
+            scaled_offset_regex = r"\(%s,%s,[0-9]+\)" % (register_regex, register_regex)
+            possibly_constant_offset_scaled_offset_regex = optional_offset + scaled_offset_regex
+
+            # Matches any of the above
+            return r"(%s|%s|%s)" % (
+                register_regex, possibly_offset_register, possibly_constant_offset_scaled_offset_regex
+            )
+
+    return FileCheckerWrapper(v.file_checker(file_name))
+
+
 class SmokeTest(unittest.TestCase):
     PACKAGE_FORMAT = Package.Format.MLIR_DYNAMIC if DEV_MODE else Package.Format.HAT_DYNAMIC
     PACKAGE_MODE = Package.Mode.RELEASE
+
+    def get_xcompile_package_format(self, matcher_fn: Callable[[], bool] = avx2_cpu) -> Package.Format:
+        return self.PACKAGE_FORMAT if matcher_fn() else Package.Format.MLIR_STATIC
 
     def test_full_fusion_trivial(self) -> None:
         A = Array(role=Role.INPUT, shape=(16, 16))
@@ -626,7 +698,7 @@ class SmokeTest(unittest.TestCase):
             v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
 
     def _test_fast_exp_mlas(self, func_level_precision: bool):
-        from accera import fast_exp, fast_exp_mlas
+        from accera import fast_exp_mlas
 
         M = 64
         N = 64
@@ -665,33 +737,31 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
             package.build(
                 package_name,
-                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                format=self.get_xcompile_package_format(),
                 mode=self.PACKAGE_MODE,
                 output_dir=TEST_PACKAGE_DIR,
+                platform=get_avx_platform(),
                 _opts=pkg_opt,
                 _quiet=False
             )
+            checker = v.file_checker(f"{package_name}_llvm.mlir")
+            checker.check(
+                '%{{[0-9]+}} = "accintr.x86.avx.max.ps.256"(%{{[0-9]+}}, %{{[0-9]+}}) : (vector<8xf32>, vector<8xf32>) -> vector<8xf32>'
+            )
+            checker.check(
+                '%{{[0-9]+}} = "llvm.intr.fmuladd"(%{{[0-9]+}}, %{{[0-9]+}}, %{{[0-9]+}}) : (vector<8xf32>, vector<8xf32>, vector<8xf32>) -> vector<8xf32>'
+            )
+            checker.run()
 
-            v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
+            if avx2_cpu():
+                v.check_correctness(function.name, before=(In_test, Out_test), after=(In_test, Out_ref))
 
-    @expectedFailure(
-        FailedReason.INVALID, "avx2 instructions not supported on MacOS arm64", sys.platform == "darwin"
-        and platform.machine() == "arm64"
-    )
     def test_fast_exp_mlas_w_func_level_precision(self):
         self._test_fast_exp_mlas(True)
 
-    @expectedFailure(
-        FailedReason.INVALID, "avx2 instructions not supported on MacOS arm64", sys.platform == "darwin"
-        and platform.machine() == "arm64"
-    )
     def test_fast_exp_mlas_w_pkg_level_precision(self):
         self._test_fast_exp_mlas(False)
 
-    @expectedFailure(
-        FailedReason.INVALID, "avx2 instructions not supported on MacOS arm64", sys.platform == "darwin"
-        and platform.machine() == "arm64"
-    )
     def test_fast_exp_mlas_with_3_vectors(self):
         from accera import fast_exp_mlas
 
@@ -731,20 +801,30 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
             package.build(
                 package_name,
-                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                format=self.get_xcompile_package_format(),
                 mode=self.PACKAGE_MODE,
                 output_dir=TEST_PACKAGE_DIR,
+                platform=get_avx_platform(),
                 _opts=Package._Options.HIGH_PRECISION_FLOATING_POINT_OPS,
                 _quiet=False
             )
 
-            v.check_correctness(function.name, before=(In_test, Max_test, Out_test), after=(In_test, Max_test, Out_ref))
+            checker = v.file_checker(f"{package_name}_llvm.mlir")
+            checker.check_count(
+                '%{{[0-9]+}} = "accintr.x86.avx.max.ps.256"(%{{[0-9]+}}, %{{[0-9]+}}) : (vector<8xf32>, vector<8xf32>) -> vector<8xf32>',
+                3
+            )
+            checker.check_count(
+                '%{{[0-9]+}} = "llvm.intr.fmuladd"(%{{[0-9]+}}, %{{[0-9]+}}, %{{[0-9]+}}) : (vector<8xf32>, vector<8xf32>, vector<8xf32>) -> vector<8xf32>',
+                3
+            )
+            checker.run()
 
+            if avx2_cpu():
+                v.check_correctness(
+                    function.name, before=(In_test, Max_test, Out_test), after=(In_test, Max_test, Out_ref)
+                )
 
-    @expectedFailure(
-        FailedReason.INVALID, "avx2 instructions not supported on MacOS arm64", sys.platform == "darwin"
-        and platform.machine() == "arm64"
-    )
     def test_fast_exp_sum(self):
 
         from accera import fast_exp_mlas
@@ -1051,14 +1131,27 @@ class SmokeTest(unittest.TestCase):
         with verifiers.VerifyPackage(self, package_name, TEST_PACKAGE_DIR) as v:
             package.build(
                 package_name,
-                format=self.PACKAGE_FORMAT | Package.Format.MLIR_VERBOSE,
+                format=self.get_xcompile_package_format(),
                 mode=self.PACKAGE_MODE,
                 output_dir=TEST_PACKAGE_DIR,
+                platform=get_avx_platform(),
                 _opts=Package._Options.HIGH_PRECISION_FLOATING_POINT_OPS,
                 _quiet=False
             )
 
-            v.check_correctness(function.name, before=(In_test, Max_test, Out_test), after=(In_test, Max_test, Out_ref))
+            checker = v.file_checker(f"{package_name}_llvm.mlir")
+            checker.check(
+                '%{{[0-9]+}} = "accintr.x86.avx.max.ps.256"(%{{[0-9]+}}, %{{[0-9]+}}) : (vector<8xf32>, vector<8xf32>) -> vector<8xf32>'
+            )
+            checker.check(
+                '%{{[0-9]+}} = "llvm.intr.fmuladd"(%{{[0-9]+}}, %{{[0-9]+}}, %{{[0-9]+}}) : (vector<8xf32>, vector<8xf32>, vector<8xf32>) -> vector<8xf32>'
+            )
+            checker.run()
+
+            if avx2_cpu():
+                v.check_correctness(
+                    function.name, before=(In_test, Max_test, Out_test), after=(In_test, Max_test, Out_ref)
+                )
 
     def test_emittime_cache_mlas_matmul(self) -> None:
         from accera.samples.OfflineCacheMatrixMultiplication import \
@@ -1085,7 +1178,8 @@ class SmokeTest(unittest.TestCase):
             package.build(package_name, output_dir=output_dir, mode=self.PACKAGE_MODE, format=self.PACKAGE_FORMAT)
 
             # check build and correctness
-            v.check_correctness(function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref))
+            if avx2_cpu():
+                v.check_correctness(function.name, before=(A_test, B_test, C_test), after=(A_test, B_test, C_ref))
 
     def test_runtime_init_cache_mlas_matmul(self) -> None:
         from accera.samples.OfflineCacheMatrixMultiplication import \
@@ -2443,7 +2537,10 @@ class SmokeTest(unittest.TestCase):
 
     # TODO : Bug - this could occur during buffer packing at an app initialization-time and/or runtime,
     #              but the underlying issue is probably related to the next bug with static split sizes
-    @expectedFailure(FailedReason.BUG, "Multiple _split_dimension's of a dynamically sized dimension with a dynamic size is not working.")
+    @expectedFailure(
+        FailedReason.BUG,
+        "Multiple _split_dimension's of a dynamically sized dimension with a dynamic size is not working."
+    )
     def test_multiple_dynamic_split_dim_dynamic_size(self) -> None:
         test_name = "test_multiple_dynamic_split_dim_dynamic_size"
 
@@ -2490,7 +2587,10 @@ class SmokeTest(unittest.TestCase):
             )
 
     # TODO : Bug - this could occur during buffer packing in an app compile-time, initialization-time or runtime
-    @expectedFailure(FailedReason.BUG, "Multiple _split_dimension's of a dynamically sized buffer into statically sized dimensions is not working.")
+    @expectedFailure(
+        FailedReason.BUG,
+        "Multiple _split_dimension's of a dynamically sized buffer into statically sized dimensions is not working."
+    )
     def test_multiple_dynamic_split_dim_static_size(self) -> None:
         test_name = "test_multiple_dynamic_split_dim_static_size"
 
@@ -2508,7 +2608,7 @@ class SmokeTest(unittest.TestCase):
         Input = Array(role=Role.INPUT, element_type=ScalarType.float32, shape=(MN, ))
         Output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(M, N))
 
-        nest = Nest(shape=(M, N_0, N_1, N_2)) # (M, 4, 5, 6)
+        nest = Nest(shape=(M, N_0, N_1, N_2))    # (M, 4, 5, 6)
         i, j_0, j_1, j_2 = nest.get_indices()
 
         @nest.iteration_logic
@@ -2591,7 +2691,7 @@ class SmokeTest(unittest.TestCase):
                 after=(test_MN, test_M, test_N, test_input, test_output_ref)
             )
 
-    # This test uses all static sizes to make sure the fix for dynamic size (test_dynamic_split_dim_static_size) 
+    # This test uses all static sizes to make sure the fix for dynamic size (test_dynamic_split_dim_static_size)
     # won't regress the static size case.
     def test_dynamic_split_dim_all_static(self) -> None:
         test_name = "test_dynamic_split_dim_all_static"
@@ -4612,10 +4712,6 @@ class SmokeTest(unittest.TestCase):
                 after=correctness_check_values["post"],
             )
 
-    @expectedFailure(
-        FailedReason.INVALID, "generated x86_64 lib not readable by MacOS arm64 build tools", sys.platform == "darwin"
-        and platform.machine() == "arm64"
-    )
     def test_int16_matmul_vpmaddwd_16_element_avx512(self):
         test_name = "test_int16_matmul_vpmaddwd_16_element_avx512"
         M = 240
@@ -4652,7 +4748,7 @@ class SmokeTest(unittest.TestCase):
         schedule.reorder(i, j, k, ii, jj, kk, kkk, iii, jjj, jjjj, kkkk)
 
         # The Intel 8351N is a known Xeon Platinum with AVX-512 support
-        target = KNOWN_DEVICES[Target.Category.CPU]["Intel 8351N"]
+        target = Target("Intel 8351N")
         plan = schedule.create_plan(target)
         plan.cache(A, index=ii, element_type=ScalarType.int16, vectorize=False)
         plan.cache(B, index=jjjj, trigger_index=jj, layout=Array.Layout.LAST_MAJOR, vectorize=False)
@@ -4660,14 +4756,101 @@ class SmokeTest(unittest.TestCase):
         plan.vectorize(jjjj)
 
         package = Package()
-        function = package.add(plan, args=(A, B, C), base_name=test_name)
+        package.add(plan, args=(A, B, C), base_name=test_name)
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
 
         # build the HAT package
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
-            package.build(test_name, format=Package.Format.DEFAULT, mode=Package.Mode.RELEASE, output_dir=output_dir)
-            # Don't check correctness as we've set a target that we may not be running the tests on
+            package.build(
+                test_name,
+                format=self.get_xcompile_package_format(avx512_cpu),
+                mode=Package.Mode.RELEASE,
+                output_dir=output_dir,
+                platform=get_avx_platform()
+            )
+            checker = v.file_checker(f"{test_name}_llvm.mlir")
+            checker.check(
+                '%{{[0-9]+}} = "accintr.x86.avx512.pmaddw.d.512"(%{{[0-9]+}}, %{{[0-9]+}}) : (vector<32xi16>, vector<32xi16>) -> vector<16xi32>'
+            )
+            checker.run()
+
+            asm_checker = make_asm_sequence_filechecker(v, f"{test_name}.s", interleave_loc_tags=True)
+
+            memory_pos_regex = asm_checker.get_memory_position_regex()
+            zmm_register_regex = asm_checker.get_vector_register_regex("z")
+
+            # This is computing a 6x32 region using vpmaddwd and vpaddd instructions on zmm registers
+            # one vpmaddwd followed by vpaddd computes a single 1x16 output for 2 elements of k
+            store_reg = [[f"store_reg_{row_offset}_{col_offset}" for col_offset in range(0, 32, 16)]
+                         for row_offset in range(0, 6, 1)]
+
+            # 6 different broadcast values from A
+            broadcast_reg = [f"broadcast_reg_{row_offset}" for row_offset in range(0, 6, 1)]
+
+            # Load 4 different vectors of B data, one for each of (k,j) = (0,0), (0,16), (2,0), (2,16)
+            load_reg = [[f"load_reg_{k_offset}_{col_offset}" for col_offset in range(0, 32, 16)]
+                        for k_offset in range(0, 4, 2)]
+
+            asm_checker.check_label(
+                "{{.*}}LBB0_14:", check_loc=False
+            )    # check_loc=False because there may be comments on the following lines before the next instruction
+            # Don't use python f-strings because FileCheck uses {{}} as delimiters that would collide with {} delimiters in the f-str. This could be worked around, but %-strs make it simpler
+
+            # Broadcast A[0,0:2]
+            asm_checker.check(
+                "vpbroadcastd {{%s}}, [[%s:%s]]" % (memory_pos_regex, broadcast_reg[0], zmm_register_regex)
+            )    # vpbroadcastd -1028(%rbp,%rsi,8), %zmm5
+
+            # Load 4 different vectors of B data, one for each of (k,j) = (0,0), (0,16), (2,0), (2,16)
+            asm_checker.check_next(
+                "vmovdqu64 {{%s}}, [[%s:%s]]" % (memory_pos_regex, load_reg[0][0], zmm_register_regex), check_loc=False
+            )    # vmovdqu64 -192(%rbx), %zmm13
+            asm_checker.check_next(
+                "vmovdqu64 {{%s}}, [[%s:%s]]" % (memory_pos_regex, load_reg[0][1], zmm_register_regex), check_loc=False
+            )    # vmovdqu64 -128(%rbx), %zmm14
+            asm_checker.check_next(
+                "vmovdqu64 {{%s}}, [[%s:%s]]" % (memory_pos_regex, load_reg[1][0], zmm_register_regex), check_loc=False
+            )    # vmovdqu64 -64(%rbx), %zmm15
+            asm_checker.check_next(
+                "vmovdqu64 {{%s}}, [[%s:%s]]" % (memory_pos_regex, load_reg[1][1], zmm_register_regex), check_loc=False
+            )    # vmovdqu64 (%rbx), %zmm8
+            asm_checker.check_next(
+                ".loc", check_loc=False
+            )    # We could have set check_loc=True on the previous line, but we write it this way for better clarity
+
+            def match_vpmaddwd_vpaddd_block(broadcast_reg, load0, load1, store0, store1):
+                asm_checker.check_next(
+                    "vpmaddwd [[%s]], [[%s]], [[temp_reg0:%s]]" % (load0, broadcast_reg, zmm_register_regex)
+                )
+                asm_checker.check_next(
+                    "vpaddd [[temp_reg0]], {{%s}}, [[%s:%s]]" % (zmm_register_regex, store0, zmm_register_regex)
+                )    # We don't really care what the original source register was, so don't capture it
+                asm_checker.check_next(
+                    "vpmaddwd [[%s]], [[%s]], [[temp_reg1:%s]]" % (load1, broadcast_reg, zmm_register_regex)
+                )
+                asm_checker.check_next(
+                    "vpaddd [[temp_reg1]], {{%s}}, [[%s:%s]]" % (zmm_register_regex, store1, zmm_register_regex),
+                    check_loc=False
+                )
+
+            for k_idx in range(2):
+                for row_idx in range(6):
+                    if not (row_idx == 0 and k_idx == 0):
+                        # First broadcast occurs before the loads, so we need to check it separately
+                        asm_checker.check(
+                            "vpbroadcastd {{%s}}, [[%s:%s]]" %
+                            (memory_pos_regex, broadcast_reg[row_idx], zmm_register_regex)
+                        )    # vpbroadcastd -1028(%rbp,%rsi,8), %zmm5
+                    match_vpmaddwd_vpaddd_block(
+                        broadcast_reg[row_idx], load_reg[k_idx][0], load_reg[k_idx][1], store_reg[row_idx][0],
+                        store_reg[row_idx][1]
+                    )
+
+            # Jump back to the top of the compute loop
+            asm_checker.check_label("jne {{.*}}LBB0_14", check_loc=False)
+
+            asm_checker.run()
 
     def test_int16_matmul_vpmaddwd_16_element_host(self):
         test_name = "test_int16_matmul_vpmaddwd_16_element_host"

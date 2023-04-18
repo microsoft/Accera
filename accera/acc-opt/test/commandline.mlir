@@ -8,6 +8,7 @@
 // CHECK-NEXT: affine
 // CHECK-NEXT: arith
 // CHECK-NEXT: builtin
+// CHECK-NEXT: cf
 // CHECK-NEXT: gpu
 // CHECK-NEXT: llvm
 // CHECK-NEXT: math

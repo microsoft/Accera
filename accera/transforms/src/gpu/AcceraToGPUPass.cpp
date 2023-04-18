@@ -457,7 +457,7 @@ struct GPUIndexIntrinsicOpLowering : public ConvertOpToLLVMPattern<Op>
             return failure();
         }
 
-        newOp = rewriter.create<arith::IndexCastOp>(loc, newOp, rewriter.getIndexType());
+        newOp = rewriter.create<arith::IndexCastOp>(loc, rewriter.getIndexType(), newOp);
 
         rewriter.replaceOp(op, { newOp });
         return success();

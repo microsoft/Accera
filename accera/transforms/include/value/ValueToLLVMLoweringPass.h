@@ -34,9 +34,9 @@ class RewritePatternSet;
 
 namespace accera::transforms::value
 {
-void populateValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns, accera::value::TargetDevice deviceInfo);
 void populateGlobalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
-void populateLocalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
+void populateLocalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns, accera::value::TargetDevice deviceInfo);
 void populateValueToLLVMMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
 void populateReshapeOpToLLVMMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns);
 
@@ -49,5 +49,6 @@ std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueToLLVMPass(bool 
                                                                            unsigned indexBitwidth,
                                                                            bool useAlignedAlloc,
                                                                            llvm::DataLayout dataLayout,
+                                                                           accera::value::TargetDevice deviceInfo = {},
                                                                            const IntraPassSnapshotOptions& options = {});
 } // namespace accera::transforms::value

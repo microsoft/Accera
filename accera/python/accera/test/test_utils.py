@@ -5,11 +5,13 @@
 
 from enum import Enum
 from typing import Callable
+import cpuinfo
 import unittest
 
+import sys
 import numpy as np
 
-from accera import ScalarType
+from accera import Package, ScalarType
 
 
 class FailedReason(Enum):
@@ -24,6 +26,7 @@ def expectedFailure(reason: FailedReason, msg: str, condition: bool = True) -> C
     "Extends the unittest.expectedFailure decorator to print failure details and takes an optional condition"
 
     def _decorator(func):
+
         @unittest.expectedFailure
         def _wrapper(x):
             print(f"\n{reason.value}: {msg}")
@@ -38,8 +41,23 @@ def expectedFailure(reason: FailedReason, msg: str, condition: bool = True) -> C
     return _decorator
 
 
+class SkipReason(Enum):
+    BUG = "Bug"
+    TARGET_MISMATCH = "Test doesn't execute for target"
+
+
+def skipTest(reason: SkipReason, msg: str, condition: bool = True) -> Callable:
+    "Extends the unittest.expectedFailure decorator to print failure details and takes an optional condition"
+
+    def _decorator(func):
+
+        return unittest.skipIf(condition, f"\n{reason.value}: {msg}")(func)
+
+    return _decorator
+
+
 def get_type_str(datatype: ScalarType):
-   return datatype.name
+    return datatype.name
 
 
 def accera_to_np_type(datatype: ScalarType):
@@ -62,3 +80,17 @@ def accera_to_np_type(datatype: ScalarType):
         return np.int8
 
     return None
+
+
+def avx2_cpu():
+    cpu_info = cpuinfo.get_cpu_info()
+    return "flags" in cpu_info and "avx2" in cpu_info["flags"]
+
+
+def avx512_cpu():
+    cpu_info = cpuinfo.get_cpu_info()
+    return "flags" in cpu_info and "avx512" in cpu_info["flags"]
+
+
+def get_avx_platform():
+    return Package.Platform.HOST if sys.platform != "darwin" else Package.Platform.WINDOWS

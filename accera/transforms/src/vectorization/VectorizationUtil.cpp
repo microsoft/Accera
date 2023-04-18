@@ -140,7 +140,7 @@ bool CanVectorizeOp(mlir::Operation* op,
             .Case([](mlir::memref::StoreOp) { return true; })
             .Case([](mlir::AffineLoadOp) { return true; })
             .Case([](mlir::AffineStoreOp) { return true; })
-            .Case([](mlir::SelectOp) { return true; })
+            .Case([](mlir::arith::SelectOp) { return true; })
             .Case([](mlir::arith::ShLIOp) { return true; })
             .Case([](mlir::arith::FPToSIOp) { return true; })
             .Case([](mlir::arith::ExtSIOp) { return true; })
@@ -810,7 +810,7 @@ std::optional<VectorizedOp> VectorizeAffineApplyOp(mlir::PatternRewriter& rewrit
 }
 
 std::optional<mlir::Operation*> VectorizeSelectOp(mlir::PatternRewriter& rewriter,
-                                                  mlir::SelectOp op,
+                                                  mlir::arith::SelectOp op,
                                                   const VectorizedOpMap& vectorizedOps,
                                                   std::vector<mlir::BlockAndValueMapping>& laneMappings,
                                                   mlir::Value inductionVar,
@@ -830,7 +830,7 @@ std::optional<mlir::Operation*> VectorizeSelectOp(mlir::PatternRewriter& rewrite
     }
 
     auto loc = op.getLoc();
-    auto result = rewriter.create<mlir::SelectOp>(loc, cond->GetVectorResult(), trueVal->GetVectorResult(), falseVal->GetVectorResult());
+    auto result = rewriter.create<mlir::arith::SelectOp>(loc, cond->GetVectorResult(), trueVal->GetVectorResult(), falseVal->GetVectorResult());
     return result;
 }
 
@@ -1193,7 +1193,7 @@ std::optional<VectorizedOp> VectorizeOp(mlir::PatternRewriter& rewriter,
             .Case([&](mlir::AffineApplyOp affineApplyOp) {
                 return VectorizeAffineApplyOp(rewriter, affineApplyOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
-            .Case([&](mlir::SelectOp selectOp) {
+            .Case([&](mlir::arith::SelectOp selectOp) {
                 return VectorizeSelectOp(rewriter, selectOp, vectorizedOps, laneMappings, inductionVar, step, vectorSize);
             })
             .Case([&](mlir::arith::ShLIOp shiftLeftOp) {
@@ -2185,7 +2185,7 @@ mlir::LogicalResult vectorizeHorizontalReduction(mlir::AffineForOp affineForOp, 
     }
     else
     {
-        reducedVal = rewriter.create<mlir::vector::ReductionOp>(binOp.getLoc(), storeElementType, mlir::vector::stringifyEnum(reductionKind), vectorValToReduce, mlir::ValueRange{} /* optional accumulate values */);
+        reducedVal = rewriter.create<mlir::vector::ReductionOp>(binOp.getLoc(), reductionKind, vectorValToReduce);
     }
 
     auto scalarValThatWasReduced = lhsLoadIsLoopSequential ? lhsVal : rhsVal;

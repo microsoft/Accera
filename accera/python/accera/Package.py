@@ -48,9 +48,7 @@ def _(arg: lang.Array):
 @singledispatch
 def _resolve_array_shape(source, arr: lang.Array):
     is_infinite_value = (
-        arr.shape[-1].get_value() == inf
-        if isinstance(arr.shape[-1], DelayedParameter)
-        else arr.shape[-1] == inf
+        arr.shape[-1].get_value() == inf if isinstance(arr.shape[-1], DelayedParameter) else arr.shape[-1] == inf
     )
     if is_infinite_value:
         # TODO: support shape inference for lang.Function, Callable if needed
@@ -63,9 +61,7 @@ def _(source, arr: lang.Array):
     from .lang.IntrospectionUtilities import get_array_access_indices
 
     is_infinite_value = (
-        arr.shape[-1].get_value() == inf
-        if isinstance(arr.shape[-1], DelayedParameter)
-        else arr.shape[-1] == inf
+        arr.shape[-1].get_value() == inf if isinstance(arr.shape[-1], DelayedParameter) else arr.shape[-1] == inf
     )
     if is_infinite_value:
         # introspect array access index to determine dimensions of the array
@@ -73,9 +69,7 @@ def _(source, arr: lang.Array):
         # TODO: support multiple logic fns if needed
         assert len(logic_fns) == 1, "Only one logic function is supported"
         access_indices = get_array_access_indices(arr, logic_fns[0])
-        assert len(access_indices) == len(
-            arr.shape
-        ), "Access indices and shape must have the same dimensions"
+        assert len(access_indices) == len(arr.shape), "Access indices and shape must have the same dimensions"
         idx = source.get_indices().index(access_indices[-1])
 
         # initialize the array with the new shape
@@ -100,9 +94,7 @@ def _emit_module(module_to_emit, target, mode, output_dir, name):
     working_dir = os.path.join(output_dir, "_tmp")
 
     proj = accc.AcceraProject(output_dir=working_dir, library_name=name)
-    proj.module_file_sets = [
-        accc.ModuleFileSet(name=name, common_module_dir=working_dir)
-    ]
+    proj.module_file_sets = [accc.ModuleFileSet(name=name, common_module_dir=working_dir)]
     module_to_emit.Save(proj.module_file_sets[0].generated_mlir_filepath)
 
     proj.generate_and_emit(
@@ -117,9 +109,7 @@ def _emit_module(module_to_emit, target, mode, output_dir, name):
 
     # Complete the HAT file with information we have stored at this layer
     hat_file = hat.HATFile.Deserialize(header_path)
-    hat_file.dependencies.link_target = os.path.basename(
-        proj.module_file_sets[0].object_filepath
-    )
+    hat_file.dependencies.link_target = os.path.basename(proj.module_file_sets[0].object_filepath)
     hat_file.Serialize(header_path)
 
     # copy HAT package files into output directory
@@ -128,6 +118,7 @@ def _emit_module(module_to_emit, target, mode, output_dir, name):
 
 
 class SetActiveModule:
+
     def __init__(self, module):
         self.module = module
 
@@ -150,28 +141,20 @@ class Package:
         MLIR = auto()
         MLIR_VERBOSE = auto()
         SOURCE = auto()
-        DEFAULT = auto()  # HAT_DYNAMIC on HOST target, HAT_STATIC otherwise
-        HAT_DYNAMIC = (
-            HAT_PACKAGE | DYNAMIC_LIBRARY
-        )  #: HAT package format, dynamically linked.
-        HAT_STATIC = (
-            HAT_PACKAGE | STATIC_LIBRARY
-        )  #: HAT package format, statically linked
+        DEFAULT = auto()    # HAT_DYNAMIC on HOST target, HAT_STATIC otherwise
+        HAT_DYNAMIC = (HAT_PACKAGE | DYNAMIC_LIBRARY)    #: HAT package format, dynamically linked.
+        HAT_STATIC = (HAT_PACKAGE | STATIC_LIBRARY)    #: HAT package format, statically linked
         HAT_SOURCE = HAT_PACKAGE | SOURCE
-        MLIR_DYNAMIC = (
-            HAT_DYNAMIC | MLIR
-        )  #: MLIR (debugging) package format, dynamically linked.
-        MLIR_STATIC = (
-            HAT_STATIC | MLIR
-        )  #: MLIR (debugging) package format, statically linked.
+        MLIR_DYNAMIC = (HAT_DYNAMIC | MLIR)    #: MLIR (debugging) package format, dynamically linked.
+        MLIR_STATIC = (HAT_STATIC | MLIR)    #: MLIR (debugging) package format, statically linked.
         MLIR_SOURCE = HAT_SOURCE | MLIR
 
     class Mode(Enum):
-        RELEASE = "Release"  #: Release (maximally optimized).
-        DEBUG = "Debug"  #: Debug mode (automatically tests logical equivalence).
+        RELEASE = "Release"    #: Release (maximally optimized).
+        DEBUG = "Debug"    #: Debug mode (automatically tests logical equivalence).
 
     class _Options(Flag):
-        NONE = auto() # (enable auto unroll | low precision fp ops)
+        NONE = auto()    # (enable auto unroll | low precision fp ops)
         DISABLE_AUTO_UNROLL = auto()
         HIGH_PRECISION_FLOATING_POINT_OPS = auto()
 
@@ -185,21 +168,15 @@ class Package:
         self._description = {}
         self._dynamic_dependencies = set()
 
-    def _create_gpu_utility_module(
-        self, compiler_options, target, mode, output_dir, name="AcceraGPUUtilities"
-    ):
+    def _create_gpu_utility_module(self, compiler_options, target, mode, output_dir, name="AcceraGPUUtilities"):
         gpu_utility_module = _lang_python._Module(name=name, options=compiler_options)
 
         with SetActiveModule(gpu_utility_module):
             gpu_init_fn = _lang_python._DeclareFunction("AcceraGPUInitialize")
             gpu_deinit_fn = _lang_python._DeclareFunction("AcceraGPUDeInitialize")
 
-            gpu_init_fn.public(True).decorated(False).headerDecl(True).rawPointerAPI(
-                True
-            ).addTag("rc_gpu_init")
-            gpu_deinit_fn.public(True).decorated(False).headerDecl(True).rawPointerAPI(
-                True
-            ).addTag("rc_gpu_deinit")
+            gpu_init_fn.public(True).decorated(False).headerDecl(True).rawPointerAPI(True).addTag("rc_gpu_init")
+            gpu_deinit_fn.public(True).decorated(False).headerDecl(True).rawPointerAPI(True).addTag("rc_gpu_deinit")
 
             # No common initialization / de-initialization at this layer, however lowering passes may add steps
             def empty_func(args):
@@ -211,8 +188,7 @@ class Package:
         return _emit_module(gpu_utility_module, target, mode, output_dir, name)
 
     def _create_mapping_of_heuristic_parameters_with_possible_values(
-        self,
-        source: Union["accera.Nest", "accera.Schedule", "accera.Plan", "accera.Function", Callable]
+        self, source: Union["accera.Nest", "accera.Schedule", "accera.Plan", "accera.Function", Callable]
     ):
         parameter_dict = {}
         heuristic_parameters = source._get_heuristic_parameters()
@@ -226,9 +202,7 @@ class Package:
 
     def add(
         self,
-        source: Union[
-            "accera.Nest", "accera.Schedule", "accera.Plan", "accera.Function", Callable
-        ],
+        source: Union["accera.Nest", "accera.Schedule", "accera.Plan", "accera.Function", Callable],
         args: List[Union["accera.Dimension", "accera.Array"]] = None,
         base_name: str = "",
         parameters: Union[dict, List[dict]] = {},
@@ -255,8 +229,11 @@ class Package:
         # Note: this does not prevent TEMP arrays from being passed as an argument to a function, but they cannot be the
         #       api-defining arguments for the function
         for idx, arg in enumerate(args):
-            if isinstance(arg, (lang.Array, _lang_python._lang.Scalar, _lang_python._lang.Dimension)) and arg.role == _lang_python.Role.TEMP:
-                raise ValueError(f"Error in package.add() for function {base_name}: args includes TEMP array at positions {idx}")
+            if isinstance(arg, (lang.Array, _lang_python._lang.Scalar,
+                                _lang_python._lang.Dimension)) and arg.role == _lang_python.Role.TEMP:
+                raise ValueError(
+                    f"Error in package.add() for function {base_name}: args includes TEMP array at positions {idx}"
+                )
 
         heuristic_parameters_dict = {}
         if isinstance(source, lang.Plan):
@@ -267,7 +244,7 @@ class Package:
         product_parameter_grid = []
 
         # Create a list of delayed parameter for each possible value separately using `get_parameters_from_grid`
-        if heuristic_parameters_dict: 
+        if heuristic_parameters_dict:
             product_parameter_grid = get_parameters_from_grid(heuristic_parameters_dict)
 
         # TODO: Add functions for product parameter grid in next PR instead of adding fns separately for
@@ -275,17 +252,15 @@ class Package:
         if parameters and not isinstance(parameters, dict):
             return [self._add_function(source, args, base_name, p, function_opts, auxiliary) for p in parameters]
         elif product_parameter_grid and not isinstance(product_parameter_grid, dict):
-            return [self._add_function(source, args, base_name, p, function_opts, auxiliary) for p in product_parameter_grid]
+            return [
+                self._add_function(source, args, base_name, p, function_opts, auxiliary) for p in product_parameter_grid
+            ]
         else:
-            return self._add_function(
-                source, args, base_name, parameters, function_opts, auxiliary
-            )
+            return self._add_function(source, args, base_name, parameters, function_opts, auxiliary)
 
     def _add_function(
         self,
-        source: Union[
-            "accera.Nest", "accera.Schedule", "accera.Plan", "accera.Function", Callable
-        ],
+        source: Union["accera.Nest", "accera.Schedule", "accera.Plan", "accera.Function", Callable],
         args: List[Union["accera.Dimension", "accera.Array"]] = None,
         base_name: str = "",
         parameters: dict = {},
@@ -315,14 +290,14 @@ class Package:
             else:
                 if isinstance(value, tuple) or isinstance(value, list):
                     if all(isinstance(v, LoopIndex) for v in value):
-                        param_value_dict[delayed_param._name] = str(
-                            [x._name for x in value]
-                    )
+                        param_value_dict[delayed_param._name] = str([x._name for x in value])
                     else:
                         raise ValueError("Invalid value of parameters")
                 else:
                     param_value_dict[delayed_param._name] = str(value)
-        auxiliary_metadata["accera"] = {"parameters": param_value_dict}
+        auxiliary_metadata["accera"] = {
+            "parameters": param_value_dict
+        }
 
         def validate_target(target: Target):
             # can't use set because targets are mutable (therefore unhashable)
@@ -347,20 +322,14 @@ class Package:
                                     base_name or token_hex(4),
                                     target,
                                     auxiliary_metadata["accera"],
-                                ]
-                                + [
-                                    (a.role, a.element_type, a.shape, a.layout)
-                                    if isinstance(a, lang.Array) else (a.name, a.type)
-                                    if isinstance(a, _lang_python._lang.Dimension) else None
-                                    for a in args 
-                                ],
+                                ] + [(a.role, a.element_type, a.shape, a.layout) if isinstance(a, lang.Array) else
+                                     (a.name, a.type) if isinstance(a, _lang_python._lang.Dimension) else None
+                                     for a in args],
                             )
                         )
                     ).encode("utf-8")
-                )
-                .digest()
-                .hex()[:16]
-            )  # truncate
+                ).digest().hex()[:16]
+            )    # truncate
 
             # Function names must begin with an _ or alphabetical character
             return f"{base_name}_{suffix}" if base_name else f"_{suffix}"
@@ -381,12 +350,14 @@ class Package:
             arg_size_refs = []
             for arg in args:
                 if isinstance(arg, lang.Array):
-                    arr_dim_mappings = [args.index(dim) if isinstance(dim, _lang_python._lang.Dimension) else SENTINEL_VALUE for dim in arg.shape]
+                    arr_dim_mappings = [
+                        args.index(dim) if isinstance(dim, _lang_python._lang.Dimension) else SENTINEL_VALUE
+                        for dim in arg.shape
+                    ]
                     arg_size_refs.append(arr_dim_mappings)
                 else:
                     arg_size_refs.append([SENTINEL_VALUE])
             return arg_size_refs
-
 
         # Resolve any undefined argument shapes based on the source usage pattern
         for arr in args:
@@ -400,12 +371,13 @@ class Package:
 
         if isinstance(source, lang.Plan):
             self._dynamic_dependencies.update(source._dynamic_dependencies)
-            source = source._create_function(
-                args, **function_opts
-            )
+            source = source._create_function(args, **function_opts)
             # fall-through
 
-        arg_names = [arg.name if isinstance(arg, lang.Array) or isinstance(arg, _lang_python._lang.Dimension) else "" for arg in args]
+        arg_names = [
+            arg.name if isinstance(arg, lang.Array) or isinstance(arg, _lang_python._lang.Dimension) else ""
+            for arg in args
+        ]
         arg_sizes = [arg._size_str if isinstance(arg, lang.Array) else "" for arg in args]
 
         if isinstance(source, lang.Function):
@@ -414,7 +386,7 @@ class Package:
             # due to the fall-through, we only need to validate here
             validate_target(source.target)
 
-            native_array_dim_args = [arg._get_native_array() if isinstance(arg, lang.Array) else arg for arg in args ]
+            native_array_dim_args = [arg._get_native_array() if isinstance(arg, lang.Array) else arg for arg in args]
 
             source.name = get_function_name(source.target)
             source.base_name = base_name
@@ -426,7 +398,7 @@ class Package:
             source.arg_sizes = arg_sizes
             source.requested_args = args
             self._fns[source.name] = source
-            return source  # for composability
+            return source    # for composability
 
         elif isinstance(source, Callable):
 
@@ -454,7 +426,7 @@ class Package:
             )
 
             self._fns[name] = wrapped_func
-            return wrapped_func  # for composability
+            return wrapped_func    # for composability
 
         else:
             raise ValueError("Invalid type for source")
@@ -467,9 +439,7 @@ class Package:
                     wrapped_func._emit()
                 except Exception as e:
                     to_pop.append(name)
-                    logging.error(
-                        f"Compiler error when trying to build function {name}"
-                    )
+                    logging.error(f"Compiler error when trying to build function {name}")
                     logging.error(e)
                     if fail_on_error:
                         raise
@@ -492,11 +462,8 @@ class Package:
         # only add if there are actually arguments to debug
         return add_debugging_functions(
             self,
-            {
-                name: fn_and_args
-                for name, fn_and_args in fns_to_add.items()
-                if fn_and_args[1]
-            },
+            {name: fn_and_args
+             for name, fn_and_args in fns_to_add.items() if fn_and_args[1]},
             atol=tolerance,
         )
 
@@ -511,10 +478,10 @@ class Package:
         host_target_device = _lang_python._GetTargetDeviceFromName("host")
 
         if platform in [
-            Package.Platform.HOST,
-            Package.Platform.LINUX,
-            Package.Platform.MACOS,
-            Package.Platform.WINDOWS,
+                Package.Platform.HOST,
+                Package.Platform.LINUX,
+                Package.Platform.MACOS,
+                Package.Platform.WINDOWS,
         ]:
             target_device = _lang_python._GetTargetDeviceFromName(platform.value)
         else:
@@ -536,15 +503,19 @@ class Package:
         elif target.architecture == Target.Architecture.X86_64:
             target_device.architecture = "x86_64"
 
-            if "AVX512" in target.extensions:
-                target_device.device_name = "avx512"
-                target_device.cpu = "skylake-avx512"
-                # TODO: make this functionality less hidden
-                avx512_feat_str = ",".join(
-                    [f"+{feature.lower()}" for feature in target.extensions]
-                )
+            if not target_device.is_macOS():    # macOS does not support these instructions
+                if "AVX512" in target.extensions:
+                    target_device.device_name = "avx512"
+                    target_device.cpu = "skylake-avx512"
+                    # TODO: make this functionality less hidden
+                    avx512_feat_str = ",".join([f"+{feature.lower()}" for feature in target.extensions])
 
-                target_device.features = avx512_feat_str
+                    target_device.features = avx512_feat_str
+
+                elif "AVX2" in target.extensions:
+                    target_device.device_name = "avx2"
+                    target_device.cpu = "skylake"
+                    target_device.features = "+avx2"
 
         elif target.architecture == Target.Architecture.X86:
             target_device.architecture = "x86"
@@ -554,21 +525,14 @@ class Package:
         compiler_options = _lang_python.CompilerOptions()
         compiler_options.target_device = target_device
         compiler_options.debug = mode == Package.Mode.DEBUG
-        compiler_options.gpu_only = (
-            target.category == Target.Category.GPU and target.runtime != Runtime.VULKAN
-        )
+        compiler_options.gpu_only = (target.category == Target.Category.GPU and target.runtime != Runtime.VULKAN)
 
         BuildConfig.obj_extension = ".obj" if target_device.is_windows() else ".o"
 
-        libs = list(
-            filter(
-                None,
-                [
-                    get_library_reference(dep, platform)
-                    for dep in self._dynamic_dependencies
-                ],
-            )
-        )
+        libs = list(filter(
+            None,
+            [get_library_reference(dep, platform) for dep in self._dynamic_dependencies],
+        ))
         return target, target_device, compiler_options, libs
 
     def _make_accc_options(self, options: _Options):
@@ -627,9 +591,9 @@ class Package:
 
         format_is_default = bool(
             format & Package.Format.DEFAULT
-        )  # store it as a boolean because we're going to turn off the actual flag
+        )    # store it as a boolean because we're going to turn off the actual flag
         if format_is_default:
-            format &= ~Package.Format.DEFAULT  # Turn off "DEFAULT"
+            format &= ~Package.Format.DEFAULT    # Turn off "DEFAULT"
 
             if target.runtime in [Target.Runtime.CUDA, Target.Runtime.ROCM]:
                 format |= Package.Format.HAT_SOURCE
@@ -640,9 +604,7 @@ class Package:
 
         dynamic_link = bool(format & Package.Format.DYNAMIC_LIBRARY)
         if cross_compile and dynamic_link:
-            raise ValueError(
-                "Package.Format.DYNAMIC_LIBRARY is not supported when cross-compiling"
-            )
+            raise ValueError("Package.Format.DYNAMIC_LIBRARY is not supported when cross-compiling")
 
         output_dir = output_dir or os.getcwd()
         working_dir = os.path.join(output_dir, "_tmp")
@@ -662,44 +624,22 @@ class Package:
 
         # Emit the package module
         if format & Package.Format.SOURCE:
-            output_type = (
-                accc.ModuleOutputType.CUDA
-                if compiler_options.gpu_only
-                else accc.ModuleOutputType.CPP
-            )
+            output_type = (accc.ModuleOutputType.CUDA if compiler_options.gpu_only else accc.ModuleOutputType.CPP)
         else:
             output_type = accc.ModuleOutputType.OBJECT
 
         # Emit the supporting modules
         supporting_hats = []
-        if (
-            not compiler_options.gpu_only
-            and output_type == accc.ModuleOutputType.OBJECT
-        ):
+        if (not compiler_options.gpu_only and output_type == accc.ModuleOutputType.OBJECT):
             supporting_hats.append(
-                Package._emit_default_module(
-                    compiler_options, target, mode, output_dir, f"{name}_Globals"
-                )
+                Package._emit_default_module(compiler_options, target, mode, output_dir, f"{name}_Globals")
             )
-            if any(
-                fn.target.category == Target.Category.GPU
-                and fn.target.runtime == Target.Runtime.VULKAN
-                for fn in self._fns.values()
-            ):
-                supporting_hats.append(
-                    self._create_gpu_utility_module(
-                        compiler_options, target, mode, output_dir
-                    )
-                )
+            if any(fn.target.category == Target.Category.GPU and fn.target.runtime == Target.Runtime.VULKAN
+                   for fn in self._fns.values()):
+                supporting_hats.append(self._create_gpu_utility_module(compiler_options, target, mode, output_dir))
 
-        proj = accc.AcceraProject(
-            output_dir=working_dir, library_name=name, output_type=output_type
-        )
-        proj.module_file_sets = [
-            accc.ModuleFileSet(
-                name=name, common_module_dir=working_dir, output_type=output_type
-            )
-        ]
+        proj = accc.AcceraProject(output_dir=working_dir, library_name=name, output_type=output_type)
+        proj.module_file_sets = [accc.ModuleFileSet(name=name, common_module_dir=working_dir, output_type=output_type)]
         package_module.Save(proj.module_file_sets[0].generated_mlir_filepath)
 
         # Enable dumping of IR passes based on build format
@@ -737,40 +677,28 @@ class Package:
             # Complete the HAT file with information we have stored at this layer
             hat_file: hat.HATFile = hat.HATFile.Deserialize(header_path)
 
-            if format & (
-                Package.Format.DYNAMIC_LIBRARY | Package.Format.STATIC_LIBRARY
-            ):
-                hat_file.dependencies.link_target = os.path.basename(
-                    proj.module_file_sets[0].object_filepath
-                )
+            if format & (Package.Format.DYNAMIC_LIBRARY | Package.Format.STATIC_LIBRARY):
+                hat_file.dependencies.link_target = os.path.basename(proj.module_file_sets[0].object_filepath)
 
             supporting_hats = map(hat.HATFile.Deserialize, supporting_hats)
             supporting_objs = []
             supporting_decls = []
             for support in supporting_hats:
                 path = os.path
-                dependency_path = path.abspath(
-                    path.join(output_dir, support.dependencies.link_target)
-                )
+                dependency_path = path.abspath(path.join(output_dir, support.dependencies.link_target))
 
                 # Collect the supporting modules as dependencies
-                supporting_objs.append(
-                    hat.LibraryReference(target_file=dependency_path)
-                )
+                supporting_objs.append(hat.LibraryReference(target_file=dependency_path))
 
                 # Collecting the supporting code decls
                 supporting_decls.append(support.declaration.code)
 
                 # Merge the function maps
-                hat_file._function_table.function_map.update(
-                    support._function_table.function_map
-                )
+                hat_file._function_table.function_map.update(support._function_table.function_map)
 
             decl_code = hat_file.declaration.code
             hat_file.dependencies.dynamic = dynamic_dependencies + supporting_objs
-            hat_file.declaration.code = decl_code._new(
-                "\n".join(map(str, ["", decl_code] + supporting_decls))
-            )
+            hat_file.declaration.code = decl_code._new("\n".join(map(str, ["", decl_code] + supporting_decls)))
 
             for fn_name in self._fns:
                 fn: lang.Function = self._fns[fn_name]
@@ -779,28 +707,19 @@ class Package:
                     hat_func = hat_file.function_map.get(fn_name)
 
                     if hat_func is None:
-                        raise ValueError(
-                            f"Couldn't find header-declared function {fn_name} in emitted HAT file"
-                        )
+                        raise ValueError(f"Couldn't find header-declared function {fn_name} in emitted HAT file")
 
                     hat_func.auxiliary = fn.auxiliary
 
-                    if (
-                        fn.target.category == Target.Category.GPU
-                        and fn.target.runtime != Target.Runtime.VULKAN
-                    ):
+                    if (fn.target.category == Target.Category.GPU and fn.target.runtime != Target.Runtime.VULKAN):
                         # TODO: Remove this when the header is emitted as part of the compilation
                         gpu_source = proj.module_file_sets[0].translated_source_filepath
                         gpu_device_func = fn_name + "__gpu__"
                         with open(gpu_source) as gpu_source_f:
-                            s = re.search(
-                                gpu_device_func + _R_GPU_LAUNCH, gpu_source_f.read()
-                            )
+                            s = re.search(gpu_device_func + _R_GPU_LAUNCH, gpu_source_f.read())
                             if not s:
                                 raise RuntimeError("Couldn't parse emitted source code")
-                            launch_parameters = list(
-                                map(int, [s[n] for n in range(1, 7)])
-                            )
+                            launch_parameters = list(map(int, [s[n] for n in range(1, 7)]))
                             dynamic_shared_mem_bytes = int(s[7])
                         gpu_source = os.path.split(gpu_source)[1]
 
@@ -847,11 +766,11 @@ class Package:
             if not cross_compile and (format & Package.Format.STATIC_LIBRARY):
                 lib_hat_path = f"{path_root}_lib{extension}"
                 hat.create_static_package(header_path, lib_hat_path)
-                
+
                 lib_hat_file = hat_file.Deserialize(lib_hat_path)
                 lib_hat_file.dependencies.auxiliary["static"] = lib_hat_file.dependencies.link_target
                 lib_hat_file.Serialize()
-                
+
                 shutil.move(lib_hat_path, header_path)
 
             if dynamic_link:
@@ -863,7 +782,7 @@ class Package:
                 dyn_hat_file.Serialize()
 
                 shutil.move(dyn_hat_path, header_path)
-            
+
             # TODO: plumb cross-compilation of static libs
 
         return proj.module_file_sets
@@ -892,9 +811,7 @@ class Package:
                 self._description["auxiliary"].update(other)
 
             # remove any keys marked None
-            keys_to_remove = [
-                k for k, v in self._description["auxiliary"].items() if v is None
-            ]
+            keys_to_remove = [k for k, v in self._description["auxiliary"].items() if v is None]
             for k in keys_to_remove:
                 del self._description["auxiliary"][k]
 

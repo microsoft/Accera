@@ -251,7 +251,7 @@ namespace value
     Scalar Select(Scalar cmp, Scalar a, Scalar b)
     {
         std::tie(a, b) = Scalar::MakeTypeCompatible(a, b);
-        return ScalarOpBuilder<mlir::SelectOp>(cmp, a, b);
+        return ScalarOpBuilder<mlir::arith::SelectOp>(cmp, a, b);
     }
 
     Scalar Sin(Scalar s)

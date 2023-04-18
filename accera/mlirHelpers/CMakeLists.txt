@@ -79,9 +79,11 @@ target_link_libraries(
          ${conversion_libs}
          ir
          MLIRStandardToLLVM
-         MLIRSCFToStandard
+         MLIRSCFToControlFlow
+         MLIRControlFlowToLLVM
          MLIRAffineToStandard
          MLIRAffineTransforms
+         MLIRAffineUtils
          MLIRExecutionEngine
          MLIRLinalgToLLVM
          MLIRLinalgTransforms

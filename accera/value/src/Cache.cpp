@@ -763,8 +763,8 @@ namespace value
             auto localScopeGlobalRef = builder.create<accera::ir::value::ReferenceGlobalOp>(GetLocation(), globalScopeGlobalRef.getGlobal());
             // Re-view the packed buffer memref to match the function argument
             // TODO : update the function arguments to match the packed shape
-            mlir::Value shapelessMemref = builder.create<mlir::memref::CastOp>(loc, localScopeGlobalRef, mlir::UnrankedMemRefType::get(GetElementType(), GetInputType().getMemorySpace()));
-            auto reshapedMemref = builder.create<mlir::memref::CastOp>(loc, shapelessMemref, GetInputType());
+            mlir::Value shapelessMemref = builder.create<mlir::memref::CastOp>(loc, mlir::UnrankedMemRefType::get(GetElementType(), GetInputType().getMemorySpace()), localScopeGlobalRef);
+            auto reshapedMemref = builder.create<mlir::memref::CastOp>(loc, GetInputType(), shapelessMemref);
 
             constantInjectedArgs.insert(constantInjectedArgs.begin() + targetArgIdx, reshapedMemref);
             auto launchFuncOp = builder.create<vir::LaunchFuncOp>(GetLocation(), scheduleFuncOp, constantInjectedArgs);

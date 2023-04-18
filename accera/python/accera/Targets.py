@@ -6,13 +6,15 @@
 import copy
 import cpuinfo
 import re
+
 from typing import List, Union
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
 
 from ._lang_python import ScalarType, _GetKnownDeviceNames
 from ._lang_python._lang import (
-    BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z, WARP_X, WARP_Y, _MemorySpace, MMAShape, _ExecutionRuntime as Runtime
+    BLOCK_X, BLOCK_Y, BLOCK_Z, THREAD_X, THREAD_Y, THREAD_Z, WARP_X, WARP_Y, _MemorySpace, MMAShape, _ExecutionRuntime
+    as Runtime
 )
 
 
@@ -768,14 +770,14 @@ class TensorCoreInformation:
 
     def mma_shape_to_tuple(self, mma_shape: MMAShape):
         return {
-            MMAShape.M64xN64xK1_B4 : (64, 64, 1),
-            MMAShape.M64xN64xK1_B2 : (64, 64, 1),
-            MMAShape.M32xN32xK2_B1 : (32, 32, 2),
-            MMAShape.M16xN16xK4_B1 : (16, 16, 4),
-            MMAShape.M64xN64xK4_B4 : (64, 64, 4),
-            MMAShape.M64xN64xK4_B2 : (64, 64, 4),
-            MMAShape.M32xN32xK8_B1 : (32, 32, 8),
-            MMAShape.M16xN16xK16_B1 : (16, 16, 16),
+            MMAShape.M64xN64xK1_B4: (64, 64, 1),
+            MMAShape.M64xN64xK1_B2: (64, 64, 1),
+            MMAShape.M32xN32xK2_B1: (32, 32, 2),
+            MMAShape.M16xN16xK4_B1: (16, 16, 4),
+            MMAShape.M64xN64xK4_B4: (64, 64, 4),
+            MMAShape.M64xN64xK4_B2: (64, 64, 4),
+            MMAShape.M32xN32xK8_B1: (32, 32, 8),
+            MMAShape.M16xN16xK16_B1: (16, 16, 16),
             MMAShape.M64xN64xK2_B4: (64, 64, 2),
             MMAShape.M64xN64xK2_B2: (64, 64, 2),
             MMAShape.M32xN32xK4_B1: (32, 32, 4),
@@ -791,6 +793,7 @@ class TensorCoreInformation:
         return tuple(mutable_tensor_splits)
 
 
+# yapf: disable
 MI100_TENSORCORE_INFO = TensorCoreInformation([
     TensorCoreInformationEntry(shape=MMAShape.M16xN16xK4_B1, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 16x16x4 mfma instruction
     TensorCoreInformationEntry(shape=MMAShape.M32xN32xK2_B1, inType=ScalarType.float32, outType=ScalarType.float32),    # maps to the 32x32x2 mfma instruction
@@ -916,6 +919,14 @@ class _TargetContainer:
 
         device_name = \
             self.family.lower() if self.family else (self.name.lower() if self.name else self._device_name)
+
+        # FIXUP: determine the device name if it matches with certain known extensions
+        # revisit using self.family for the device_name?
+        if "AVX512" in self.extensions:
+            device_name = "avx512"
+        elif "AVX2" in self.extensions:
+            device_name = "avx2"
+
         if device_name in _GetKnownDeviceNames():
             self._device_name = device_name
 
@@ -1045,7 +1056,7 @@ class Target(_TargetContainer):
         num_threads: int = None,
         num_cores: int = None,
         vector_bytes: int = 0,
-        vector_registers: int = None,
+        vector_registers: int = 0,
         frequency_GHz: float = None,
         tensor_core_info: TensorCoreInformation = None,
         turbo_frequency_GHz: float = None,
@@ -1060,15 +1071,25 @@ class Target(_TargetContainer):
             known_name = self._try_get_known_name(known_name)
 
             if known_name == "HOST":
+                if not extensions:
+                    # infer extensions from cpu information
+                    cpu_info = cpuinfo.get_cpu_info()
+                    extensions = [
+                        ext for ext in
+                        ["MMX", "SSE", "SSE2", "SSE3", "SSSE3", "SSE4", "SSE4.1", "SSE4.2", "AVX", "AVX2", "FMA3"]
+                        if "flags" in cpu_info and ext.lower() in cpu_info["flags"]
+                    ]
+
+                    if "AVX2" in extensions:
+                        vector_bytes = 32    # There are 32-bytes per full SIMD register
+                        vector_registers = 16    # There are 16 YMM registers
 
                 super().__init__(
                     category=category or Target.Category.CPU,
                     architecture=Target.Architecture["HOST"],
-                    vector_bytes=32,    # There are 32-bytes per full SIMD register
-                    vector_registers=16,    # There are 16 YMM registers
-                    extensions=[
-                        "MMX", "SSE", "SSE2", "SSE3", "SSSE3", "SSE4", "SSE4.1", "SSE4.2", "AVX", "AVX2", "FMA3"
-                    ]
+                    vector_bytes=vector_bytes,
+                    vector_registers=vector_registers,
+                    extensions=extensions
                 )
             else:
 

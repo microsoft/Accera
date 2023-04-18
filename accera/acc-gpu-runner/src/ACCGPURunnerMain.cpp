@@ -119,7 +119,7 @@ void AddMLIRVulkanRunnerPasses(PassManager& passManager)
 
     passManager.addPass(createConvertGpuLaunchFuncToVulkanLaunchFuncPass());
     passManager.addPass(accera::transforms::vulkan::createEmitVulkanWrapperPass());
-    passManager.addPass(createLowerToCFGPass());
+    passManager.addPass(createConvertSCFToCFPass());
     passManager.addPass(LLVM::createLegalizeForExportPass());
     LowerToLLVMOptions llvmOptions(passManager.getContext());
     llvmOptions.useBarePtrCallConv = false;

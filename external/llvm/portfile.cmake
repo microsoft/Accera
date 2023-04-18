@@ -1,5 +1,6 @@
 # Builds LLVM for features needed by Accera
-set(LLVM_VERSION llvmorg-14.0.6)
+set(LLVM_VERSION 24a37a396a9bd6b73b05b4eafce8b87e7a748cf9)
+set(LLVM_FRIENDLY_VERSION 15.0.0-rc1)
 
 set(VCPKG_BUILD_TYPE release)
 if((DEFINED ENV{LLVM_BUILD_TYPE}) AND ("$ENV{LLVM_BUILD_TYPE}" STREQUAL "debug"))
@@ -20,7 +21,7 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO llvm/llvm-project
     REF ${LLVM_VERSION}
-    SHA512 d64f97754c24f32deb5f284ebbd486b3a467978b7463d622f50d5237fff91108616137b4394f1d1ce836efa59bf7bec675b6dee257a79b241c15be52d4697460
+    SHA512 5fdee8487afac16033a6d2cea720dedb5f05e00f20d761307805f0a6e1fad22d6c3ce45d89112cbe70aec1a4dfe8ae72a90d45e14bc67539fbe3dc948a316d92
     HEAD_REF main
     PATCHES
     0001-Merged-PR-2213-mlir-Plumb-OpenMP-dialect-attributes-.patch
@@ -28,9 +29,8 @@ vcpkg_from_github(
     0003-Fix-bad-merge.patch
     0004-Lower-memref.copy-to-memcpy-when-layouts-canonicaliz.patch
     0005-Fix-issue-where-passed-in-op-printing-flags-were-ign.patch
-    0006-Merged-PR-2822-Fix-lowering-of-MemrefCastOp-to-the-L.patch
-    0007-More-flexible-code-generation-for-vpmaddwd-instructi.patch
-    0008-fix-vcpkg-install-paths.patch # cf. https://github.com/microsoft/vcpkg/blob/master/ports/llvm
+    0006-Merged-PR-2919-More-flexible-code-generation-for-vpm.patch
+    0007-fix-vcpkg-install-paths.patch # cf. https://github.com/microsoft/vcpkg/blob/master/ports/llvm
 )
 
 vcpkg_find_acquire_program(PYTHON3)
@@ -64,7 +64,7 @@ vcpkg_configure_cmake(
         -DLLVM_INSTALL_UTILS=ON # FileCheck
         "-DLLVM_ENABLE_PROJECTS=mlir;lld"
         "-DLLVM_TARGETS_TO_BUILD=host;X86;ARM;NVPTX;AMDGPU"
-        -DPACKAGE_VERSION=${LLVM_VERSION}
+        -DPACKAGE_VERSION=${LLVM_FRIENDLY_VERSION}
         # Force TableGen to be built with optimization. This will significantly improve build time.
         # cf. https://github.com/microsoft/vcpkg/blob/master/ports/llvm
         -DLLVM_OPTIMIZED_TABLEGEN=ON

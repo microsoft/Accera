@@ -116,7 +116,6 @@ ARM: fp16, neon, vfp3, d16, vfp4, hwdiv-arm, hwdiv
                 "_flags"_a = value::AllocateFlags::None)
             .def("Print", &value::MLIRContext::print, "Prints the module")
             .def("Save", &value::MLIRContext::save, "filename"_a)
-            .def("Verify", &value::MLIRContext::verify)
             .def("WriteHeader", &value::MLIRContext::writeHeader, "filename"_a = std::nullopt)
             .def("SetMetadata", &value::MLIRContext::setMetadata)
             .def("GetFullMetadata", &value::MLIRContext::getFullMetadata)

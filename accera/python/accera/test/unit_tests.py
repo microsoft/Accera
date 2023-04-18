@@ -172,7 +172,7 @@ class PackagingTypesTests(unittest.TestCase):
         self.assertIsNotNone(module)
         with ModuleScope(module):
             module.Print()
-            module.Verify()
+            # module.Verify() # BUGBUG: ModuleOp::verify is private as of LLVM 15
 
             header_filename = f"test_module_{time.time()}.hat"
             module.WriteHeader(header_filename)

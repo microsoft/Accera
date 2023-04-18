@@ -415,7 +415,7 @@ namespace cpp_printer
         return success();
     }
 
-    LogicalResult StdDialectCppPrinter::printSelectOp(SelectOp selectOp)
+    LogicalResult StdDialectCppPrinter::printSelectOp(arith::SelectOp selectOp)
     {
         if (selectOp.getNumOperands() != 3)
         {
@@ -728,7 +728,7 @@ namespace cpp_printer
         if (auto returnOp = dyn_cast<ReturnOp>(op))
             return printReturnOp(returnOp);
 
-        if (auto selectOp = dyn_cast<SelectOp>(op))
+        if (auto selectOp = dyn_cast<arith::SelectOp>(op))
             return printSelectOp(selectOp);
 
         if (auto getGlobal = dyn_cast<memref::GetGlobalOp>(op))

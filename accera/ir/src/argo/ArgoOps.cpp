@@ -128,17 +128,17 @@ static LogicalResult verify(CopyOp op)
 // YieldOp
 //===----------------------------------------------------------------------===//
 
-static void print(OpAsmPrinter& p, argo::YieldOp op)
+void YieldOp::print(OpAsmPrinter& p)
 {
-    p << op.getOperationName();
-    if (op.getNumOperands() > 0)
-        p << ' ' << op.getOperands();
-    p.printOptionalAttrDict(op->getAttrs());
-    if (op.getNumOperands() > 0)
-        p << " : " << op.getOperandTypes();
+    p << getOperationName();
+    if (getNumOperands() > 0)
+        p << ' ' << getOperands();
+    p.printOptionalAttrDict((*this)->getAttrs());
+    if (getNumOperands() > 0)
+        p << " : " << getOperandTypes();
 }
 
-static ParseResult parseYieldOp(OpAsmParser& parser, OperationState& result)
+ParseResult YieldOp::parse(OpAsmParser& parser, OperationState& result)
 {
     SmallVector<OpAsmParser::OperandType, 2> opInfo;
     SmallVector<Type, 2> types;
@@ -243,33 +243,33 @@ void OpaqueOp::build(
     bodyBuild(odsBuilder, odsState.location, bodyBlock->getArguments());
 }
 
-static void print(OpAsmPrinter& p, OpaqueOp op)
+void OpaqueOp::print(OpAsmPrinter& p)
 {
-    auto attrNames = op.argoTraitAttrNames();
+    auto attrNames = argoTraitAttrNames();
     llvm::StringSet<> argoTraitAttrsSet;
     argoTraitAttrsSet.insert(attrNames.begin(), attrNames.end());
     SmallVector<NamedAttribute, 8> attrs;
-    for (auto attr : op->getAttrs())
+    for (auto attr : (*this)->getAttrs())
         if (argoTraitAttrsSet.count(attr.getName().strref()) > 0)
             attrs.push_back(attr);
 
-    auto dictAttr = DictionaryAttr::get(op.getContext(), attrs);
-    p << op.getOperationName() << " " << dictAttr;
-    p.printOptionalAttrDict(op->getAttrs(), attrNames);
-    p << " (" << op.getOperands() << ")";
-    if (!op.region().empty())
+    auto dictAttr = DictionaryAttr::get(getContext(), attrs);
+    p << getOperationName() << " " << dictAttr;
+    p.printOptionalAttrDict((*this)->getAttrs(), attrNames);
+    p << " (" << getOperands() << ")";
+    if (!region().empty())
     {
-        p.printRegion(op.region());
+        p.printRegion(region());
     }
 
-    auto inputTypes = op.getOperandTypes();
+    auto inputTypes = getOperandTypes();
     if (!inputTypes.empty())
     {
         p << " : " << inputTypes;
     }
 }
 
-static ParseResult parseOpaqueOp(OpAsmParser& parser, OperationState& result)
+ParseResult OpaqueOp::parse(OpAsmParser& parser, OperationState& result)
 {
     SmallVector<OpAsmParser::OperandType, 8> operandsInfo, regionOperandsInfo;
     DictionaryAttr dictAttr;
@@ -340,8 +340,8 @@ void EntryPointOp::build(OpBuilder& builder, OperationState& result, StringRef e
 /// Parse an Argo entry_point op
 /// <operation> ::= `argo.entry_point` symbol-ref-id `(` argument-list `)`
 ///                 (`->` function-result-list)? function-attributes?
-static ParseResult parseEntryPointOp(OpAsmParser& parser,
-                                     OperationState& result)
+ParseResult EntryPointOp::parse(OpAsmParser& parser,
+                                OperationState& result)
 {
     SmallVector<OpAsmParser::OperandType, 8> entryArgs;
     SmallVector<Type, 8> argTypes;
@@ -387,17 +387,17 @@ static ParseResult parseEntryPointOp(OpAsmParser& parser,
     return success();
 }
 
-static void printEntryPointOp(OpAsmPrinter& p, EntryPointOp op)
+void EntryPointOp::print(OpAsmPrinter& p)
 {
     p << EntryPointOp::getOperationName() << ' ';
-    p.printSymbolName(op.getName());
+    p.printSymbolName(getName());
 
-    FunctionType type = op.getType();
-    function_interface_impl::printFunctionSignature(p, op.getOperation(), type.getInputs(),
-                                               /*isVariadic=*/false,
-                                               type.getResults());
+    FunctionType type = getType();
+    function_interface_impl::printFunctionSignature(p, getOperation(), type.getInputs(),
+                                                    /*isVariadic=*/false,
+                                                    type.getResults());
 
-    function_interface_impl::printFunctionAttributes(p, op.getOperation(), type.getNumInputs(), type.getNumResults());
+    function_interface_impl::printFunctionAttributes(p, getOperation(), type.getNumInputs(), type.getNumResults());
 }
 
 static LogicalResult verify(EntryPointOp op)

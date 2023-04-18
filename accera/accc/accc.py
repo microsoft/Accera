@@ -23,6 +23,7 @@ default_target = target_options[0]
 
 class SystemTarget(Enum):
     HOST = "host"
+    AVX2 = "avx2"
     AVX512 = "avx512"
     RPI4 = "pi4"
     RPI3 = "pi3"
@@ -116,6 +117,7 @@ LLVM_TOOLING_OPTS = {
         "-O3", "--march=arm", "-mcpu=arm1136jf-s", "--mtriple=armv6-linux-gnueabihf"
     ],
     SystemTarget.AVX512.value: ["-O3", "--march=x86-64", "-mcpu=skylake-avx512"],
+    SystemTarget.AVX2.value: ["-O3", "--march=x86-64", "-mcpu=skylake"],
     SystemTarget.ARM_CORTEX_M4.value: [
         "-Oz", "-mcpu=cortex-m4", "--mtriple=thumbv7em-arm-none-eabi",
     ],

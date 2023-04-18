@@ -202,9 +202,9 @@ TEST_CASE("UnrankedMemRefTest")
         mlir::Value val6 = Alloca(builder, memrefType6, Value{ builder.create<arith::ConstantIndexOp>(builder.getUnknownLoc(), 10) });
 
         // auto cast_3_4 = builder.create<mlir::memref::CastOp>(loc, val3, val4.getType()); // cast <10xi32> -> <2x5xi32> -- illegal
-        [[maybe_unused]] auto cast_4_5 = builder.create<mlir::memref::CastOp>(loc, val3, val5.getType()); // cast <10xi32> -> <?xi32>
-        [[maybe_unused]] auto cast_4_6 = builder.create<mlir::memref::CastOp>(loc, val4, val6.getType()); // cast <2x5xi32> -> <2x?xi32>
-        [[maybe_unused]] auto cast_4_7 = builder.create<mlir::memref::CastOp>(loc, val4, memrefType7); // cast <2x5xi32> -> <*xi32>
+        [[maybe_unused]] auto cast_4_5 = builder.create<mlir::memref::CastOp>(loc, val5.getType(), val3); // cast <10xi32> -> <?xi32>
+        [[maybe_unused]] auto cast_4_6 = builder.create<mlir::memref::CastOp>(loc, val6.getType(), val4); // cast <2x5xi32> -> <2x?xi32>
+        [[maybe_unused]] auto cast_4_7 = builder.create<mlir::memref::CastOp>(loc, memrefType7, val4); // cast <2x5xi32> -> <*xi32>
     });
 
     SECTION("Parsing")

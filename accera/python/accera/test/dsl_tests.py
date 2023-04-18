@@ -27,9 +27,8 @@ else:
 
 from accera import ScalarType, Array, Function, Nest, Target, Package, algorithms, cast, AllocateFlags, Role
 from accera.test import verifiers
-from accera.test.test_utils import expectedFailure, FailedReason
+from accera.test.test_utils import expectedFailure, FailedReason, avx2_cpu, get_avx_platform
 from accera._lang_python._lang import Dimension, EnterProfileRegion, ExitProfileRegion, PrintProfileResults
-
 
 INTERNAL_FUNCTION_OPTS = {
     "no_inline_into": True,
@@ -38,6 +37,7 @@ INTERNAL_FUNCTION_OPTS = {
 
 TEST_MODE = Package.Mode.DEBUG if DEV_MODE else Package.Mode.RELEASE
 TEST_FORMAT = Package.Format.MLIR_DYNAMIC if DEV_MODE else Package.Format.HAT_DYNAMIC
+TEST_FORMAT_XCOMPILE = Package.Format.MLIR_STATIC
 TEST_PACKAGE_DIR = "test_acccgen"
 
 # Groups of types commonly used for tests
@@ -75,7 +75,13 @@ class DSLTest_01Arrays(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir, _quiet=quiet)
+            package.build(
+                package_name,
+                format=TEST_FORMAT,
+                mode=_get_test_mode(correctness_check_values),
+                output_dir=output_dir,
+                _quiet=quiet
+            )
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -373,6 +379,7 @@ class DSLTest_01Arrays(unittest.TestCase):
             )
 
     def test_dynamic_temp_array(self) -> None:
+
         def make_test_fn(package, A, B, C, N):
             T = Array(role=Role.TEMP, element_type=A.element_type, shape=A.shape)
 
@@ -538,7 +545,9 @@ class DSLTest_01Arrays(unittest.TestCase):
             "pre": (A_test, B_test, C_test),
             "post": (A_test, B_expected, C_expected),
         }
-        self._verify_nest(plan, (A, B, C), "test_array_vectorize_cast", correctness_check_values=correctness_check_values)
+        self._verify_nest(
+            plan, (A, B, C), "test_array_vectorize_cast", correctness_check_values=correctness_check_values
+        )
 
     def test_interleaved_vectorize_cast(self) -> None:
         shape = (64, 32, 8, 2)
@@ -643,7 +652,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         def reinterpret_arr_as_int16(array: Array):
             # Assumes array is f32
 
-            num_elements = reduce(lambda x, y: x*y, array.shape, 1)
+            num_elements = reduce(lambda x, y: x * y, array.shape, 1)
             arr_mb = array._get_memory_buffer()
             self.assertEqual(arr_mb.shape, [num_elements * 4])
             self.assertEqual(arr_mb.element_type, ScalarType.uint8)
@@ -659,7 +668,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         def reinterpret_arr_as_int32(array: Array):
             # Assumes array is f32
 
-            num_elements = reduce(lambda x, y: x*y, array.shape, 1)
+            num_elements = reduce(lambda x, y: x * y, array.shape, 1)
             arr_mb = array._get_memory_buffer()
             self.assertEqual(arr_mb.shape, [num_elements * 4])
             self.assertEqual(arr_mb.element_type, ScalarType.uint8)
@@ -675,7 +684,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         def simple_reinterpret_arr_as_int32(array: Array):
             # Assumes array is f32
 
-            num_elements = reduce(lambda x, y: x*y, array.shape, 1)
+            num_elements = reduce(lambda x, y: x * y, array.shape, 1)
             arr_as_int32 = array._reinterpret_cast(ScalarType.int32)
             self.assertEqual(arr_as_int32.shape, array.shape)
             self.assertEqual(arr_as_int32.element_type, ScalarType.int32)
@@ -718,18 +727,14 @@ class DSLTest_01Arrays(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir):
             package.build(
-                package_name,
-                format=TEST_FORMAT,
-                mode=Package.Mode.RELEASE,
-                output_dir=output_dir,
-                _quiet=False
+                package_name, format=TEST_FORMAT, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False
             )
 
     def test_heap_alloc_reinterpret_cast(self) -> None:
         package = Package()
 
-        temp = Array(role=Role.TEMP, element_type=ScalarType.int32, shape=(32,), flags=AllocateFlags.HEAP)
-        output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(32,))
+        temp = Array(role=Role.TEMP, element_type=ScalarType.int32, shape=(32, ), flags=AllocateFlags.HEAP)
+        output = Array(role=Role.INPUT_OUTPUT, element_type=ScalarType.float32, shape=(32, ))
 
         nest = Nest(shape=output.shape)
         i, = nest.get_indices()
@@ -739,18 +744,14 @@ class DSLTest_01Arrays(unittest.TestCase):
             temp_mb = temp._get_memory_buffer()
             cast_temp = temp_mb._reinterpret_cast(ScalarType.float32)
             output[i] = cast_temp[i]
-        
+
         package.add(nest, args=(output, ))
 
         package_name = "test_heap_alloc_reinterpret_cast"
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir):
             package.build(
-                package_name,
-                format=TEST_FORMAT,
-                mode=Package.Mode.RELEASE,
-                output_dir=output_dir,
-                _quiet=False
+                package_name, format=TEST_FORMAT, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False
             )
 
     def test_reinterpret_cast_partially_dynamic_shape(self) -> None:
@@ -769,18 +770,12 @@ class DSLTest_01Arrays(unittest.TestCase):
         def _():
             float_A = A._reinterpret_cast(ScalarType.float32)
             B[indices] = float_A[indices]
-        
+
         package.add(nest, args=(M, N, A, B), base_name=test_name)
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         with verifiers.VerifyPackage(self, test_name, output_dir):
-            package.build(
-                test_name,
-                format=TEST_FORMAT,
-                mode=Package.Mode.RELEASE,
-                output_dir=output_dir,
-                _quiet=False
-            )
+            package.build(test_name, format=TEST_FORMAT, mode=Package.Mode.RELEASE, output_dir=output_dir, _quiet=False)
 
     def test_subarray(self) -> None:
         package = Package()
@@ -885,7 +880,9 @@ class DSLTest_01Arrays(unittest.TestCase):
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / test_name
         with verifiers.VerifyPackage(self, test_name, output_dir) as v:
             shutil.rmtree(output_dir, ignore_errors=True)
-            package.build(test_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
+            package.build(
+                test_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir
+            )
             if function_name and correctness_check_values:
                 v.check_correctness(
                     function_name,
@@ -1523,11 +1520,13 @@ class DSLTest_01Arrays(unittest.TestCase):
         output_start = Scalar(type=ScalarType.float32, role=Role.TEMP)
 
         nest1 = Nest((1, ))
+
         @nest1.iteration_logic
         def _():
             outputDim.set(cast(floor((limit - start) / delta), ScalarType.int64))
 
         nest2 = Nest((1, ))
+
         @nest2.iteration_logic
         def _():
             output_start.set(start)
@@ -1549,7 +1548,7 @@ class DSLTest_01Arrays(unittest.TestCase):
         package = Package()
         # BUGBUG: dim args ordered first due to issue with Debug mode
         package.add(nest1, args=(start, limit, delta, outputDim), base_name=f"range_get_size")
-        ini_start_fn = package.add(nest2, args=(start,), base_name=f"ini_start")
+        ini_start_fn = package.add(nest2, args=(start, ), base_name=f"ini_start")
         get_result_fn = package.add(nest3, args=(inputDim, output, delta), base_name=f"get_result")
 
         nest4 = Nest((1, ))
@@ -1692,7 +1691,16 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
         return Nest(shape=(M, N, S)), A, B, C
 
-    def _build_nest(self, nest, args: Tuple[Array], package_name, correctness_check_values=None, quiet=True) -> None:
+    def _build_nest(
+        self,
+        nest,
+        args: Tuple[Array],
+        package_name,
+        correctness_check_values=None,
+        quiet=True,
+        file_check_fn=None,
+        platform=Package.Platform.HOST
+    ) -> None:
         # helper function to build a nest so that we can focus on the logic function
         # create a HAT package and add the nest to it
         package = Package()
@@ -1701,13 +1709,22 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
         # build the HAT package
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir, _quiet=quiet)
+            package.build(
+                package_name,
+                format=TEST_FORMAT if correctness_check_values else TEST_FORMAT_XCOMPILE,
+                mode=_get_test_mode(correctness_check_values),
+                output_dir=output_dir,
+                platform=platform,
+                _quiet=quiet
+            )
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
                     before=correctness_check_values["pre"],
                     after=correctness_check_values["post"],
                 )
+            if file_check_fn:
+                file_check_fn(v)
 
     def test_signed_types(self) -> None:
         for t in [ScalarType.int16, ScalarType.int32, ScalarType.int64] + FLOAT_TYPES:
@@ -1939,7 +1956,6 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
         self._build_nest(nest, [A, B], "test_round_intrinsic", correctness_check_values=correctness_check_values)
 
-    @expectedFailure(FailedReason.INVALID, "x86 round intrinsic not supported on MacOS", sys.platform == "darwin")
     def test_round_intrinsic_vectorized(self) -> None:
         from accera import round as accround
 
@@ -1962,7 +1978,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             j: 8
         })
         sched.reorder(i, j, ii, jj)
-        plan = sched.create_plan()
+        plan = sched.create_plan(Target("Intel 6700"))
         plan.vectorize(ii)
 
         A_test = np.random.uniform(low=-1000.0, high=1000.0, size=A.shape).astype(np.float32)
@@ -1978,10 +1994,24 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
         correctness_check_values = {
             "pre": [A_test, B_test],
             "post": [A_test, B_ref]
-        }
+        } if avx2_cpu() else None
+
+        package_name = "test_round_intrinsic_vectorized"
+
+        def file_check_fn(v):
+            checker = v.file_checker(f"{package_name}_llvm.mlir")
+            checker.check_label("llvm.func @{{[a-z_]*}}" + package_name)
+            checker.check_count(
+                '%{{[0-9]+}} = "accintr.x86.avx.cvt.ps2dq.256"(%{{[0-9]+}}) : (vector<8xf32>) -> vector<8xi32>', 4
+            )
+            checker.run()
 
         self._build_nest(
-            plan, [A, B], "test_round_intrinsic_vectorized", correctness_check_values=correctness_check_values
+            plan, [A, B],
+            package_name,
+            correctness_check_values=correctness_check_values,
+            file_check_fn=file_check_fn,
+            platform=get_avx_platform()
         )
 
     # TODO : fix this test - it appears to abort on just the linux buddy build machine
@@ -2018,7 +2048,6 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
 
     #     self._build_nest(nest, [A, B], "test_remainderf_intrinsic_rounding", correctness_check_values=correctness_check_values)
 
-    @expectedFailure(FailedReason.INVALID, "x86 max min intrinsics not supported on MacOS", sys.platform == "darwin")
     def test_vectorized_max_min(self) -> None:
         from accera import max, min
 
@@ -2052,7 +2081,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 j: 8
             })
             sched.reorder(i, j, ii, jj)
-            plan = sched.create_plan()
+            plan = sched.create_plan(Target("Intel 6700"))
             plan.vectorize(ii)
             function = package.add(plan, args=(A, B, C_max, C_min), base_name=fn_name)
 
@@ -2064,18 +2093,20 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             C_max_ref = np.maximum(A_test, B_test)
             C_min_ref = np.minimum(A_test, B_test)
 
-            correctness_check_values[fn_name] = {
-                "pre": [A_test, B_test, C_max_test, C_min_test],
-                "post": [A_test, B_test, C_max_ref, C_min_ref]
-            }
+            if avx2_cpu():
+                correctness_check_values[fn_name] = {
+                    "pre": [A_test, B_test, C_max_test, C_min_test],
+                    "post": [A_test, B_test, C_max_ref, C_min_ref]
+                }
 
         # build the HAT package
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(
                 package_name,
-                format=TEST_FORMAT | Package.Format.MLIR_VERBOSE,
+                format=TEST_FORMAT if avx2_cpu() else TEST_FORMAT_XCOMPILE,
                 mode=Package.Mode.RELEASE,
+                platform=get_avx_platform(),
                 output_dir=output_dir
             )
             for fn_name in func_names:
@@ -2086,7 +2117,22 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                         after=correctness_check_values[fn_name]["post"],
                     )
 
-    @expectedFailure(FailedReason.INVALID, "x86 max min intrinsics not supported on MacOS", sys.platform == "darwin")
+                max_checker = v.file_checker(f"{package_name}_llvm.mlir")
+                max_checker.check_label(f'llvm.func @{function.name}')
+                max_checker.check_count(
+                    '%{{[0-9]+}} = "accintr.x86.avx.max.ps.256"(%{{[0-9]+}}, %{{[0-9]+}}) : (vector<8xf32>, vector<8xf32>) -> vector<8xf32>',
+                    4
+                )
+                max_checker.run()
+
+                min_checker = v.file_checker(f"{package_name}_llvm.mlir")
+                max_checker.check_label(f'llvm.func @{function.name}')
+                min_checker.check_count(
+                    '%{{[0-9]+}} = "accintr.x86.avx.min.ps.256"(%{{[0-9]+}}, %{{[0-9]+}}) : (vector<8xf32>, vector<8xf32>) -> vector<8xf32>',
+                    4
+                )
+                min_checker.run()
+
     def test_vectorized_single_max_min_block(self) -> None:
         # In this test we're trying to find the single max and single min value of a 2-D array.
         # To vectorize this, we'll want to compute several maxs and mins in paralle and then reduce them
@@ -2134,7 +2180,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 io_A_min_cache[inner_i, inner_j] = min(io_A_min_cache[inner_i, inner_j], A[i, j])
 
             inner_sched = inner_nest.create_schedule()
-            inner_plan = inner_sched.create_plan()
+            inner_plan = inner_sched.create_plan(Target("Intel 6700"))
             inner_plan.vectorize(inner_i)
             inner_fn = package.add(
                 inner_plan,
@@ -2158,7 +2204,7 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 outer_j: N_tile
             })
             outer_sched.reorder(outer_i, outer_j, outer_ii, outer_iii, outer_jj)
-            outer_plan = outer_sched.create_plan()
+            outer_plan = outer_sched.create_plan(Target("Intel 6700"))
             outer_plan._erase_loops([outer_iii, outer_jj])
             outer_fn = package.add(
                 outer_plan,
@@ -2178,7 +2224,10 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                     arr[indices] = outer_arr[indices]
 
                 return package.add(
-                    zero_nest, args=(outer_arr, arr), base_name=base_name, function_opts=INTERNAL_FUNCTION_OPTS
+                    zero_nest.create_plan(Target("Intel 6700")),
+                    args=(outer_arr, arr),
+                    base_name=base_name,
+                    function_opts=INTERNAL_FUNCTION_OPTS
                 )
 
             zero_max_cache_fn = _make_init_fn(package, A, io_A_max_cache, "max_cache_zeroing")
@@ -2201,7 +2250,10 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                         outer_arr[0] = min(outer_arr[0], cache[indices])
 
                 return package.add(
-                    reduce_nest, args=(cache, outer_arr), base_name=base_name, function_opts=INTERNAL_FUNCTION_OPTS
+                    reduce_nest.create_plan(Target("Intel 6700")),
+                    args=(cache, outer_arr),
+                    base_name=base_name,
+                    function_opts=INTERNAL_FUNCTION_OPTS
                 )
 
             reduce_max_cache_fn = _make_cache_reduce_fn(package, io_A_max_cache, A_max, "max_cache_reduce", True)
@@ -2219,7 +2271,9 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                 reduce_max_cache_fn(A_max_cache, A_max)
                 reduce_min_cache_fn(A_min_cache, A_min)
 
-            function = package.add(top_nest, args=(A, A_max, A_min), base_name=fn_name)
+            function = package.add(
+                top_nest.create_plan(Target("Intel 6700")), args=(A, A_max, A_min), base_name=fn_name
+            )
 
             A_test = np.random.random(A.shape).astype(np.float32)
             A_max_test = np.random.random(A_max.shape).astype(np.float32)
@@ -2228,18 +2282,20 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
             A_max_ref = np.max(A_test).reshape((1, ))
             A_min_ref = np.min(A_test).reshape((1, ))
 
-            correctness_check_values[fn_name] = {
-                "pre": [A_test, A_max_test, A_min_test],
-                "post": [A_test, A_max_ref, A_min_ref]
-            }
+            if avx2_cpu():
+                correctness_check_values[fn_name] = {
+                    "pre": [A_test, A_max_test, A_min_test],
+                    "post": [A_test, A_max_ref, A_min_ref]
+                }
 
         # build the HAT package
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
             package.build(
                 package_name,
-                format=TEST_FORMAT | Package.Format.MLIR_VERBOSE,
+                format=TEST_FORMAT if avx2_cpu() else TEST_FORMAT_XCOMPILE,
                 mode=Package.Mode.RELEASE,
+                platform=get_avx_platform(),
                 output_dir=output_dir
             )
             for fn_name in func_names:
@@ -2249,6 +2305,22 @@ class DSLTest_02SimpleAffineLoopNests(unittest.TestCase):
                         before=correctness_check_values[fn_name]["pre"],
                         after=correctness_check_values[fn_name]["post"],
                     )
+
+                max_checker = v.file_checker(f"{package_name}_llvm.mlir")
+                max_checker.check_label(f'llvm.func @{function.name}')
+                max_checker.check_count(
+                    '%{{[0-9]+}} = "accintr.x86.avx.max.ps.256"(%{{[0-9]+}}, %{{[0-9]+}}) : (vector<8xf32>, vector<8xf32>) -> vector<8xf32>',
+                    4
+                )
+                max_checker.run()
+
+                min_checker = v.file_checker(f"{package_name}_llvm.mlir")
+                max_checker.check_label(f'llvm.func @{function.name}')
+                min_checker.check_count(
+                    '%{{[0-9]+}} = "accintr.x86.avx.min.ps.256"(%{{[0-9]+}}, %{{[0-9]+}}) : (vector<8xf32>, vector<8xf32>) -> vector<8xf32>',
+                    4
+                )
+                min_checker.run()
 
     def test_intrinsics_float(self) -> None:
         from accera import (
@@ -2361,7 +2433,9 @@ class DSLTest_03Schedules(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
+            package.build(
+                package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir
+            )
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -4148,7 +4222,9 @@ class DSLTest_06PlansCaching(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
+            package.build(
+                package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir
+            )
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -4351,13 +4427,21 @@ class DSLTest_06PlansCaching(unittest.TestCase):
 
 class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
 
-    def _verify_plan(self, plan, args: Tuple[int], package_name, correctness_check_values=None) -> None:
+    def _verify_plan(self, plan, args: Tuple[int], package_name, correctness_check_values=None, check_parallelization=False) -> None:
         package = Package()
         function = package.add(plan, args, base_name="vectorization_parallelization_test")
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
+            package.build(
+                package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir
+            )
+
+            if check_parallelization:
+                checker = v.file_checker(f"{package_name}_llvm.mlir")
+                checker.check_label("omp.parallel")
+                checker.run()
+
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -4622,6 +4706,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
                 [A, B, C],
                 f"test_parallelize_i_{policy}",
                 correctness_check_values,
+                check_parallelization=True
             )
 
             # parallelizing middle index
@@ -4632,6 +4717,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
                 [A, B, C],
                 f"test_parallelize_ii_{policy}",
                 correctness_check_values,
+                check_parallelization=True
             )
 
             try:
@@ -4643,6 +4729,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
                     [A, B, C],
                     f"test_parallelize_i_ii_j_{policy}",
                     correctness_check_values,
+                    check_parallelization=True
                 )
 
                 # partial collapsed inner indices
@@ -4653,6 +4740,7 @@ class DSLTest_07PlansVectorizationParallelization(unittest.TestCase):
                     [A, B, C],
                     f"test_parallelize_ii_j_{policy}",
                     correctness_check_values,
+                    check_parallelization=True
                 )
             except:
                 # BUGBUG: partial collapsed + dynamic is broken in mlir-translate since LLVM 14
@@ -4679,7 +4767,9 @@ class DSLTest_08DeferredLayout(unittest.TestCase):
 
         output_dir = pathlib.Path(TEST_PACKAGE_DIR) / package_name
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
+            package.build(
+                package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir
+            )
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -5053,7 +5143,9 @@ class DSLTest_09Parameters(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir)
+            package.build(
+                package_name, format=TEST_FORMAT, mode=_get_test_mode(correctness_check_values), output_dir=output_dir
+            )
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -6464,6 +6556,7 @@ class DSLTest_11AutoPlan(unittest.TestCase):
 
 
 class DSLTest_12Profiling(unittest.TestCase):
+
     def _verify_func(
         self, package, function, package_name, correctness_check_values, quiet=True, mode=TEST_MODE
     ) -> None:
@@ -6471,7 +6564,9 @@ class DSLTest_12Profiling(unittest.TestCase):
 
         # build the HAT package
         with verifiers.VerifyPackage(self, package_name, output_dir) as v:
-            package.build(package_name, format=TEST_FORMAT, mode=mode, output_dir=output_dir, _quiet=quiet, profile=True)
+            package.build(
+                package_name, format=TEST_FORMAT, mode=mode, output_dir=output_dir, _quiet=quiet, profile=True
+            )
             if correctness_check_values:
                 v.check_correctness(
                     function.name,
@@ -6540,7 +6635,7 @@ class DSLTest_12Profiling(unittest.TestCase):
             EnterProfileRegion("pack_b_fn")
             pack_b_fn(B, B_temp, j, k)
             ExitProfileRegion("pack_b_fn")
-        
+
             EnterProfileRegion("matmul_fn")
             matmul_fn(A, B, C, B_temp, i, j, k)
             ExitProfileRegion("matmul_fn")

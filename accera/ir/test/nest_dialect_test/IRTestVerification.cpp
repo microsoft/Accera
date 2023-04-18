@@ -16,6 +16,7 @@
 #include <ir/include/nest/Range.h>
 #include <ir/include/nest/TransformedDomain.h>
 
+#include <value/include/TargetDevice.h>
 #include <transforms/include/nest/LoopNestPasses.h>
 #include <transforms/include/value/ValueToLLVMLoweringPass.h>
 #include <transforms/include/value/ValueToStandardLoweringPass.h>
@@ -376,7 +377,7 @@ bool VerifyLowerToLLVM(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::FuncOp& 
 
             funcPm.addPass(mlir::arith::createArithmeticExpandOpsPass()); //  --arith-expand 
             pm.addPass(mlir::createLowerAffinePass());  //  --lower-affine 
-            pm.addPass(mlir::createLowerToCFGPass());  //  --convert-scf-to-std 
+            pm.addPass(mlir::createConvertSCFToCFPass());  //  --convert-scf-to-cf 
             pm.addPass(mlir::createMemRefToLLVMPass());  //  --convert-memref-to-llvm 
             pm.addPass(mlir::createLowerToLLVMPass());  //  --convert-std-to-llvm="use-bare-ptr-memref-call-conv" 
             pm.addPass(mlir::createConvertVectorToLLVMPass());  //  --convert-vector-to-llvm
@@ -437,7 +438,7 @@ bool VerifyTranslateToLLVMIR(mlir::OwningOpRef<mlir::ModuleOp>& module, mlir::Fu
 
             funcPm.addPass(mlir::arith::createArithmeticExpandOpsPass()); //  --arith-expand 
             pm.addPass(mlir::createLowerAffinePass());  // --lower-affine 
-            pm.addPass(mlir::createLowerToCFGPass());  //   --convert-scf-to-std 
+            pm.addPass(mlir::createConvertSCFToCFPass());  //   --convert-scf-to-cf 
             pm.addPass(mlir::createMemRefToLLVMPass());  //   --convert-memref-to-llvm 
             pm.addPass(mlir::createLowerToLLVMPass());  //   --convert-std-to-llvm="use-bare-ptr-memref-call-conv" 
             pm.addPass(mlir::createConvertVectorToLLVMPass());  //  --convert-vector-to-llvm

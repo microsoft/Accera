@@ -178,10 +178,10 @@ TEST_CASE("Int8Test1")
                 auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
 
                 // extend to 32 bits
-                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
-                auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bEven, bigVecType);
-                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
-                auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bOdd, bigVecType);
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aEven);
+                auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bEven);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aOdd);
+                auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bOdd);
 
                 auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                 auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
@@ -189,14 +189,14 @@ TEST_CASE("Int8Test1")
                 auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEven, mulOdd);
 
                 // Make sum be saturated
-                auto minI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
-                auto maxI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
+                auto minI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
+                auto maxI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
 
                 auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                 auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, cElemType);
+                auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, cElemType, minVal);
                 return truncVal;
             };
 
@@ -279,10 +279,10 @@ TEST_CASE("Int8Test1b")
                 auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
 
                 // extend to 32 bits
-                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
-                auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bEven, bigVecType);
-                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
-                auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bOdd, bigVecType);
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aEven);
+                auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bEven);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aOdd);
+                auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bOdd);
 
                 auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                 auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
@@ -290,14 +290,14 @@ TEST_CASE("Int8Test1b")
                 auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEven, mulOdd);
 
                 // Make sum be saturated
-                auto minI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
-                auto maxI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
+                auto minI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
+                auto maxI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
 
                 auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                 auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, cElemType);
+                auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, cElemType, minVal);
                 return truncVal;
             };
 
@@ -378,10 +378,10 @@ TEST_CASE("Int8Test1c")
                 auto bOdd = builder.create<mlir::vector::ExtractOp>(loc, b, std::vector<int64_t>{ 1 });
 
                 // extend to 32 bits
-                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
-                auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bEven, bigVecType);
-                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
-                auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bOdd, bigVecType);
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aEven);
+                auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bEven);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aOdd);
+                auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bOdd);
 
                 auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                 auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
@@ -389,14 +389,14 @@ TEST_CASE("Int8Test1c")
                 auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEven, mulOdd);
 
                 // Make sum be saturated
-                auto minI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
-                auto maxI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
+                auto minI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
+                auto maxI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
 
                 auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                 auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, cElemType);
+                auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, cElemType, minVal);
                 return truncVal;
             };
 
@@ -497,10 +497,10 @@ TEST_CASE("Int8Test2")
                 auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
 
                 // extend to 32 bits
-                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
-                auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bEven, bigVecType);
-                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
-                auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bOdd, bigVecType);
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aEven);
+                auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bEven);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aOdd);
+                auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bOdd);
 
                 auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                 auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
@@ -508,14 +508,14 @@ TEST_CASE("Int8Test2")
                 auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEven, mulOdd);
 
                 // Make sum be saturated
-                auto minI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
-                auto maxI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
+                auto minI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
+                auto maxI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
 
                 auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                 auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, truncVecType);
+                auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, truncVecType, minVal);
                 return truncVal;
             };
 
@@ -529,10 +529,10 @@ TEST_CASE("Int8Test2")
             auto r2Even = builder.create<mlir::vector::ShuffleOp>(loc, halfResultVecType, r2, r2, evenMask);
             auto r2Odd = builder.create<mlir::vector::ShuffleOp>(loc, halfResultVecType, r2, r2, oddMask);
 
-            auto r1Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, r1Even, resultVecType), builder.create<mlir::arith::ExtSIOp>(loc, r1Odd, resultVecType));
-            auto r2Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, r2Even, resultVecType), builder.create<mlir::arith::ExtSIOp>(loc, r2Odd, resultVecType));
-            // auto r1Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, r1Even, resultVecType), builder.create<mlir::arith::ExtSIOp>(loc, r1Odd, resultVecType));
-            // auto r2Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, r2Even, resultVecType), builder.create<mlir::arith::ExtSIOp>(loc, r2Odd, resultVecType));
+            auto r1Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r1Even), builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r1Odd));
+            auto r2Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r2Even), builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r2Odd));
+            // auto r1Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r1Even), builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r1Odd));
+            // auto r2Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r2Even), builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r2Odd));
             auto finalSum = builder.create<mlir::arith::AddIOp>(loc, r1Sum, r2Sum);
             builder.create<mlir::memref::StoreOp>(loc, finalSum, C);
         });
@@ -616,10 +616,10 @@ TEST_CASE("Int8Test2b")
                 auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
 
                 // extend to 32 bits
-                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
-                auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bEven, bigVecType);
-                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
-                auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bOdd, bigVecType);
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aEven);
+                auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bEven);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aOdd);
+                auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bOdd);
 
                 auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                 auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
@@ -627,14 +627,14 @@ TEST_CASE("Int8Test2b")
                 auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEven, mulOdd);
 
                 // Make sum be saturated
-                auto minI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
-                auto maxI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
+                auto minI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
+                auto maxI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
 
                 auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                 auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, truncVecType);
+                auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, truncVecType, minVal);
                 return truncVal;
             };
 
@@ -648,10 +648,10 @@ TEST_CASE("Int8Test2b")
             auto r2Even = builder.create<mlir::vector::ShuffleOp>(loc, halfResultVecType, r2, r2, evenMask);
             auto r2Odd = builder.create<mlir::vector::ShuffleOp>(loc, halfResultVecType, r2, r2, oddMask);
 
-            auto r1Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, r1Even, resultVecType), builder.create<mlir::arith::ExtSIOp>(loc, r1Odd, resultVecType));
-            auto r2Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, r2Even, resultVecType), builder.create<mlir::arith::ExtSIOp>(loc, r2Odd, resultVecType));
-            // auto r1Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, r1Even, resultVecType), builder.create<mlir::arith::ExtSIOp>(loc, r1Odd, resultVecType));
-            // auto r2Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, r2Even, resultVecType), builder.create<mlir::arith::ExtSIOp>(loc, r2Odd, resultVecType));
+            auto r1Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r1Even), builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r1Odd));
+            auto r2Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r2Even), builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r2Odd));
+            // auto r1Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r1Even), builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r1Odd));
+            // auto r2Sum = builder.create<mlir::arith::AddIOp>(loc, builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r2Even), builder.create<mlir::arith::ExtSIOp>(loc, resultVecType, r2Odd));
             auto finalSum = builder.create<mlir::arith::AddIOp>(loc, r1Sum, r2Sum);
             builder.create<mlir::memref::StoreOp>(loc, finalSum, C);
         });
@@ -759,10 +759,10 @@ TEST_CASE("Int8Test3")
                     auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
 
                     // extend to 32 bits
-                    auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
-                    auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bEven, bigVecType);
-                    auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
-                    auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bOdd, bigVecType);
+                    auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aEven);
+                    auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bEven);
+                    auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aOdd);
+                    auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bOdd);
 
                     auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                     auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
@@ -770,14 +770,14 @@ TEST_CASE("Int8Test3")
                     auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEven, mulOdd);
 
                     // Make sum be saturated
-                    auto minI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
-                    auto maxI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
+                    auto minI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
+                    auto maxI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
 
                     auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                    auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                    auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                     auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                    auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                    auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, cElemType);
+                    auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                    auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, cElemType, minVal);
 
                     auto c = CC.Get(builder, i);
                     auto cPlus = builder.create<mlir::arith::AddIOp>(loc, c, truncVal);
@@ -901,29 +901,29 @@ TEST_CASE("Int8Test3b")
                     auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
 
                     // extend to 16 bits
-                    auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, medVecType);
-                    auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bEven, medVecType);
-                    auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, medVecType);
-                    auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bOdd, medVecType);
+                    auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, medVecType, aEven);
+                    auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, medVecType, bEven);
+                    auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, medVecType, aOdd);
+                    auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, medVecType, bOdd);
 
                     auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                     auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
 
                     // extend to 32 bits
-                    auto mulEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, mulEven, bigVecType);
-                    auto mulOddExt = builder.create<mlir::arith::ExtSIOp>(loc, mulOdd, bigVecType);
+                    auto mulEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, mulEven);
+                    auto mulOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, mulOdd);
 
                     auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEvenExt, mulOddExt);
 
                     // Make sum be saturated
-                    auto minI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
-                    auto maxI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
+                    auto minI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
+                    auto maxI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
 
                     auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                    auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                    auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                     auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                    auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                    auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, cElemType);
+                    auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                    auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, cElemType, minVal);
 
                     auto c = CC.Get(builder, i);
                     auto cPlus = builder.create<mlir::arith::AddIOp>(loc, c, truncVal);
@@ -1090,10 +1090,10 @@ TEST_CASE("Int8Test3c")
                             auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddBMask);
 
                             // extend to 32 bits
-                            auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
-                            auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bEven, bigVecType);
-                            auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
-                            auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bOdd, bigVecType);
+                            auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aEven);
+                            auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bEven);
+                            auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aOdd);
+                            auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bigVecType, bOdd);
 
                             auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                             auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
@@ -1101,16 +1101,16 @@ TEST_CASE("Int8Test3c")
                             auto sum = builder.create<mlir::arith::AddIOp>(loc, mulEven, mulOdd);
 
                             // Make sum be saturated
-                            auto minI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
-                            auto maxI16Val = builder.create<mlir::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
+                            auto minI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32), bigVecType);
+                            auto maxI16Val = builder.create<mlir::vector::SplatOp>(loc, builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32), bigVecType);
 
                             auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                            auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                            auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                             auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                            auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                            auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, midVecType);
+                            auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                            auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, midVecType, minVal);
 
-                            auto embiggenVal = builder.create<mlir::arith::ExtSIOp>(loc, truncVal, bigVecType);
+                            auto embiggenVal = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, truncVal);
 
                             auto c = CC.Get(builder, i, j);
                             auto cPlus = builder.create<mlir::arith::AddIOp>(loc, c, embiggenVal);
@@ -1241,10 +1241,10 @@ TEST_CASE("Int8Test4")
                     auto bOdd = BB.Get(builder, iOdd);
 
                     // extend to 32 bits
-                    auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, i32Type);
-                    auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, bEven, i32Type);
-                    auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, i32Type);
-                    auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, bOdd, i32Type);
+                    auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, i32Type, aEven);
+                    auto bEvenExt = builder.create<mlir::arith::ExtUIOp>(loc, i32Type, bEven);
+                    auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, i32Type, aOdd);
+                    auto bOddExt = builder.create<mlir::arith::ExtUIOp>(loc, i32Type, bOdd);
 
                     auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                     auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
@@ -1255,10 +1255,10 @@ TEST_CASE("Int8Test4")
                     auto maxI16Val = builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32);
 
                     auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                    auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                    auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                     auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                    auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                    auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, cElemType);
+                    auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                    auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, cElemType, minVal);
 
                     auto c = CC.Get(builder, i);
                     auto cPlus = builder.create<mlir::arith::AddIOp>(loc, c, truncVal);
@@ -1391,8 +1391,8 @@ TEST_CASE("Int8Test5")
                         auto b = BB.Get(builder, j, i);
 
                         // extend to 32 bits
-                        auto aExt = builder.create<mlir::arith::ExtUIOp>(loc, a, i32Type);
-                        auto bExt = builder.create<mlir::arith::ExtSIOp>(loc, b, i32Type);
+                        auto aExt = builder.create<mlir::arith::ExtUIOp>(loc, i32Type, a);
+                        auto bExt = builder.create<mlir::arith::ExtSIOp>(loc, i32Type, b);
 
                         auto prod = builder.create<mlir::arith::MulIOp>(loc, aExt, bExt);
                         auto accumVal = builder.create<mlir::memref::LoadOp>(loc, accum);
@@ -1406,13 +1406,13 @@ TEST_CASE("Int8Test5")
                     // Make sum be saturated
                     auto minI16Val = builder.create<mlir::arith::ConstantIntOp>(loc, -32768, 32);
                     auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                    auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                    auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
 
                     auto maxI16Val = builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32);
                     auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                    auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                    auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
 
-                    auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, cElemType);
+                    auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, cElemType, minVal);
                     auto c = CC.Get(builder, j);
                     auto cPlus = builder.create<mlir::arith::AddIOp>(loc, c, truncVal);
                     CC.Set(builder, cPlus, j);
@@ -1555,8 +1555,8 @@ TEST_CASE("Int8Test5b")
                         auto b = BB.Get(builder, j, i);
 
                         // extend to 32 bits
-                        auto aExt = builder.create<mlir::arith::ExtSIOp>(loc, a, i32Type);
-                        auto bExt = builder.create<mlir::arith::ExtUIOp>(loc, b, i32Type);
+                        auto aExt = builder.create<mlir::arith::ExtSIOp>(loc, i32Type, a);
+                        auto bExt = builder.create<mlir::arith::ExtUIOp>(loc, i32Type, b);
 
                         auto mul = builder.create<mlir::arith::MulIOp>(loc, aExt, bExt);
                         auto accumVal = builder.create<mlir::memref::LoadOp>(loc, accum);
@@ -1571,10 +1571,10 @@ TEST_CASE("Int8Test5b")
                     auto maxI16Val = builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32);
 
                     auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                    auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                    auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                     auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                    auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                    auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, cElemType);
+                    auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                    auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, cElemType, minVal);
 
                     auto c = CC.Get(builder, j);
                     auto cPlus = builder.create<mlir::arith::AddIOp>(loc, c, truncVal);
@@ -1724,8 +1724,8 @@ TEST_CASE("Int8Test6")
                                 auto b = BB.Get(builder, jInner, iInner);
 
                                 // extend to 32 bits
-                                auto aExt = builder.create<mlir::arith::ExtSIOp>(loc, a, i32Type);
-                                auto bExt = builder.create<mlir::arith::ExtUIOp>(loc, b, i32Type);
+                                auto aExt = builder.create<mlir::arith::ExtSIOp>(loc, i32Type, a);
+                                auto bExt = builder.create<mlir::arith::ExtUIOp>(loc, i32Type, b);
 
                                 auto mul = builder.create<mlir::arith::MulIOp>(loc, aExt, bExt);
                                 auto accumVal = builder.create<mlir::memref::LoadOp>(loc, accum);
@@ -1740,10 +1740,10 @@ TEST_CASE("Int8Test6")
                             auto maxI16Val = builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32);
 
                             auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                            auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                            auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                             auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                            auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
-                            auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, cElemType);
+                            auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                            auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, cElemType, minVal);
 
                             auto c = CC.Get(builder, jInner);
                             auto cPlus = builder.create<mlir::arith::AddIOp>(loc, c, truncVal);
@@ -1982,8 +1982,8 @@ TEST_CASE("Int8Test8")
                                             auto b = BB.Get(builder, jInner, kInner);
 
                                             // extend to 32 bits
-                                            auto aExt = builder.create<mlir::arith::ExtSIOp>(loc, a, i32Type);
-                                            auto bExt = builder.create<mlir::arith::ExtUIOp>(loc, b, i32Type);
+                                            auto aExt = builder.create<mlir::arith::ExtSIOp>(loc, i32Type, a);
+                                            auto bExt = builder.create<mlir::arith::ExtUIOp>(loc, i32Type, b);
 
                                             auto mul = builder.create<mlir::arith::MulIOp>(loc, aExt, bExt);
                                             auto accumVal = builder.create<mlir::memref::LoadOp>(loc, accum);
@@ -1998,19 +1998,19 @@ TEST_CASE("Int8Test8")
                                         auto maxI16Val = builder.create<mlir::arith::ConstantIntOp>(loc, 32767, 32);
 
                                         auto maxCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, sum, minI16Val);
-                                        auto maxVal = builder.create<mlir::SelectOp>(loc, maxCmp, sum, minI16Val);
+                                        auto maxVal = builder.create<mlir::arith::SelectOp>(loc, maxCmp, sum, minI16Val);
                                         auto minCmp = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, maxVal, maxI16Val);
-                                        auto minVal = builder.create<mlir::SelectOp>(loc, minCmp, maxVal, maxI16Val);
+                                        auto minVal = builder.create<mlir::arith::SelectOp>(loc, minCmp, maxVal, maxI16Val);
 
                                         if (cccElemType == cElemType)
                                         {
-                                            auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, i16Type);
-                                            auto expandVal = builder.create<mlir::arith::ExtSIOp>(loc, truncVal, cccElemType);
+                                            auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, i16Type, minVal);
+                                            auto expandVal = builder.create<mlir::arith::ExtSIOp>(loc, cccElemType, truncVal);
                                             CCC.Set(builder, expandVal, jInner, kInner1Count);
                                         }
                                         else
                                         {
-                                            auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, minVal, cccElemType);
+                                            auto truncVal = builder.create<mlir::arith::TruncIOp>(loc, cccElemType, minVal);
                                             auto c = CCC.Get(builder, jInner, kInner1Count);
                                             auto cPlus = builder.create<mlir::arith::AddIOp>(loc, c, truncVal);
                                             CCC.Set(builder, cPlus, jInner, kInner1Count);
@@ -2031,7 +2031,7 @@ TEST_CASE("Int8Test8")
                                             auto c = CCC.Get(builder, jInner, kInner);
                                             if (cccElemType != ccElemType)
                                             {
-                                                c = builder.create<mlir::arith::ExtSIOp>(loc, c, ccElemType);
+                                                c = builder.create<mlir::arith::ExtSIOp>(loc, ccElemType, c);
                                             }
 
                                             auto c2 = CC.Get(builder, iInner, jInner);
@@ -2063,7 +2063,7 @@ TEST_CASE("Int8Test8")
                                 }
                                 else
                                 {
-                                    auto ccVal = builder.create<mlir::arith::ExtSIOp>(loc, CC.Get(builder, iInner, jInner), i32Type);
+                                    auto ccVal = builder.create<mlir::arith::ExtSIOp>(loc, i32Type, CC.Get(builder, iInner, jInner));
                                     C.Set(builder, ccVal, i, j);
                                 }
                             }
@@ -2148,10 +2148,10 @@ TEST_CASE("Int16Test1")
                 auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
 
                 // extend to 32 bits
-                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
-                auto bEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bEven, bigVecType);
-                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
-                auto bOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bOdd, bigVecType);
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aEven);
+                auto bEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, bEven);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aOdd);
+                auto bOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, bOdd);
 
                 auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                 auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
@@ -2235,10 +2235,10 @@ TEST_CASE("Int16Test1b")
                 auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
 
                 // extend to 32 bits
-                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
-                auto bEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bEven, bigVecType);
-                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
-                auto bOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bOdd, bigVecType);
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aEven);
+                auto bEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, bEven);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aOdd);
+                auto bOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, bOdd);
 
                 auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                 auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);
@@ -2328,10 +2328,10 @@ TEST_CASE("Int16Test2")
                 auto bOdd = builder.create<mlir::vector::ShuffleOp>(loc, halfVecType, b, b, oddMask);
 
                 // extend to 32 bits
-                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, aEven, bigVecType);
-                auto bEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bEven, bigVecType);
-                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, aOdd, bigVecType);
-                auto bOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bOdd, bigVecType);
+                auto aEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aEven);
+                auto bEvenExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, bEven);
+                auto aOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, aOdd);
+                auto bOddExt = builder.create<mlir::arith::ExtSIOp>(loc, bigVecType, bOdd);
 
                 auto mulEven = builder.create<mlir::arith::MulIOp>(loc, aEvenExt, bEvenExt);
                 auto mulOdd = builder.create<mlir::arith::MulIOp>(loc, aOddExt, bOddExt);

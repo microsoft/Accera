@@ -68,6 +68,25 @@ RangeValue resolveGridDimRange(Operation* op, gpu::Dimension dimId)
     return RangeValue();
 }
 
+mlir::APInt toAPInt(int64_t val)
+{
+    return mlir::APInt(RangeValue::maxBitWidth, val, true);
+}
+
+RangeValue resolveConstantForLoopRange(mlir::APInt lb, mlir::APInt ub, mlir::APInt step)
+{
+    auto range = ub - lb;
+    auto remainder = range.srem(step);
+    auto largestInductionVarValue = (remainder.sgt(0)) ? (ub - remainder) : (ub - step);
+
+    return RangeValue(lb, largestInductionVarValue);
+}
+
+RangeValue resolveConstantForLoopRange(int64_t lb, int64_t ub, int64_t step)
+{
+    return resolveConstantForLoopRange(toAPInt(lb), toAPInt(ub), toAPInt(step));
+}
+
 } // namespace
 
 namespace accera::ir::util
@@ -172,8 +191,86 @@ RangeValue RangeValueAnalysis::getRange(Value value) const
     return it->second;
 }
 
+void RangeValueAnalysis::addSCFParallelOp(mlir::scf::ParallelOp op)
+{
+    mlir::scf::ParallelOpAdaptor adaptor{ op };
+    auto ivs = op.getInductionVars();
+    auto lbs = adaptor.getLowerBound();
+    auto ubs = adaptor.getUpperBound();
+    auto steps = adaptor.getStep();
+    assert(ivs.size() == lbs.size());
+    assert(ivs.size() == ubs.size());
+    assert(ivs.size() == steps.size());
+    unsigned numDims = ivs.size();
+
+    for (unsigned dimIdx = 0; dimIdx < numDims; ++dimIdx)
+    {
+        auto lb = lbs[dimIdx];
+        auto ub = ubs[dimIdx];
+        auto step = steps[dimIdx];
+        auto lbConst = lb.getDefiningOp<mlir::arith::ConstantIndexOp>();
+        auto ubConst = ub.getDefiningOp<mlir::arith::ConstantIndexOp>();
+        auto stepConst = step.getDefiningOp<mlir::arith::ConstantIndexOp>();
+        if (lbConst && ubConst && stepConst)
+        {
+            auto range = resolveConstantForLoopRange(lbConst.value(), ubConst.value(), stepConst.value());
+            _rangeMap.insert({ ivs[dimIdx], range });
+        }
+        else
+        {
+            _rangeMap.insert({ ivs[dimIdx], RangeValue() });
+        }
+    }
+}
+
+void RangeValueAnalysis::addAffineParallelOp(mlir::AffineParallelOp op)
+{
+    auto constantRangesOpt = op.getConstantRanges();
+    if (!constantRangesOpt.hasValue())
+    {
+        return;
+    }
+
+    unsigned numDims = op.getNumDims();
+    auto ivs = op.getIVs();
+    auto constantRanges = constantRangesOpt.getValue();
+    auto lbValueMap = op.getLowerBoundsValueMap();
+    auto steps = op.getSteps();
+
+    assert(numDims == ivs.size());
+    assert(numDims == constantRanges.size());
+    assert(numDims == lbValueMap.getNumResults());
+    assert(numDims == steps.size());
+
+    for (unsigned dimIdx = 0; dimIdx < numDims; ++dimIdx)
+    {
+        auto expr = lbValueMap.getResult(dimIdx);
+        if (expr.isa<mlir::AffineConstantExpr>())
+        {
+            auto lb = expr.cast<mlir::AffineConstantExpr>().getValue();
+            auto range = resolveConstantForLoopRange(lb, lb + constantRanges[dimIdx], steps[dimIdx]);
+            _rangeMap.insert({ ivs[dimIdx], range });
+        }
+        else
+        {
+            _rangeMap.insert({ ivs[dimIdx], RangeValue() });
+        }
+    }
+}
+
 RangeValue RangeValueAnalysis::addOperation(mlir::Operation* op)
 {
+    // Special case AffineParallelOp and scf::ParallelOp as they can have multiple results,
+    // however we care more about their possibly-multiple IVs which may have static ranges
+    if (isa<AffineParallelOp>(op) || isa<scf::ParallelOp>(op))
+    {
+        mlir::TypeSwitch<mlir::Operation*>(op)
+            .Case([&](scf::ParallelOp op) { addSCFParallelOp(op); })
+            .Case([&](AffineParallelOp op) { addAffineParallelOp(op); });
+        // Possibly no single range to return for the op itself
+        return RangeValue();
+    }
+
     if (op->getNumResults() > 1)
     {
         // Only operations with 0 or 1 results can have their ranges tracked successfully currently
@@ -415,14 +512,11 @@ RangeValue RangeValueAnalysis::resolveRangeValue(AffineForOp op)
         auto ub = op.getConstantUpperBound();
         auto step = op.getStep();
 
-        auto range = ub - lb;
-        auto remainder = range % step;
-        auto largestInductionVarValue = (remainder > 0) ? (ub - remainder) : (ub - step);
-
-        return RangeValue(lb, largestInductionVarValue);
+        return resolveConstantForLoopRange(lb, ub, step);
     }
     return RangeValue();
 }
+
 RangeValue RangeValueAnalysis::resolveRangeValue(scf::ForOp op)
 {
     assert(op.getNumInductionVars() == 1);
@@ -442,14 +536,11 @@ RangeValue RangeValueAnalysis::resolveRangeValue(scf::ForOp op)
         auto ub = upperBound.range.getUpper();
         auto step = stepSize.range.getLower();
 
-        auto range = ub - lb;
-        auto remainder = range.srem(step);
-        auto largestInductionVarValue = (remainder.sgt(0)) ? (ub - remainder) : (ub - step);
-
-        return RangeValue(lb, largestInductionVarValue);
+        return resolveConstantForLoopRange(lb, ub, step);
     }
     return RangeValue();
 }
+
 RangeValue RangeValueAnalysis::resolveRangeValue(mlir::Operation* op)
 {
     return mlir::TypeSwitch<mlir::Operation*, RangeValue>(op)

@@ -157,9 +157,11 @@ target_link_libraries(
          MLIRROCDLIR
          MLIRROCDLToLLVMIRTranslation
          MLIRStandardToLLVM
-         MLIRSCFToStandard
+         MLIRSCFToControlFlow
+         MLIRControlFlowToLLVM
          MLIRAffineToStandard
          MLIRAffineTransforms
+         MLIRAffineUtils
          MLIRLinalgToLLVM
          MLIRLinalgTransforms
          MLIRTargetLLVMIRExport

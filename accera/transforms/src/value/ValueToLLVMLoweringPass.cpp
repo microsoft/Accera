@@ -21,6 +21,7 @@
 #include <value/include/MLIREmitterContext.h>
 
 #include <mlir/Conversion/AffineToStandard/AffineToStandard.h>
+#include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/ConversionTarget.h>
 #include <mlir/Conversion/LLVMCommon/MemRefBuilder.h>
 #include <mlir/Conversion/LLVMCommon/Pattern.h>
@@ -28,7 +29,6 @@
 #include <mlir/Conversion/LinalgToLLVM/LinalgToLLVM.h>
 #include <mlir/Conversion/MemRefToLLVM/AllocLikeConversion.h>
 #include <mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h>
-#include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
 #include <mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h>
@@ -66,6 +66,15 @@ using namespace accera::transforms::value;
 
 namespace
 {
+// This is ported from Linux code time.h
+//     #define CLOCK_REALTIME   0  // Identifier for system-wide realtime clock.  
+//     #define CLOCK_MONOTONIC	1  // Monotonic system-wide clock.
+enum class ClockID
+{
+    ACCERA_CLOCK_REALTIME = 0,
+    ACCERA_CLOCK_MONOTONIC = 1,
+};
+
 // TODO: Refactor this class and find a better place for this helper class
 class LLVMTypeConverterDynMem : public mlir::LLVMTypeConverter
 {
@@ -344,6 +353,13 @@ struct GetTimeOpLowering : public ValueLLVMOpConversionPattern<GetTimeOp>
 {
     using ValueLLVMOpConversionPattern::ValueLLVMOpConversionPattern;
 
+    accera::value::TargetDevice deviceInfo;
+
+    GetTimeOpLowering(LLVMTypeConverter& converter, mlir::MLIRContext* context, accera::value::TargetDevice deviceInfo) :
+        ValueLLVMOpConversionPattern(converter, context),
+        deviceInfo(deviceInfo)
+    {}
+
     LogicalResult matchAndRewrite(
         GetTimeOp op,
         OpAdaptor adaptor,
@@ -371,10 +387,11 @@ struct GetTimeOpLowering : public ValueLLVMOpConversionPattern<GetTimeOp>
 
     static FlatSymbolRefAttr getOrInsertClockGetTime(PatternRewriter& rewriter,
                                                      ModuleOp module,
-                                                     LLVM::LLVMDialect* llvmDialect)
+                                                     LLVM::LLVMDialect* llvmDialect,
+                                                     size_t numBits)
     {
         auto* context = module.getContext();
-        auto llvmFnType = getGetTimeFunctionType(context);
+        auto llvmFnType = getGetTimeFunctionType(context, numBits);
         return getOrInsertLibraryFunction(rewriter, "clock_gettime", llvmFnType, module, llvmDialect);
     }
 
@@ -394,13 +411,13 @@ struct GetTimeOpLowering : public ValueLLVMOpConversionPattern<GetTimeOp>
         return LLVM::LLVMFunctionType::get(boolTy, { argTy }, /*isVarArg=*/false);
     }
 
-    static Type getGetTimeFunctionType(mlir::MLIRContext* context)
+    static Type getGetTimeFunctionType(mlir::MLIRContext* context, size_t numBits)
     {
         // Create a function type for clock_gettime, the signature is:
         //        int clock_gettime(clockid_t clockid, struct timespec *tp);
-        auto returnTy = getIntType(context);
-        auto llvmClockIdTy = getClockIdType(context);
-        auto llvmTimespecTy = getTimeSpecType(context);
+        auto returnTy = getIntType(context, numBits);
+        auto llvmClockIdTy = getClockIdType(context, numBits);
+        auto llvmTimespecTy = getTimeSpecType(context, numBits);
         auto llvmTimespecPtrTy = LLVM::LLVMPointerType::get(llvmTimespecTy);
         return LLVM::LLVMFunctionType::get(returnTy, { llvmClockIdTy, llvmTimespecPtrTy }, /*isVarArg=*/false);
     }
@@ -410,29 +427,27 @@ struct GetTimeOpLowering : public ValueLLVMOpConversionPattern<GetTimeOp>
         return IntegerType::get(context, 64);
     }
 
-    static Type getClockIdType(mlir::MLIRContext* context)
+    static Type getClockIdType(mlir::MLIRContext* context, size_t numBits)
     {
-        return getIntType(context);
+        return getIntType(context, numBits);
     }
 
-    static Type getTimeSpecType(mlir::MLIRContext* context)
+    static Type getTimeSpecType(mlir::MLIRContext* context, size_t numBits)
     {
         //    struct timespec {
         //        time_t   tv_sec;        /* seconds */
         //        long     tv_nsec;       /* nanoseconds */
         //    };
-        auto llvmIntTy = getIntType(context);
+        auto llvmIntTy = getIntType(context, numBits);
         auto llvmTimespecTy = LLVM::LLVMStructType::getLiteral(context, { llvmIntTy, llvmIntTy }, /* isPacked */ true);
         return llvmTimespecTy;
     }
 
-    static Type getIntType(mlir::MLIRContext* context)
+    static Type getIntType(mlir::MLIRContext* context, size_t numBits)
     {
         auto llvmI32Ty = IntegerType::get(context, 32);
         auto llvmI64Ty = IntegerType::get(context, 64);
-        const int hostBitSize = 64; // TODO:: FIXME :: This assumes that the host is always 64bit
-            // Should query the target hardware
-        auto llvmIntTy = hostBitSize == 32 ? llvmI32Ty : llvmI64Ty;
+        auto llvmIntTy = numBits == 32 ? llvmI32Ty : llvmI64Ty;
         return llvmIntTy;
     }
 };
@@ -757,7 +772,7 @@ struct RoundOpLowering : public ValueLLVMOpConversionPattern<RoundOp>
 
             // Create arithmetic dialect cast ops with the expectation that other arithmetic dialect ops are getting lowered as part of this pass
             auto signlessOutputType = util::ToSignlessMLIRType(rewriter, op.getType());
-            mlir::Value roundedSIVal = rewriter.create<mlir::arith::FPToSIOp>(op.getLoc(), roundedFPVal, signlessOutputType);
+            mlir::Value roundedSIVal = rewriter.create<mlir::arith::FPToSIOp>(op.getLoc(), signlessOutputType, roundedFPVal);
             rewriter.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(op, op.getType(), roundedSIVal);
         }
         return success();
@@ -766,8 +781,9 @@ struct RoundOpLowering : public ValueLLVMOpConversionPattern<RoundOp>
 
 struct ValueToLLVMLoweringPass : public ConvertValueToLLVMBase<ValueToLLVMLoweringPass>
 {
-    ValueToLLVMLoweringPass(bool useBarePtrCallConv, bool emitCWrappers, unsigned indexBitwidth, bool useAlignedAlloc, llvm::DataLayout dataLayout, const IntraPassSnapshotOptions& snapshotteroptions = {}) :
-        _intrapassSnapshotter(snapshotteroptions)
+    ValueToLLVMLoweringPass(bool useBarePtrCallConv, bool emitCWrappers, unsigned indexBitwidth, bool useAlignedAlloc, llvm::DataLayout dataLayout, accera::value::TargetDevice deviceInfo = {}, const IntraPassSnapshotOptions& snapshotteroptions = {}) :
+        _intrapassSnapshotter(snapshotteroptions),
+        deviceInfo(deviceInfo)
     {
         this->useBarePtrCallConv = useBarePtrCallConv;
         this->emitCWrappers = emitCWrappers;
@@ -781,6 +797,7 @@ struct ValueToLLVMLoweringPass : public ConvertValueToLLVMBase<ValueToLLVMLoweri
 
 private:
     IRSnapshotter _intrapassSnapshotter;
+    accera::value::TargetDevice deviceInfo;
 };
 
 // Creates a constant Op producing a value of `resultType` from an index-typed
@@ -1607,8 +1624,6 @@ mlir::Value GetTimeOpLowering::GetTime(ConversionPatternRewriter& rewriter, GetT
     assert(llvmDialect && "expected llvm dialect to be registered");
 
     // call the platform-specific time function and convert to seconds
-    // TODO: encode the target platform in the module or platform somehow, so we can query it instead
-    // of having the runtime environment being based on the compile-time environment
     auto* context = rewriter.getContext();
     auto doubleTy = Float64Type::get(context);
     mlir::Location loc = op.getLoc();
@@ -1619,130 +1634,131 @@ mlir::Value GetTimeOpLowering::GetTime(ConversionPatternRewriter& rewriter, GetT
         isEnterRegionTimer = static_cast<TimerRegionType>(timerRegionTypeAttr.getInt()) == TimerRegionType::enterRegion;
     }
 
-    // TODO: get check `TargetDeviceInfo` for the OS instead
-#ifdef WIN32
-    if (isEnterRegionTimer) {
-        auto boolTy = IntegerType::get(context, 8);
-        auto argTy = getPerformanceCounterType(context);
-        LLVMTypeConverter llvmTypeConverter(context);
-        Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
-        
-        auto queryPerfFrequencyFn = getOrInsertQueryPerfFrequency(rewriter, parentModule, llvmDialect);
-        Value perfFreqPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
-        auto getFreqCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfFrequencyFn, ValueRange{ perfFreqPtr });
+    if (this->deviceInfo.IsWindows())
+    {
+        if (isEnterRegionTimer) {
+            auto boolTy = IntegerType::get(context, 8);
+            auto argTy = getPerformanceCounterType(context);
+            LLVMTypeConverter llvmTypeConverter(context);
+            Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
+            
+            auto queryPerfFrequencyFn = getOrInsertQueryPerfFrequency(rewriter, parentModule, llvmDialect);
+            Value perfFreqPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
+            auto getFreqCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfFrequencyFn, ValueRange{ perfFreqPtr });
 
-        Value perfFreq = rewriter.create<LLVM::LoadOp>(loc, perfFreqPtr);
-        Value freqDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfFreq);
+            Value perfFreq = rewriter.create<LLVM::LoadOp>(loc, perfFreqPtr);
+            Value freqDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfFreq);
 
-        auto queryPerfCounterFn = getOrInsertQueryPerfCounter(rewriter, parentModule, llvmDialect);
-        Value perfCountPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
-        auto getCounterCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfCounterFn, ValueRange{ perfCountPtr });
+            auto queryPerfCounterFn = getOrInsertQueryPerfCounter(rewriter, parentModule, llvmDialect);
+            Value perfCountPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
+            auto getCounterCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfCounterFn, ValueRange{ perfCountPtr });
 
-        [[maybe_unused]] auto getCountResult = getCounterCall.getResult(0);
-        [[maybe_unused]] auto getFreqResult = getFreqCall.getResult(0);
+            [[maybe_unused]] auto getCountResult = getCounterCall.getResult(0);
+            [[maybe_unused]] auto getFreqResult = getFreqCall.getResult(0);
 
-        Value perfCount = rewriter.create<LLVM::LoadOp>(loc, perfCountPtr);
-        Value ticksDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfCount);
+            Value perfCount = rewriter.create<LLVM::LoadOp>(loc, perfCountPtr);
+            Value ticksDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfCount);
 
-        Value result = rewriter.create<LLVM::FDivOp>(loc, doubleTy, ticksDoubleVal, freqDoubleVal);
-        return result;
+            Value result = rewriter.create<LLVM::FDivOp>(loc, doubleTy, ticksDoubleVal, freqDoubleVal);
+            return result;
+        }
+        else
+        {
+            auto queryPerfCounterFn = getOrInsertQueryPerfCounter(rewriter, parentModule, llvmDialect);
+            auto queryPerfFrequencyFn = getOrInsertQueryPerfFrequency(rewriter, parentModule, llvmDialect);
+
+            auto boolTy = IntegerType::get(context, 8);
+            auto argTy = getPerformanceCounterType(context);
+            LLVMTypeConverter llvmTypeConverter(context);
+            Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
+            Value perfCountPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
+            auto getCounterCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfCounterFn, ValueRange{ perfCountPtr });
+
+            Value perfFreqPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
+            auto getFreqCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfFrequencyFn, ValueRange{ perfFreqPtr });
+            [[maybe_unused]] auto getCountResult = getCounterCall.getResult(0);
+            [[maybe_unused]] auto getFreqResult = getFreqCall.getResult(0);
+
+            Value perfCount = rewriter.create<LLVM::LoadOp>(loc, perfCountPtr);
+            Value perfFreq = rewriter.create<LLVM::LoadOp>(loc, perfFreqPtr);
+
+            Value ticksDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfCount);
+            Value freqDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfFreq);
+            Value result = rewriter.create<LLVM::FDivOp>(loc, doubleTy, ticksDoubleVal, freqDoubleVal);
+            return result;
+        }
     }
     else
     {
-        auto queryPerfCounterFn = getOrInsertQueryPerfCounter(rewriter, parentModule, llvmDialect);
-        auto queryPerfFrequencyFn = getOrInsertQueryPerfFrequency(rewriter, parentModule, llvmDialect);
+        if (isEnterRegionTimer) 
+        {
+            auto clockGetTimeFn = getOrInsertClockGetTime(rewriter, parentModule, llvmDialect, this->deviceInfo.numBits);
 
-        auto boolTy = IntegerType::get(context, 8);
-        auto argTy = getPerformanceCounterType(context);
-        LLVMTypeConverter llvmTypeConverter(context);
-        Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
-        
-        Value perfCountPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
-        auto getCounterCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfCounterFn, ValueRange{ perfCountPtr });
+            auto llvmTimespecTy = getTimeSpecType(context, this->deviceInfo.numBits);
+            auto clockIdTy = getClockIdType(context, this->deviceInfo.numBits);
+            auto intTy = getIntType(context, this->deviceInfo.numBits);
+            
+            // Get a symbol reference to the gettime function, inserting it if necessary.
+            LLVMTypeConverter llvmTypeConverter(context);
+            Value zero = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+            Value zero32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 0));
+            Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
+            Value one32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 1));
+            
+            Value clockId = rewriter.create<LLVM::ConstantOp>(loc, clockIdTy, rewriter.getI64IntegerAttr(int64_t(ClockID::ACCERA_CLOCK_REALTIME)));
 
-        Value perfFreqPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(argTy), one);
-        auto getFreqCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ boolTy }, queryPerfFrequencyFn, ValueRange{ perfFreqPtr });
+            Value timespecPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(llvmTimespecTy), one);
+            Value secondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, zero32 });
+            Value nanosecondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, one32 });
 
-        [[maybe_unused]] auto getCountResult = getCounterCall.getResult(0);
-        [[maybe_unused]] auto getFreqResult = getFreqCall.getResult(0);
+            std::vector<Value> args{ clockId, timespecPtr };
+            auto getTimeCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ getIntType(context, this->deviceInfo.numBits) }, clockGetTimeFn, args);
+            [[maybe_unused]] auto getTimeResult = getTimeCall.getResult(0);
 
-        Value perfCount = rewriter.create<LLVM::LoadOp>(loc, perfCountPtr);
-        Value perfFreq = rewriter.create<LLVM::LoadOp>(loc, perfFreqPtr);
+            Value secondsIntVal = rewriter.create<LLVM::LoadOp>(loc, secondsPtr);
+            Value nanosecondsIntVal = rewriter.create<LLVM::LoadOp>(loc, nanosecondsPtr);
+            Value secondsDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, secondsIntVal);
+            Value nanosecondsDoubleVal = rewriter.create<LLVM::UIToFPOp>(loc, doubleTy, nanosecondsIntVal);
+            Value divisor = rewriter.create<LLVM::ConstantOp>(loc, doubleTy, rewriter.getF64FloatAttr(1.0e9));
+            Value nanoseconds = rewriter.create<LLVM::FDivOp>(loc, doubleTy, nanosecondsDoubleVal, divisor);
+            Value totalSecondsDoubleVal = rewriter.create<LLVM::FAddOp>(loc, doubleTy, secondsDoubleVal, nanoseconds);
+            return totalSecondsDoubleVal;
+        }
+        else
+        {
+            auto clockGetTimeFn = getOrInsertClockGetTime(rewriter, parentModule, llvmDialect, this->deviceInfo.numBits);
 
-        Value ticksDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfCount);
-        Value freqDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, perfFreq);
-        Value result = rewriter.create<LLVM::FDivOp>(loc, doubleTy, ticksDoubleVal, freqDoubleVal);
-        return result;        
+            auto llvmTimespecTy = getTimeSpecType(context, this->deviceInfo.numBits);
+            auto clockIdTy = getClockIdType(context, this->deviceInfo.numBits);
+            auto intTy = getIntType(context, this->deviceInfo.numBits);
+
+            // Get a symbol reference to the gettime function, inserting it if necessary.
+            LLVMTypeConverter llvmTypeConverter(context);
+            Value zero = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+            Value zero32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 0));
+            Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
+            Value one32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 1));
+            Value clockId = rewriter.create<LLVM::ConstantOp>(loc, clockIdTy, rewriter.getI64IntegerAttr(int64_t(ClockID::ACCERA_CLOCK_REALTIME)));
+
+            Value timespecPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(llvmTimespecTy), one);
+
+            std::vector<Value> args{ clockId, timespecPtr };
+            auto getTimeCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ getIntType(context, this->deviceInfo.numBits) }, clockGetTimeFn, args);
+            [[maybe_unused]] auto getTimeResult = getTimeCall.getResult(0);
+            
+            Value secondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, zero32 });
+            Value nanosecondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, one32 });
+
+            Value secondsIntVal = rewriter.create<LLVM::LoadOp>(loc, secondsPtr);
+            Value nanosecondsIntVal = rewriter.create<LLVM::LoadOp>(loc, nanosecondsPtr);
+            Value secondsDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, secondsIntVal);
+            Value nanosecondsDoubleVal = rewriter.create<LLVM::UIToFPOp>(loc, doubleTy, nanosecondsIntVal);
+            Value divisor = rewriter.create<LLVM::ConstantOp>(loc, doubleTy, rewriter.getF64FloatAttr(1.0e9));
+            Value nanoseconds = rewriter.create<LLVM::FDivOp>(loc, doubleTy, nanosecondsDoubleVal, divisor);
+            Value totalSecondsDoubleVal = rewriter.create<LLVM::FAddOp>(loc, doubleTy, secondsDoubleVal, nanoseconds);
+            return totalSecondsDoubleVal;
+        }
     }
-#else
-    if (isEnterRegionTimer) 
-    {
-        auto clockGetTimeFn = getOrInsertClockGetTime(rewriter, parentModule, llvmDialect);
-
-        auto llvmTimespecTy = getTimeSpecType(context);
-        auto clockIdTy = getClockIdType(context);
-        auto intTy = getIntType(context);
-
-        // Get a symbol reference to the gettime function, inserting it if necessary.
-        LLVMTypeConverter llvmTypeConverter(context);
-        Value zero = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
-        Value zero32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 0));
-        Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
-        Value one32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 1));
-        Value clockId = rewriter.create<LLVM::ConstantOp>(loc, clockIdTy, rewriter.getI64IntegerAttr(CLOCK_REALTIME));
-
-        Value timespecPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(llvmTimespecTy), one);
-        Value secondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, zero32 });
-        Value nanosecondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, one32 });
-
-        std::vector<Value> args{ clockId, timespecPtr };
-        auto getTimeCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ getIntType(context) }, clockGetTimeFn, args);
-        [[maybe_unused]] auto getTimeResult = getTimeCall.getResult(0);
-
-        Value secondsIntVal = rewriter.create<LLVM::LoadOp>(loc, secondsPtr);
-        Value nanosecondsIntVal = rewriter.create<LLVM::LoadOp>(loc, nanosecondsPtr);
-        Value secondsDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, secondsIntVal);
-        Value nanosecondsDoubleVal = rewriter.create<LLVM::UIToFPOp>(loc, doubleTy, nanosecondsIntVal);
-        Value divisor = rewriter.create<LLVM::ConstantOp>(loc, doubleTy, rewriter.getF64FloatAttr(1.0e9));
-        Value nanoseconds = rewriter.create<LLVM::FDivOp>(loc, doubleTy, nanosecondsDoubleVal, divisor);
-        Value totalSecondsDoubleVal = rewriter.create<LLVM::FAddOp>(loc, doubleTy, secondsDoubleVal, nanoseconds);
-        return totalSecondsDoubleVal;
-    }
-    else
-    {
-        auto clockGetTimeFn = getOrInsertClockGetTime(rewriter, parentModule, llvmDialect);
-
-        auto llvmTimespecTy = getTimeSpecType(context);
-        auto clockIdTy = getClockIdType(context);
-        auto intTy = getIntType(context);
-
-        // Get a symbol reference to the gettime function, inserting it if necessary.
-        LLVMTypeConverter llvmTypeConverter(context);
-        Value zero = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
-        Value zero32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 0));
-        Value one = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getIndexType()), rewriter.getIntegerAttr(rewriter.getIndexType(), 1));
-        Value one32 = rewriter.create<LLVM::ConstantOp>(loc, llvmTypeConverter.convertType(rewriter.getI32Type()), rewriter.getIntegerAttr(rewriter.getI32Type(), 1));
-        Value clockId = rewriter.create<LLVM::ConstantOp>(loc, clockIdTy, rewriter.getI64IntegerAttr(CLOCK_REALTIME));
-
-        Value timespecPtr = rewriter.create<LLVM::AllocaOp>(loc, LLVM::LLVMPointerType::get(llvmTimespecTy), one);
-
-        std::vector<Value> args{ clockId, timespecPtr };
-        auto getTimeCall = rewriter.create<LLVM::CallOp>(loc, std::vector<Type>{ getIntType(context) }, clockGetTimeFn, args);
-        [[maybe_unused]] auto getTimeResult = getTimeCall.getResult(0);
-        
-        Value secondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, zero32 });
-        Value nanosecondsPtr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(intTy), timespecPtr, ValueRange{ zero, one32 });
-
-        Value secondsIntVal = rewriter.create<LLVM::LoadOp>(loc, secondsPtr);
-        Value nanosecondsIntVal = rewriter.create<LLVM::LoadOp>(loc, nanosecondsPtr);
-        Value secondsDoubleVal = rewriter.create<LLVM::SIToFPOp>(loc, doubleTy, secondsIntVal);
-        Value nanosecondsDoubleVal = rewriter.create<LLVM::UIToFPOp>(loc, doubleTy, nanosecondsIntVal);
-        Value divisor = rewriter.create<LLVM::ConstantOp>(loc, doubleTy, rewriter.getF64FloatAttr(1.0e9));
-        Value nanoseconds = rewriter.create<LLVM::FDivOp>(loc, doubleTy, nanosecondsDoubleVal, divisor);
-        Value totalSecondsDoubleVal = rewriter.create<LLVM::FAddOp>(loc, doubleTy, secondsDoubleVal, nanoseconds);
-        return totalSecondsDoubleVal;
-    }
-#endif
 }
 
 LogicalResult GetTimeOpLowering::matchAndRewrite(
@@ -1856,7 +1872,7 @@ void ValueToLLVMLoweringPass::runOnModule()
         intermediateTarget.addLegalDialect<mlir::BuiltinDialect>();
 
         RewritePatternSet patterns(&getContext());
-        populateValueToLLVMNonMemPatterns(llvmTypeConverter, patterns);
+        populateValueToLLVMNonMemPatterns(llvmTypeConverter, patterns, this->deviceInfo);
 
         populateLinalgToLLVMConversionPatterns(llvmTypeConverter, patterns);
 
@@ -1891,6 +1907,7 @@ void ValueToLLVMLoweringPass::runOnModule()
         populateStdToLLVMConversionPatterns(llvmTypeConverter, patterns);
         arith::populateArithmeticToLLVMConversionPatterns(llvmTypeConverter, patterns);
         arith::populateArithmeticExpandOpsPatterns(patterns);
+        cf::populateControlFlowToLLVMConversionPatterns(llvmTypeConverter, patterns);
 
         // Subset of LowerVectorToLLVMPass patterns
         vector::populateVectorToVectorCanonicalizationPatterns(patterns);
@@ -1947,7 +1964,7 @@ void populateGlobalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConver
     patterns.insert<GlobalOpToLLVMLowering>(typeConverter, context);
 }
 
-void populateLocalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
+void populateLocalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns, accera::value::TargetDevice deviceInfo)
 {
     mlir::MLIRContext* context = patterns.getContext();
 
@@ -1957,19 +1974,20 @@ void populateLocalValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConvert
         BitcastOpLowering,
         CallOpLowering,
         PrintFOpLowering,
-        GetTimeOpLowering,
         RangeOpLowering,
         VpmaddwdOpLowering,
         VmaxpsOpLowering,
         VminpsOpLowering,
         RoundOpLowering,
         MemrefAllocOpLowering>(typeConverter, context);
+
+    patterns.insert<GetTimeOpLowering>(typeConverter, context, deviceInfo);
 }
 
-void populateValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
+void populateValueToLLVMNonMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns, accera::value::TargetDevice deviceInfo)
 {
     populateGlobalValueToLLVMNonMemPatterns(typeConverter, patterns);
-    populateLocalValueToLLVMNonMemPatterns(typeConverter, patterns);
+    populateLocalValueToLLVMNonMemPatterns(typeConverter, patterns, deviceInfo);
 }
 
 void populateValueToLLVMMemPatterns(mlir::LLVMTypeConverter& typeConverter, mlir::RewritePatternSet& patterns)
@@ -2009,9 +2027,10 @@ std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueToLLVMPass(bool 
                                                                            unsigned indexBitwidth,
                                                                            bool useAlignedAlloc,
                                                                            llvm::DataLayout dataLayout,
+                                                                           accera::value::TargetDevice deviceInfo /*  = {} */,
                                                                            const IntraPassSnapshotOptions& options /*  = {} */)
 {
-    return std::make_unique<ValueToLLVMLoweringPass>(useBasePtrCallConv, emitCWrappers, indexBitwidth, useAlignedAlloc, dataLayout, options);
+    return std::make_unique<ValueToLLVMLoweringPass>(useBasePtrCallConv, emitCWrappers, indexBitwidth, useAlignedAlloc, dataLayout, deviceInfo, options);
 }
 
 std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> createValueToLLVMPass()

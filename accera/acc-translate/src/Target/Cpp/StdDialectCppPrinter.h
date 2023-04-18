@@ -83,7 +83,7 @@ namespace cpp_printer
         LogicalResult printReturnOp(ReturnOp returnOp);
 
         /// print SelectOp as ternary operator
-        LogicalResult printSelectOp(SelectOp selectOp);
+        LogicalResult printSelectOp(arith::SelectOp selectOp);
 
         /// print GetGlobalOp as a call to the global variable
         LogicalResult printGetGlobalOp(memref::GetGlobalOp getGlobalOp);

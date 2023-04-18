@@ -1,7 +1,7 @@
-From 08caef4cc7d6e8bc79185d0775da02552eddea9d Mon Sep 17 00:00:00 2001
+From c0e0b6c647aaa8a9c8f8167ef54f4846f25f827b Mon Sep 17 00:00:00 2001
 From: Lisa Ong <onglisa@microsoft.com>
 Date: Tue, 17 May 2022 15:16:57 +0800
-Subject: [PATCH] Merged PR 2213: [mlir] Plumb OpenMP dialect attributes
+Subject: [PATCH 1/6] Merged PR 2213: [mlir] Plumb OpenMP dialect attributes
  through affine and scf lowering
 
 * Updated AffineToSCF and SCFToOpenMP to support OMP dialect attributes for num_threads, schedule_val, proc_bind, and collapse
@@ -43,7 +43,7 @@ index 05d7637d52d7..8295b01f8fcd 100644
 +
  #endif // MLIR_DIALECT_OPENMP_OPENMPDIALECT_H_
 diff --git a/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td b/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td
-index 505e9cb22a0a..d124be11cb94 100644
+index ddeb698fb2a2..6a74eeb217bd 100644
 --- a/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td
 +++ b/mlir/include/mlir/Dialect/OpenMP/OpenMPOps.td
 @@ -124,7 +124,8 @@ def ParallelOp : OpenMP_Op<"parallel", [AttrSizedOperandSegments,
@@ -54,13 +54,13 @@ index 505e9cb22a0a..d124be11cb94 100644
 +    OpBuilder<(ins CArg<"ArrayRef<NamedAttribute>", "{}">:$attributes)>,
 +    OpBuilder<(ins "Value":$num_threads, "ClauseProcBindKindAttr":$proc_bind)>
    ];
-   let parser = [{ return parseParallelOp(parser, result); }];
-   let printer = [{ return printParallelOp(p, *this); }];
+   let hasCustomAssemblyFormat = 1;
+   let hasVerifier = 1;
 diff --git a/mlir/lib/Conversion/AffineToStandard/AffineToStandard.cpp b/mlir/lib/Conversion/AffineToStandard/AffineToStandard.cpp
-index 8ff1134f4b7b..888a6ed20fdc 100644
+index 7c91af4c49f0..0992fc0c1f3a 100644
 --- a/mlir/lib/Conversion/AffineToStandard/AffineToStandard.cpp
 +++ b/mlir/lib/Conversion/AffineToStandard/AffineToStandard.cpp
-@@ -385,6 +385,11 @@ public:
+@@ -177,6 +177,11 @@ public:
      SmallVector<Value, 8> upperBoundTuple;
      SmallVector<Value, 8> lowerBoundTuple;
      SmallVector<Value, 8> identityVals;
@@ -72,7 +72,7 @@ index 8ff1134f4b7b..888a6ed20fdc 100644
      // Emit IR computing the lower and upper bound by expanding the map
      // expression.
      lowerBoundTuple.reserve(op.getNumDims());
-@@ -418,6 +423,7 @@ public:
+@@ -210,6 +215,7 @@ public:
        rewriter.eraseBlock(parOp.getBody());
        rewriter.inlineRegionBefore(op.region(), parOp.getRegion(),
                                    parOp.getRegion().end());
@@ -80,7 +80,7 @@ index 8ff1134f4b7b..888a6ed20fdc 100644
        rewriter.replaceOp(op, parOp.getResults());
        return success();
      }
-@@ -467,6 +473,7 @@ public:
+@@ -259,6 +265,7 @@ public:
            reduceOp.getReductionOperator().front().getArgument(1));
        rewriter.create<scf::ReduceReturnOp>(loc, reductionResult);
      }
@@ -89,10 +89,10 @@ index 8ff1134f4b7b..888a6ed20fdc 100644
      return success();
    }
 diff --git a/mlir/lib/Conversion/SCFToOpenMP/SCFToOpenMP.cpp b/mlir/lib/Conversion/SCFToOpenMP/SCFToOpenMP.cpp
-index e472af257776..526909ca4224 100644
+index a9e7759aa75e..30e0e3e9ad16 100644
 --- a/mlir/lib/Conversion/SCFToOpenMP/SCFToOpenMP.cpp
 +++ b/mlir/lib/Conversion/SCFToOpenMP/SCFToOpenMP.cpp
-@@ -363,8 +363,12 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
+@@ -364,8 +364,12 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
          loc, rewriter.getIntegerType(64), rewriter.getI64IntegerAttr(1));
      SmallVector<Value> reductionVariables;
      reductionVariables.reserve(parallelOp.getNumReductions());
@@ -107,7 +107,7 @@ index e472af257776..526909ca4224 100644
      for (Value init : parallelOp.getInitVals()) {
        assert((LLVM::isCompatibleType(init.getType()) ||
                init.getType().isa<LLVM::PointerElementTypeInterface>()) &&
-@@ -389,7 +393,19 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
+@@ -390,7 +394,19 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
      }
  
      // Create the parallel wrapper.
@@ -128,7 +128,7 @@ index e472af257776..526909ca4224 100644
      {
        OpBuilder::InsertionGuard guard(rewriter);
        rewriter.createBlock(&ompParallel.region());
-@@ -405,9 +421,20 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
+@@ -406,9 +422,20 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
        }
  
        // Replace the loop.
@@ -150,7 +150,7 @@ index e472af257776..526909ca4224 100644
        rewriter.create<omp::TerminatorOp>(loc);
  
        rewriter.inlineRegionBefore(parallelOp.getRegion(), loop.region(),
-@@ -420,15 +447,21 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
+@@ -421,15 +448,21 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
      }
  
      // Load loop results.
@@ -179,7 +179,7 @@ index e472af257776..526909ca4224 100644
      return success();
    }
  };
-@@ -437,7 +470,7 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
+@@ -438,7 +471,7 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
  static LogicalResult applyPatterns(ModuleOp module) {
    ConversionTarget target(*module.getContext());
    target.addIllegalOp<scf::ReduceOp, scf::ReduceReturnOp, scf::ParallelOp>();
@@ -189,7 +189,7 @@ index e472af257776..526909ca4224 100644
    RewritePatternSet patterns(module.getContext());
    patterns.add<ParallelOpLowering>(module.getContext());
 diff --git a/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp b/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp
-index 46a2bf3019e0..d9104bf41a93 100644
+index 4ff38e2b455a..a4b6fd78e7f9 100644
 --- a/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp
 +++ b/mlir/lib/Dialect/OpenMP/IR/OpenMPDialect.cpp
 @@ -73,6 +73,16 @@ void ParallelOp::build(OpBuilder &builder, OperationState &state,
@@ -210,5 +210,5 @@ index 46a2bf3019e0..d9104bf41a93 100644
  // Parser and printer for Operand and type list
  //===----------------------------------------------------------------------===//
 -- 
-2.32.1 (Apple Git-133)
+2.37.1 (Apple Git-137.1)
 

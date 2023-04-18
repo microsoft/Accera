@@ -281,7 +281,7 @@ mlir::FunctionType ToMLIRType(mlir::OpBuilder& builder, const FunctionDeclaratio
     if (type.isa<mlir::IntegerType>())
     {
         auto loc = builder.getUnknownLoc();
-        return builder.create<mlir::arith::IndexCastOp>(loc, v, mlir::IndexType::get(v.getContext()));
+        return builder.create<mlir::arith::IndexCastOp>(loc, mlir::IndexType::get(v.getContext()), v);
     }
 
     // Index types fall through
@@ -355,7 +355,7 @@ std::vector<mlir::Value> ToMLIRValue(mlir::OpBuilder& builder, std::vector<Value
     else
     {
         auto loc = builder.getUnknownLoc();
-        return builder.create<mlir::arith::IndexCastOp>(loc, mlirValue, indexType);
+        return builder.create<mlir::arith::IndexCastOp>(loc, indexType, mlirValue);
     }
 }
 
@@ -825,7 +825,9 @@ void MLIRContext::print() const
 
 void MLIRContext::verify() const
 {
-    (void)_impl->_mlirModule.verify();
+    // BUGBUG: ModuleOp::verify() is private as of LLVM 15
+    // (void)_impl->_mlirModule.verify();
+    throw utilities::LogicException(utilities::LogicExceptionErrors::notImplemented, "verify() is not implemented.");
 }
 
 mlir::OwningOpRef<mlir::ModuleOp> MLIRContext::cloneModule() const
@@ -918,8 +920,8 @@ Scalar CreateGPUIndexOp(mlir::OpBuilder& builder, accera::ir::value::Processor i
     auto loc = builder.getUnknownLoc();
     return Wrap(
         builder.create<mlir::arith::IndexCastOp>(loc,
-                                                 accera::ir::util::GetGPUIndex(idxType, builder, loc),
-                                                 builder.getI64Type()));
+                                                 builder.getI64Type(),
+                                                 accera::ir::util::GetGPUIndex(idxType, builder, loc)));
 }
 
 template <GPUIndexType type>
@@ -2097,7 +2099,7 @@ Value MLIRContext::ReinterpretCastImpl(Value input, ValueType valueType)
             mlir::MemRefType::Builder outputTypeBuilder(inputMemrefType);
             outputTypeBuilder.setElementType(outputMlirElemType);
             mlir::MemRefType outputMemRefType = outputTypeBuilder;
-            auto returnVal = builder.create<accera::ir::value::MemRefCastOp>(loc, inputMlir, outputMemRefType);
+            auto returnVal = builder.create<accera::ir::value::MemRefCastOp>(loc, outputMemRefType, inputMlir);
 
             return Wrap(returnVal, input.GetLayout());
         }
@@ -2254,7 +2256,7 @@ Value MLIRContext::ReinterpretCastImpl(Value input, ValueType valueType)
         auto outputMemRefType = mlir::MemRefType::get({ numElementsInOutput }, outputMlirElemType, composedMap);
         // Fetch a new memref type after normalizing the old memref to have an identity map layout.
         outputMemRefType = normalizeMemRefType(outputMemRefType, builder, composedMap.getNumSymbols() /* ?? No idea if this is correct */);
-        auto returnVal = builder.create<accera::ir::value::MemRefCastOp>(loc, inputMlir, outputMemRefType);
+        auto returnVal = builder.create<accera::ir::value::MemRefCastOp>(loc, outputMemRefType, inputMlir);
 
         return Wrap(returnVal, MemoryLayout{ numElementsInOutput });
     }
@@ -2262,7 +2264,7 @@ Value MLIRContext::ReinterpretCastImpl(Value input, ValueType valueType)
     {
         // Case 3
         // auto outputMemRefType = mlir::UnrankedMemRefType::get(outputMlirElemType, inputUnrankedMemrefType.getMemorySpace());
-        // auto returnVal = builder.create<accera::ir::value::MemRefCastOp>(loc, inputMlir, outputMemRefType);
+        // auto returnVal = builder.create<accera::ir::value::MemRefCastOp>(loc, outputMemRefType, inputMlir);
 
         // TODO: This is going to assert because returnVal is of type UnrankedMemRefType and MemoryLayout doesn't support unranked
         // return Wrap(returnVal);
@@ -2786,8 +2788,8 @@ void MLIRContext::PrintRawMemoryImpl(ViewAdapter value)
     auto identityLayout = mlir::MemRefLayoutAttrInterface{};
 
     // cast to a value with type `memref<total_size x elem_type>` (via `memref<* x elem_type>`)
-    mlir::Value ptr = builder.create<mlir::memref::CastOp>(loc, mem, mlir::UnrankedMemRefType::get(elemTy, memType.getMemorySpace()));
-    mlir::Value mlirValue = builder.create<mlir::memref::CastOp>(loc, ptr, mlir::MemRefType::get({ size }, elemTy, identityLayout, memType.getMemorySpace()));
+    mlir::Value ptr = builder.create<mlir::memref::CastOp>(loc, mlir::UnrankedMemRefType::get(elemTy, memType.getMemorySpace()), mem);
+    mlir::Value mlirValue = builder.create<mlir::memref::CastOp>(loc, mlir::MemRefType::get({ size }, elemTy, identityLayout, memType.getMemorySpace()), ptr);
 
     [[maybe_unused]] auto op = builder.create<ir::value::PrintOp>(loc, mlirValue, /*toStderr=*/false);
 }
@@ -3141,8 +3143,8 @@ void FillResource(ViewAdapter resourceView, Scalar fillValue)
         auto loc = b.getUnknownLoc();
         mlir::Value memrefCasted = b.create<mlir::memref::CastOp>(
             loc,
-            res,
-            castType);
+            castType,
+            res);
 
         auto DeclareFn = [&](const std::string& name, mlir::FunctionType fnTy) -> ir::value::ValueFuncOp {
             auto mod = res.getParentRegion()->getParentOfType<ir::value::ValueModuleOp>();
@@ -3208,8 +3210,8 @@ void PrintMemref(ViewAdapter memView)
         }
         mlir::Value memrefCasted = b.create<mlir::memref::CastOp>(
             loc,
-            mem,
-            mlir::UnrankedMemRefType::get(elemTy, shapedType.getMemorySpace()));
+            mlir::UnrankedMemRefType::get(elemTy, shapedType.getMemorySpace()),
+            mem);
 
         auto DeclareFn = [&](const std::string& name, mlir::FunctionType fnTy) -> ir::value::ValueFuncOp {
             auto mod = mem.getParentRegion()->getParentOfType<ir::value::ValueModuleOp>();

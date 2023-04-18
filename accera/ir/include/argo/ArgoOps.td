@@ -43,6 +43,9 @@ def Argo_YieldOp : Argo_Op<"yield", [NoSideEffect, ReturnLike, Terminator]>,
     argo.yield %f0, %f1 : f32, f32
     ```
   }];
+
+  // Indicate that the operation has a custom parser and printer method.
+  let hasCustomAssemblyFormat = 1;
 }
 
 def Argo_EntryPointOp : Argo_Op<"entry_point", [IsolatedFromAbove, FunctionOpInterface,
@@ -89,6 +92,9 @@ def Argo_EntryPointOp : Argo_Op<"entry_point", [IsolatedFromAbove, FunctionOpInt
   let regions = (region AnyRegion:$body);
 
   let skipDefaultBuilders = 1;
+
+  // Indicate that the operation has a custom parser and printer method.
+  let hasCustomAssemblyFormat = 1;
 
   let builders = [
     OpBuilder<(ins "StringRef":$entryName,

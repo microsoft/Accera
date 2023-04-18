@@ -15,7 +15,7 @@ module @test_accera_vectorization attributes {accv.target_device_features = "-av
         // mlir::affine::AffineLoadOp non-sequential
         // mlir::affine::AffineStoreOp sequential
         // mlir::affine::AffineStoreOp non-sequential
-        // mlir::SelectOp
+        // mlir::arith::SelectOp
         // mlir::arith::ShLIOp
         // mlir::arith::FPToSIOp
         // mlir::arith::ExtSIOp

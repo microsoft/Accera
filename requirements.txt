@@ -9,7 +9,7 @@ conan<2.0.0
 lit
 packaging
 pytest
-hatlib==0.0.38 # keep setup.cfg in sync; prefer == (avoids picking up breaking changes)
+hatlib==0.0.39 # keep setup.cfg in sync; prefer == (avoids picking up breaking changes)
 varname
 py-cpuinfo
 termcolor

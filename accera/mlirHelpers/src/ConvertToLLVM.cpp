@@ -9,9 +9,10 @@
 #include <ir/include/value/ValueDialect.h>
 
 #include <mlir/Conversion/AffineToStandard/AffineToStandard.h>
-#include <mlir/Conversion/LinalgToLLVM/LinalgToLLVM.h>
-#include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
+#include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/LoweringOptions.h>
+#include <mlir/Conversion/LinalgToLLVM/LinalgToLLVM.h>
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h>
 #include <mlir/Dialect/Affine/Passes.h>
 #include <mlir/Dialect/Linalg/Passes.h>
@@ -49,14 +50,17 @@ namespace ir
         // affine -> loops
         funcOpPM.addPass(mlir::createLowerAffinePass());
 
-        // loops -> std
-        pm.addPass(mlir::createLowerToCFGPass());
+        // loops -> cf
+        pm.addPass(mlir::createConvertSCFToCFPass());
 
         // add custom LLVM passes
         addLLVMPassesFn(pm);
 
         // linalg -> llvm
         pm.addPass(mlir::createConvertLinalgToLLVMPass());
+
+        // cf -> llvm
+        pm.addPass(mlir::cf::createConvertControlFlowToLLVMPass());
 
         // another canonicalization pass
         pm.addPass(mlir::createCanonicalizerPass());

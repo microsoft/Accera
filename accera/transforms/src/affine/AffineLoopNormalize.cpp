@@ -81,7 +81,7 @@ struct AcceraAffineLoopNormalizePass : public accera::transforms::AcceraAffineLo
         // See <llvm-project>\mlir\lib\Dialect\Affine\Transforms\AffineLoopNormalize.cpp
         op->walk([](mlir::AffineForOp affineForOp) {
             workaroundModifyAffineForOp(affineForOp);
-            mlir::normalizeAffineFor(affineForOp);
+            (void)mlir::normalizeAffineFor(affineForOp);
         });
     }
 };

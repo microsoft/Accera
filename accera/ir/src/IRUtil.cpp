@@ -1000,13 +1000,30 @@ namespace util
 
     mlir::Operation* GetDefiningOpOrForLoop(mlir::Value val)
     {
-        if (mlir::isForInductionVar(val)) // AffineForOp
+        if (auto affineForOp = mlir::getForInductionVarOwner(val)) // AffineForOp
         {
-            return mlir::getForInductionVarOwner(val);
+            return affineForOp;
         }
         else if (auto scfForOp = mlir::scf::getForInductionVarOwner(val)) // SCFForOp
         {
             return scfForOp;
+        }
+        else if (auto ivArg = val.dyn_cast<mlir::BlockArgument>())
+        {
+            auto block = ivArg.getOwner();
+            if (!block)
+            {
+                return nullptr;
+            }
+            auto parentOp = block->getParentOp();
+
+            // only handle AffineParallelOp and scf::ParallelOp, other block args such as function args should not return their associated ops
+            if (mlir::isa<mlir::AffineParallelOp>(parentOp) ||
+                mlir::isa<mlir::scf::ParallelOp>(parentOp))
+            {
+                return parentOp;
+            }
+            return nullptr;
         }
         else // Arbitrary other op
         {

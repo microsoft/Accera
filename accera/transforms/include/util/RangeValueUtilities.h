@@ -79,6 +79,9 @@ private:
     RangeValue resolveRangeValue(mlir::AffineApplyOp op);
     RangeValue resolveRangeValue(mlir::scf::ForOp op);
     RangeValue resolveRangeValue(mlir::Operation* op);
+
+    void addSCFParallelOp(mlir::scf::ParallelOp op);
+    void addAffineParallelOp(mlir::AffineParallelOp op);
 };
 
 } // namespace accera::ir::util

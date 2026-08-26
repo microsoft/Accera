@@ -133,7 +133,7 @@ No installation is required. This will launch a Jupyter notebook with the quicks
     np.testing.assert_allclose(C_test, C_numpy, atol=1e-3)
 
     # benchmark all functions
-    hat.run_benchmark("hello_accera.hat", batch_size=5, min_time_in_sec=5)
+    hat.run_benchmark("hello_accera.hat", batch_size=5, min_time_in_sec=5, verbose=True)
     ```
 
 6. Run the benchmark to get the execution time results:

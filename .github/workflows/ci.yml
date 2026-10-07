@@ -24,7 +24,7 @@ jobs:
     container:
         image: acceracontainers.azurecr.io/accera-llvm-ubuntu:llvmorg-14.0.6-1
     steps:
-    - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2.8.0
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         submodules: 'recursive'
     # running within a container, install miniconda manually
